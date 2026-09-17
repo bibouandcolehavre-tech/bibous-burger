@@ -9,7 +9,8 @@ const DELIVERY_PRICING = [
 ];
 const DELIVERY_FEE = DELIVERY_PRICING[0].price;
 const ORDER_STEPS = ["Confirmée", "En préparation", "Prête", "En livraison", "Livrée"];
-const API_BASE_URL = typeof window !== "undefined" && window.location?.hostname === "localhost" ? "http://localhost:3001/api" : "";
+const PUBLIC_API_BASE_URL = "https://bibous-burger.onrender.com/api";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (typeof window !== "undefined" && window.location?.hostname === "localhost" ? "http://localhost:3001/api" : PUBLIC_API_BASE_URL);
 const progressForStatus = { confirmed: 0, preparing: 1, ready: 2, out_for_delivery: 3, delivered: 4 };
 const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", progress: progressForStatus[order.status] ?? 0 });
 const POINTS_PER_ORDER = 20;
@@ -243,21 +244,36 @@ export default function App() {
     setCart({ ...cart, delivery: { ...cart.delivery, fee: deliveryFee } });
     setScreen("payment");
   };
-  const pay = (total) => Alert.alert("Paiement SumUp simulé", `Le paiement de ${money(total)} sera ouvert par SumUp dès que le compte marchand sera autorisé.`, [{ text: "Confirmer", onPress: async () => {
-    let savedOrder = null;
-    if (API_BASE_URL && customer.id) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: customer.id, items: [{ name: cart.product.name, quantity: 1, price: cart.total }], method: cart.delivery.method, slot: cart.delivery.slot, distanceKm: cart.delivery.method === "delivery" ? Number.parseFloat(customer.distance.replace(",", ".")) : 0 }) });
-        if (response.ok) {
-          const payload = await response.json();
-          savedOrder = orderFromApi(payload.order);
-          setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders });
-        }
-      } catch {}
+  const pay = async (total) => {
+    try {
+      const statusResponse = await fetch(`${API_BASE_URL}/integrations/sumup/status`);
+      const status = await statusResponse.json();
+      if (!status.checkoutReady) throw new Error("Le paiement sécurisé est encore en cours de configuration.");
+
+      let activeCustomer = customer;
+      if (!activeCustomer.id) {
+        const customerResponse = await fetch(`${API_BASE_URL}/customers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(customer) });
+        if (!customerResponse.ok) throw new Error("Impossible d’enregistrer vos coordonnées.");
+        activeCustomer = (await customerResponse.json()).customer;
+        setCustomer((current) => ({ ...current, ...activeCustomer }));
+      }
+
+      const orderResponse = await fetch(`${API_BASE_URL}/orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customerId: activeCustomer.id, items: [{ name: cart.product.name, quantity: 1, price: cart.total }], method: cart.delivery.method, slot: cart.delivery.slot, distanceKm: cart.delivery.method === "delivery" ? Number.parseFloat(customer.distance.replace(",", ".")) : 0 }) });
+      if (!orderResponse.ok) throw new Error("Impossible de créer la commande.");
+      const orderPayload = await orderResponse.json();
+
+      const checkoutResponse = await fetch(`${API_BASE_URL}/payments/sumup-checkout`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: orderPayload.order.id }) });
+      const checkoutPayload = await checkoutResponse.json();
+      if (!checkoutResponse.ok || !checkoutPayload.checkoutUrl) throw new Error(checkoutPayload.error || "Impossible d’ouvrir le paiement SumUp.");
+
+      setLoyalty({ points: orderPayload.customer.points, orders: orderPayload.customer.weeklyOrders });
+      setOrders((currentOrders) => [orderFromApi(orderPayload.order), ...currentOrders]);
+      await Linking.openURL(checkoutPayload.checkoutUrl);
+      setScreen("success");
+    } catch (error) {
+      Alert.alert("Paiement indisponible", error.message || "Une erreur est survenue. Réessaie dans un instant.");
     }
-    setOrders((currentOrders) => [savedOrder || { id: `#${240 + currentOrders.length}`, product: cart.product.name, total, method: cart.delivery.method, slot: cart.delivery.slot, date: "Aujourd’hui", progress: 1 }, ...currentOrders]);
-    setScreen("success");
-  } }]);
+  };
   const simulateOrder = () => {
     const before = loyalty.orders * POINTS_PER_ORDER * Math.min(Math.max(loyalty.orders, 1), 3);
     const nextOrders = loyalty.orders + 1;

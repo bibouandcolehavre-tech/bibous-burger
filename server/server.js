@@ -72,7 +72,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/integrations/sumup/status") {
       const merchantCode = await getSumUpMerchantCode();
-      return send(response, 200, { configured: Boolean(sumupApiKey), authenticated: Boolean(merchantCode) });
+      return send(response, 200, { configured: Boolean(sumupApiKey), authenticated: Boolean(merchantCode), checkoutReady: Boolean(sumupApiKey && merchantCode && sumupReturnUrl && sumupRedirectUrl) });
     }
 
     const database = await readDatabase();
