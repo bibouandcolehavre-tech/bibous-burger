@@ -186,6 +186,10 @@ function PaymentScreen({ cart, customer, onBack, onPay }) {
   return <SafeAreaView style={styles.safeArea}><View style={styles.detailContent}><Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text><Text style={styles.deliveryIntro}>Tout est prêt pour le paiement sécurisé.</Text><View style={styles.paymentSummary}><Text style={styles.paymentProduct}>{cart.product.name}</Text><Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} /><ReceiptLine label="Sous-total" value={money(cart.total)} /><ReceiptLine label={isDelivery ? "Livraison" : "Retrait"} value={fee ? money(fee) : "Offert"} /><View style={styles.receiptDivider} /><ReceiptLine label="Total" value={money(total)} strong /></View><View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? "Livrer à" : "Retrait par"}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View><View style={styles.securePayment}><Text style={styles.securePaymentIcon}>🔒</Text><View><Text style={styles.securePaymentTitle}>Paiement sécurisé avec SumUp</Text><Text style={styles.securePaymentText}>Carte bancaire · le paiement sera ouvert par SumUp.</Text></View></View></View><View style={styles.stickyAction}><Pressable style={styles.primaryButton} onPress={() => onPay(total)}><Text style={styles.primaryButtonText}>Payer avec SumUp · {money(total)}</Text></Pressable></View></SafeAreaView>;
 }
 
+function PaymentPendingScreen({ onCheckPayment, onBack }) {
+  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🔒</Text><Text style={styles.successTitle}>Paiement en cours</Text><Text style={styles.successText}>Finalise le paiement sur la page sécurisée SumUp, puis reviens ici. Nous vérifierons son statut avant de confirmer la commande.</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● En attente de SumUp</Text><Text style={styles.statusDescription}>Aucune commande n’est considérée comme payée tant que SumUp ne l’a pas confirmée.</Text></View><Pressable style={styles.primaryButton} onPress={onCheckPayment}><Text style={styles.primaryButtonText}>J’ai terminé le paiement</Text></Pressable><Pressable style={styles.trackOrderButton} onPress={onBack}><Text style={styles.trackOrderButtonText}>Retour au paiement</Text></Pressable></View></SafeAreaView>;
+}
+
 function SuccessScreen({ cart, onHome, onReview, onTrack }) {
   const label = cart.delivery.method === "delivery" ? "Livraison" : "Retrait";
   return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>Commande confirmée!</Text><Text style={styles.successText}>Le restaurant prépare déjà ton {cart.product.name}.</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Préparation en cours</Text><Text style={styles.statusDescription}>{label} {cart.delivery.dayLabel.toLowerCase()} entre {cart.delivery.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
@@ -215,6 +219,7 @@ export default function App() {
   const [customer, setCustomer] = useState({ name: "", phone: "", address: "", postalCode: "", city: "Le Havre", distance: "" });
   const [loyalty, setLoyalty] = useState({ points: 620, orders: 2 });
   const [orders, setOrders] = useState([{ id: "#238", product: "Menu - À travers les montagnes", total: 20.89, method: "delivery", slot: "19:00 – 19:30", date: "Dimanche dernier", progress: 4 }]);
+  const [pendingOrder, setPendingOrder] = useState(null);
   const cartCount = useMemo(() => (cart ? 1 : 0), [cart]);
   useEffect(() => {
     if (!API_BASE_URL) return;
@@ -268,10 +273,25 @@ export default function App() {
 
       setLoyalty({ points: orderPayload.customer.points, orders: orderPayload.customer.weeklyOrders });
       setOrders((currentOrders) => [orderFromApi(orderPayload.order), ...currentOrders]);
+      setPendingOrder(orderPayload.order);
+      setScreen("payment-pending");
       await Linking.openURL(checkoutPayload.checkoutUrl);
-      setScreen("success");
     } catch (error) {
       Alert.alert("Paiement indisponible", error.message || "Une erreur est survenue. Réessaie dans un instant.");
+    }
+  };
+  const checkPayment = async () => {
+    if (!pendingOrder) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/payments/sumup-checkout/${pendingOrder.id}`);
+      const payload = await response.json();
+      if (payload.payment?.status === "PAID") {
+        setScreen("success");
+      } else {
+        Alert.alert("Paiement en attente", "SumUp n’a pas encore confirmé le paiement. Réessaie dans quelques instants.");
+      }
+    } catch {
+      Alert.alert("Vérification indisponible", "Impossible de vérifier le paiement pour le moment.");
     }
   };
   const simulateOrder = () => {
@@ -288,6 +308,7 @@ export default function App() {
   if (screen === "delivery") return <DeliveryScreen cart={cart} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => setScreen("details")} />;
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} onChange={setCustomer} onBack={() => setScreen("delivery")} onContinue={continueWithCustomer} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} />;
+  if (screen === "payment-pending") return <PaymentPendingScreen onCheckPayment={checkPayment} onBack={() => setScreen("payment")} />;
   const submitReview = (rating, comment) => { setLoyalty({ ...loyalty, points: loyalty.points + REVIEW_POINTS }); Alert.alert("Merci pour votre avis !", `Votre note de ${rating}/5 a bien été enregistrée${comment ? "." : " sans commentaire."}\n\n+ ${REVIEW_POINTS} points ajoutés à votre compte dans cette maquette.`, [{ text: "Retour à l’accueil", onPress: () => { setCart(null); setScreen("menu"); } }]); };
   if (screen === "success") return <SuccessScreen cart={cart} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} onSubmit={submitReview} />;

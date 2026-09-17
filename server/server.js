@@ -175,6 +175,22 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { ok: true });
     }
 
+    if (request.method === "GET" && url.pathname.startsWith("/api/payments/sumup-checkout/")) {
+      const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
+      if (!order?.payment?.checkoutId) return send(response, 404, { error: "Paiement introuvable" });
+      if (sumupApiKey) {
+        const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${order.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
+        if (sumupResponse.ok) {
+          const checkout = await sumupResponse.json();
+          order.payment.status = checkout.status || order.payment.status;
+          order.payment.updatedAt = new Date().toISOString();
+          if (checkout.status === "PAID") order.payment.paidAt = new Date().toISOString();
+          await writeDatabase(database);
+        }
+      }
+      return send(response, 200, { order, payment: order.payment });
+    }
+
     if (request.method === "PATCH" && url.pathname.startsWith("/api/orders/")) {
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
