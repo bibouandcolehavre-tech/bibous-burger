@@ -1,0 +1,33 @@
+{
+  "nextCustomerId": 2,
+  "nextOrderNumber": 241,
+  "customers": [
+    {
+      "id": "customer-1",
+      "name": "Client Bibou",
+      "phone": "",
+      "address": "",
+      "postalCode": "",
+      "city": "Le Havre",
+      "points": 620,
+      "weeklyOrders": 2,
+      "createdAt": "2026-09-17T12:00:00.000Z"
+    }
+  ],
+  "orders": [
+    {
+      "id": "order-240",
+      "number": 240,
+      "customerId": "customer-1",
+      "customerName": "Client Bibou",
+      "items": [{ "name": "Menu - À travers les montagnes", "quantity": 1, "price": 16.9 }],
+      "subtotal": 16.9,
+      "deliveryFee": 3.99,
+      "total": 20.89,
+      "method": "delivery",
+      "slot": "19:00 – 19:30",
+      "status": "delivered",
+      "createdAt": "2026-09-14T17:00:00.000Z"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Bibou's Burger",
+    "slug": "bibous-burger",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF8F2"
+    },
+    "ios": { "supportsTablet": false },
+    "android": { "adaptiveIcon": { "backgroundColor": "#FFF8F2" } }
+  }
+}

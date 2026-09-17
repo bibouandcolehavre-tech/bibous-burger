@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: bibous-burger-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/health
+    disk:
+      name: bibous-burger-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_FILE_PATH
+        value: /var/data/data.json
+      - key: SUMUP_API_KEY
+        sync: false
+      - key: SUMUP_RETURN_URL
+        sync: false
+      - key: SUMUP_REDIRECT_URL
+        sync: false
