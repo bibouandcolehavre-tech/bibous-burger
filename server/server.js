@@ -1,4 +1,5 @@
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
@@ -23,6 +24,11 @@ const sumupApiKey = process.env.SUMUP_API_KEY;
 const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE;
 const sumupReturnUrl = process.env.SUMUP_RETURN_URL;
 const sumupRedirectUrl = process.env.SUMUP_REDIRECT_URL;
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+const smsAttempts = new Map();
+const sessions = new Map();
 
 const ensureDatabase = async () => {
   await fs.mkdir(path.dirname(databasePath), { recursive: true });
@@ -31,7 +37,7 @@ const ensureDatabase = async () => {
 const readDatabase = async () => { await ensureDatabase(); return JSON.parse(await fs.readFile(databasePath, "utf8")); };
 const writeDatabase = async (database) => { await ensureDatabase(); return fs.writeFile(databasePath, `${JSON.stringify(database, null, 2)}\n`); };
 const send = (response, status, payload) => {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
   response.end(JSON.stringify(payload));
 };
 
@@ -52,6 +58,36 @@ const deliveryFeeForDistance = (distanceKm) => {
   if (distanceKm <= 3) return 4.99;
   if (distanceKm <= 5) return 5.99;
   return null;
+};
+
+const normalizeFrenchPhone = (value) => {
+  const compact = String(value || "").replace(/[\s.-]/g, "");
+  if (/^0[67]\d{8}$/.test(compact)) return `+33${compact.slice(1)}`;
+  if (/^\+33[67]\d{8}$/.test(compact)) return compact;
+  return null;
+};
+const twilioConfigured = () => Boolean(twilioAccountSid && twilioAuthToken && twilioVerifyServiceSid);
+const createSession = (customerId) => {
+  const token = crypto.randomBytes(32).toString("base64url");
+  sessions.set(token, { customerId, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30 });
+  return token;
+};
+const authenticatedCustomer = (request, database) => {
+  const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const session = token && sessions.get(token);
+  if (!session || session.expiresAt < Date.now()) return null;
+  return database.customers.find((customer) => customer.id === session.customerId) || null;
+};
+const verifyWithTwilio = async (path, input) => {
+  const body = new URLSearchParams(input);
+  const credentials = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
+  const response = await fetch(`https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/${path}`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const payload = await response.json().catch(() => ({}));
+  return { response, payload };
 };
 
 const getSumUpMerchantCode = async () => {
@@ -75,7 +111,47 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { configured: Boolean(sumupApiKey), authenticated: Boolean(merchantCode), checkoutReady: Boolean(sumupApiKey && merchantCode && sumupReturnUrl && sumupRedirectUrl) });
     }
 
+    if (request.method === "GET" && url.pathname === "/api/auth/sms/status") {
+      return send(response, 200, { configured: twilioConfigured() });
+    }
+
     const database = await readDatabase();
+
+    if (request.method === "POST" && url.pathname === "/api/auth/sms/start") {
+      const { phone } = await readBody(request);
+      const normalizedPhone = normalizeFrenchPhone(phone);
+      if (!normalizedPhone) return send(response, 400, { error: "Saisissez un numéro français commençant par 06 ou 07." });
+      if (!twilioConfigured()) return send(response, 503, { error: "La connexion par SMS n’est pas encore activée." });
+      const attempt = smsAttempts.get(normalizedPhone) || { count: 0, startedAt: Date.now() };
+      if (Date.now() - attempt.startedAt > 15 * 60 * 1000) { attempt.count = 0; attempt.startedAt = Date.now(); }
+      if (attempt.count >= 3) return send(response, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
+      attempt.count += 1;
+      smsAttempts.set(normalizedPhone, attempt);
+      const { response: twilioResponse, payload } = await verifyWithTwilio("Verifications", { To: normalizedPhone, Channel: "sms" });
+      if (!twilioResponse.ok) return send(response, 502, { error: payload.message || "Le SMS n’a pas pu être envoyé." });
+      return send(response, 200, { ok: true, phone: normalizedPhone });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/sms/check") {
+      const { phone, code } = await readBody(request);
+      const normalizedPhone = normalizeFrenchPhone(phone);
+      if (!normalizedPhone || !/^\d{4,10}$/.test(String(code || ""))) return send(response, 400, { error: "Le numéro ou le code est invalide." });
+      if (!twilioConfigured()) return send(response, 503, { error: "La connexion par SMS n’est pas encore activée." });
+      const { response: twilioResponse, payload } = await verifyWithTwilio("VerificationCheck", { To: normalizedPhone, Code: String(code) });
+      if (!twilioResponse.ok || payload.status !== "approved") return send(response, 401, { error: "Le code est incorrect ou a expiré." });
+      let customer = database.customers.find((item) => normalizeFrenchPhone(item.phone) === normalizedPhone);
+      if (!customer) {
+        customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
+        database.customers.push(customer);
+        await writeDatabase(database);
+      }
+      return send(response, 200, { token: createSession(customer.id), customer });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/auth/me") {
+      const customer = authenticatedCustomer(request, database);
+      return customer ? send(response, 200, { customer }) : send(response, 401, { error: "Session expirée." });
+    }
 
     if (request.method === "GET" && url.pathname === "/api/orders") {
       const status = url.searchParams.get("status");
