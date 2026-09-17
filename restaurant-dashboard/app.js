@@ -19,7 +19,7 @@ function orderFromApi(order) {
 }
 
 function actionMarkup(order) {
-  if (order.status === "Nouvelle") return `<div class="actions"><button class="reject" data-action="Refusée" data-id="${order.id}">Refuser</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
+  if (order.status === "Nouvelle") return `<div class="actions"><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
   if (order.status === "Acceptée") return `<div class="actions"><button class="advance" data-action="Prête" data-id="${order.id}">Marquer prête</button></div>`;
   if (order.status === "Prête") return `<div class="actions"><button class="advance ready" data-action="En livraison" data-id="${order.id}">${order.type === "Livraison" ? "Confier au livreur" : "Remettre au client"}</button></div>`;
   return `<div class="actions"><button class="advance delivery" data-action="Terminée" data-id="${order.id}">Terminer la commande</button></div>`;
@@ -66,6 +66,7 @@ async function loadOrders({ notify = false } = {}) {
 async function changeOrder(id, status) {
   const order = orders.find((item) => item.id === id);
   if (!order) return;
+  if (status === "Refusée" && !window.confirm(`La commande #${id} a déjà été réglée. Confirmez son annulation uniquement après avoir organisé le remboursement dans SumUp.`)) return;
   const previousStatus = order.status;
   order.status = status;
   refreshMetrics();
@@ -74,7 +75,7 @@ async function changeOrder(id, status) {
     if (!API_BASE_URL || !order.apiId) throw new Error("API indisponible");
     const response = await fetch(`${API_BASE_URL}/dashboard/orders/${order.apiId}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: statusForLabel[status] }) });
     if (!response.ok) throw new Error("Mise à jour impossible");
-    const messages = { Acceptée: `Commande #${id} acceptée.`, Refusée: `Commande #${id} refusée.`, Prête: `Commande #${id} est prête.`, "En livraison": `Commande #${id} confiée au livreur.`, Terminée: `Commande #${id} terminée.` };
+    const messages = { Acceptée: `Commande #${id} acceptée.`, Refusée: `Commande #${id} annulée. Pensez à effectuer le remboursement dans SumUp.`, Prête: `Commande #${id} est prête.`, "En livraison": `Commande #${id} confiée au livreur.`, Terminée: `Commande #${id} terminée.` };
     showToast(messages[status]);
   } catch {
     order.status = previousStatus;
@@ -96,7 +97,7 @@ document.querySelector("#sound-button").addEventListener("click", (event) => {
   event.currentTarget.style.color = soundOn ? "" : "#806e65";
 });
 
-document.querySelector("#simulate-order").addEventListener("click", () => showToast("Utilise l’application client pour simuler une vraie commande."));
+document.querySelector("#refresh-orders").addEventListener("click", async () => { await loadOrders(); showToast("Commandes actualisées."); });
 document.querySelector("#dashboard-login").addEventListener("click", async () => {
   const button = document.querySelector("#dashboard-login");
   const password = document.querySelector("#dashboard-password").value;
