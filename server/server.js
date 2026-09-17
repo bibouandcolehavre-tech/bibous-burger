@@ -134,6 +134,18 @@ const finalizePaidOrder = (order, database) => {
   return { customer, pointsAdded };
 };
 
+const revokeLoyaltyForCancelledOrder = (order, database) => {
+  if (order.status !== "cancelled" || !order.loyaltyGrantedAt || order.loyaltyRevokedAt) return false;
+  const customer = database.customers.find((item) => item.id === order.customerId);
+  if (customer) {
+    customer.points = Math.max(0, customer.points - Number(order.loyaltyPointsAdded || 0));
+    customer.weeklyOrders = Math.max(0, customer.weeklyOrders - 1);
+  }
+  order.loyaltyRevokedAt = new Date().toISOString();
+  return true;
+};
+const reconcileCancelledLoyalty = (database) => database.orders.reduce((changed, order) => revokeLoyaltyForCancelledOrder(order, database) || changed, false);
+
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -209,6 +221,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
       const status = url.searchParams.get("status");
       const orders = status ? paidOrders(database).filter((order) => order.status === status) : paidOrders(database);
       return send(response, 200, { orders });
@@ -216,6 +229,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/summary") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
       const confirmedOrders = paidOrders(database);
       const activeOrders = confirmedOrders.filter((order) => !["delivered", "cancelled"].includes(order.status));
       return send(response, 200, {
@@ -228,6 +242,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
       return send(response, 200, { orders: paidOrders(database) });
     }
 
@@ -240,6 +255,7 @@ const server = http.createServer(async (request, response) => {
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
+      revokeLoyaltyForCancelledOrder(order, database);
       await writeDatabase(database);
       return send(response, 200, { order });
     }
@@ -352,6 +368,7 @@ const server = http.createServer(async (request, response) => {
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
+      revokeLoyaltyForCancelledOrder(order, database);
       await writeDatabase(database);
       return send(response, 200, { order });
     }
