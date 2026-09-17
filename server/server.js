@@ -31,6 +31,7 @@ const restaurantDashboardPassword = process.env.RESTAURANT_DASHBOARD_PASSWORD;
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
 const googlePlaceSearchQuery = "Bibou's Burgers, 153 Quai Georges V, 76600 Le Havre, France";
+const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
 const smsAttempts = new Map();
 const sessions = new Map();
 const dashboardSessions = new Map();
@@ -79,6 +80,37 @@ const deliveryFeeForDistance = (distanceKm) => {
   if (distanceKm <= 3) return 4.99;
   if (distanceKm <= 5) return 5.99;
   return null;
+};
+
+const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
+  if (!googleMapsApiKey) throw new Error("Le calcul automatique de livraison n’est pas encore disponible.");
+  const destination = `${String(address || "").trim()}, ${String(postalCode || "").trim()} ${String(city || "").trim()}, France`;
+  const routeResponse = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": googleMapsApiKey,
+      "X-Goog-FieldMask": "routes.distanceMeters"
+    },
+    body: JSON.stringify({
+      origin: { address: restaurantAddress },
+      destination: { address: destination },
+      travelMode: "DRIVE",
+      routingPreference: "TRAFFIC_UNAWARE",
+      languageCode: "fr-FR",
+      units: "METRIC"
+    })
+  });
+  if (!routeResponse.ok) {
+    const routeError = await routeResponse.json().catch(() => null);
+    console.error("Google Routes request failed", routeResponse.status, routeError?.error?.status || "unknown");
+    throw new Error("Cette adresse n’a pas pu être localisée.");
+  }
+  const route = (await routeResponse.json()).routes?.[0];
+  const distanceKm = Number(route?.distanceMeters) / 1000;
+  if (!Number.isFinite(distanceKm)) throw new Error("Cette adresse n’a pas pu être localisée.");
+  const roundedDistanceKm = Math.round(distanceKm * 100) / 100;
+  return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm) };
 };
 
 const normalizeFrenchPhone = (value) => {
@@ -204,6 +236,17 @@ const server = http.createServer(async (request, response) => {
       };
       googleReviewsCache = { value: payload, expiresAt: Date.now() + 1000 * 60 * 60 * 6 };
       return send(response, 200, payload);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/delivery-quote") {
+      const input = await readBody(request);
+      if (![input.address, input.postalCode, input.city].every((value) => String(value || "").trim())) return send(response, 400, { error: "Indiquez une adresse complète pour calculer la livraison." });
+      try {
+        const quote = await calculateDeliveryQuote(input);
+        return send(response, 200, { ...quote, withinZone: quote.deliveryFee !== null });
+      } catch (error) {
+        return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/auth/status") {
@@ -334,8 +377,17 @@ const server = http.createServer(async (request, response) => {
       const customer = database.customers.find((item) => item.id === input.customerId);
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot) return send(response, 400, { error: "Informations de commande incomplètes." });
       const subtotal = input.items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
-      const distanceKm = Number(input.distanceKm);
-      const deliveryFee = input.method === "delivery" ? deliveryFeeForDistance(distanceKm) : 0;
+      let distanceKm = 0;
+      let deliveryFee = 0;
+      if (input.method === "delivery") {
+        try {
+          const quote = await calculateDeliveryQuote(customer);
+          distanceKm = quote.distanceKm;
+          deliveryFee = quote.deliveryFee;
+        } catch (error) {
+          return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });
+        }
+      }
       if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
       const order = { id: `order-${database.nextOrderNumber}`, number: database.nextOrderNumber++, customerId: customer.id, customerName: customer.name, items: input.items.map((item) => ({ name: String(item.name), quantity: Number(item.quantity || 1), price: Number(item.price || 0) })), subtotal, deliveryFee, total: subtotal + deliveryFee, method: input.method, slot: input.slot, status: "awaiting_payment", createdAt: new Date().toISOString() };
       database.orders.unshift(order);
