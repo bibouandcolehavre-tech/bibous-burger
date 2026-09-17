@@ -229,7 +229,7 @@ function SuccessScreen({ cart, onHome, onReview, onTrack }) {
 function ReviewScreen({ onBack, onSubmit }) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis</Text><Text style={styles.reviewIntro}>Comment s’est passée votre expérience avec Bibou’s Burgers ?</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Votre note</Text><View style={styles.starsRow}>{[1, 2, 3, 4, 5].map((star) => <Pressable key={star} accessibilityLabel={`${star} étoile${star > 1 ? "s" : ""}`} onPress={() => setRating(star)} style={styles.starButton}><Text style={[styles.star, star <= rating && styles.starActive]}>★</Text></Pressable>)}</View><Text style={styles.ratingHelper}>{rating ? `${rating} / 5 · Merci pour votre retour !` : "Choisissez une note de 1 à 5"}</Text></View><View style={styles.reviewReward}><Text style={styles.reviewRewardEmoji}>🎁</Text><View><Text style={styles.reviewRewardTitle}>Votre avis est récompensé</Text><Text style={styles.reviewRewardText}>+ {REVIEW_POINTS} points sur votre compte fidélité</Text></View></View><Text style={styles.reviewLabel}>VOTRE COMMENTAIRE</Text><TextInput value={comment} onChangeText={setComment} multiline placeholder="Parlez-nous de votre commande…" placeholderTextColor="#9B877B" style={styles.reviewInput} textAlignVertical="top" maxLength={500} /><Text style={styles.characterCount}>{comment.length} / 500</Text><Pressable disabled={!rating} onPress={() => onSubmit(rating, comment)} style={[styles.primaryButton, styles.reviewSubmit, !rating && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>Envoyer mon avis · + {REVIEW_POINTS} points</Text></Pressable><Text style={styles.reviewFinePrint}>Dans la version connectée, les points seront crédités après validation de l’avis par le restaurant.</Text></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis</Text><Text style={styles.reviewIntro}>Comment s’est passée votre expérience avec Bibou’s Burgers ?</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Votre note</Text><View style={styles.starsRow}>{[1, 2, 3, 4, 5].map((star) => <Pressable key={star} accessibilityLabel={`${star} étoile${star > 1 ? "s" : ""}`} onPress={() => setRating(star)} style={styles.starButton}><Text style={[styles.star, star <= rating && styles.starActive]}>★</Text></Pressable>)}</View><Text style={styles.ratingHelper}>{rating ? `${rating} / 5 · Merci pour votre retour !` : "Choisissez une note de 1 à 5"}</Text></View><View style={styles.reviewReward}><Text style={styles.reviewRewardEmoji}>🎁</Text><View><Text style={styles.reviewRewardTitle}>Votre avis est récompensé</Text><Text style={styles.reviewRewardText}>+ {REVIEW_POINTS} points sur votre compte fidélité</Text></View></View><Text style={styles.reviewLabel}>VOTRE COMMENTAIRE</Text><TextInput value={comment} onChangeText={setComment} multiline placeholder="Parlez-nous de votre commande…" placeholderTextColor="#9B877B" style={styles.reviewInput} textAlignVertical="top" maxLength={500} /><Text style={styles.characterCount}>{comment.length} / 500</Text><Pressable disabled={!rating} onPress={() => onSubmit(rating, comment)} style={[styles.primaryButton, styles.reviewSubmit, !rating && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>Envoyer mon avis · + {REVIEW_POINTS} points</Text></Pressable><Text style={styles.reviewFinePrint}>Un avis est récompensé une seule fois par commande payée.</Text></ScrollView></SafeAreaView>;
 }
 
 function LoyaltyScreen({ loyalty, onBack, onSimulateOrder, onRefer }) {
@@ -322,6 +322,7 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/payments/sumup-checkout/${pendingOrder.id}`);
       const payload = await response.json();
       if (payload.payment?.status === "PAID") {
+        setPendingOrder(payload.order);
         if (payload.customer) {
           setCustomer((current) => ({ ...current, ...payload.customer }));
           setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders });
@@ -350,7 +351,17 @@ export default function App() {
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} onChange={setCustomer} onBack={() => setScreen("delivery")} onContinue={continueWithCustomer} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} />;
   if (screen === "payment-pending") return <PaymentPendingScreen onCheckPayment={checkPayment} onBack={() => setScreen("payment")} />;
-  const submitReview = (rating, comment) => { setLoyalty({ ...loyalty, points: loyalty.points + REVIEW_POINTS }); Alert.alert("Merci pour votre avis !", `Votre note de ${rating}/5 a bien été enregistrée${comment ? "." : " sans commentaire."}\n\n+ ${REVIEW_POINTS} points ajoutés à votre compte dans cette maquette.`, [{ text: "Retour à l’accueil", onPress: () => { setCart(null); setScreen("menu"); } }]); };
+  const submitReview = async (rating, comment) => {
+    try {
+      if (!pendingOrder?.reviewToken) throw new Error("Votre commande n’est pas encore prête à recevoir un avis.");
+      const response = await fetch(`${API_BASE_URL}/reviews`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: pendingOrder.id, reviewToken: pendingOrder.reviewToken, rating, comment }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Impossible d’enregistrer votre avis.");
+      setCustomer((current) => ({ ...current, ...payload.customer }));
+      setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders });
+      Alert.alert("Merci pour votre avis !", `Votre note de ${rating}/5 a bien été enregistrée${comment ? "." : " sans commentaire."}\n\n+ ${payload.pointsAdded} points ajoutés à votre compte.`, [{ text: "Retour à l’accueil", onPress: () => { setCart(null); setScreen("menu"); } }]);
+    } catch (error) { Alert.alert("Avis indisponible", error.message || "Réessaie dans un instant."); }
+  };
   if (screen === "success") return <SuccessScreen cart={cart} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} onSubmit={submitReview} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} onBack={() => setScreen("menu")} onSimulateOrder={simulateOrder} onRefer={referFriend} />;
