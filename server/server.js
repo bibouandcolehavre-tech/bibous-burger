@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -175,27 +176,17 @@ const finalizePaidOrder = (order, database) => {
 
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
-  if (order.loyaltyGrantedAt) return { customer, pointsAdded: order.loyaltyPointsAdded || 0 };
-
-  customer.weeklyOrders += 1;
-  const pointsAdded = 20 * Math.min(customer.weeklyOrders, 3);
-  customer.points += pointsAdded;
-  order.loyaltyGrantedAt = now;
-  order.loyaltyPointsAdded = pointsAdded;
+  const { pointsAdded } = grantLoyaltyForOrder(customer, order, new Date(now));
   return { customer, pointsAdded };
 };
 
 const revokeLoyaltyForCancelledOrder = (order, database) => {
   if (order.status !== "cancelled" || !order.loyaltyGrantedAt || order.loyaltyRevokedAt) return false;
   const customer = database.customers.find((item) => item.id === order.customerId);
-  if (customer) {
-    customer.points = Math.max(0, customer.points - Number(order.loyaltyPointsAdded || 0));
-    customer.weeklyOrders = Math.max(0, customer.weeklyOrders - 1);
-  }
-  order.loyaltyRevokedAt = new Date().toISOString();
-  return true;
+  return customer ? revokeLoyaltyForOrder(customer, order) : false;
 };
 const reconcileCancelledLoyalty = (database) => database.orders.reduce((changed, order) => revokeLoyaltyForCancelledOrder(order, database) || changed, false);
+const resetExpiredLoyaltyWeeks = (database) => database.customers.reduce((changed, customer) => ensureCurrentLoyaltyWeek(customer) || changed, false);
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
@@ -263,6 +254,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     const database = await readDatabase();
+    if (resetExpiredLoyaltyWeeks(database)) await writeDatabase(database);
 
     if (request.method === "POST" && url.pathname === "/api/auth/sms/start") {
       const { phone } = await readBody(request);
