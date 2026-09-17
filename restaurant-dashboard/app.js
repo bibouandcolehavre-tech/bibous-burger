@@ -15,6 +15,7 @@ const todayDateKey = () => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 };
+const todayHeading = () => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(new Date()).toUpperCase();
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
@@ -59,6 +60,7 @@ function refreshMetrics() {
   document.querySelector("#new-filter-count").textContent = newOrders.length;
   const pendingReservations = reservations.filter((reservation) => reservation.status === "pending").length;
   document.querySelector("#new-reservation-count").textContent = pendingReservations;
+  document.querySelector("#new-reservation-count-mobile").textContent = pendingReservations;
   document.querySelector("#pending-reservation-count").textContent = pendingReservations;
 }
 
@@ -206,6 +208,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
 document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
 refreshMetrics();
+document.querySelector("#service-date-heading").textContent = todayHeading();
 renderOrders();
 renderReservations();
 if (dashboardToken) { showDashboard(); loadOrders(); loadReservations(); } else { showLogin(); }

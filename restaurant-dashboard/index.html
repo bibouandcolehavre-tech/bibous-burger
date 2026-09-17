@@ -43,7 +43,7 @@
       <main class="main-panel">
         <header class="topbar">
           <div>
-            <p class="eyebrow">MERCREDI 17 SEPTEMBRE</p>
+            <p id="service-date-heading" class="eyebrow"></p>
             <h1 id="dashboard-title">Commandes en direct</h1>
           </div>
           <div class="topbar-actions">
@@ -51,6 +51,11 @@
             <button class="profile-button">HB</button>
           </div>
         </header>
+
+        <nav class="mobile-view-switch" aria-label="Choisir la rubrique">
+          <button class="nav-item mobile-view-button active" data-view="orders"><span>▦</span> Commandes</button>
+          <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
+        </nav>
 
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
