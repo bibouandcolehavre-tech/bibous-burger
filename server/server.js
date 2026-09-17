@@ -30,10 +30,26 @@ const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 const restaurantDashboardPassword = process.env.RESTAURANT_DASHBOARD_PASSWORD;
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
+const googlePlaceSearchQuery = "Bibou's Burgers, 153 Quai Georges V, 76600 Le Havre, France";
 const smsAttempts = new Map();
 const sessions = new Map();
 const dashboardSessions = new Map();
 let googleReviewsCache = { value: null, expiresAt: 0 };
+
+const fetchGooglePlaceDetails = (placeId) => fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+  headers: { "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "displayName,rating,userRatingCount,reviews" }
+});
+
+const findGooglePlaceId = async () => {
+  const searchResponse = await fetch("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "places.id" },
+    body: JSON.stringify({ textQuery: googlePlaceSearchQuery })
+  });
+  if (!searchResponse.ok) return null;
+  const result = await searchResponse.json();
+  return result.places?.[0]?.id || null;
+};
 
 const ensureDatabase = async () => {
   await fs.mkdir(path.dirname(databasePath), { recursive: true });
@@ -168,9 +184,11 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/google-reviews") {
       if (!googleMapsApiKey) return send(response, 200, { configured: false, reviews: [] });
       if (googleReviewsCache.value && googleReviewsCache.expiresAt > Date.now()) return send(response, 200, googleReviewsCache.value);
-      const googleResponse = await fetch(`https://places.googleapis.com/v1/places/${googlePlaceId}`, {
-        headers: { "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "displayName,rating,userRatingCount,reviews" }
-      });
+      let googleResponse = await fetchGooglePlaceDetails(googlePlaceId);
+      if (googleResponse.status === 404 && !process.env.GOOGLE_PLACE_ID) {
+        const foundPlaceId = await findGooglePlaceId();
+        if (foundPlaceId) googleResponse = await fetchGooglePlaceDetails(foundPlaceId);
+      }
       if (!googleResponse.ok) {
         const googleError = await googleResponse.json().catch(() => null);
         console.error("Google Places request failed", googleResponse.status, googleError?.error?.status || "unknown");
