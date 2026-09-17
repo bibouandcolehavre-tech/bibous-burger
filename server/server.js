@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
+const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -177,13 +178,16 @@ const finalizePaidOrder = (order, database) => {
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
   const { pointsAdded } = grantLoyaltyForOrder(customer, order, new Date(now));
-  return { customer, pointsAdded };
+  const referral = grantReferralReward(order, database, new Date(now));
+  return { customer, pointsAdded, referralPointsAdded: referral.pointsAdded };
 };
 
 const revokeLoyaltyForCancelledOrder = (order, database) => {
-  if (order.status !== "cancelled" || !order.loyaltyGrantedAt || order.loyaltyRevokedAt) return false;
+  if (order.status !== "cancelled") return false;
   const customer = database.customers.find((item) => item.id === order.customerId);
-  return customer ? revokeLoyaltyForOrder(customer, order) : false;
+  const loyaltyChanged = customer ? revokeLoyaltyForOrder(customer, order) : false;
+  const referralChanged = revokeReferralReward(order, database);
+  return loyaltyChanged || referralChanged;
 };
 const reconcileCancelledLoyalty = (database) => database.orders.reduce((changed, order) => revokeLoyaltyForCancelledOrder(order, database) || changed, false);
 const resetExpiredLoyaltyWeeks = (database) => database.customers.reduce((changed, customer) => ensureCurrentLoyaltyWeek(customer) || changed, false);
@@ -254,7 +258,9 @@ const server = http.createServer(async (request, response) => {
     }
 
     const database = await readDatabase();
-    if (resetExpiredLoyaltyWeeks(database)) await writeDatabase(database);
+    const loyaltyWeekChanged = resetExpiredLoyaltyWeeks(database);
+    const referralCodesChanged = ensureAllReferralCodes(database);
+    if (loyaltyWeekChanged || referralCodesChanged) await writeDatabase(database);
 
     if (request.method === "POST" && url.pathname === "/api/auth/sms/start") {
       const { phone } = await readBody(request);
@@ -281,6 +287,7 @@ const server = http.createServer(async (request, response) => {
       let customer = database.customers.find((item) => normalizeFrenchPhone(item.phone) === normalizedPhone);
       if (!customer) {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
+        ensureReferralCode(customer, database);
         database.customers.push(customer);
         await writeDatabase(database);
       }
@@ -348,6 +355,8 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       if (!input.name || !input.phone) return send(response, 400, { error: "Le nom et le téléphone sont requis." });
       const customer = { id: `customer-${database.nextCustomerId++}`, name: input.name.trim(), phone: input.phone.trim(), address: input.address?.trim() || "", postalCode: input.postalCode?.trim() || "", city: input.city?.trim() || "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
+      ensureReferralCode(customer, database);
+      if (input.sponsorCode) applyReferralCode(database, customer, input.sponsorCode);
       database.customers.push(customer);
       await writeDatabase(database);
       return send(response, 201, { customer });
@@ -360,6 +369,7 @@ const server = http.createServer(async (request, response) => {
       ["name", "phone", "address", "postalCode", "city"].forEach((field) => {
         if (typeof input[field] === "string") customer[field] = input[field].trim();
       });
+      if (input.sponsorCode) applyReferralCode(database, customer, input.sponsorCode);
       await writeDatabase(database);
       return send(response, 200, { customer });
     }
@@ -408,7 +418,7 @@ const server = http.createServer(async (request, response) => {
       order.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "pending", createdAt: new Date().toISOString() };
       const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);
-      return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0 });
+      return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
 
     if (["GET", "POST"].includes(request.method) && url.pathname === "/api/payments/sumup-return") {
@@ -444,7 +454,7 @@ const server = http.createServer(async (request, response) => {
           await writeDatabase(database);
         }
       }
-      return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0 });
+      return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/orders/")) {
@@ -464,6 +474,7 @@ const server = http.createServer(async (request, response) => {
     return send(response, 404, { error: "Route introuvable" });
   } catch (error) {
     console.error(error);
+    if (error.statusCode === 400) return send(response, 400, { error: error.message });
     return send(response, error.message === "Invalid JSON" ? 400 : 500, { error: "Une erreur serveur est survenue." });
   }
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const DELIVERY_PRICING = [
@@ -14,8 +14,8 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (typeof window !== 
 const progressForStatus = { confirmed: 0, preparing: 1, ready: 2, out_for_delivery: 3, delivered: 4 };
 const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", status: order.status, progress: progressForStatus[order.status] ?? 0 });
 const POINTS_PER_ORDER = 20;
-const REWARD_POINTS = 700;
 const GOOGLE_REVIEW_URL = "https://share.google/ZnSdNG7pj8QtMieYO";
+const CUSTOMER_APP_URL = "https://bibous-burger-app.onrender.com/";
 const REWARDS = [
   { points: 200, emoji: "🍟", title: "Une portion de frites offerte", detail: "Frites maison, tout simplement" },
   { points: 400, emoji: "🥤", title: "Une boisson fraîche offerte", detail: "À ajouter à ta prochaine commande" },
@@ -33,6 +33,10 @@ const PRESTIGE_LEVELS = [
 const money = (value) => `${value.toFixed(2).replace(".", ",")} €`;
 const deliveryCostForDistance = (distanceKm) => DELIVERY_PRICING.find((tier) => distanceKm <= tier.maxKm)?.price;
 const deliveryCost = (method) => method === "delivery" ? deliveryCostForDistance(0) : 0;
+const referralCodeFromUrl = () => {
+  if (typeof window === "undefined") return "";
+  try { return new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase() || ""; } catch { return ""; }
+};
 
 const PRODUCTS = [
   { id: "taurus", name: "Le Taurus", price: 16.9, isMenu: true, image: taurusPhoto, description: "Pain brioché au charbon végétal, pesto rosso, jambon de Parme, mozzarella, roquette, tomates fraîches, oignons caramélisés et cornichons.", detail: "Pain brioché au charbon végétal, pesto rosso, jambon de Parme et mozzarella fondante." },
@@ -251,7 +255,7 @@ function CheckoutDetailsScreen({ cart, customer, onChange, onBack, onContinue })
   };
   const hasExactFee = !isDelivery || quoteReady;
   const total = cart.total + (deliveryFee ?? deliveryCostForDistance(0));
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Tes coordonnées</Text><Text style={styles.detailsIntro}>Elles permettent au restaurant de préparer et de suivre ta commande.</Text><Text style={styles.deliveryLabel}>CONTACT</Text><TextInput value={customer.name} onChangeText={(value) => update("name", value)} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><TextInput value={customer.phone} onChangeText={(value) => update("phone", value)} placeholder="Téléphone" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" />{isDelivery ? <><Text style={styles.deliveryLabel}>ADRESSE DE LIVRAISON</Text><TextInput value={customer.address} onChangeText={(value) => update("address", value)} placeholder="Numéro et nom de rue" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><View style={styles.fieldRow}><TextInput value={customer.postalCode} onChangeText={(value) => update("postalCode", value)} placeholder="Code postal" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldHalf]} keyboardType="number-pad" maxLength={5} /><TextInput value={customer.city} onChangeText={(value) => update("city", value)} placeholder="Ville" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldCity]} autoCapitalize="words" /></View><View style={[styles.distanceCard, quote?.status === "error" && styles.distanceCardError]}><Text style={styles.distanceTitle}>Frais de livraison automatiques</Text><Text style={styles.distanceText}>Ton adresse est utilisée uniquement pour calculer l’itinéraire et vérifier la zone de 5 km.</Text><Pressable onPress={calculateQuote} disabled={quote?.status === "loading"} style={[styles.quoteButton, quote?.status === "loading" && styles.quoteButtonDisabled]}><Text style={styles.quoteButtonText}>{quote?.status === "loading" ? "Calcul en cours…" : "Calculer mon tarif"}</Text></Pressable>{quote?.status === "success" && quote.withinZone && <Text style={styles.distanceSuccess}>✓ À {quote.distanceKm.toFixed(2).replace(".", ",")} km · Livraison {money(quote.deliveryFee)}</Text>}{quote?.status === "success" && !quote.withinZone && <Text style={styles.distanceError}>Cette adresse est hors de la zone de livraison de 5 km.</Text>}{quote?.status === "error" && <Text style={styles.distanceError}>{quote.error}</Text>}</View></> : <View style={styles.pickupCard}><Text style={styles.pickupTitle}>Retrait au restaurant</Text><Text style={styles.pickupText}>{RESTAURANT_ADDRESS}</Text><Text style={styles.pickupText}>Aucun frais de livraison.</Text></View>}<Text style={styles.detailsFinePrint}>Le montant exact est calculé avant le paiement à partir de l’itinéraire routier.</Text></ScrollView><View style={styles.stickyAction}>{!complete && <Text style={styles.requiredHint}>{isDelivery && !quoteReady ? "Calcule ton tarif de livraison pour continuer." : "Complète les informations pour continuer."}</Text>}<Pressable disabled={!complete} style={[styles.primaryButton, !complete && styles.primaryButtonDisabled]} onPress={() => onContinue(deliveryFee)}><Text style={styles.primaryButtonText}>Vérifier et payer · {!hasExactFee ? "dès " : ""}{money(total)}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Tes coordonnées</Text><Text style={styles.detailsIntro}>Elles permettent au restaurant de préparer et de suivre ta commande.</Text><Text style={styles.deliveryLabel}>CONTACT</Text><TextInput value={customer.name} onChangeText={(value) => update("name", value)} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><TextInput value={customer.phone} onChangeText={(value) => update("phone", value)} placeholder="Téléphone" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" /><Text style={styles.deliveryLabel}>PARRAINAGE · FACULTATIF</Text>{customer.referredByCustomerId ? <View style={styles.referralApplied}><Text style={styles.referralAppliedText}>✓ Ton parrain est déjà enregistré</Text></View> : <TextInput value={customer.sponsorCode || ""} onChangeText={(value) => update("sponsorCode", value.toUpperCase())} placeholder="Exemple : BIBOU-A1B2C3" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="characters" autoCorrect={false} />}<Text style={styles.referralFieldHint}>Le parrain gagne 100 points après ta première commande réellement payée.</Text>{isDelivery ? <><Text style={styles.deliveryLabel}>ADRESSE DE LIVRAISON</Text><TextInput value={customer.address} onChangeText={(value) => update("address", value)} placeholder="Numéro et nom de rue" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><View style={styles.fieldRow}><TextInput value={customer.postalCode} onChangeText={(value) => update("postalCode", value)} placeholder="Code postal" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldHalf]} keyboardType="number-pad" maxLength={5} /><TextInput value={customer.city} onChangeText={(value) => update("city", value)} placeholder="Ville" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldCity]} autoCapitalize="words" /></View><View style={[styles.distanceCard, quote?.status === "error" && styles.distanceCardError]}><Text style={styles.distanceTitle}>Frais de livraison automatiques</Text><Text style={styles.distanceText}>Ton adresse est utilisée uniquement pour calculer l’itinéraire et vérifier la zone de 5 km.</Text><Pressable onPress={calculateQuote} disabled={quote?.status === "loading"} style={[styles.quoteButton, quote?.status === "loading" && styles.quoteButtonDisabled]}><Text style={styles.quoteButtonText}>{quote?.status === "loading" ? "Calcul en cours…" : "Calculer mon tarif"}</Text></Pressable>{quote?.status === "success" && quote.withinZone && <Text style={styles.distanceSuccess}>✓ À {quote.distanceKm.toFixed(2).replace(".", ",")} km · Livraison {money(quote.deliveryFee)}</Text>}{quote?.status === "success" && !quote.withinZone && <Text style={styles.distanceError}>Cette adresse est hors de la zone de livraison de 5 km.</Text>}{quote?.status === "error" && <Text style={styles.distanceError}>{quote.error}</Text>}</View></> : <View style={styles.pickupCard}><Text style={styles.pickupTitle}>Retrait au restaurant</Text><Text style={styles.pickupText}>{RESTAURANT_ADDRESS}</Text><Text style={styles.pickupText}>Aucun frais de livraison.</Text></View>}<Text style={styles.detailsFinePrint}>Le montant exact est calculé avant le paiement à partir de l’itinéraire routier.</Text></ScrollView><View style={styles.stickyAction}>{!complete && <Text style={styles.requiredHint}>{isDelivery && !quoteReady ? "Calcule ton tarif de livraison pour continuer." : "Complète les informations pour continuer."}</Text>}<Pressable disabled={!complete} style={[styles.primaryButton, !complete && styles.primaryButtonDisabled]} onPress={() => onContinue(deliveryFee)}><Text style={styles.primaryButtonText}>Vérifier et payer · {!hasExactFee ? "dès " : ""}{money(total)}</Text></Pressable></View></SafeAreaView>;
 }
 
 function PaymentScreen({ cart, customer, onBack, onPay }) {
@@ -274,11 +278,13 @@ function ReviewScreen({ onBack }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis compte</Text><Text style={styles.reviewIntro}>Partagez votre expérience avec Bibou’s Burgers directement sur notre page Google.</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Merci pour votre commande !</Text><Text style={styles.ratingHelper}>Votre avis Google aide d’autres gourmands à nous découvrir.</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Laisser mon avis sur Google ↗</Text></Pressable><Text style={styles.reviewFinePrint}>Google ouvrira sa page officielle. Vous restez libre de publier ou non votre avis.</Text></ScrollView></SafeAreaView>;
 }
 
-function LoyaltyScreen({ loyalty, onBack, onSimulateOrder, onRefer }) {
+function LoyaltyScreen({ loyalty, customer, onBack, onSimulateOrder, onRefer }) {
   const multiplier = loyalty.orders ? Math.min(loyalty.orders, 3) : 1;
   const weeklyPoints = loyalty.orders * POINTS_PER_ORDER * multiplier;
-  const remaining = Math.max(0, REWARD_POINTS - loyalty.points);
-  const progress = Math.min(100, (loyalty.points / REWARD_POINTS) * 100);
+  const nextReward = REWARDS.find((reward) => loyalty.points < reward.points);
+  const rewardTarget = nextReward?.points || REWARDS[REWARDS.length - 1].points;
+  const remaining = nextReward ? nextReward.points - loyalty.points : 0;
+  const progress = nextReward ? Math.min(100, (loyalty.points / rewardTarget) * 100) : 100;
   const currentPrestigeIndex = PRESTIGE_LEVELS.reduce((activeIndex, level, index) => loyalty.points >= level.points ? index : activeIndex, -1);
   const currentPrestige = currentPrestigeIndex >= 0 ? PRESTIGE_LEVELS[currentPrestigeIndex] : null;
   const nextPrestige = PRESTIGE_LEVELS[currentPrestigeIndex + 1];
@@ -291,9 +297,9 @@ function LoyaltyScreen({ loyalty, onBack, onSimulateOrder, onRefer }) {
         <View style={styles.pointsCard}>
           <Text style={styles.pointsEyebrow}>TON SOLDE FIDÉLITÉ</Text>
           <Text style={styles.pointsTotal}>★ {loyalty.points} points</Text>
-          <Text style={styles.pointsSubtext}>{remaining ? `Encore ${remaining} points avant 5 € offerts` : "Ta récompense de 5 € est disponible !"}</Text>
+          <Text style={styles.pointsSubtext}>{nextReward ? `Encore ${remaining} points avant : ${nextReward.title}` : "Toutes les récompenses sont débloquées !"}</Text>
           <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${progress}%` }]} /></View>
-          <Text style={styles.progressCaption}>{loyalty.points} / {REWARD_POINTS} points</Text>
+          <Text style={styles.progressCaption}>{Math.min(loyalty.points, rewardTarget)} / {rewardTarget} points</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Tes badges Prestige</Text>
@@ -355,10 +361,10 @@ function LoyaltyScreen({ loyalty, onBack, onSimulateOrder, onRefer }) {
         <Text style={styles.sectionTitle}>Parrainage</Text>
         <Pressable onPress={onRefer} style={styles.referralCard}>
           <View style={styles.referralIcon}><Text style={styles.referralEmoji}>🎁</Text></View>
-          <View style={styles.referralCopy}><Text style={styles.referralTitle}>Invite un proche</Text><Text style={styles.referralText}>+ 100 points après sa première commande.</Text></View>
+          <View style={styles.referralCopy}><Text style={styles.referralTitle}>Invite un proche</Text><Text style={styles.referralText}>{customer?.referralCode ? `Ton code : ${customer.referralCode}` : "Connecte-toi pour obtenir ton code personnel."}{"\n"}+ 100 points après sa première commande payée.</Text></View>
           <Text style={styles.loyaltyShortcutArrow}>›</Text>
         </Pressable>
-        <Text style={styles.loyaltyLegal}>Dans la version connectée, les commandes et les parrainages seront associés au compte du client.</Text>
+        <Text style={styles.loyaltyLegal}>Un seul parrain par client. Le bonus est retiré si la commande qui l’a déclenché est annulée.</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -368,7 +374,7 @@ export default function App() {
   const [screen, setScreen] = useState("menu");
   const [activeProduct, setActiveProduct] = useState(null);
   const [cart, setCart] = useState(null);
-  const [customer, setCustomer] = useState({ name: "", phone: "", address: "", postalCode: "", city: "Le Havre", distance: "" });
+  const [customer, setCustomer] = useState({ name: "", phone: "", address: "", postalCode: "", city: "Le Havre", distance: "", sponsorCode: referralCodeFromUrl() });
   const [loyalty, setLoyalty] = useState({ points: 0, orders: 0 });
   const [orders, setOrders] = useState([]);
   const [authToken, setAuthToken] = useState("");
@@ -401,8 +407,13 @@ export default function App() {
       try {
         const endpoint = customer.id ? `${API_BASE_URL}/customers/${customer.id}` : `${API_BASE_URL}/customers`;
         const response = await fetch(endpoint, { method: customer.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(customer) });
-        if (response.ok) savedCustomer = (await response.json()).customer;
-      } catch {}
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "Impossible d’enregistrer tes coordonnées.");
+        savedCustomer = payload.customer;
+      } catch (error) {
+        Alert.alert("Coordonnées non enregistrées", error.message || "Réessaie dans un instant.");
+        return;
+      }
     }
     setCustomer((current) => ({ ...current, ...savedCustomer }));
     setCart({ ...cart, delivery: { ...cart.delivery, fee: deliveryFee } });
@@ -417,8 +428,9 @@ export default function App() {
       let activeCustomer = customer;
       if (!activeCustomer.id) {
         const customerResponse = await fetch(`${API_BASE_URL}/customers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(customer) });
-        if (!customerResponse.ok) throw new Error("Impossible d’enregistrer vos coordonnées.");
-        activeCustomer = (await customerResponse.json()).customer;
+        const customerPayload = await customerResponse.json().catch(() => ({}));
+        if (!customerResponse.ok) throw new Error(customerPayload.error || "Impossible d’enregistrer tes coordonnées.");
+        activeCustomer = customerPayload.customer;
         setCustomer((current) => ({ ...current, ...activeCustomer }));
       }
 
@@ -464,7 +476,26 @@ export default function App() {
     Alert.alert("Points ajoutés", `+ ${added} points grâce au multiplicateur × ${Math.min(nextOrders, 3)}.`);
     setLoyalty({ points: loyalty.points + added, orders: nextOrders });
   };
-  const referFriend = () => Alert.alert("Code de parrainage", "BIBOU-HELEN\n\nTon proche recevra son invitation. Tu gagneras 100 points après sa première commande.");
+  const referFriend = async () => {
+    if (!customer.referralCode) {
+      Alert.alert("Connexion nécessaire", "Ouvre « Mon compte » et connecte-toi pour obtenir ton code personnel de parrainage.");
+      return;
+    }
+    const referralUrl = `${CUSTOMER_APP_URL}?ref=${encodeURIComponent(customer.referralCode)}`;
+    const message = `Je t’invite chez Bibou’s Burgers ! Utilise mon code ${customer.referralCode} lors de ta première commande : ${referralUrl}`;
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ title: "Bibou’s Burgers", text: message, url: referralUrl });
+      } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(message);
+        Alert.alert("Invitation copiée", `Le lien et le code ${customer.referralCode} sont prêts à être envoyés.`);
+      } else {
+        await Share.share({ title: "Bibou’s Burgers", message, url: referralUrl });
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") Alert.alert("Ton code de parrainage", `${customer.referralCode}\n\n${referralUrl}`);
+    }
+  };
   if (screen === "product") return <ProductScreen product={activeProduct} onBack={() => setScreen("menu")} onAdd={addToCart} />;
   if (screen === "cart") return <CartScreen cart={cart} onBack={() => setScreen("menu")} onCheckout={() => setScreen("delivery")} />;
   if (screen === "delivery") return <DeliveryScreen cart={cart} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => setScreen("details")} />;
@@ -473,7 +504,7 @@ export default function App() {
   if (screen === "payment-pending") return <PaymentPendingScreen onCheckPayment={checkPayment} onBack={() => setScreen("payment")} />;
   if (screen === "success") return <SuccessScreen cart={cart} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
-  if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} onBack={() => setScreen("menu")} onSimulateOrder={simulateOrder} onRefer={referFriend} />;
+  if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} onBack={() => setScreen("menu")} onSimulateOrder={simulateOrder} onRefer={referFriend} />;
   if (screen === "login") return <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "account") return authToken ? <AccountScreen customer={customer} loyalty={loyalty} orders={orders} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenLoyalty={() => setScreen("loyalty")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "orders") return <OrdersScreen orders={orders} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
@@ -496,6 +527,7 @@ const styles = StyleSheet.create({
   deliveryIntro: { color: "#826E63", lineHeight: 20, marginTop: 9, marginBottom: 22 }, deliveryLabel: { color: "#826E63", fontSize: 12, fontWeight: "900", letterSpacing: 0.4, marginTop: 20, marginBottom: 9 }, methodRow: { flexDirection: "row", gap: 9 }, dayRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" }, choiceChip: { borderWidth: 1.5, borderColor: "#EADBD2", borderRadius: 13, paddingVertical: 12, paddingHorizontal: 13, backgroundColor: "#FFFDFC" }, choiceChipSelected: { borderColor: "#E95122", backgroundColor: "#FFF0E9" }, choiceChipText: { color: "#2C201B", fontWeight: "700", fontSize: 13 }, choiceChipTextSelected: { color: "#D74318" }, addressNotice: { backgroundColor: "#F8EAE0", borderRadius: 14, padding: 13, marginTop: 13 }, addressNoticeTitle: { color: "#826E63", fontSize: 12 }, addressNoticeText: { color: "#2C201B", fontWeight: "700", marginTop: 3 }, deliveryPrices: { marginTop: 9, borderTopWidth: 1, borderTopColor: "#EADBD2", paddingTop: 5 }, deliveryPriceRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 }, deliveryPriceDistance: { color: "#826E63", fontSize: 12 }, deliveryPriceValue: { color: "#2C201B", fontSize: 12, fontWeight: "800" }, deliveryFeeHint: { color: "#826E63", fontSize: 11, marginTop: 5 }, cartFeeHint: { color: "#826E63", fontSize: 11, lineHeight: 15, marginTop: 10 }, slots: { gap: 9 }, slot: { borderWidth: 1.5, borderColor: "#EADBD2", borderRadius: 14, padding: 15, backgroundColor: "#FFFDFC" }, slotSelected: { borderColor: "#E95122", backgroundColor: "#FFF0E9" }, slotText: { color: "#2C201B", fontWeight: "700" }, slotTextSelected: { color: "#D74318" },
   detailsContent: { flexGrow: 1, padding: 20, paddingBottom: 120 }, detailsIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, fieldInput: { minHeight: 52, borderRadius: 14, borderWidth: 1, borderColor: "#EADBD2", backgroundColor: "#FFFDFC", paddingHorizontal: 14, color: "#2C201B", fontSize: 15, marginBottom: 10 }, fieldRow: { flexDirection: "row", gap: 10 }, fieldHalf: { flex: 0.8 }, fieldCity: { flex: 1.2 }, distanceCard: { backgroundColor: "#F8EAE0", borderRadius: 18, padding: 15, marginTop: 5, borderWidth: 1, borderColor: "#F0D7CB" }, distanceCardError: { backgroundColor: "#FFF0ED", borderColor: "#E3A18C" }, distanceTitle: { color: "#2C201B", fontWeight: "800" }, distanceText: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 5 }, distanceInput: { minHeight: 48, borderRadius: 12, backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", paddingHorizontal: 13, color: "#2C201B", fontSize: 14, marginTop: 12 }, distanceSuccess: { color: "#397353", fontSize: 12, fontWeight: "800", marginTop: 9 }, distanceError: { color: "#A3472A", fontSize: 12, fontWeight: "800", marginTop: 9 }, pickupCard: { backgroundColor: "#EAF5E4", borderRadius: 18, padding: 16, marginTop: 22 }, pickupTitle: { color: "#397353", fontWeight: "800" }, pickupText: { color: "#526D57", lineHeight: 18, marginTop: 5, fontSize: 13 }, detailsFinePrint: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 17, textAlign: "center" }, paymentSummary: { backgroundColor: "#F8EAE0", borderRadius: 19, padding: 17, marginTop: 22 }, paymentProduct: { color: "#2C201B", fontSize: 16, fontWeight: "800" }, paymentLine: { color: "#826E63", fontSize: 12, marginTop: 6 }, customerSummary: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 16, marginTop: 13 }, customerSummaryTitle: { color: "#826E63", fontSize: 12, fontWeight: "800", textTransform: "uppercase" }, customerSummaryText: { color: "#2C201B", fontSize: 13, lineHeight: 18, marginTop: 6 }, securePayment: { backgroundColor: "#EAF5E4", borderRadius: 18, padding: 15, marginTop: 13, flexDirection: "row", alignItems: "center" }, securePaymentIcon: { fontSize: 22, marginRight: 11 }, securePaymentTitle: { color: "#397353", fontWeight: "800" }, securePaymentText: { color: "#526D57", fontSize: 11, lineHeight: 15, marginTop: 3, paddingRight: 24 },
   quoteButton: { alignSelf: "flex-start", backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#D74318", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, marginTop: 12 }, quoteButtonDisabled: { opacity: 0.6 }, quoteButtonText: { color: "#D74318", fontSize: 13, fontWeight: "800" },
+  referralApplied: { minHeight: 48, borderRadius: 13, backgroundColor: "#EAF5E4", borderWidth: 1, borderColor: "#C7E1BF", paddingHorizontal: 14, justifyContent: "center" }, referralAppliedText: { color: "#397353", fontWeight: "800" }, referralFieldHint: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: -3, marginBottom: 2 },
   successContent: { flex: 1, alignItems: "center", justifyContent: "center", padding: 28 }, successEmoji: { fontSize: 64 }, successTitle: { color: "#2C201B", fontSize: 28, fontWeight: "800", marginTop: 15, textAlign: "center" }, successText: { color: "#826E63", textAlign: "center", lineHeight: 20, marginTop: 9 }, statusCard: { backgroundColor: "#F8EAE0", borderRadius: 20, padding: 18, width: "100%", marginTop: 30, marginBottom: 12 }, statusTitle: { color: "#397353", fontWeight: "800" }, statusDescription: { color: "#826E63", lineHeight: 19, marginTop: 8 }, trackOrderButton: { width: "100%", borderWidth: 1.5, borderColor: "#E95122", borderRadius: 16, padding: 14, alignItems: "center", marginBottom: 12 }, trackOrderButtonText: { color: "#D74318", fontWeight: "800" },
   reviewPrompt: { width: "100%", borderWidth: 1.5, borderColor: "#E95122", borderRadius: 18, padding: 16, marginBottom: 12, backgroundColor: "#FFF0E9" }, reviewPromptTitle: { color: "#2C201B", fontWeight: "800" }, reviewPromptText: { color: "#826E63", fontSize: 12, lineHeight: 16, marginTop: 4 }, reviewPromptLink: { color: "#D74318", fontWeight: "800", marginTop: 9 }, reviewContent: { padding: 20, paddingBottom: 44 }, reviewIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, reviewCard: { backgroundColor: "#F8EAE0", borderRadius: 20, padding: 18, marginTop: 23, alignItems: "center" }, reviewQuestion: { color: "#2C201B", fontWeight: "800", fontSize: 16 }, starsRow: { flexDirection: "row", marginTop: 12 }, starButton: { paddingHorizontal: 4, paddingVertical: 3 }, star: { color: "#D5BDB0", fontSize: 38, lineHeight: 43 }, starActive: { color: "#F1A326" }, ratingHelper: { color: "#826E63", fontSize: 12, marginTop: 7 }, reviewReward: { backgroundColor: "#EAF5E4", borderRadius: 17, padding: 14, flexDirection: "row", alignItems: "center", marginTop: 15 }, reviewRewardEmoji: { fontSize: 25, marginRight: 11 }, reviewRewardTitle: { color: "#2C201B", fontWeight: "800" }, reviewRewardText: { color: "#397353", fontSize: 12, fontWeight: "700", marginTop: 4 }, reviewLabel: { color: "#826E63", fontSize: 12, fontWeight: "900", letterSpacing: 0.4, marginTop: 25, marginBottom: 8 }, reviewInput: { minHeight: 130, borderRadius: 17, borderWidth: 1, borderColor: "#EADBD2", backgroundColor: "#FFFDFC", padding: 14, color: "#2C201B", fontSize: 14, lineHeight: 20 }, characterCount: { color: "#826E63", fontSize: 11, alignSelf: "flex-end", marginTop: 6 }, reviewSubmit: { marginTop: 20 }, googleReviewButton: { borderWidth: 1, borderColor: "#EADBD2", borderRadius: 14, padding: 14, alignItems: "center", marginTop: 11, backgroundColor: "#FFFDFC" }, googleReviewText: { color: "#2C201B", fontWeight: "800", fontSize: 13 }, reviewFinePrint: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 12, textAlign: "center" },
   accountContent: { padding: 20, paddingBottom: 46 }, accountHero: { backgroundColor: "#2C201B", borderRadius: 22, padding: 19, marginTop: 20, flexDirection: "row", alignItems: "center" }, accountAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: "#E95122", alignItems: "center", justifyContent: "center", marginRight: 13 }, accountAvatarText: { color: "white", fontSize: 22, fontWeight: "900" }, accountGreeting: { color: "white", fontSize: 18, fontWeight: "800" }, accountContact: { color: "#F2C8B5", fontSize: 12, marginTop: 5, maxWidth: 230 }, currentOrderCard: { backgroundColor: "#EAF5E4", borderRadius: 20, padding: 16, marginTop: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, currentOrderEyebrow: { color: "#397353", fontSize: 10, fontWeight: "900", letterSpacing: 0.5 }, currentOrderTitle: { color: "#2C201B", fontSize: 15, fontWeight: "800", marginTop: 5 }, currentOrderText: { color: "#526D57", fontSize: 12, marginTop: 4 }, currentOrderArrow: { color: "#397353", fontSize: 30 }, accountAction: { backgroundColor: "#FFFDFC", borderRadius: 18, borderWidth: 1, borderColor: "#EADBD2", padding: 14, flexDirection: "row", alignItems: "center", marginBottom: 10 }, accountActionIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, accountActionCopy: { flex: 1 }, accountActionTitle: { color: "#2C201B", fontWeight: "800" }, accountActionText: { color: "#826E63", fontSize: 12, marginTop: 4 }, accountActionArrow: { color: "#D74318", fontSize: 26 }, accountAddress: { backgroundColor: "#F8EAE0", borderRadius: 18, padding: 15, marginTop: 15 }, accountAddressTitle: { color: "#2C201B", fontWeight: "800" }, accountAddressText: { color: "#826E63", fontSize: 13, lineHeight: 18, marginTop: 6 }, accountFinePrint: { color: "#826E63", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 19 }, trackingCard: { backgroundColor: "#FFFDFC", borderRadius: 20, borderWidth: 1, borderColor: "#EADBD2", padding: 16 }, trackingHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }, trackingOrder: { color: "#2C201B", fontSize: 15, fontWeight: "800", maxWidth: 230 }, trackingMeta: { color: "#826E63", fontSize: 12, marginTop: 5 }, trackingPrice: { color: "#2C201B", fontWeight: "800" }, trackingSteps: { flexDirection: "row", justifyContent: "space-between", marginTop: 24 }, trackingStep: { flex: 1, alignItems: "center" }, trackingDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#F3E9E2", borderWidth: 1, borderColor: "#D6BEB1", alignItems: "center", justifyContent: "center" }, trackingDotDone: { backgroundColor: "#E95122", borderColor: "#E95122" }, trackingCheck: { color: "white", fontSize: 12, fontWeight: "900" }, trackingLabel: { color: "#9B877B", fontSize: 8, fontWeight: "700", textAlign: "center", marginTop: 5 }, trackingLabelDone: { color: "#D74318" }, trackingMessage: { color: "#397353", fontWeight: "700", fontSize: 12, textAlign: "center", marginTop: 18 }, historyOrder: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 17, padding: 13, flexDirection: "row", alignItems: "center", marginBottom: 9 }, historyIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: "#EAF5E4", alignItems: "center", justifyContent: "center", marginRight: 10 }, historyCopy: { flex: 1 }, historyTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, historyMeta: { color: "#826E63", fontSize: 11, marginTop: 4 }, historyPrice: { color: "#2C201B", fontWeight: "800", fontSize: 12 },
