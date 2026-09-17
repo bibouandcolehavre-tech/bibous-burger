@@ -77,6 +77,11 @@
             <div><span id="pending-reservation-count">0</span><small>demandes à traiter</small></div>
             <p>Acceptez ou refusez chaque demande selon les tables disponibles.</p>
           </div>
+          <div class="reservation-filters" role="tablist">
+            <button class="reservation-filter" data-reservation-filter="today">Aujourd’hui</button>
+            <button class="reservation-filter active" data-reservation-filter="upcoming">À venir</button>
+            <button class="reservation-filter" data-reservation-filter="all">Toutes</button>
+          </div>
           <div id="reservations-list" class="reservations-list"></div>
         </section>
       </main>

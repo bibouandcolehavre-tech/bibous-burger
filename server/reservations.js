@@ -34,6 +34,12 @@ const reservationAvailabilityForDate = (database, dateKey, now = new Date()) => 
   })
 );
 
+const reservationsForCustomer = (database, customer) => {
+  ensureReservationStore(database);
+  const customerPhone = normalizeReservationPhone(customer?.phone);
+  return database.reservations.filter((reservation) => reservation.customerId === customer?.id || (customerPhone && normalizeReservationPhone(reservation.phone) === customerPhone));
+};
+
 const createReservation = (database, input, now = new Date()) => {
   ensureReservationStore(database);
   const customerName = String(input.customerName || input.name || "").trim();
@@ -52,6 +58,7 @@ const createReservation = (database, input, now = new Date()) => {
   const reservation = {
     id: `reservation-${number}`,
     number,
+    customerId: input.customerId || null,
     customerName,
     phone,
     guests,
@@ -85,5 +92,6 @@ module.exports = {
   normalizeReservationPhone,
   remainingReservationPlaces,
   reservationAvailabilityForDate,
+  reservationsForCustomer,
   updateReservationStatus
 };

@@ -6,7 +6,7 @@ const path = require("node:path");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
-const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, updateReservationStatus } = require("./reservations");
+const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -294,7 +294,8 @@ const server = http.createServer(async (request, response) => {
       try {
         const reservation = await serializeOrderCreation(async () => {
           const latestDatabase = await readDatabase();
-          const created = createReservation(latestDatabase, input);
+          const customer = authenticatedCustomer(request, latestDatabase);
+          const created = createReservation(latestDatabase, { ...input, customerId: customer?.id || null });
           await writeDatabase(latestDatabase);
           return created;
         });
@@ -345,6 +346,13 @@ const server = http.createServer(async (request, response) => {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
       return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id) });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/customer/reservations") {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Session expirée." });
+      const reservations = reservationsForCustomer(database, customer).sort((a, b) => `${b.serviceDate} ${b.slot}`.localeCompare(`${a.serviceDate} ${a.slot}`));
+      return send(response, 200, { reservations });
     }
 
     if (request.method === "GET" && url.pathname === "/api/orders") {

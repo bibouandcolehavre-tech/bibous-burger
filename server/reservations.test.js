@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createReservation, ensureReservationStore, normalizeReservationPhone, reservationAvailabilityForDate, updateReservationStatus } = require("./reservations");
+const { createReservation, ensureReservationStore, normalizeReservationPhone, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
 
 test("normalise les numéros de téléphone français", () => {
   assert.equal(normalizeReservationPhone("06 12 34 56 78"), "+33612345678");
@@ -58,4 +58,14 @@ test("limite chaque tranche de 30 minutes à deux réservations", () => {
 
   updateReservationStatus(database, "reservation-1", "cancelled", now);
   assert.equal(reservationAvailabilityForDate(database, input.serviceDate, now)[input.slot].remaining, 1);
+});
+
+test("retrouve uniquement les réservations du client connecté", () => {
+  const database = { reservations: [
+    { id: "reservation-1", customerId: "customer-1", phone: "+33612345678" },
+    { id: "reservation-2", customerId: null, phone: "06 12 34 56 78" },
+    { id: "reservation-3", customerId: "customer-2", phone: "+33699999999" }
+  ] };
+  const results = reservationsForCustomer(database, { id: "customer-1", phone: "+33612345678" });
+  assert.deepEqual(results.map((reservation) => reservation.id), ["reservation-1", "reservation-2"]);
 });
