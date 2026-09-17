@@ -158,6 +158,23 @@ const server = http.createServer(async (request, response) => {
       return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null });
     }
 
+    if (["GET", "POST"].includes(request.method) && url.pathname === "/api/payments/sumup-return") {
+      const notification = request.method === "POST" ? await readBody(request) : Object.fromEntries(url.searchParams);
+      const checkoutId = notification.checkout_id || notification.checkoutId || notification.id;
+      const order = database.orders.find((item) => item.payment?.checkoutId === checkoutId);
+      if (order && sumupApiKey) {
+        const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
+        if (sumupResponse.ok) {
+          const checkout = await sumupResponse.json();
+          order.payment.status = checkout.status || order.payment.status;
+          order.payment.updatedAt = new Date().toISOString();
+          if (checkout.status === "PAID") order.payment.paidAt = new Date().toISOString();
+          await writeDatabase(database);
+        }
+      }
+      return send(response, 200, { ok: true });
+    }
+
     if (request.method === "PATCH" && url.pathname.startsWith("/api/orders/")) {
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
