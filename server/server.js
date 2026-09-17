@@ -5,6 +5,7 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
+const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -38,6 +39,15 @@ const smsAttempts = new Map();
 const sessions = new Map();
 const dashboardSessions = new Map();
 let googleReviewsCache = { value: null, expiresAt: 0 };
+let orderCreationQueue = Promise.resolve();
+
+const serializeOrderCreation = async (task) => {
+  const previousTask = orderCreationQueue;
+  let release;
+  orderCreationQueue = new Promise((resolve) => { release = resolve; });
+  await previousTask;
+  try { return await task(); } finally { release(); }
+};
 
 const fetchGooglePlaceDetails = (placeId) => fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
   headers: { "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "displayName,rating,userRatingCount,reviews" }
@@ -262,6 +272,14 @@ const server = http.createServer(async (request, response) => {
     const referralCodesChanged = ensureAllReferralCodes(database);
     if (loyaltyWeekChanged || referralCodesChanged) await writeDatabase(database);
 
+    if (request.method === "GET" && url.pathname === "/api/availability") {
+      const serviceDate = url.searchParams.get("date");
+      const validationError = validateServiceDate(serviceDate);
+      if (validationError) return send(response, 400, { error: validationError });
+      const slots = availabilityForDate(database, serviceDate);
+      return send(response, 200, { serviceDate, capacity: SLOT_CAPACITY, slots });
+    }
+
     if (request.method === "POST" && url.pathname === "/api/auth/sms/start") {
       const { phone } = await readBody(request);
       const normalizedPhone = normalizeFrenchPhone(phone);
@@ -377,7 +395,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/orders") {
       const input = await readBody(request);
       const customer = database.customers.find((item) => item.id === input.customerId);
-      if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot) return send(response, 400, { error: "Informations de commande incomplètes." });
+      if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
+      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot);
+      if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
       const subtotal = input.items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
       let distanceKm = 0;
       let deliveryFee = 0;
@@ -391,9 +411,18 @@ const server = http.createServer(async (request, response) => {
         }
       }
       if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
-      const order = { id: `order-${database.nextOrderNumber}`, number: database.nextOrderNumber++, customerId: customer.id, customerName: customer.name, items: input.items.map((item) => ({ name: String(item.name), quantity: Number(item.quantity || 1), price: Number(item.price || 0) })), subtotal, deliveryFee, total: subtotal + deliveryFee, method: input.method, slot: input.slot, status: "awaiting_payment", createdAt: new Date().toISOString() };
-      database.orders.unshift(order);
-      await writeDatabase(database);
+      const order = await serializeOrderCreation(async () => {
+        const latestDatabase = await readDatabase();
+        const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId);
+        if (!latestCustomer) return null;
+        if (input.method === "delivery" && remainingDeliveryPlaces(latestDatabase, input.serviceDate, input.slot).remaining < 1) return false;
+        const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, items: input.items.map((item) => ({ name: String(item.name), quantity: Number(item.quantity || 1), price: Number(item.price || 0) })), subtotal, deliveryFee, distanceKm, total: subtotal + deliveryFee, method: input.method, serviceDate: input.serviceDate, slot: input.slot, status: "awaiting_payment", createdAt: new Date().toISOString() };
+        latestDatabase.orders.unshift(createdOrder);
+        await writeDatabase(latestDatabase);
+        return createdOrder;
+      });
+      if (order === false) return send(response, 409, { error: "Ce créneau de livraison vient d’être réservé deux fois. Choisis-en un autre." });
+      if (!order) return send(response, 404, { error: "Client introuvable" });
       return send(response, 201, { order });
     }
 
@@ -401,6 +430,10 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === input.orderId);
       if (!order) return send(response, 404, { error: "Commande introuvable" });
+      const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
+      if (!Number.isFinite(checkoutExpiresAt.getTime()) || checkoutExpiresAt.getTime() <= Date.now()) {
+        return send(response, 409, { error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
+      }
       const merchantCode = await getSumUpMerchantCode();
       if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "SumUp n’est pas encore configuré sur le serveur." });
 
@@ -408,14 +441,14 @@ const server = http.createServer(async (request, response) => {
       const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
         method: "POST",
         headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burgers #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, hosted_checkout: { enabled: true } })
+        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burgers #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: checkoutExpiresAt.toISOString(), hosted_checkout: { enabled: true } })
       });
       if (!sumupResponse.ok) {
         console.error("SumUp checkout creation failed", sumupResponse.status);
         return send(response, 502, { error: "SumUp n’a pas pu créer le paiement." });
       }
       const checkout = await sumupResponse.json();
-      order.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "pending", createdAt: new Date().toISOString() };
+      order.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "pending", createdAt: new Date().toISOString(), validUntil: checkoutExpiresAt.toISOString() };
       const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);
       return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });

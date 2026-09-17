@@ -6,6 +6,7 @@ let filter = "all";
 let soundOn = true;
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
+const serviceDateLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "Date non précisée";
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
@@ -15,7 +16,7 @@ const showDashboard = () => { document.querySelector("#login-screen").hidden = t
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
   const minutes = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
-  return { id: order.number, apiId: order.id, customer: order.customerName, age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: order.slot, total: order.total, items: order.items.map((item) => item.quantity > 1 ? `${item.quantity} × ${item.name}` : item.name).join(" · "), status: statusLabel[order.status] || "Nouvelle" };
+  return { id: order.number, apiId: order.id, customer: order.customerName, age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, total: order.total, items: order.items.map((item) => item.quantity > 1 ? `${item.quantity} × ${item.name}` : item.name).join(" · "), status: statusLabel[order.status] || "Nouvelle" };
 }
 
 function actionMarkup(order) {
