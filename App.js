@@ -300,11 +300,11 @@ function LoyaltyScreen({ loyalty, onBack, onSimulateOrder, onRefer }) {
             {PRESTIGE_LEVELS.map((level, index) => {
               const unlocked = index <= currentPrestigeIndex;
               return <View key={level.level} style={styles.prestigeLevel}>
-                <Text style={[styles.prestigeAboveLabel, unlocked && { color: level.color }]}>Prestige {level.level}</Text>
-                <View style={[styles.prestigeDot, unlocked && { backgroundColor: level.softColor, borderColor: level.color }]}>
-                  <Text style={[styles.prestigeDotText, unlocked && { color: level.color }]}>{"★".repeat(level.level)}</Text>
+                <Text style={[styles.prestigeAboveLabel, { color: level.color, opacity: unlocked ? 1 : 0.65 }]}>Prestige {level.level}</Text>
+                <View style={[styles.prestigeDot, { backgroundColor: level.softColor, borderColor: level.color, opacity: unlocked ? 1 : 0.6 }]}>
+                  <Text style={[styles.prestigeDotText, { color: level.color }]}>{"★".repeat(level.level)}</Text>
                 </View>
-                <Text style={[styles.prestigeLevelLabel, index === currentPrestigeIndex && { color: level.color }]}>{level.name}{"\n"}{level.metal} · {level.points} pts</Text>
+                <Text style={[styles.prestigeLevelLabel, { color: level.color, opacity: unlocked ? 1 : 0.72 }]}>{level.name}{"\n"}{level.metal} · {level.points} pts</Text>
               </View>;
             })}
           </View>
