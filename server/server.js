@@ -237,7 +237,7 @@ const server = http.createServer(async (request, response) => {
         placeName: place.displayName?.text || "Bibou’s Burgers",
         rating: place.rating || null,
         reviewCount: place.userRatingCount || null,
-        reviews: (place.reviews || []).slice(0, 5).map((review) => ({ author: review.authorAttribution?.displayName || "Client Google", rating: review.rating, text: review.originalText?.text || review.text?.text || "", publishedAt: review.publishTime || null }))
+        reviews: (place.reviews || []).slice(0, 5).map((review) => ({ author: review.authorAttribution?.displayName || "Client Google", rating: review.rating, text: review.text?.text || review.originalText?.text || "", publishedAt: review.publishTime || null }))
       };
       googleReviewsCache = { value: payload, expiresAt: Date.now() + 1000 * 60 * 60 * 6 };
       return send(response, 200, payload);
