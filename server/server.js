@@ -146,7 +146,7 @@ const server = http.createServer(async (request, response) => {
       const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
         method: "POST",
         headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burger #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl })
+        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burger #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, hosted_checkout: { enabled: true } })
       });
       if (!sumupResponse.ok) {
         console.error("SumUp checkout creation failed", sumupResponse.status);
