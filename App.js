@@ -657,7 +657,7 @@ export default function App() {
 }
 
 const APP_PALETTE = {
-  "#FFF8F2": "#D86843",
+  "#FFF8F2": "#E54832",
   "#FFFDFC": "#FFFCF7",
   "#F8EAE0": "#EEE2D6",
   "#FFF0E9": "#F3DDD3",
