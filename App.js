@@ -20,7 +20,7 @@ const REWARDS = [
   { points: 200, emoji: "🥤", title: "Une boisson fraîche offerte", detail: "À ajouter à ta prochaine commande" },
   { points: 400, emoji: "🍟", title: "Une portion de frites offerte", detail: "Frites maison, tout simplement" },
   { points: 700, emoji: "✨", title: "5 € de remise", detail: "À utiliser sur une prochaine commande" },
-  { points: 1500, emoji: "🍔", title: "Un menu classique offert", detail: "Le plaisir est pour Bibou's Burger" },
+  { points: 1500, emoji: "🍔", title: "Un menu classique offert", detail: "Le plaisir est pour Bibou's Burgers" },
 ];
 const PRESTIGE_LEVELS = [
   { level: 1, name: "Débutant", points: 0, reward: "Badge de bienvenue" },
@@ -71,7 +71,7 @@ const DRINKS = { id: "drink", title: "BOISSONS", max: 1, options: [{ id: "coca",
 const MENU_OPTION_GROUPS = [PROTEIN, SALAD, SAUCES, DRINKS, SUPPLEMENTS, SIDES];
 const BURGER_OPTION_GROUPS = [PROTEIN, SALAD, SAUCES, SUPPLEMENTS, SIDES, DESSERTS];
 const RESTAURANT_ADDRESS = "153 quai George-V, 76600 Le Havre";
-const DELIVERY_ZONE = "Rayon de 5 km autour de Bibou's Burger";
+const DELIVERY_ZONE = "Rayon de 5 km autour de Bibou's Burgers";
 const DELIVERY_SCHEDULE = [
   { id: "monday", label: "Lun.", name: "Lundi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
   { id: "tuesday", label: "Mar.", name: "Mardi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
@@ -83,7 +83,7 @@ const DELIVERY_SCHEDULE = [
 ];
 const DEFAULT_DELIVERY_DAY = DELIVERY_SCHEDULE[0];
 function Header({ onBack, right }) {
-  return <View style={styles.header}>{onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <Text style={styles.wordmark}>Bibou's Burger</Text>}<Text style={styles.headerRight}>{right || ""}</Text></View>;
+  return <View style={styles.header}>{onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <Text style={styles.wordmark}>Bibou's Burgers</Text>}<Text style={styles.headerRight}>{right || ""}</Text></View>;
 }
 
 function ProductCard({ product, onPress }) {
@@ -198,7 +198,7 @@ function SuccessScreen({ cart, onHome, onReview, onTrack }) {
 function ReviewScreen({ onBack, onSubmit }) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis</Text><Text style={styles.reviewIntro}>Comment s’est passée votre expérience avec Bibou’s Burger ?</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Votre note</Text><View style={styles.starsRow}>{[1, 2, 3, 4, 5].map((star) => <Pressable key={star} accessibilityLabel={`${star} étoile${star > 1 ? "s" : ""}`} onPress={() => setRating(star)} style={styles.starButton}><Text style={[styles.star, star <= rating && styles.starActive]}>★</Text></Pressable>)}</View><Text style={styles.ratingHelper}>{rating ? `${rating} / 5 · Merci pour votre retour !` : "Choisissez une note de 1 à 5"}</Text></View><View style={styles.reviewReward}><Text style={styles.reviewRewardEmoji}>🎁</Text><View><Text style={styles.reviewRewardTitle}>Votre avis est récompensé</Text><Text style={styles.reviewRewardText}>+ {REVIEW_POINTS} points sur votre compte fidélité</Text></View></View><Text style={styles.reviewLabel}>VOTRE COMMENTAIRE</Text><TextInput value={comment} onChangeText={setComment} multiline placeholder="Parlez-nous de votre commande…" placeholderTextColor="#9B877B" style={styles.reviewInput} textAlignVertical="top" maxLength={500} /><Text style={styles.characterCount}>{comment.length} / 500</Text><Pressable disabled={!rating} onPress={() => onSubmit(rating, comment)} style={[styles.primaryButton, styles.reviewSubmit, !rating && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>Envoyer mon avis · + {REVIEW_POINTS} points</Text></Pressable><Text style={styles.reviewFinePrint}>Dans la version connectée, les points seront crédités après validation de l’avis par le restaurant.</Text></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis</Text><Text style={styles.reviewIntro}>Comment s’est passée votre expérience avec Bibou’s Burgers ?</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Votre note</Text><View style={styles.starsRow}>{[1, 2, 3, 4, 5].map((star) => <Pressable key={star} accessibilityLabel={`${star} étoile${star > 1 ? "s" : ""}`} onPress={() => setRating(star)} style={styles.starButton}><Text style={[styles.star, star <= rating && styles.starActive]}>★</Text></Pressable>)}</View><Text style={styles.ratingHelper}>{rating ? `${rating} / 5 · Merci pour votre retour !` : "Choisissez une note de 1 à 5"}</Text></View><View style={styles.reviewReward}><Text style={styles.reviewRewardEmoji}>🎁</Text><View><Text style={styles.reviewRewardTitle}>Votre avis est récompensé</Text><Text style={styles.reviewRewardText}>+ {REVIEW_POINTS} points sur votre compte fidélité</Text></View></View><Text style={styles.reviewLabel}>VOTRE COMMENTAIRE</Text><TextInput value={comment} onChangeText={setComment} multiline placeholder="Parlez-nous de votre commande…" placeholderTextColor="#9B877B" style={styles.reviewInput} textAlignVertical="top" maxLength={500} /><Text style={styles.characterCount}>{comment.length} / 500</Text><Pressable disabled={!rating} onPress={() => onSubmit(rating, comment)} style={[styles.primaryButton, styles.reviewSubmit, !rating && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>Envoyer mon avis · + {REVIEW_POINTS} points</Text></Pressable><Text style={styles.reviewFinePrint}>Dans la version connectée, les points seront crédités après validation de l’avis par le restaurant.</Text></ScrollView></SafeAreaView>;
 }
 
 function LoyaltyScreen({ loyalty, onBack, onSimulateOrder, onRefer }) {

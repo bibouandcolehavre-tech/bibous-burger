@@ -1,4 +1,4 @@
-# Bibou's Burger
+# Bibou's Burgers
 
 Première application mobile client pour le restaurant : menu, personnalisation du Taurus, panier et paiement simulé.
 

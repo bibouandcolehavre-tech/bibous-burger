@@ -68,7 +68,7 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
   try {
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burger API" });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API" });
 
     if (request.method === "GET" && url.pathname === "/api/integrations/sumup/status") {
       const merchantCode = await getSumUpMerchantCode();
@@ -146,7 +146,7 @@ const server = http.createServer(async (request, response) => {
       const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
         method: "POST",
         headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burger #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, hosted_checkout: { enabled: true } })
+        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burgers #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, hosted_checkout: { enabled: true } })
       });
       if (!sumupResponse.ok) {
         console.error("SumUp checkout creation failed", sumupResponse.status);
@@ -209,4 +209,4 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, () => console.log(`Bibou's Burger API démarrée sur http://localhost:${port}`));
+server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${port}`));
