@@ -27,8 +27,10 @@ const sumupRedirectUrl = process.env.SUMUP_REDIRECT_URL;
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+const restaurantDashboardPassword = process.env.RESTAURANT_DASHBOARD_PASSWORD;
 const smsAttempts = new Map();
 const sessions = new Map();
+const dashboardSessions = new Map();
 
 const ensureDatabase = async () => {
   await fs.mkdir(path.dirname(databasePath), { recursive: true });
@@ -78,6 +80,16 @@ const authenticatedCustomer = (request, database) => {
   if (!session || session.expiresAt < Date.now()) return null;
   return database.customers.find((customer) => customer.id === session.customerId) || null;
 };
+const authenticatedDashboard = (request) => {
+  const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const session = token && dashboardSessions.get(token);
+  return Boolean(session && session.expiresAt > Date.now());
+};
+const passwordsMatch = (candidate, expected) => {
+  const candidateBuffer = Buffer.from(String(candidate || ""));
+  const expectedBuffer = Buffer.from(String(expected || ""));
+  return candidateBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(candidateBuffer, expectedBuffer);
+};
 const verifyWithTwilio = async (path, input) => {
   const body = new URLSearchParams(input);
   const credentials = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
@@ -113,6 +125,19 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/auth/sms/status") {
       return send(response, 200, { configured: twilioConfigured() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/dashboard/auth/status") {
+      return send(response, 200, { configured: Boolean(restaurantDashboardPassword) });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/dashboard/auth/login") {
+      const { password } = await readBody(request);
+      if (!restaurantDashboardPassword) return send(response, 503, { error: "L’accès restaurant n’est pas encore configuré." });
+      if (!passwordsMatch(password, restaurantDashboardPassword)) return send(response, 401, { error: "Mot de passe incorrect." });
+      const token = crypto.randomBytes(32).toString("base64url");
+      dashboardSessions.set(token, { expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
+      return send(response, 200, { token });
     }
 
     const database = await readDatabase();
@@ -154,12 +179,14 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/orders") {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const status = url.searchParams.get("status");
       const orders = status ? database.orders.filter((order) => order.status === status) : database.orders;
       return send(response, 200, { orders });
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/summary") {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const activeOrders = database.orders.filter((order) => !["delivered", "cancelled"].includes(order.status));
       return send(response, 200, {
         activeOrders: activeOrders.length,
@@ -167,6 +194,23 @@ const server = http.createServer(async (request, response) => {
         readyOrders: activeOrders.filter((order) => order.status === "ready").length,
         serviceRevenue: database.orders.filter((order) => order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
       });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/dashboard/orders") {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      return send(response, 200, { orders: database.orders });
+    }
+
+    if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/orders/")) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      const input = await readBody(request);
+      const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
+      if (!order) return send(response, 404, { error: "Commande introuvable" });
+      if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
+      order.status = input.status;
+      order.updatedAt = new Date().toISOString();
+      await writeDatabase(database);
+      return send(response, 200, { order });
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/customers/")) {
@@ -268,6 +312,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/orders/")) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
       if (!order) return send(response, 404, { error: "Commande introuvable" });

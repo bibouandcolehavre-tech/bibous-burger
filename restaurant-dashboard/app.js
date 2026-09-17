@@ -1,12 +1,16 @@
-const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:3001/api" : "";
+const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:3001/api" : "https://bibous-burger.onrender.com/api";
 const statusLabel = { confirmed: "Nouvelle", preparing: "Acceptée", ready: "Prête", out_for_delivery: "En livraison", delivered: "Terminée", cancelled: "Refusée" };
 const statusForLabel = Object.fromEntries(Object.entries(statusLabel).map(([key, value]) => [value, key]));
 let orders = [];
 let filter = "all";
 let soundOn = true;
+let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
+const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
+const showLogin = (message = "") => { dashboardToken = ""; sessionStorage.removeItem("bibous-dashboard-token"); document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
@@ -44,7 +48,8 @@ function refreshMetrics() {
 async function loadOrders({ notify = false } = {}) {
   if (!API_BASE_URL) return;
   try {
-    const response = await fetch(`${API_BASE_URL}/orders`);
+    const response = await fetch(`${API_BASE_URL}/dashboard/orders`, { headers: dashboardHeaders() });
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
     if (!response.ok) throw new Error("Chargement impossible");
     const payload = await response.json();
     const nextOrders = payload.orders.map(orderFromApi);
@@ -67,7 +72,7 @@ async function changeOrder(id, status) {
   renderOrders();
   try {
     if (!API_BASE_URL || !order.apiId) throw new Error("API indisponible");
-    const response = await fetch(`${API_BASE_URL}/orders/${order.apiId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: statusForLabel[status] }) });
+    const response = await fetch(`${API_BASE_URL}/dashboard/orders/${order.apiId}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: statusForLabel[status] }) });
     if (!response.ok) throw new Error("Mise à jour impossible");
     const messages = { Acceptée: `Commande #${id} acceptée.`, Refusée: `Commande #${id} refusée.`, Prête: `Commande #${id} est prête.`, "En livraison": `Commande #${id} confiée au livreur.`, Terminée: `Commande #${id} terminée.` };
     showToast(messages[status]);
@@ -92,8 +97,26 @@ document.querySelector("#sound-button").addEventListener("click", (event) => {
 });
 
 document.querySelector("#simulate-order").addEventListener("click", () => showToast("Utilise l’application client pour simuler une vraie commande."));
+document.querySelector("#dashboard-login").addEventListener("click", async () => {
+  const button = document.querySelector("#dashboard-login");
+  const password = document.querySelector("#dashboard-password").value;
+  document.querySelector("#login-error").textContent = "";
+  button.disabled = true;
+  button.textContent = "Connexion…";
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Connexion impossible.");
+    dashboardToken = payload.token;
+    sessionStorage.setItem("bibous-dashboard-token", dashboardToken);
+    showDashboard();
+    loadOrders();
+  } catch (error) { document.querySelector("#login-error").textContent = error.message; }
+  finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
+});
+document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
 refreshMetrics();
 renderOrders();
-loadOrders();
-window.setInterval(() => loadOrders({ notify: true }), 10000);
+if (dashboardToken) { showDashboard(); loadOrders(); } else { showLogin(); }
+window.setInterval(() => { if (dashboardToken) loadOrders({ notify: true }); }, 10000);

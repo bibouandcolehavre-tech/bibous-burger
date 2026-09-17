@@ -24,3 +24,5 @@ services:
         sync: false
       - key: TWILIO_VERIFY_SERVICE_SID
         sync: false
+      - key: RESTAURANT_DASHBOARD_PASSWORD
+        sync: false

@@ -7,7 +7,20 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="login-screen" class="login-screen">
+      <div class="login-panel">
+        <div class="login-brand">Bibou's<br /><span>Burgers</span></div>
+        <p class="eyebrow">ESPACE RESTAURANT</p>
+        <h1>Bon retour, Hélène</h1>
+        <p>Connectez-vous pour voir et gérer les commandes en direct.</p>
+        <label for="dashboard-password">Mot de passe</label>
+        <input id="dashboard-password" type="password" autocomplete="current-password" placeholder="Votre mot de passe" />
+        <p id="login-error" class="login-error" role="alert"></p>
+        <button id="dashboard-login" class="login-button">Accéder aux commandes</button>
+        <small>Accès réservé à l’équipe Bibou’s Burgers.</small>
+      </div>
+    </section>
+    <div id="dashboard-app" class="app-shell" hidden>
       <aside class="sidebar">
         <div class="brand">Bibou's<br /><span>Burgers</span></div>
         <div class="restaurant-card">
