@@ -171,7 +171,11 @@ const server = http.createServer(async (request, response) => {
       const googleResponse = await fetch(`https://places.googleapis.com/v1/places/${googlePlaceId}`, {
         headers: { "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "displayName,rating,userRatingCount,reviews" }
       });
-      if (!googleResponse.ok) return send(response, 502, { error: "Les avis Google ne sont pas disponibles pour le moment." });
+      if (!googleResponse.ok) {
+        const googleError = await googleResponse.json().catch(() => null);
+        console.error("Google Places request failed", googleResponse.status, googleError?.error?.status || "unknown");
+        return send(response, 502, { error: "Les avis Google ne sont pas disponibles pour le moment." });
+      }
       const place = await googleResponse.json();
       const payload = {
         configured: true,
