@@ -295,8 +295,6 @@ export default function App() {
       const checkoutPayload = await checkoutResponse.json();
       if (!checkoutResponse.ok || !checkoutPayload.checkoutUrl) throw new Error(checkoutPayload.error || "Impossible d’ouvrir le paiement SumUp.");
 
-      setLoyalty({ points: orderPayload.customer.points, orders: orderPayload.customer.weeklyOrders });
-      setOrders((currentOrders) => [orderFromApi(orderPayload.order), ...currentOrders]);
       setPendingOrder(orderPayload.order);
       setScreen("payment-pending");
       await Linking.openURL(checkoutPayload.checkoutUrl);
@@ -310,6 +308,11 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/payments/sumup-checkout/${pendingOrder.id}`);
       const payload = await response.json();
       if (payload.payment?.status === "PAID") {
+        if (payload.customer) {
+          setCustomer((current) => ({ ...current, ...payload.customer }));
+          setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders });
+        }
+        setOrders((currentOrders) => currentOrders.some((order) => order.apiId === payload.order.id) ? currentOrders : [orderFromApi(payload.order), ...currentOrders]);
         setScreen("success");
       } else {
         Alert.alert("Paiement en attente", "SumUp n’a pas encore confirmé le paiement. Réessaie dans quelques instants.");

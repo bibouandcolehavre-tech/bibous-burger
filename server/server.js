@@ -111,6 +111,29 @@ const getSumUpMerchantCode = async () => {
   return merchant.merchant_code || merchant.merchant?.merchant_code || merchant.merchant_profile?.merchant_code || merchant.merchant?.merchant_profile?.merchant_code || null;
 };
 
+const paidOrders = (database) => database.orders.filter((order) => order.payment?.status === "PAID");
+const finalizePaidOrder = (order, database) => {
+  if (order.payment?.status !== "PAID") return null;
+
+  const now = new Date().toISOString();
+  order.payment.paidAt ||= now;
+  if (order.status === "awaiting_payment") {
+    order.status = "confirmed";
+    order.updatedAt = now;
+  }
+
+  const customer = database.customers.find((item) => item.id === order.customerId);
+  if (!customer) return null;
+  if (order.loyaltyGrantedAt) return { customer, pointsAdded: order.loyaltyPointsAdded || 0 };
+
+  customer.weeklyOrders += 1;
+  const pointsAdded = 20 * Math.min(customer.weeklyOrders, 3);
+  customer.points += pointsAdded;
+  order.loyaltyGrantedAt = now;
+  order.loyaltyPointsAdded = pointsAdded;
+  return { customer, pointsAdded };
+};
+
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   const url = new URL(request.url, `http://${request.headers.host}`);
@@ -181,24 +204,25 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const status = url.searchParams.get("status");
-      const orders = status ? database.orders.filter((order) => order.status === status) : database.orders;
+      const orders = status ? paidOrders(database).filter((order) => order.status === status) : paidOrders(database);
       return send(response, 200, { orders });
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/summary") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
-      const activeOrders = database.orders.filter((order) => !["delivered", "cancelled"].includes(order.status));
+      const confirmedOrders = paidOrders(database);
+      const activeOrders = confirmedOrders.filter((order) => !["delivered", "cancelled"].includes(order.status));
       return send(response, 200, {
         activeOrders: activeOrders.length,
         newOrders: activeOrders.filter((order) => order.status === "confirmed").length,
         readyOrders: activeOrders.filter((order) => order.status === "ready").length,
-        serviceRevenue: database.orders.filter((order) => order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
+        serviceRevenue: confirmedOrders.filter((order) => order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
       });
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
-      return send(response, 200, { orders: database.orders });
+      return send(response, 200, { orders: paidOrders(database) });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/orders/")) {
@@ -206,6 +230,7 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
       if (!order) return send(response, 404, { error: "Commande introuvable" });
+      if (order.payment?.status !== "PAID") return send(response, 409, { error: "Le paiement doit être confirmé avant de traiter la commande." });
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
@@ -246,13 +271,10 @@ const server = http.createServer(async (request, response) => {
       const distanceKm = Number(input.distanceKm);
       const deliveryFee = input.method === "delivery" ? deliveryFeeForDistance(distanceKm) : 0;
       if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
-      const order = { id: `order-${database.nextOrderNumber}`, number: database.nextOrderNumber++, customerId: customer.id, customerName: customer.name, items: input.items.map((item) => ({ name: String(item.name), quantity: Number(item.quantity || 1), price: Number(item.price || 0) })), subtotal, deliveryFee, total: subtotal + deliveryFee, method: input.method, slot: input.slot, status: "confirmed", createdAt: new Date().toISOString() };
+      const order = { id: `order-${database.nextOrderNumber}`, number: database.nextOrderNumber++, customerId: customer.id, customerName: customer.name, items: input.items.map((item) => ({ name: String(item.name), quantity: Number(item.quantity || 1), price: Number(item.price || 0) })), subtotal, deliveryFee, total: subtotal + deliveryFee, method: input.method, slot: input.slot, status: "awaiting_payment", createdAt: new Date().toISOString() };
       database.orders.unshift(order);
-      customer.weeklyOrders += 1;
-      const multiplier = Math.min(customer.weeklyOrders, 3);
-      customer.points += 20 * multiplier;
       await writeDatabase(database);
-      return send(response, 201, { order, customer, pointsAdded: 20 * multiplier });
+      return send(response, 201, { order });
     }
 
     if (request.method === "POST" && url.pathname === "/api/payments/sumup-checkout") {
@@ -274,8 +296,9 @@ const server = http.createServer(async (request, response) => {
       }
       const checkout = await sumupResponse.json();
       order.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "pending", createdAt: new Date().toISOString() };
+      const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);
-      return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null });
+      return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0 });
     }
 
     if (["GET", "POST"].includes(request.method) && url.pathname === "/api/payments/sumup-return") {
@@ -289,6 +312,7 @@ const server = http.createServer(async (request, response) => {
           order.payment.status = checkout.status || order.payment.status;
           order.payment.updatedAt = new Date().toISOString();
           if (checkout.status === "PAID") order.payment.paidAt = new Date().toISOString();
+          finalizePaidOrder(order, database);
           await writeDatabase(database);
         }
       }
@@ -298,6 +322,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname.startsWith("/api/payments/sumup-checkout/")) {
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
       if (!order?.payment?.checkoutId) return send(response, 404, { error: "Paiement introuvable" });
+      let confirmation = null;
       if (sumupApiKey) {
         const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${order.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
         if (sumupResponse.ok) {
@@ -305,10 +330,11 @@ const server = http.createServer(async (request, response) => {
           order.payment.status = checkout.status || order.payment.status;
           order.payment.updatedAt = new Date().toISOString();
           if (checkout.status === "PAID") order.payment.paidAt = new Date().toISOString();
+          confirmation = finalizePaidOrder(order, database);
           await writeDatabase(database);
         }
       }
-      return send(response, 200, { order, payment: order.payment });
+      return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0 });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/orders/")) {
@@ -316,6 +342,7 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
       if (!order) return send(response, 404, { error: "Commande introuvable" });
+      if (order.payment?.status !== "PAID") return send(response, 409, { error: "Le paiement doit être confirmé avant de traiter la commande." });
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
