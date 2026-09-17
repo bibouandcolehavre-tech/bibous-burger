@@ -656,7 +656,48 @@ export default function App() {
   return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={setPreferredMethod} onOpenReservation={() => setScreen("reservation")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenProduct={openProduct} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
+const APP_PALETTE = {
+  "#FFF8F2": "#C97859",
+  "#FFFDFC": "#FFFCF7",
+  "#F8EAE0": "#EEE2D6",
+  "#FFF0E9": "#F3DDD3",
+  "#EADBD2": "#DED0C4",
+  "#E95122": "#B85C3C",
+  "#D74318": "#98452F",
+  "#2C201B": "#171412",
+  "#473831": "#332A25",
+  "#826E63": "#76665D",
+  "#9B877B": "#88786F",
+  "#FFB797": "#E7B09A",
+  "#FFE5D8": "#F4DFD4",
+  "#D6BEB1": "#CAB7AC",
+  "#CBB7AA": "#BFAEA3",
+  "#C9B4A7": "#B8AAA0",
+  "#DEC8BA": "#CDBAAF",
+  "#D5BDB0": "#C6B5AA",
+  "#A99388": "#9A8C83",
+  "#F2C8B5": "#DFB5A2",
+  "#F9D6C8": "#EAC9BA",
+  "#5D4740": "#463A34",
+  "#EBC8B9": "#D9B7A8",
+  "#F2C7B7": "#DDB4A4",
+  "#D3BDB1": "#C5B3A8",
+  "#CDB7AB": "#BDACA2",
+  "#F2E8E2": "#EAE0D7",
+  "#F3E9E2": "#EAE1D9",
+  "#E4D6CE": "#D8CAC0",
+  "#907E74": "#81736B",
+  "#EAF5E4": "#F2E7DE",
+  "#C7E1BF": "#D8C3B7"
+};
+
+const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleSheet).map(([name, style]) => {
+  const themedStyle = Object.fromEntries(Object.entries(style).map(([property, value]) => [property, APP_PALETTE[value] || value]));
+  if (["wordmark", "siteFooterTitle"].includes(name)) themedStyle.color = "#171412";
+  return [name, themedStyle];
+}));
+
+const styles = StyleSheet.create(applyAppPalette({
   safeArea: { flex: 1, backgroundColor: "#FFF8F2" }, scrollContent: { width: "100%", maxWidth: 1180, alignSelf: "center", padding: 20, paddingBottom: 110 }, scrollContentDesktop: { paddingHorizontal: 32, paddingBottom: 60 }, detailContent: { flexGrow: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 20, paddingBottom: 120 },
   header: { height: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, wordmark: { color: "#E95122", fontSize: 20, fontWeight: "800", letterSpacing: -0.7 }, headerRight: { fontSize: 18 }, backButton: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#F8EAE0", alignItems: "center", justifyContent: "center" }, backText: { fontSize: 30, lineHeight: 32, color: "#2C201B" },
   headerDesktop: { height: 76, borderBottomWidth: 1, borderBottomColor: "#EADBD2", marginBottom: 4 }, wordmarkDesktop: { fontSize: 29, letterSpacing: -1.1 }, wordmarkTagline: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 2 },
@@ -695,4 +736,4 @@ const styles = StyleSheet.create({
   prestigeShieldStars: { fontSize: 10, lineHeight: 13, fontWeight: "900", letterSpacing: -0.5, marginTop: 4 },
   prestigeShieldStarsLarge: { fontSize: 17, lineHeight: 21, letterSpacing: 0 },
   prestigeShieldGem: { fontSize: 8, lineHeight: 10, marginTop: 2 },
-});
+}));
