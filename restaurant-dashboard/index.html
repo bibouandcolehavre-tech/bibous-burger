@@ -29,6 +29,7 @@
         </div>
         <nav>
           <button class="nav-item active" data-view="orders"><span>▦</span> Commandes <b id="new-order-count">1</b></button>
+          <button class="nav-item" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count">0</b></button>
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & disponibilité</button>
           <button class="nav-item" data-view="customers"><span>★</span> Fidélité clients</button>
         </nav>
@@ -43,7 +44,7 @@
         <header class="topbar">
           <div>
             <p class="eyebrow">MERCREDI 17 SEPTEMBRE</p>
-            <h1>Commandes en direct</h1>
+            <h1 id="dashboard-title">Commandes en direct</h1>
           </div>
           <div class="topbar-actions">
             <button id="refresh-orders" class="secondary-button">↻ Actualiser</button>
@@ -51,14 +52,14 @@
           </div>
         </header>
 
-        <section class="metrics" aria-label="Résumé des commandes">
+        <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
           <article><span class="metric-icon red">●</span><div><strong id="new-count">1</strong><small>nouvelle à accepter</small></div></article>
           <article><span class="metric-icon green">✓</span><div><strong id="ready-count">1</strong><small>commande prête</small></div></article>
           <article><span class="metric-icon dark">€</span><div><strong id="turnover">56,68 €</strong><small>chiffre du service</small></div></article>
         </section>
 
-        <section class="orders-section">
+        <section id="orders-view" class="orders-section">
           <div class="section-header">
             <div class="filters" role="tablist">
               <button class="filter active" data-filter="all">Toutes <span id="all-filter-count">3</span></button>
@@ -69,6 +70,14 @@
             <button class="sound-button" id="sound-button">🔔 Son activé</button>
           </div>
           <div id="orders-list" class="orders-list"></div>
+        </section>
+
+        <section id="reservations-view" class="reservations-section" hidden>
+          <div class="reservation-summary">
+            <div><span id="pending-reservation-count">0</span><small>demandes à traiter</small></div>
+            <p>Acceptez ou refusez chaque demande selon les tables disponibles.</p>
+          </div>
+          <div id="reservations-list" class="reservations-list"></div>
         </section>
       </main>
     </div>

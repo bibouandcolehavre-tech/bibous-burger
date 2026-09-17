@@ -5,7 +5,8 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
-const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
+const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, slotsForDate, validateServiceDate, validateServiceSlot } = require("./availability");
+const { createReservation, ensureReservationStore, updateReservationStatus } = require("./reservations");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -280,6 +281,32 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { serviceDate, capacity: SLOT_CAPACITY, slots });
     }
 
+    if (request.method === "GET" && url.pathname === "/api/reservation-availability") {
+      const serviceDate = url.searchParams.get("date");
+      const validationError = validateServiceDate(serviceDate);
+      if (validationError) return send(response, 400, { error: validationError.replace("livraison", "réservation") });
+      const slots = Object.fromEntries(slotsForDate(serviceDate).map((slot) => {
+        const unavailableReason = validateServiceSlot(serviceDate, slot);
+        return [slot, { unavailable: Boolean(unavailableReason), unavailableReason }];
+      }));
+      return send(response, 200, { serviceDate, slots });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/reservations") {
+      const input = await readBody(request);
+      try {
+        const reservation = await serializeOrderCreation(async () => {
+          const latestDatabase = await readDatabase();
+          const created = createReservation(latestDatabase, input);
+          await writeDatabase(latestDatabase);
+          return created;
+        });
+        return send(response, 201, { reservation });
+      } catch (error) {
+        return send(response, 400, { error: error.message || "La réservation n’a pas pu être enregistrée." });
+      }
+    }
+
     if (request.method === "POST" && url.pathname === "/api/auth/sms/start") {
       const { phone } = await readBody(request);
       const normalizedPhone = normalizeFrenchPhone(phone);
@@ -348,6 +375,26 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
       return send(response, 200, { orders: paidOrders(database) });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/dashboard/reservations") {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      ensureReservationStore(database);
+      const reservations = [...database.reservations].sort((a, b) => `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
+      return send(response, 200, { reservations });
+    }
+
+    if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/reservations/")) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      const input = await readBody(request);
+      try {
+        const reservation = updateReservationStatus(database, url.pathname.split("/").pop(), input.status);
+        if (!reservation) return send(response, 404, { error: "Réservation introuvable." });
+        await writeDatabase(database);
+        return send(response, 200, { reservation });
+      } catch (error) {
+        return send(response, 400, { error: error.message || "Mise à jour impossible." });
+      }
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/orders/")) {
