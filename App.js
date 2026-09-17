@@ -12,7 +12,7 @@ const ORDER_STEPS = ["Confirmée", "En préparation", "Prête", "En livraison", 
 const PUBLIC_API_BASE_URL = "https://bibous-burger.onrender.com/api";
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (typeof window !== "undefined" && window.location?.hostname === "localhost" ? "http://localhost:3001/api" : PUBLIC_API_BASE_URL);
 const progressForStatus = { confirmed: 0, preparing: 1, ready: 2, out_for_delivery: 3, delivered: 4 };
-const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", progress: progressForStatus[order.status] ?? 0 });
+const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", status: order.status, progress: progressForStatus[order.status] ?? 0 });
 const POINTS_PER_ORDER = 20;
 const REWARD_POINTS = 700;
 const REVIEW_POINTS = 50;
@@ -145,9 +145,11 @@ function SmsLoginScreen({ onBack, onAuthenticated }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><View style={styles.loginIcon}><Text style={styles.loginIconText}>✉</Text></View><Text style={styles.title}>{step === "phone" ? "Bienvenue" : "Vérifie ton numéro"}</Text><Text style={styles.loginIntro}>{step === "phone" ? "Connecte-toi avec ton numéro de téléphone pour retrouver tes commandes et tes points fidélité." : `Un code a été envoyé au ${phone}.`}</Text><View style={styles.loginCard}>{step === "phone" ? <><Text style={styles.deliveryLabel}>NUMÉRO DE TÉLÉPHONE</Text><TextInput value={phone} onChangeText={setPhone} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" /><Text style={styles.loginFinePrint}>Un code à usage unique te sera envoyé par SMS. Aucun mot de passe à retenir.</Text><Pressable disabled={!validPhone || loading} onPress={sendCode} style={[styles.primaryButton, (!validPhone || loading) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Envoi en cours…" : "Recevoir mon code"}</Text></Pressable></> : <><Text style={styles.deliveryLabel}>CODE REÇU PAR SMS</Text><TextInput value={code} onChangeText={setCode} placeholder="123456" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} /><Pressable disabled={code.length < 4 || loading} onPress={checkCode} style={[styles.primaryButton, (code.length < 4 || loading) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Vérification…" : "Valider le code"}</Text></Pressable><Pressable onPress={() => { setCode(""); setStep("phone"); }} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon numéro</Text></Pressable></>}</View><Text style={styles.loginLegal}>En te connectant, tu acceptes de recevoir ce SMS de vérification nécessaire à la sécurisation de ton compte.</Text></ScrollView></SafeAreaView>;
 }
 
-function OrdersScreen({ orders, onBack, onAdvance }) {
-  const activeOrder = orders.find((order) => order.progress < ORDER_STEPS.length - 1);
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text>{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View><View style={styles.trackingSteps}>{ORDER_STEPS.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View><Text style={styles.trackingMessage}>{activeOrder.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder.progress === 2 ? "Ta commande est prête : le livreur arrive." : "Ton livreur est en route."}</Text></View><Pressable onPress={() => onAdvance(activeOrder.id)} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Faire avancer le suivi</Text><Text style={styles.simulateHint}>Maquette : simuler une mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.progress === ORDER_STEPS.length - 1 ? "✓" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {ORDER_STEPS[order.progress]} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
+function OrdersScreen({ orders, onBack, onRefresh }) {
+  const activeOrder = orders.find((order) => !["delivered", "cancelled"].includes(order.status));
+  const activeMessage = activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? "Ta commande est prête : le livreur arrive." : "Ton livreur est en route.";
+  const labelForOrder = (order) => order.status === "cancelled" ? "Annulée" : ORDER_STEPS[order.progress];
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text>{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View><View style={styles.trackingSteps}>{ORDER_STEPS.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View><Text style={styles.trackingMessage}>{activeMessage}</Text></View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
 }
 
 function ProductScreen({ product, onBack, onAdd }) {
@@ -251,10 +253,22 @@ export default function App() {
   const [authToken, setAuthToken] = useState("");
   const [pendingOrder, setPendingOrder] = useState(null);
   const cartCount = useMemo(() => (cart ? 1 : 0), [cart]);
+  const loadCustomerOrders = async (token = authToken) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/customer/orders`, { headers: { Authorization: `Bearer ${token}` } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les commandes.");
+      setOrders(payload.orders.map(orderFromApi));
+    } catch (error) {
+      Alert.alert("Actualisation indisponible", error.message || "Réessaie dans un instant.");
+    }
+  };
   const authenticate = ({ token, customer: savedCustomer }) => {
     setAuthToken(token);
     setCustomer((current) => ({ ...current, ...savedCustomer }));
     setLoyalty({ points: savedCustomer.points, orders: savedCustomer.weeklyOrders });
+    void loadCustomerOrders(token);
     setScreen("account");
   };
   const openProduct = (product) => { setActiveProduct(product); setScreen("product"); };
@@ -341,8 +355,8 @@ export default function App() {
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} onSubmit={submitReview} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} onBack={() => setScreen("menu")} onSimulateOrder={simulateOrder} onRefer={referFriend} />;
   if (screen === "login") return <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
-  if (screen === "account") return authToken ? <AccountScreen customer={customer} loyalty={loyalty} orders={orders} onBack={() => setScreen("menu")} onOpenOrders={() => setScreen("orders")} onOpenLoyalty={() => setScreen("loyalty")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
-  if (screen === "orders") return <OrdersScreen orders={orders} onBack={() => setScreen("account")} onAdvance={(id) => setOrders((currentOrders) => currentOrders.map((order) => order.id === id ? { ...order, progress: Math.min(order.progress + 1, ORDER_STEPS.length - 1) } : order))} />;
+  if (screen === "account") return authToken ? <AccountScreen customer={customer} loyalty={loyalty} orders={orders} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenLoyalty={() => setScreen("loyalty")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
+  if (screen === "orders") return <OrdersScreen orders={orders} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
   return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenProduct={openProduct} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
 }
 

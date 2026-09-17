@@ -201,6 +201,12 @@ const server = http.createServer(async (request, response) => {
       return customer ? send(response, 200, { customer }) : send(response, 401, { error: "Session expirée." });
     }
 
+    if (request.method === "GET" && url.pathname === "/api/customer/orders") {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Session expirée." });
+      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id) });
+    }
+
     if (request.method === "GET" && url.pathname === "/api/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const status = url.searchParams.get("status");
