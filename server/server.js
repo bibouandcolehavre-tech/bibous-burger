@@ -28,10 +28,12 @@ const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 const restaurantDashboardPassword = process.env.RESTAURANT_DASHBOARD_PASSWORD;
-const reviewPoints = 50;
+const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
+const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
 const smsAttempts = new Map();
 const sessions = new Map();
 const dashboardSessions = new Map();
+let googleReviewsCache = { value: null, expiresAt: 0 };
 
 const ensureDatabase = async () => {
   await fs.mkdir(path.dirname(databasePath), { recursive: true });
@@ -132,7 +134,6 @@ const finalizePaidOrder = (order, database) => {
   customer.points += pointsAdded;
   order.loyaltyGrantedAt = now;
   order.loyaltyPointsAdded = pointsAdded;
-  order.reviewToken ||= crypto.randomBytes(24).toString("base64url");
   return { customer, pointsAdded };
 };
 
@@ -162,6 +163,25 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/auth/sms/status") {
       return send(response, 200, { configured: twilioConfigured() });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/google-reviews") {
+      if (!googleMapsApiKey) return send(response, 200, { configured: false, reviews: [] });
+      if (googleReviewsCache.value && googleReviewsCache.expiresAt > Date.now()) return send(response, 200, googleReviewsCache.value);
+      const googleResponse = await fetch(`https://places.googleapis.com/v1/places/${googlePlaceId}`, {
+        headers: { "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "displayName,rating,userRatingCount,reviews" }
+      });
+      if (!googleResponse.ok) return send(response, 502, { error: "Les avis Google ne sont pas disponibles pour le moment." });
+      const place = await googleResponse.json();
+      const payload = {
+        configured: true,
+        placeName: place.displayName?.text || "Bibou’s Burgers",
+        rating: place.rating || null,
+        reviewCount: place.userRatingCount || null,
+        reviews: (place.reviews || []).slice(0, 5).map((review) => ({ author: review.authorAttribution?.displayName || "Client Google", rating: review.rating, text: review.text?.text || "", publishedAt: review.publishTime || null }))
+      };
+      googleReviewsCache = { value: payload, expiresAt: Date.now() + 1000 * 60 * 60 * 6 };
+      return send(response, 200, payload);
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/auth/status") {
@@ -274,28 +294,6 @@ const server = http.createServer(async (request, response) => {
       database.customers.push(customer);
       await writeDatabase(database);
       return send(response, 201, { customer });
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/reviews") {
-      const input = await readBody(request);
-      const order = database.orders.find((item) => item.id === input.orderId);
-      const rating = Number(input.rating);
-      const comment = String(input.comment || "").trim();
-      if (!order || order.payment?.status !== "PAID" || order.status === "cancelled") return send(response, 400, { error: "Cet avis ne peut pas être associé à cette commande." });
-      if (input.reviewToken !== order.reviewToken) return send(response, 401, { error: "Lien d’avis invalide." });
-      if (!Number.isInteger(rating) || rating < 1 || rating > 5 || comment.length > 500) return send(response, 400, { error: "Votre avis est incomplet ou trop long." });
-      if (order.reviewedAt) return send(response, 409, { error: "Un avis a déjà été enregistré pour cette commande." });
-
-      const customer = database.customers.find((item) => item.id === order.customerId);
-      if (!customer) return send(response, 404, { error: "Client introuvable" });
-      database.reviews ||= [];
-      const review = { id: `review-${database.reviews.length + 1}`, orderId: order.id, customerId: customer.id, rating, comment, createdAt: new Date().toISOString() };
-      database.reviews.unshift(review);
-      customer.points += reviewPoints;
-      order.reviewedAt = review.createdAt;
-      order.reviewPointsAdded = reviewPoints;
-      await writeDatabase(database);
-      return send(response, 201, { review, customer, pointsAdded: reviewPoints });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/customers/")) {
