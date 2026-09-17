@@ -1,6 +1,7 @@
-const { validateServiceSlot } = require("./availability");
+const { slotsForDate, validateServiceSlot } = require("./availability");
 
 const RESERVATION_STATUSES = ["pending", "confirmed", "cancelled"];
+const RESERVATION_SLOT_CAPACITY = 2;
 
 const normalizeReservationPhone = (value) => {
   const compact = String(value || "").replace(/[\s.()-]/g, "");
@@ -17,6 +18,22 @@ const ensureReservationStore = (database) => {
   return database;
 };
 
+const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && reservation.slot === slot && reservation.status !== "cancelled";
+
+const remainingReservationPlaces = (database, dateKey, slot) => {
+  ensureReservationStore(database);
+  const reserved = database.reservations.filter((reservation) => holdsReservationSlot(reservation, dateKey, slot)).length;
+  return { capacity: RESERVATION_SLOT_CAPACITY, reserved, remaining: Math.max(0, RESERVATION_SLOT_CAPACITY - reserved), full: reserved >= RESERVATION_SLOT_CAPACITY };
+};
+
+const reservationAvailabilityForDate = (database, dateKey, now = new Date()) => Object.fromEntries(
+  slotsForDate(dateKey).map((slot) => {
+    const status = remainingReservationPlaces(database, dateKey, slot);
+    const unavailableReason = validateServiceSlot(dateKey, slot, now);
+    return [slot, { ...status, unavailable: Boolean(unavailableReason), unavailableReason }];
+  })
+);
+
 const createReservation = (database, input, now = new Date()) => {
   ensureReservationStore(database);
   const customerName = String(input.customerName || input.name || "").trim();
@@ -26,9 +43,10 @@ const createReservation = (database, input, now = new Date()) => {
 
   if (customerName.length < 2) throw new Error("Indique ton nom pour réserver.");
   if (!phone) throw new Error("Indique un numéro de téléphone français valide.");
-  if (!Number.isInteger(guests) || guests < 1 || guests > 12) throw new Error("Choisis entre 1 et 12 personnes.");
+  if (!Number.isInteger(guests) || guests < 1 || guests > 4) throw new Error("Choisis entre 1 et 4 personnes.");
   const slotError = validateServiceSlot(input.serviceDate, input.slot, now);
   if (slotError) throw new Error(slotError.replace("livraison", "réservation"));
+  if (remainingReservationPlaces(database, input.serviceDate, input.slot).full) throw new Error("Ce créneau de réservation est complet.");
 
   const number = database.nextReservationNumber++;
   const reservation = {
@@ -59,9 +77,13 @@ const updateReservationStatus = (database, id, status, now = new Date()) => {
 };
 
 module.exports = {
+  RESERVATION_SLOT_CAPACITY,
   RESERVATION_STATUSES,
   createReservation,
   ensureReservationStore,
+  holdsReservationSlot,
   normalizeReservationPhone,
+  remainingReservationPlaces,
+  reservationAvailabilityForDate,
   updateReservationStatus
 };

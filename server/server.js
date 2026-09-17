@@ -5,8 +5,8 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
-const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, slotsForDate, validateServiceDate, validateServiceSlot } = require("./availability");
-const { createReservation, ensureReservationStore, updateReservationStatus } = require("./reservations");
+const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
+const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, updateReservationStatus } = require("./reservations");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -285,11 +285,8 @@ const server = http.createServer(async (request, response) => {
       const serviceDate = url.searchParams.get("date");
       const validationError = validateServiceDate(serviceDate);
       if (validationError) return send(response, 400, { error: validationError.replace("livraison", "réservation") });
-      const slots = Object.fromEntries(slotsForDate(serviceDate).map((slot) => {
-        const unavailableReason = validateServiceSlot(serviceDate, slot);
-        return [slot, { unavailable: Boolean(unavailableReason), unavailableReason }];
-      }));
-      return send(response, 200, { serviceDate, slots });
+      const slots = reservationAvailabilityForDate(database, serviceDate);
+      return send(response, 200, { serviceDate, capacity: RESERVATION_SLOT_CAPACITY, slots });
     }
 
     if (request.method === "POST" && url.pathname === "/api/reservations") {
