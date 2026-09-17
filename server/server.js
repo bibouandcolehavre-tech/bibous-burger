@@ -107,7 +107,7 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
     throw new Error("Cette adresse n’a pas pu être localisée.");
   }
   const route = (await routeResponse.json()).routes?.[0];
-  const distanceKm = Number(route?.distanceMeters) / 1000;
+  const distanceKm = Number(route?.distanceMeters ?? 0) / 1000;
   if (!Number.isFinite(distanceKm)) throw new Error("Cette adresse n’a pas pu être localisée.");
   const roundedDistanceKm = Math.round(distanceKm * 100) / 100;
   return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm) };
