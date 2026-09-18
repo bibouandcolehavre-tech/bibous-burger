@@ -3,12 +3,16 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { anonymizeCustomerAccount } = require("./account-deletion");
+const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
+const { validateAndPriceOrderItems } = require("./catalog");
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
-const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
+const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
+const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -40,6 +44,8 @@ const customerSessionSecret = configuredCustomerSessionSecret || crypto.randomBy
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
 const googlePlaceSearchQuery = "Bibou's Burgers, 153 Quai Georges V, 76600 Le Havre, France";
 const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
+const menuProductIds = new Set(["taurus", "montagnes-menu", "atlas-menu", "classique-menu", "duck-menu", "dynamite-menu", "gros-lard-menu", "hambagu-menu", "basilic-menu", "pork-menu"]);
+const burgerProductIds = new Set(["atlas", "classique", "duck", "dynamite", "hambagu", "basilic", "montagnes", "gros-lard", "pork"]);
 const smsAttemptLimiter = createSmsAttemptLimiter();
 const dashboardSessions = new Map();
 let googleReviewsCache = { value: null, expiresAt: 0 };
@@ -75,7 +81,7 @@ const ensureDatabase = async () => {
 const readDatabase = async () => { await ensureDatabase(); return JSON.parse(await fs.readFile(databasePath, "utf8")); };
 const writeDatabase = async (database) => { await ensureDatabase(); return fs.writeFile(databasePath, `${JSON.stringify(database, null, 2)}\n`); };
 const send = (response, status, payload) => {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
   response.end(JSON.stringify(payload));
 };
 
@@ -175,6 +181,7 @@ const getSumUpMerchantCode = async () => {
 };
 
 const paidOrders = (database) => database.orders.filter((order) => order.payment?.status === "PAID");
+const loyaltyPointsForItems = (items) => items.reduce((total, item) => total + (menuProductIds.has(item.productId) ? MENU_POINTS : burgerProductIds.has(item.productId) ? BURGER_POINTS : 0) * Math.max(1, Number(item.quantity) || 1), 0);
 const finalizePaidOrder = (order, database) => {
   if (order.payment?.status !== "PAID") return null;
 
@@ -187,7 +194,8 @@ const finalizePaidOrder = (order, database) => {
 
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
-  const { pointsAdded } = grantLoyaltyForOrder(customer, order, new Date(now));
+  const { pointsAdded } = grantLoyaltyForOrder(customer, order, new Date(now), { bibouPlus: Boolean(order.bibouPlusApplied) });
+  consumeWelcomeReward(customer, order, new Date(now));
   const referral = grantReferralReward(order, database, new Date(now));
   return { customer, pointsAdded, referralPointsAdded: referral.pointsAdded };
 };
@@ -196,11 +204,19 @@ const revokeLoyaltyForCancelledOrder = (order, database) => {
   if (order.status !== "cancelled") return false;
   const customer = database.customers.find((item) => item.id === order.customerId);
   const loyaltyChanged = customer ? revokeLoyaltyForOrder(customer, order) : false;
+  const welcomeRewardChanged = customer ? restoreWelcomeReward(customer, order) : false;
   const referralChanged = revokeReferralReward(order, database);
-  return loyaltyChanged || referralChanged;
+  return loyaltyChanged || welcomeRewardChanged || referralChanged;
 };
 const reconcileCancelledLoyalty = (database) => database.orders.reduce((changed, order) => revokeLoyaltyForCancelledOrder(order, database) || changed, false);
 const resetExpiredLoyaltyWeeks = (database) => database.customers.reduce((changed, customer) => ensureCurrentLoyaltyWeek(customer) || changed, false);
+const finalizePaidBibouPlusPurchase = (purchase, database) => {
+  if (purchase?.payment?.status !== "PAID") return null;
+  const customer = database.customers.find((item) => item.id === purchase.customerId);
+  if (!customer) return null;
+  activateBibouPlus(customer, purchase);
+  return customer;
+};
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
@@ -245,6 +261,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "POST" && url.pathname === "/api/delivery-quote") {
       const input = await readBody(request);
+      if (!authenticatedCustomer(request, await readDatabase())) return send(response, 401, { error: "Connecte-toi pour calculer la livraison." });
       if (![input.address, input.postalCode, input.city].every((value) => String(value || "").trim())) return send(response, 400, { error: "Indiquez une adresse complète pour calculer la livraison." });
       try {
         const quote = await calculateDeliveryQuote(input);
@@ -270,7 +287,8 @@ const server = http.createServer(async (request, response) => {
     const database = await readDatabase();
     const loyaltyWeekChanged = resetExpiredLoyaltyWeeks(database);
     const referralCodesChanged = ensureAllReferralCodes(database);
-    if (loyaltyWeekChanged || referralCodesChanged) await writeDatabase(database);
+    const bibouPlusStoreChanged = ensureBibouPlusStore(database);
+    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged) await writeDatabase(database);
 
     if (request.method === "GET" && url.pathname === "/api/availability") {
       const serviceDate = url.searchParams.get("date");
@@ -294,13 +312,14 @@ const server = http.createServer(async (request, response) => {
         const reservation = await serializeOrderCreation(async () => {
           const latestDatabase = await readDatabase();
           const customer = authenticatedCustomer(request, latestDatabase);
-          const created = createReservation(latestDatabase, { ...input, customerId: customer?.id || null });
+          if (!customer) throw Object.assign(new Error("Connecte-toi par SMS avant de réserver."), { statusCode: 401 });
+          const created = createReservation(latestDatabase, { ...input, customerId: customer.id, phone: customer.phone });
           await writeDatabase(latestDatabase);
           return created;
         });
         return send(response, 201, { reservation });
       } catch (error) {
-        return send(response, 400, { error: error.message || "La réservation n’a pas pu être enregistrée." });
+        return send(response, error.statusCode || 400, { error: error.message || "La réservation n’a pas pu être enregistrée." });
       }
     }
 
@@ -339,6 +358,7 @@ const server = http.createServer(async (request, response) => {
       if (!customer) {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
         ensureReferralCode(customer, database);
+        grantWelcomeReward(customer);
         database.customers.push(customer);
         await writeDatabase(database);
       }
@@ -348,6 +368,65 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
       const customer = authenticatedCustomer(request, database);
       return customer ? send(response, 200, { customer }) : send(response, 401, { error: "Session expirée." });
+    }
+
+    if (request.method === "DELETE" && url.pathname === "/api/customer/account") {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Reconnecte-toi pour supprimer ton compte." });
+      const deletion = anonymizeCustomerAccount(database, customer);
+      await writeDatabase(database);
+      return send(response, 200, { deleted: true, deletion });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/bibou-plus/status") {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Connecte-toi pour consulter Bibou Plus." });
+      return send(response, 200, { bibouPlus: bibouPlusStatus(customer) });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/bibou-plus/checkout") {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Connecte-toi pour t’abonner à Bibou Plus." });
+      const merchantCode = await getSumUpMerchantCode();
+      if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "Le paiement Bibou Plus n’est pas encore disponible." });
+
+      const createdAt = new Date();
+      const validUntil = new Date(createdAt.getTime() + 30 * 60 * 1000);
+      const number = database.nextBibouPlusNumber++;
+      const purchase = { id: `bibou-plus-${number}`, number, customerId: customer.id, amount: BIBOU_PLUS_PRICE, status: "awaiting_payment", createdAt: createdAt.toISOString() };
+      const checkoutReference = `bibou-plus-${number}-${Date.now()}`;
+      const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ checkout_reference: checkoutReference, amount: BIBOU_PLUS_PRICE, currency: "EUR", merchant_code: merchantCode, description: "Bibou Plus · 30 jours", return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: validUntil.toISOString(), hosted_checkout: { enabled: true } })
+      });
+      if (!sumupResponse.ok) {
+        database.nextBibouPlusNumber -= 1;
+        console.error("SumUp Bibou Plus checkout creation failed", sumupResponse.status);
+        return send(response, 502, { error: "SumUp n’a pas pu ouvrir le paiement Bibou Plus." });
+      }
+      const checkout = await sumupResponse.json();
+      purchase.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "PENDING", createdAt: createdAt.toISOString(), validUntil: validUntil.toISOString() };
+      database.bibouPlusPurchases.unshift(purchase);
+      await writeDatabase(database);
+      return send(response, 201, { purchase, checkoutUrl: checkout.hosted_checkout_url || null });
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/bibou-plus/checkout/")) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Session expirée." });
+      const purchase = database.bibouPlusPurchases.find((item) => item.id === url.pathname.split("/").pop() && item.customerId === customer.id);
+      if (!purchase?.payment?.checkoutId) return send(response, 404, { error: "Paiement Bibou Plus introuvable." });
+      const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${purchase.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
+      if (sumupResponse.ok) {
+        const checkout = await sumupResponse.json();
+        purchase.payment.status = checkout.status || purchase.payment.status;
+        purchase.payment.updatedAt = new Date().toISOString();
+        if (checkout.status === "PAID") purchase.payment.paidAt = new Date().toISOString();
+        finalizePaidBibouPlusPurchase(purchase, database);
+        await writeDatabase(database);
+      }
+      return send(response, 200, { purchase, customer, bibouPlus: bibouPlusStatus(customer) });
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
@@ -425,8 +504,10 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/customers/")) {
-      const customer = database.customers.find((item) => item.id === url.pathname.split("/").pop());
-      return customer ? send(response, 200, { customer }) : send(response, 404, { error: "Client introuvable" });
+      const customer = authenticatedCustomer(request, database);
+      const requestedId = url.pathname.split("/").pop();
+      if (!customer || customer.id !== requestedId) return send(response, 401, { error: "Accès au compte requis." });
+      return send(response, 200, { customer });
     }
 
     if (request.method === "POST" && url.pathname === "/api/customers") {
@@ -442,8 +523,9 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/customers/")) {
       const input = await readBody(request);
-      const customer = database.customers.find((item) => item.id === url.pathname.split("/").pop());
-      if (!customer) return send(response, 404, { error: "Client introuvable" });
+      const customer = authenticatedCustomer(request, database);
+      const requestedId = url.pathname.split("/").pop();
+      if (!customer || customer.id !== requestedId) return send(response, 401, { error: "Reconnecte-toi pour modifier tes coordonnées." });
       ["name", "phone", "address", "postalCode", "city"].forEach((field) => {
         if (typeof input[field] === "string") customer[field] = input[field].trim();
       });
@@ -455,10 +537,13 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/orders") {
       const input = await readBody(request);
       const customer = database.customers.find((item) => item.id === input.customerId);
+      const sessionCustomer = authenticatedCustomer(request, database);
+      if (!sessionCustomer || sessionCustomer.id !== customer?.id) return send(response, 401, { error: "Connecte-toi par SMS avant de commander." });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
-      const subtotal = input.items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+      const pricedCart = validateAndPriceOrderItems(input.items);
+      const subtotal = pricedCart.subtotal;
       let distanceKm = 0;
       let deliveryFee = 0;
       if (input.method === "delivery") {
@@ -473,10 +558,18 @@ const server = http.createServer(async (request, response) => {
       if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
       const order = await serializeOrderCreation(async () => {
         const latestDatabase = await readDatabase();
+        ensureBibouPlusStore(latestDatabase);
         const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId);
         if (!latestCustomer) return null;
         if (input.method === "delivery" && remainingDeliveryPlaces(latestDatabase, input.serviceDate, input.slot).remaining < 1) return false;
-        const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, items: input.items.map((item) => ({ name: String(item.name), quantity: Number(item.quantity || 1), price: Number(item.price || 0) })), subtotal, deliveryFee, distanceKm, total: subtotal + deliveryFee, method: input.method, serviceDate: input.serviceDate, slot: input.slot, status: "awaiting_payment", createdAt: new Date().toISOString() };
+        const sessionCustomer = authenticatedCustomer(request, latestDatabase);
+        const benefitsAllowed = sessionCustomer?.id === latestCustomer.id;
+        const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
+        const welcomeRewardApplied = benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
+        const discountRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
+        const pricing = bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate });
+        const storedItems = pricedCart.items;
+        const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         latestDatabase.orders.unshift(createdOrder);
         await writeDatabase(latestDatabase);
         return createdOrder;
@@ -490,6 +583,8 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const order = database.orders.find((item) => item.id === input.orderId);
       if (!order) return send(response, 404, { error: "Commande introuvable" });
+      const customer = authenticatedCustomer(request, database);
+      if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour payer cette commande." });
       const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
       if (!Number.isFinite(checkoutExpiresAt.getTime()) || checkoutExpiresAt.getTime() <= Date.now()) {
         return send(response, 409, { error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
@@ -518,6 +613,7 @@ const server = http.createServer(async (request, response) => {
       const notification = request.method === "POST" ? await readBody(request) : Object.fromEntries(url.searchParams);
       const checkoutId = notification.checkout_id || notification.checkoutId || notification.id;
       const order = database.orders.find((item) => item.payment?.checkoutId === checkoutId);
+      const bibouPlusPurchase = database.bibouPlusPurchases.find((item) => item.payment?.checkoutId === checkoutId);
       if (order && sumupApiKey) {
         const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
         if (sumupResponse.ok) {
@@ -529,12 +625,25 @@ const server = http.createServer(async (request, response) => {
           await writeDatabase(database);
         }
       }
+      if (bibouPlusPurchase && sumupApiKey) {
+        const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
+        if (sumupResponse.ok) {
+          const checkout = await sumupResponse.json();
+          bibouPlusPurchase.payment.status = checkout.status || bibouPlusPurchase.payment.status;
+          bibouPlusPurchase.payment.updatedAt = new Date().toISOString();
+          if (checkout.status === "PAID") bibouPlusPurchase.payment.paidAt = new Date().toISOString();
+          finalizePaidBibouPlusPurchase(bibouPlusPurchase, database);
+          await writeDatabase(database);
+        }
+      }
       return send(response, 200, { ok: true });
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/payments/sumup-checkout/")) {
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
       if (!order?.payment?.checkoutId) return send(response, 404, { error: "Paiement introuvable" });
+      const customer = authenticatedCustomer(request, database);
+      if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour vérifier ce paiement." });
       let confirmation = null;
       if (sumupApiKey) {
         const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${order.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });

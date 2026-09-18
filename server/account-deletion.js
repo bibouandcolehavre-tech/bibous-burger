@@ -1,0 +1,45 @@
+const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
+  if (!database || !customer) return null;
+  const deletedAt = value.toISOString();
+  const customerId = customer.id;
+  const customerPhone = customer.phone;
+  let ordersAnonymized = 0;
+  let reservationsAnonymized = 0;
+
+  (database.orders || []).forEach((order) => {
+    if (order.customerId !== customerId) return;
+    order.customerId = null;
+    order.customerName = "Client supprimé";
+    order.accountDeletedAt = deletedAt;
+    delete order.referralSponsorCustomerId;
+    ordersAnonymized += 1;
+  });
+
+  (database.reservations || []).forEach((reservation) => {
+    if (reservation.customerId !== customerId && reservation.phone !== customerPhone) return;
+    reservation.customerId = null;
+    reservation.customerName = "Client supprimé";
+    reservation.phone = "";
+    reservation.note = "";
+    if (reservation.status !== "cancelled") reservation.status = "cancelled";
+    reservation.accountDeletedAt = deletedAt;
+    reservation.updatedAt = deletedAt;
+    reservationsAnonymized += 1;
+  });
+
+  (database.bibouPlusPurchases || []).forEach((purchase) => {
+    if (purchase.customerId === customerId) {
+      purchase.customerId = null;
+      purchase.accountDeletedAt = deletedAt;
+    }
+  });
+
+  (database.customers || []).forEach((otherCustomer) => {
+    if (otherCustomer.referredByCustomerId === customerId) delete otherCustomer.referredByCustomerId;
+  });
+  database.customers = (database.customers || []).filter((item) => item.id !== customerId);
+
+  return { customerId, deletedAt, ordersAnonymized, reservationsAnonymized };
+};
+
+module.exports = { anonymizeCustomerAccount };

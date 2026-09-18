@@ -1,5 +1,7 @@
 const TIME_ZONE = "Europe/Paris";
 const POINTS_PER_ORDER = 20;
+const BURGER_POINTS = 10;
+const MENU_POINTS = 15;
 
 const parisDateParts = (value = new Date()) => Object.fromEntries(
   new Intl.DateTimeFormat("en-CA", {
@@ -29,25 +31,43 @@ const ensureCurrentLoyaltyWeek = (customer, value = new Date()) => {
   if (!customer.loyaltyWeekStart) {
     customer.loyaltyWeekStart = currentWeek;
     customer.weeklyOrders = Math.max(0, Number(customer.weeklyOrders) || 0);
+    customer.weeklyWeightedBasePoints = Math.max(0, Number(customer.weeklyWeightedBasePoints) || 0);
+    customer.weeklyProgramPoints = Math.max(0, Number(customer.weeklyProgramPoints) || 0);
     return true;
   }
   if (customer.loyaltyWeekStart === currentWeek) return false;
   customer.loyaltyWeekStart = currentWeek;
   customer.weeklyOrders = 0;
+  customer.weeklyWeightedBasePoints = 0;
+  customer.weeklyProgramPoints = 0;
   return true;
 };
 
-const grantLoyaltyForOrder = (customer, order, value = new Date()) => {
+const grantLoyaltyForOrder = (customer, order, value = new Date(), options = {}) => {
   const changedWeek = ensureCurrentLoyaltyWeek(customer, value);
   if (order.loyaltyGrantedAt) return { pointsAdded: Number(order.loyaltyPointsAdded) || 0, changed: changedWeek };
 
   const previousOrders = Math.max(0, Number(customer.weeklyOrders) || 0);
   const nextOrders = previousOrders + 1;
-  const pointsAdded = weeklyPointsForOrders(nextOrders) - weeklyPointsForOrders(previousOrders);
+  const bibouPlusMultiplier = options.bibouPlus ? 2 : 1;
+  const hasConfiguredBasePoints = Object.prototype.hasOwnProperty.call(order, "loyaltyBasePoints");
+  const basePoints = hasConfiguredBasePoints
+    ? Math.max(0, Number(order.loyaltyBasePoints) || 0)
+    : POINTS_PER_ORDER;
+  const previousWeightedBasePoints = Math.max(0, Number(customer.weeklyWeightedBasePoints) || (previousOrders * POINTS_PER_ORDER));
+  const nextWeightedBasePoints = previousWeightedBasePoints + (basePoints * bibouPlusMultiplier);
+  const previousProgramPoints = previousOrders ? previousWeightedBasePoints * Math.min(previousOrders, 3) : 0;
+  const nextProgramPoints = nextWeightedBasePoints * Math.min(nextOrders, 3);
+  const pointsAdded = nextProgramPoints - previousProgramPoints;
   customer.weeklyOrders = nextOrders;
+  customer.weeklyWeightedBasePoints = nextWeightedBasePoints;
+  customer.weeklyProgramPoints = nextProgramPoints;
   customer.points = Math.max(0, Number(customer.points) || 0) + pointsAdded;
   order.loyaltyGrantedAt = value.toISOString();
   order.loyaltyPointsAdded = pointsAdded;
+  order.loyaltyBasePoints = basePoints;
+  order.loyaltyWeightedBasePoints = basePoints * bibouPlusMultiplier;
+  order.loyaltyBibouPlusMultiplier = bibouPlusMultiplier;
   order.loyaltyWeekStart = customer.loyaltyWeekStart;
   return { pointsAdded, changed: true };
 };
@@ -56,16 +76,28 @@ const revokeLoyaltyForOrder = (customer, order, value = new Date()) => {
   if (!order.loyaltyGrantedAt || order.loyaltyRevokedAt) return false;
   const currentWeek = weekStartKey(value);
   const orderWeek = order.loyaltyWeekStart || weekStartKey(new Date(order.loyaltyGrantedAt));
-  customer.points = Math.max(0, (Number(customer.points) || 0) - (Number(order.loyaltyPointsAdded) || 0));
   if (orderWeek === currentWeek) {
     ensureCurrentLoyaltyWeek(customer, value);
-    customer.weeklyOrders = Math.max(0, (Number(customer.weeklyOrders) || 0) - 1);
+    const currentOrders = Math.max(0, Number(customer.weeklyOrders) || 0);
+    const currentWeightedBasePoints = Math.max(0, Number(customer.weeklyWeightedBasePoints) || 0);
+    const currentProgramPoints = Math.max(0, Number(customer.weeklyProgramPoints) || (currentWeightedBasePoints * Math.min(currentOrders, 3)));
+    const nextOrders = Math.max(0, currentOrders - 1);
+    const nextWeightedBasePoints = Math.max(0, currentWeightedBasePoints - (Number(order.loyaltyWeightedBasePoints) || Number(order.loyaltyBasePoints) || 0));
+    const nextProgramPoints = nextWeightedBasePoints * Math.min(nextOrders, 3);
+    customer.points = Math.max(0, (Number(customer.points) || 0) - Math.max(0, currentProgramPoints - nextProgramPoints));
+    customer.weeklyOrders = nextOrders;
+    customer.weeklyWeightedBasePoints = nextWeightedBasePoints;
+    customer.weeklyProgramPoints = nextProgramPoints;
+  } else {
+    customer.points = Math.max(0, (Number(customer.points) || 0) - (Number(order.loyaltyPointsAdded) || 0));
   }
   order.loyaltyRevokedAt = value.toISOString();
   return true;
 };
 
 module.exports = {
+  BURGER_POINTS,
+  MENU_POINTS,
   ensureCurrentLoyaltyWeek,
   grantLoyaltyForOrder,
   revokeLoyaltyForOrder,

@@ -2,14 +2,42 @@
   "expo": {
     "name": "Bibou's Burgers",
     "slug": "bibous-burger",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#FFF8F2"
+    "scheme": "bibousburgers",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#E95122",
+    "primaryColor": "#E95122",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bibouandco.bibousburgers",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
-    "ios": { "supportsTablet": false },
-    "android": { "adaptiveIcon": { "backgroundColor": "#FFF8F2" } }
+    "android": {
+      "package": "com.bibouandco.bibousburgers",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E95122"
+      }
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#E95122",
+          "image": "./assets/adaptive-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain"
+        }
+      ]
+    ]
   }
 }

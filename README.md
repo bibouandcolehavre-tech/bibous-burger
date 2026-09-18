@@ -1,11 +1,33 @@
 # Bibou's Burgers
 
-Première application mobile client pour le restaurant : menu, personnalisation du Taurus, panier et paiement simulé.
+Application de commande et de fidélité de Bibou & Co pour iPhone, Android et le web.
 
-## Lancer l’application
+## Fonctionnalités prêtes
 
-1. Installe Node.js LTS sur l’ordinateur.
-2. Dans ce dossier, lance `npm install`.
-3. Lance `npm start`, puis ouvre le projet avec Expo Go sur iPhone ou Android.
+- carte complète avec menus, burgers, petites faims et boissons ;
+- personnalisation sans prix affiché pour les choix gratuits, panier multi-produits et suggestions de compléments ;
+- livraison et Click & Collect ;
+- créneaux limités à deux livraisons ou réservations par tranche de 30 minutes ;
+- paiement sécurisé hébergé par SumUp ;
+- connexion client par code SMS Twilio ;
+- suivi des commandes et espace restaurant séparé ;
+- programme fidélité, parrainage, prestiges et récompenses ;
+- Bibou Plus : livraison offerte, remise de 5 % et points doublés pendant 30 jours ;
+- cadeau de bienvenue de 10 % sur la première commande ;
+- réservation de table jusqu’à quatre personnes ;
+- avis Google, politique de confidentialité et suppression de compte.
 
-Le paiement est volontairement simulé pour cette première étape. La prochaine version connectera Stripe à un vrai serveur afin de ne jamais exposer de données bancaires dans l’application.
+## Développement local
+
+1. Installer les dépendances avec `npm install`.
+2. Lancer l’API avec `npm run server`.
+3. Lancer l’application avec `npm start`.
+
+Les secrets SumUp, Twilio, Google, le mot de passe restaurant et la clé de session restent uniquement dans les variables d’environnement du serveur.
+
+## Préparation des stores
+
+La configuration Expo/EAS est prête dans `app.json` et `eas.json`, avec l’identifiant `com.bibouandco.bibousburgers`. Les builds de production se lancent avec `npm run build:production` après connexion à un compte Expo et aux comptes développeur Apple/Google.
+
+- Politique de confidentialité : `https://bibous-burger-app.onrender.com/?legal=privacy`
+- Suppression de compte : `https://bibous-burger-app.onrender.com/?legal=delete-account`

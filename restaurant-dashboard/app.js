@@ -27,7 +27,7 @@ const showDashboard = () => { document.querySelector("#login-screen").hidden = t
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
   const minutes = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
-  return { id: order.number, apiId: order.id, customer: order.customerName, age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, total: order.total, items: order.items.map((item) => item.quantity > 1 ? `${item.quantity} × ${item.name}` : item.name).join(" · "), status: statusLabel[order.status] || "Nouvelle" };
+  return { id: order.number, apiId: order.id, customer: order.customerName, age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
 }
 
 function reservationFromApi(reservation) {
@@ -43,7 +43,10 @@ function actionMarkup(order) {
 
 function renderOrders() {
   const visible = active().filter((order) => filter === "all" || order.status === filter);
-  document.querySelector("#orders-list").innerHTML = visible.length ? visible.map((order) => `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${order.id} · ${order.customer}</div><div class="order-meta">${order.age} · ${order.type}</div></div><span class="status ${order.status.replace(" ", "-")}">${order.status}</span></div><p class="order-items">${order.items}</p><div class="order-bottom"><div class="order-details">🕒 ${order.slot}<span class="order-total">${euro(order.total)}</span></div>${actionMarkup(order)}</div></article>`).join("") : `<div class="empty">🍔<strong>Aucune commande ici</strong>Les nouvelles commandes apparaîtront dès leur réception.</div>`;
+  document.querySelector("#orders-list").innerHTML = visible.length ? visible.map((order) => {
+    const lines = order.items.map((item) => `<div class="order-line"><strong>${item.quantity > 1 ? `${Number(item.quantity)} × ` : ""}${escapeHtml(item.name)}</strong>${item.options?.length ? `<small>${item.options.map((option) => escapeHtml(option.label)).join(" · ")}</small>` : ""}</div>`).join("");
+    return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div><div class="order-items">${lines}</div><div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}<span class="order-total">${euro(order.total)}</span></div>${actionMarkup(order)}</div></article>`;
+  }).join("") : `<div class="empty">🍔<strong>Aucune commande ici</strong>Les nouvelles commandes apparaîtront dès leur réception.</div>`;
   document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
 }
 
