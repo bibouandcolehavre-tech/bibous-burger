@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bibou's Burgers — Espace restaurant</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=service-alerts-1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -53,6 +53,14 @@
           </div>
         </header>
 
+        <section class="service-alerts" aria-label="Alertes du restaurant">
+          <div class="alert-controls"><div><strong>Les alertes du service</strong><p id="sound-status">Activez le son pour entendre les nouvelles demandes.</p></div><div class="alert-buttons"><button type="button" class="sound-button" id="sound-button" aria-pressed="false">Activer le son</button><button type="button" class="secondary-button" id="test-sound-button" disabled>Tester le son</button></div></div>
+          <div class="attention-links"><button type="button" id="attention-orders">0 commande à accepter</button><button type="button" id="attention-reservations">0 réservation à confirmer</button><button type="button" id="attention-rewards">0 récompense à remettre</button></div>
+          <p id="arrival-message" class="arrival-message" role="status" aria-live="polite" aria-atomic="true"></p>
+          <p id="connection-status" class="connection-status" role="status">Connexion au restaurant…</p>
+          <small>Gardez ce tableau ouvert, le Mac éveillé et le volume audible. Pas d’alerte si la page est fermée. Utilisez un seul onglet pour éviter les sons en double.</small>
+        </section>
+
         <nav class="mobile-view-switch" aria-label="Choisir la rubrique">
           <button class="nav-item mobile-view-button active" data-view="orders"><span>▦</span> Commandes</button>
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
@@ -75,7 +83,6 @@
               <button class="filter" data-filter="Acceptée">En préparation</button>
               <button class="filter" data-filter="Prête">Prêtes</button>
             </div>
-            <button class="sound-button" id="sound-button">🔔 Son activé</button>
           </div>
           <div id="orders-list" class="orders-list"></div>
         </section>
@@ -117,6 +124,7 @@
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
-    <script src="./app.js"></script>
+    <script src="./alerts.js?v=service-alerts-1"></script>
+    <script src="./app.js?v=service-alerts-1"></script>
   </body>
 </html>

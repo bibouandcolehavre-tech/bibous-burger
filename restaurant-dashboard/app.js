@@ -13,7 +13,14 @@ let menuRequest = 0;
 let filter = "all";
 let reservationFilter = "upcoming";
 let rewardFilter = "active";
-let soundOn = true;
+const arrivalTracker = BibouAlerts.createArrivalTracker();
+const feedRequests = new Map();
+const feedHealth = Object.fromEntries(["orders", "reservations", "rewards"].map((kind) => [kind, { lastSuccess: 0, error: false }]));
+const queuedArrivals = new Map();
+let arrivalTimer = null;
+const savedSoundPreference = () => { try { return localStorage.getItem("bibous-restaurant-sound") !== "off"; } catch { return true; } };
+const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, enabled: savedSoundPreference(), onChange: updateSoundControls });
 let currentView = "orders";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
@@ -28,7 +35,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { dashboardToken = ""; sessionStorage.removeItem("bibous-dashboard-token"); document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { dashboardToken = ""; sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -81,6 +88,54 @@ function refreshMetrics() {
   document.querySelector("#new-reward-count").textContent = activeRewards;
   document.querySelector("#new-reward-count-mobile").textContent = activeRewards;
   document.querySelector("#active-reward-count").textContent = activeRewards;
+  updateAttention(newOrders.length, pendingReservations, activeRewards);
+}
+
+function updateText(selector, value) {
+  const element = document.querySelector(selector);
+  if (element.textContent !== value) element.textContent = value;
+}
+
+function updateAttention(orderCount, reservationCount, rewardCount) {
+  const counters = { orders: [orderCount, "commande à accepter", "commandes à accepter"], reservations: [reservationCount, "réservation à confirmer", "réservations à confirmer"], rewards: [rewardCount, "récompense à remettre", "récompenses à remettre"] };
+  for (const [kind, [count, singular, plural]] of Object.entries(counters)) {
+    const selector = `#attention-${kind}`;
+    updateText(selector, `${count} ${count > 1 ? plural : singular}`);
+    document.querySelector(selector).classList.toggle("needs-attention", count > 0);
+  }
+  const total = orderCount + reservationCount + rewardCount;
+  document.title = `${total ? `(${total}) ` : ""}Bibou's Burgers — Espace restaurant`;
+}
+
+function updateSoundControls() {
+  const state = soundPlayer.state();
+  updateText("#sound-button", !state.supported ? "Son non disponible" : state.ready ? "Couper le son" : state.enabled ? "Activer le son" : "Son coupé · Activer");
+  document.querySelector("#sound-button").disabled = !state.supported;
+  document.querySelector("#sound-button").setAttribute("aria-pressed", String(state.ready));
+  document.querySelector("#sound-button").classList.toggle("sound-ready", Boolean(state.ready));
+  document.querySelector("#test-sound-button").disabled = !state.ready;
+  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son activé · commandes, réservations et récompenses." : !state.enabled ? "Son coupé. Les alertes visuelles restent actives." : "Cliquez sur Activer le son pour autoriser les alertes dans cet onglet.");
+}
+
+function updateConnectionStatus() {
+  const status = BibouAlerts.connectionStatus(Object.values(feedHealth), navigator.onLine);
+  updateText("#connection-status", status.text);
+  document.querySelector("#connection-status").classList.toggle("connection-warning", status.warning);
+}
+
+function announceArrivals(kind, count) {
+  if (!count) return;
+  queuedArrivals.set(kind, (queuedArrivals.get(kind) || 0) + count);
+  clearTimeout(arrivalTimer);
+  arrivalTimer = setTimeout(() => {
+    if (!dashboardToken) return queuedArrivals.clear();
+    const labels = { orders: ["nouvelle commande payée", "nouvelles commandes payées"], reservations: ["nouvelle réservation", "nouvelles réservations"], rewards: ["nouvelle récompense réclamée", "nouvelles récompenses réclamées"] };
+    const message = [...queuedArrivals].map(([type, amount]) => `${amount} ${labels[type][amount > 1 ? 1 : 0]}`).join(" · ");
+    updateText("#arrival-message", `${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} — ${message}`);
+    showToast(message);
+    for (const type of queuedArrivals.keys()) soundPlayer.play(type);
+    queuedArrivals.clear();
+  }, 250);
 }
 
 function reservationActions(reservation) {
@@ -104,57 +159,50 @@ function renderRewardClaims() {
   document.querySelectorAll("[data-reward-action]").forEach((button) => button.addEventListener("click", () => changeRewardClaim(button.dataset.id, button.dataset.rewardAction)));
 }
 
-async function loadOrders({ notify = false } = {}) {
-  if (!API_BASE_URL) return;
-  try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/orders`, { headers: dashboardHeaders() });
-    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
-    if (!response.ok) throw new Error("Chargement impossible");
-    const payload = await response.json();
-    const nextOrders = payload.orders.map(orderFromApi);
-    const hadNewOrder = orders.length && nextOrders.some((order) => !orders.some((current) => current.apiId === order.apiId) && order.status === "Nouvelle");
-    orders = nextOrders;
-    refreshMetrics();
-    renderOrders();
-    if (notify && hadNewOrder && soundOn) showToast("Nouvelle commande reçue !");
-  } catch {
-    showToast("Impossible de joindre les commandes pour le moment.");
-  }
+function loadFeed(kind, { notify = true } = {}) {
+  if (!dashboardToken) return Promise.resolve(false);
+  const token = dashboardToken;
+  const running = feedRequests.get(kind);
+  if (running?.token === token) return running.promise;
+  const request = { token };
+  request.promise = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const endpoint = kind === "rewards" ? "reward-claims" : kind;
+      const response = await fetch(`${API_BASE_URL}/dashboard/${endpoint}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal });
+      if (token !== dashboardToken) return false;
+      if (response.status === 401) { showLogin("Votre session a expiré. Reconnectez-vous pour recevoir les nouvelles demandes."); return false; }
+      if (!response.ok) throw new Error("Chargement impossible");
+      const payload = await response.json();
+      if (token !== dashboardToken) return false;
+      const items = payload[kind === "rewards" ? "claims" : kind];
+      if (!Array.isArray(items)) throw new Error("Réponse invalide");
+      const fresh = arrivalTracker.update(kind, items);
+      if (kind === "orders") { orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi); renderOrders(); }
+      else if (kind === "reservations") { reservations = items.map(reservationFromApi); renderReservations(); }
+      else { rewardClaims = items.map(rewardClaimFromApi); renderRewardClaims(); }
+      feedHealth[kind] = { lastSuccess: Date.now(), error: false };
+      refreshMetrics();
+      if (notify) announceArrivals(kind, fresh.length);
+      return true;
+    } catch {
+      if (token === dashboardToken) feedHealth[kind].error = true;
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      if (feedRequests.get(kind) === request) feedRequests.delete(kind);
+      updateConnectionStatus();
+    }
+  })();
+  feedRequests.set(kind, request);
+  return request.promise;
 }
 
-async function loadReservations({ notify = false } = {}) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/reservations`, { headers: dashboardHeaders() });
-    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
-    if (!response.ok) throw new Error("Chargement impossible");
-    const payload = await response.json();
-    const nextReservations = payload.reservations.map(reservationFromApi);
-    const hasNewReservation = reservations.length && nextReservations.some((reservation) => !reservations.some((current) => current.apiId === reservation.apiId) && reservation.status === "pending");
-    reservations = nextReservations;
-    refreshMetrics();
-    renderReservations();
-    if (notify && hasNewReservation && soundOn) showToast("Nouvelle réservation reçue !");
-  } catch {
-    showToast("Impossible de joindre les réservations pour le moment.");
-  }
-}
-
-async function loadRewardClaims({ notify = false } = {}) {
-  try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/reward-claims`, { headers: dashboardHeaders() });
-    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
-    if (!response.ok) throw new Error("Chargement impossible");
-    const payload = await response.json();
-    const nextClaims = payload.claims.map(rewardClaimFromApi);
-    const hasNewClaim = rewardClaims.length && nextClaims.some((claim) => !rewardClaims.some((current) => current.apiId === claim.apiId) && claim.status === "active");
-    rewardClaims = nextClaims;
-    refreshMetrics();
-    renderRewardClaims();
-    if (notify && hasNewClaim && soundOn) showToast("Nouvelle récompense réclamée !");
-  } catch {
-    showToast("Impossible de joindre les récompenses pour le moment.");
-  }
-}
+const loadOrders = (options) => loadFeed("orders", options);
+const loadReservations = (options) => loadFeed("reservations", options);
+const loadRewardClaims = (options) => loadFeed("rewards", options);
+const refreshFeeds = (options) => Promise.all([loadOrders(options), loadReservations(options), loadRewardClaims(options)]);
 
 async function changeOrder(id, status) {
   const order = orders.find((item) => item.id === id);
@@ -312,14 +360,44 @@ document.querySelectorAll(".reward-filter").forEach((button) => button.addEventL
   renderRewardClaims();
 }));
 
-document.querySelector("#sound-button").addEventListener("click", (event) => {
-  soundOn = !soundOn;
-  event.currentTarget.textContent = soundOn ? "🔔 Son activé" : "🔕 Son désactivé";
-  event.currentTarget.style.color = soundOn ? "" : "#806e65";
+document.querySelector("#sound-button").addEventListener("click", async (event) => {
+  const enable = !soundPlayer.state().ready;
+  event.currentTarget.disabled = true;
+  const ready = await soundPlayer.setEnabled(enable);
+  try { localStorage.setItem("bibous-restaurant-sound", enable ? "on" : "off"); } catch { /* Private browsing may block storage. */ }
+  updateSoundControls();
+  if (ready) soundPlayer.play("orders");
+  else if (enable) updateText("#sound-status", "Le son est bloqué par le navigateur. Cliquez à nouveau sur Activer le son ou vérifiez les autorisations du site.");
 });
+document.querySelector("#test-sound-button").addEventListener("click", () => {
+  const played = soundPlayer.play("orders");
+  updateSoundControls();
+  updateText("#sound-status", played ? "Son de test lancé. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Le son n’est pas prêt. Cliquez sur Activer le son.");
+});
+document.querySelectorAll(".attention-links button").forEach((button) => button.addEventListener("click", () => {
+  const view = button.id.replace("attention-", "");
+  if (view === "orders") {
+    filter = "Nouvelle";
+    document.querySelectorAll(".filter").forEach((item) => item.classList.toggle("active", item.dataset.filter === filter));
+    renderOrders();
+  } else if (view === "reservations") {
+    reservationFilter = "upcoming";
+    document.querySelectorAll("[data-reservation-filter]").forEach((item) => item.classList.toggle("active", item.dataset.reservationFilter === reservationFilter));
+    renderReservations();
+  } else {
+    rewardFilter = "active";
+    document.querySelectorAll(".reward-filter").forEach((item) => item.classList.toggle("active", item.dataset.rewardFilter === rewardFilter));
+    renderRewardClaims();
+  }
+  showView(view);
+}));
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
-document.querySelector("#refresh-orders").addEventListener("click", async () => { if (currentView === "menu") return loadMenu(); if (currentView === "orders") { await loadOrders(); showToast("Commandes actualisées."); } else if (currentView === "reservations") { await loadReservations(); showToast("Réservations actualisées."); } else { await loadRewardClaims(); showToast("Récompenses actualisées."); } });
+document.querySelector("#refresh-orders").addEventListener("click", async () => {
+  if (currentView === "menu") return loadMenu();
+  const results = await refreshFeeds();
+  if (dashboardToken) showToast(results.every(Boolean) ? "Demandes actualisées." : "Actualisation incomplète. Vérifiez la connexion.");
+});
 document.querySelector("#dashboard-login").addEventListener("click", async () => {
   const button = document.querySelector("#dashboard-login");
   const password = document.querySelector("#dashboard-password").value;
@@ -333,9 +411,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     dashboardToken = payload.token;
     sessionStorage.setItem("bibous-dashboard-token", dashboardToken);
     showDashboard();
-    loadOrders();
-    loadReservations();
-    loadRewardClaims();
+    void refreshFeeds({ notify: false });
     if (currentView === "menu") loadMenu();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
@@ -343,9 +419,22 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
 document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
 refreshMetrics();
+updateSoundControls();
+updateConnectionStatus();
 document.querySelector("#service-date-heading").textContent = todayHeading();
 renderOrders();
 renderReservations();
 renderRewardClaims();
-if (dashboardToken) { showDashboard(); loadOrders(); loadReservations(); loadRewardClaims(); } else { showLogin(); }
-window.setInterval(() => { if (dashboardToken) { loadOrders({ notify: true }); loadReservations({ notify: true }); loadRewardClaims({ notify: true }); if (currentView === "menu") loadMenu(); } }, 10000);
+if (dashboardToken) { showDashboard(); void refreshFeeds({ notify: false }); } else { showLogin(); }
+const resumeUpdates = () => {
+  if (!dashboardToken) return;
+  updateConnectionStatus();
+  updateSoundControls();
+  void refreshFeeds();
+  if (currentView === "menu") void loadMenu();
+};
+window.setInterval(resumeUpdates, 10000);
+window.addEventListener("online", resumeUpdates);
+window.addEventListener("offline", updateConnectionStatus);
+window.addEventListener("focus", resumeUpdates);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) resumeUpdates(); });

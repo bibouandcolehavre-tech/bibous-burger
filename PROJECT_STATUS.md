@@ -24,17 +24,19 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Fidélité, multiplicateurs hebdomadaires, parrainage, cinq prestiges et cadeau de bienvenue.
 - Récompenses de palier réclamables une seule fois, sans retrait de points, avec code unique validé dans l’espace restaurant.
 - Gestion des produits disponibles/en rupture dans l’espace restaurant, avec recherche et filtres. Propagation aux produits, aux options, aux suggestions et au panier. Contrôle serveur avant création de commande et de paiement.
+- Alertes sonores réelles pour nouvelles commandes payées, réservations et récompenses, avec activation, test et mise en sourdine. Compteurs cliquables, total dans l’onglet, indicateur de connexion et protection contre les alertes répétées.
 - Bibou + à 9,99 € pour 30 jours : livraison offerte, remise de 5 % et points doublés.
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
-- 56 tests automatisés réussissent, dont un test HTTP isolé (sans paiement ni SMS réels).
+- 67 tests automatisés réussissent, dont un test HTTP isolé et 11 tests des alertes (sans paiement ni SMS réels).
 - Export web réussi ; rupture/restauration de boissons, options de menu et blocage d’un panier existant vérifiés dans un environnement local avec données fictives.
+- Alertes vérifiées dans le navigateur : activation, test du son, arrivée simultanée d’une commande payée et d’une table fictives, compteurs, accès aux réservations et mise en sourdine ; aucune erreur JavaScript observée.
 
 ## Prochaines priorités recommandées
 
 1. Retester l’envoi d’un SMS vers un numéro réel non vérifié après l’approbation Twilio.
 2. Terminer l’espace restaurant : modification de la carte et gestion détaillée de la fidélité clients (la disponibilité est maintenant implémentée).
-3. Ajouter une vraie notification sonore pour les nouvelles commandes, réservations et récompenses.
+3. Étudier des notifications push pour recevoir une alerte lorsque le tableau est fermé (les sons dans la page sont maintenant implémentés).
 4. Fiabiliser la confirmation des paiements et la gestion des remboursements SumUp.
 5. Ajouter des sauvegardes automatiques des données de production.
 6. Générer une première version installable iPhone/Android et effectuer un test complet sur appareils réels.
@@ -46,6 +48,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Ne pas ajouter `server/data.json` à un commit : il peut contenir des données locales de test ou de clients.
 - Les données de production sont conservées sur le disque persistant du service Render et ne doivent pas être remplacées par le fichier local.
 - Les ruptures persistent dans `product-stock.json` à côté du fichier de données ; inclure ce fichier dans les sauvegardes. Une rupture ne révoque pas les liens SumUp déjà ouverts ni les commandes payées.
+- Les alertes nécessitent un clic sur « Activer le son », un tableau ouvert, un Mac éveillé et un volume audible. Le premier chargement est silencieux ; pas de notification en dehors de la page. Garder un seul onglet, idéalement au premier plan pendant le service.
 
 ## Idées discutées, non lancées
 
