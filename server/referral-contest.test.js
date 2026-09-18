@@ -65,6 +65,7 @@ test('Suppression/recréation : retrait du classement et blocage du même numér
 test('Actualités : aucun burger, vidéo Epicu et concours, visibilité et ordre enregistrés',()=>{
   const db={};const n=dashboardNews(db);
   assert.deepEqual(n.items.map(item=>item.id),['contest','epicu','paris-normandie','social']);assert.equal(n.items.length,4);assert.equal(n.items.some(item=>item.kind==='product'),false);assert.match(n.items[1].url,/DX1QN8DIdet/);
+  assert.equal(n.items[2].kind,'video');assert.match(n.items[2].url,/presse\.havraise\/videos\/bibous-burger\/1226219005580139/);assert.match(n.items[2].subtitle,/13 juin 2025/);assert.equal(JSON.stringify(n.items).includes('Étoiles gourmandes'),false);
   saveNews(db,{revision:0,items:n.items.map((x,i)=>({...x,enabled:i!==0})).reverse()},now);
   assert.equal(publicNews(db).items[0].kind,'social');assert.equal(publicNews(db).items.length,3);
   assert.throws(()=>saveNews(db,{revision:0,items:[]}),/changé/);

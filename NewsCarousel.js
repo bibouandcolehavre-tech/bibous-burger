@@ -52,7 +52,7 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
           {source && <><Image source={source} style={s.photo} /><View style={s.shade} /></>}
           {item.kind === 'contest' && <Text style={s.decor} importantForAccessibility="no">✦</Text>}
           {item.kind === 'video' && <Text style={s.play} importantForAccessibility="no">▶</Text>}
-          <View style={s.copy}><Text style={s.tag}>{item.kind === 'contest' ? 'BIENTÔT ENSEMBLE' : item.kind === 'article' ? 'ON PARLE DE NOUS' : item.kind === 'video' ? 'LE HAVRE · EPICU' : 'À LA UNE'}</Text><Text style={s.title}>{item.title}</Text><Text style={s.subtitle}>{item.subtitle}</Text></View>
+          <View style={s.copy}><Text style={s.tag}>{item.kind === 'contest' ? 'BIENTÔT ENSEMBLE' : item.kind === 'article' ? 'ON PARLE DE NOUS' : item.kind === 'video' ? (item.id === 'epicu' ? 'LE HAVRE · EPICU' : 'ON PARLE DE NOUS · VIDÉO') : 'À LA UNE'}</Text><Text style={s.title}>{item.title}</Text><Text style={s.subtitle}>{item.subtitle}</Text></View>
         </Pressable>;
       })}
     </ScrollView>
