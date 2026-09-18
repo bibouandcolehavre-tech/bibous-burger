@@ -221,19 +221,21 @@ function GoogleReviewsCarousel() {
 }
 
 function BibouPlusHomeCard({ active, customer, onPress }) {
-  return <Pressable onPress={onPress} style={styles.bibouPlusShortcut} accessibilityLabel="Découvrir l’abonnement Bibou +">
-    <View style={styles.bibouPlusShortcutHeader}>
+  const [expanded, setExpanded] = useState(false);
+  return <View style={styles.bibouPlusShortcut}>
+    <Pressable onPress={() => setExpanded((value) => !value)} style={styles.bibouPlusShortcutHeader} accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel="Afficher les avantages de l’abonnement Bibou +">
       <View style={styles.bibouPlusShortcutMark}><Text style={styles.bibouPlusShortcutMarkText}>✦</Text></View>
-      <View style={styles.bibouPlusShortcutHeading}><Text style={styles.bibouPlusShortcutEyebrow}>{active ? "ABONNEMENT ACTIF" : "L’ABONNEMENT BIBOU"}</Text><Text style={styles.bibouPlusShortcutName}>Bibou +</Text></View>
+      <View style={styles.bibouPlusShortcutHeading}><Text style={styles.bibouPlusShortcutTitle}>L’ABONNEMENT BIBOU +</Text></View>
       {active && <View style={styles.bibouPlusShortcutActiveBadge}><Text style={styles.bibouPlusShortcutActiveText}>ACTIF</Text></View>}
-    </View>
-    <View style={styles.bibouPlusShortcutBenefits}>
+      <Text style={styles.bibouPlusShortcutDisclosure}>{expanded ? "⌃" : "⌄"}</Text>
+    </Pressable>
+    {expanded && <><View style={styles.bibouPlusShortcutBenefits}>
       <View style={styles.bibouPlusShortcutBenefit}><Text style={styles.bibouPlusShortcutCheck}>✓</Text><Text style={styles.bibouPlusShortcutBenefitText}>Livraison offerte</Text></View>
       <View style={styles.bibouPlusShortcutBenefit}><Text style={styles.bibouPlusShortcutCheck}>✓</Text><Text style={styles.bibouPlusShortcutBenefitText}>−5 % sur toutes les commandes</Text></View>
       <View style={styles.bibouPlusShortcutBenefit}><Text style={styles.bibouPlusShortcutCheck}>✓</Text><Text style={styles.bibouPlusShortcutBenefitText}>Points de fidélité multipliés par 2</Text></View>
     </View>
-    <View style={styles.bibouPlusShortcutFooter}><View><Text style={styles.bibouPlusShortcutPrice}>{active ? "Abonnement en cours" : "9,99 €"}</Text><Text style={styles.bibouPlusShortcutPeriod}>{active ? `Valable jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "pour 30 jours · sans renouvellement automatique"}</Text></View><Text style={styles.bibouPlusShortcutArrow}>›</Text></View>
-  </Pressable>;
+    <Pressable onPress={onPress} style={styles.bibouPlusShortcutFooter} accessibilityRole="button" accessibilityLabel={active ? "Gérer ou prolonger l’abonnement Bibou +" : "Souscrire à Bibou + pour 9,99 euros"}><View><Text style={styles.bibouPlusShortcutPrice}>{active ? "Abonnement en cours" : "9,99 €"}</Text><Text style={styles.bibouPlusShortcutPeriod}>{active ? `Valable jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Souscrire · 30 jours · sans renouvellement automatique"}</Text></View><Text style={styles.bibouPlusShortcutArrow}>›</Text></Pressable></>}
+  </View>;
 }
 
 function MenuScreen({ onOpenProduct, onQuickAdd, cartCount, onOpenCart, loyaltyPoints, onOpenLoyalty, onOpenAccount, onOpenReservation, onOpenBibouPlus, onOpenPrivacy, onChooseOrderMethod, preferredMethod, customer }) {
@@ -1001,10 +1003,12 @@ const styles = StyleSheet.create(applyAppPalette({
   bibouPlusShortcutMark: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#F0A65A", marginRight: 12 },
   bibouPlusShortcutMarkText: { color: "#4C1713", fontSize: 22, fontWeight: "900" },
   bibouPlusShortcutHeading: { flex: 1 },
+  bibouPlusShortcutTitle: { color: "#FFF8EE", fontSize: 16, fontWeight: "900", letterSpacing: 0.35 },
   bibouPlusShortcutEyebrow: { color: "#F6C98D", fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
   bibouPlusShortcutName: { color: "#FFF8EE", fontSize: 22, fontWeight: "900", marginTop: 2 },
   bibouPlusShortcutActiveBadge: { borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "#EAF5E4" },
   bibouPlusShortcutActiveText: { color: "#397353", fontSize: 9, fontWeight: "900" },
+  bibouPlusShortcutDisclosure: { color: "#F0A65A", fontSize: 24, lineHeight: 25, marginLeft: 9, marginTop: -3 },
   bibouPlusShortcutBenefits: { marginTop: 14, borderTopWidth: 1, borderTopColor: "#A95346" },
   bibouPlusShortcutBenefit: { minHeight: 37, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#A95346" },
   bibouPlusShortcutCheck: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#F0A65A", color: "#4C1713", textAlign: "center", lineHeight: 22, fontSize: 12, fontWeight: "900", marginRight: 9 },
