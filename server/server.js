@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 const { createDatabaseLock } = require("./database-lock");
+const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
@@ -13,6 +14,7 @@ const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderIt
 const { createProductStockStore } = require("./product-stock");
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
+const { createAuthRateLimiter } = require("./auth-rate-limit");
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
@@ -33,8 +35,7 @@ if (fsSync.existsSync(envPath)) {
 }
 
 const port = Number(process.env.PORT || 3001);
-const seedDatabasePath = path.join(__dirname, "data.json");
-const databasePath = process.env.DATA_FILE_PATH || seedDatabasePath;
+const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
 const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
 const sumupApiKey = process.env.SUMUP_API_KEY;
@@ -54,6 +55,8 @@ const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
 const menuProductIds = new Set(["taurus", "montagnes-menu", "atlas-menu", "classique-menu", "duck-menu", "dynamite-menu", "gros-lard-menu", "hambagu-menu", "basilic-menu", "pork-menu"]);
 const burgerProductIds = new Set(["atlas", "classique", "duck", "dynamite", "hambagu", "basilic", "montagnes", "gros-lard", "pork"]);
 const smsAttemptLimiter = createSmsAttemptLimiter();
+const dashboardLoginLimiter = createAuthRateLimiter();
+const smsCodeLimiter = createAuthRateLimiter({ limit: 8, windowMs: 15 * 60000 });
 const dashboardSessions = new Map();
 const acquireDatabase = createDatabaseLock();
 let googleReviewsCache = { value: null, expiresAt: 0 };
@@ -68,12 +71,14 @@ const serializeOrderCreation = async (task) => {
 };
 
 const fetchGooglePlaceDetails = (placeId) => fetch(`https://places.googleapis.com/v1/places/${placeId}?languageCode=fr`, {
+  signal: AbortSignal.timeout(10000),
   headers: { "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "displayName,rating,userRatingCount,reviews" }
 });
 
 const findGooglePlaceId = async () => {
   const searchResponse = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
+    signal: AbortSignal.timeout(10000),
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": googleMapsApiKey, "X-Goog-FieldMask": "places.id" },
     body: JSON.stringify({ textQuery: googlePlaceSearchQuery })
   });
@@ -84,7 +89,11 @@ const findGooglePlaceId = async () => {
 
 const ensureDatabase = async () => {
   await fs.mkdir(path.dirname(databasePath), { recursive: true });
-  try { await fs.access(databasePath); } catch { await fs.copyFile(seedDatabasePath, databasePath); }
+  try { await fs.access(databasePath); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    // Never ship or copy a developer's customers into a new deployment.
+    await fs.writeFile(databasePath, JSON.stringify({ customers: [], orders: [], reservations: [], nextCustomerId: 1, nextOrderNumber: 1 }), { flag: 'wx', mode: 0o600 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+  }
 };
 const readDatabase = async () => { await ensureDatabase(); return JSON.parse(await fs.readFile(databasePath, "utf8")); };
 const writeDatabase = async (database) => {
@@ -108,7 +117,7 @@ const backupStore = createBackupStore({
   }
 });
 const send = (response, status, payload) => {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
   response.end(JSON.stringify(payload));
 };
 
@@ -307,11 +316,12 @@ const openPayment = async (record, database, { merchantCode, expiresAt, descript
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  let url;
+  try { url = new URL(request.url, 'http://localhost'); } catch { return send(response, 400, { error: 'Adresse de requête invalide.' }); }
   let releaseDatabase;
 
   try {
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -399,9 +409,20 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/dashboard/auth/login") {
+      // Use the connection peer, not a forgeable forwarded header. Behind a reverse
+      // proxy this conservative limit can be shared by restaurant operators.
+      const loginKey = request.socket.remoteAddress || 'unknown';
+      const limit = dashboardLoginLimiter.consume(loginKey);
+      if (!limit.allowed) {
+        response.setHeader('Retry-After', String(limit.retryAfterSeconds));
+        return send(response, 429, { error: 'Trop de tentatives de connexion. Réessayez dans quelques minutes.', retryAfterSeconds: limit.retryAfterSeconds });
+      }
       const { password } = await readBody(request);
       if (!restaurantDashboardPassword) return send(response, 503, { error: "L’accès restaurant n’est pas encore configuré." });
       if (!passwordsMatch(password, restaurantDashboardPassword)) return send(response, 401, { error: "Mot de passe incorrect." });
+      dashboardLoginLimiter.reset(loginKey);
+      for (const [key, session] of dashboardSessions) if (session.expiresAt <= Date.now()) dashboardSessions.delete(key);
+      if (dashboardSessions.size >= 1000) return send(response, 503, { error: 'Trop de sessions actives. Réessayez plus tard.' });
       const token = crypto.randomBytes(32).toString("base64url");
       dashboardSessions.set(token, { expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
       return send(response, 200, { token });
@@ -491,8 +512,14 @@ const server = http.createServer(async (request, response) => {
       const normalizedPhone = normalizeFrenchPhone(phone);
       if (!normalizedPhone || !/^\d{4,10}$/.test(String(code || ""))) return send(response, 400, { error: "Le numéro ou le code est invalide." });
       if (!twilioConfigured()) return send(response, 503, { error: "La connexion par SMS n’est pas encore activée." });
+      const limit = smsCodeLimiter.consume(normalizedPhone);
+      if (!limit.allowed) {
+        response.setHeader('Retry-After', String(limit.retryAfterSeconds));
+        return send(response, 429, { error: 'Trop de codes essayés. Attends quelques minutes avant de réessayer.', retryAfterSeconds: limit.retryAfterSeconds });
+      }
       const { response: twilioResponse, payload } = await verifyWithTwilio("VerificationCheck", { To: normalizedPhone, Code: String(code) });
       if (!twilioResponse.ok || payload.status !== "approved") return send(response, 401, { error: "Le code est incorrect ou a expiré." });
+      smsCodeLimiter.reset(normalizedPhone);
       let customer = database.customers.find((item) => normalizeFrenchPhone(item.phone) === normalizedPhone);
       if (!customer) {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
@@ -549,21 +576,31 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && url.pathname === "/api/bibou-plus/checkout") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Connecte-toi pour t’abonner à Bibou +." });
+      const requestId = validateRequestId((await readBody(request)).requestId);
+      const previous = requestId && database.bibouPlusPurchases.find(item => item.customerId === customer.id && (item.requestId === requestId || item.requestAliases?.includes(requestId)));
+      if (previous?.activatedAt) return send(response, 200, { purchase: previous, customer, bibouPlus: bibouPlusStatus(customer) });
       const merchantCode = await getSumUpMerchantCode();
       if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "Le paiement Bibou + n’est pas encore disponible." });
 
       const createdAt = new Date();
       const validUntil = new Date(createdAt.getTime() + 30 * 60 * 1000);
-      let purchase = database.bibouPlusPurchases.find(item => item.customerId === customer.id && !item.activatedAt && item.payment?.status !== "EXPIRED" && new Date(item.payment?.validUntil || 0) > createdAt);
+      let purchase = previous || database.bibouPlusPurchases.find(item => item.customerId === customer.id && !item.activatedAt && item.payment?.status !== "EXPIRED" && new Date(item.payment?.validUntil || 0) > createdAt);
       if (!purchase) {
         const number = database.nextBibouPlusNumber++;
-        purchase = { id: `bibou-plus-${number}`, number, customerId: customer.id, amount: BIBOU_PLUS_PRICE, status: "awaiting_payment", createdAt: createdAt.toISOString() };
+        purchase = { id: `bibou-plus-${number}`, number, customerId: customer.id, requestId, amount: BIBOU_PLUS_PRICE, status: "awaiting_payment", createdAt: createdAt.toISOString() };
         database.bibouPlusPurchases.unshift(purchase);
+      }
+      // Associate this browser's attempt even when reusing a pending checkout from another visit.
+      if (requestId && !purchase.requestId) purchase.requestId = requestId;
+      if (requestId && purchase.requestId !== requestId && !purchase.requestAliases?.includes(requestId)) {
+        purchase.requestAliases ||= [];
+        if (purchase.requestAliases.length >= 20) return send(response, 429, { error: "Trop de reprises de ce paiement. Réessaie plus tard." });
+        purchase.requestAliases.push(requestId);
       }
       await openPayment(purchase, database, { merchantCode, expiresAt: validUntil, description: "Bibou + · 30 jours", prefix: "bibou-plus" });
       finalizePaidBibouPlusPurchase(purchase, database);
       await writeDatabase(database);
-      return send(response, 201, { purchase, checkoutUrl: purchase.payment.checkoutUrl || null });
+      return send(response, 201, { purchase, customer, bibouPlus: bibouPlusStatus(customer), checkoutUrl: purchase.payment.checkoutUrl || null });
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/bibou-plus/checkout/")) {
@@ -575,6 +612,16 @@ const server = http.createServer(async (request, response) => {
       finalizePaidBibouPlusPurchase(purchase, database);
       await writeDatabase(database);
       return send(response, 200, { purchase, customer, bibouPlus: bibouPlusStatus(customer) });
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/customer/payment-attempts/")) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Reconnecte-toi pour retrouver ton paiement." });
+      const requestId = validateRequestId(url.pathname.split("/").pop());
+      const order = database.orders.find(item => item.customerId === customer.id && item.requestId === requestId);
+      const purchase = database.bibouPlusPurchases.find(item => item.customerId === customer.id && (item.requestId === requestId || item.requestAliases?.includes(requestId)));
+      if (!order && !purchase) return send(response, 404, { error: "Aucune commande associée à cette tentative." });
+      return send(response, 200, { kind: order ? "order" : "bibou-plus", record: order || purchase });
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
@@ -706,6 +753,13 @@ const server = http.createServer(async (request, response) => {
       const customer = database.customers.find((item) => item.id === input.customerId);
       const sessionCustomer = authenticatedCustomer(request, database);
       if (!sessionCustomer || sessionCustomer.id !== customer?.id) return send(response, 401, { error: "Connecte-toi par SMS avant de commander." });
+      const requestId = validateRequestId(input.requestId);
+      const fingerprint = orderFingerprint(input);
+      const previous = requestId && database.orders.find(item => item.customerId === customer.id && item.requestId === requestId);
+      if (previous) {
+        if (previous.requestFingerprint !== fingerprint) return send(response, 409, { code: "ATTEMPT_CONFLICT", error: "Cette tentative correspond déjà à une autre commande. Vérifie son paiement avant de continuer." });
+        return send(response, 200, { order: previous, reused: true });
+      }
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
@@ -738,6 +792,8 @@ const server = http.createServer(async (request, response) => {
         const pricing = bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate });
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
+        createdOrder.requestId = requestId;
+        createdOrder.requestFingerprint = fingerprint;
         latestDatabase.orders.unshift(createdOrder);
         await writeDatabase(latestDatabase);
         return createdOrder;
@@ -753,6 +809,8 @@ const server = http.createServer(async (request, response) => {
       if (!order) return send(response, 404, { error: "Commande introuvable" });
       const customer = authenticatedCustomer(request, database);
       if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour payer cette commande." });
+      if (order.status === "cancelled") return send(response, 409, { code: "ORDER_CANCELLED", error: "Cette commande est annulée. Aucun nouveau paiement ne sera ouvert." });
+      if (order.payment?.status === "PAID") return send(response, 200, { order, payment: order.payment, customer });
       if (order.status !== "awaiting_payment") return send(response, 409, { error: "Cette commande n’est plus en attente de paiement." });
       assertStoredOrderAvailable(order.items, await productStockStore.read());
       const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
@@ -766,7 +824,7 @@ const server = http.createServer(async (request, response) => {
       await openPayment(order, database, { merchantCode, expiresAt: checkoutExpiresAt, description: `Commande Bibou's Burgers #${order.number}`, prefix: "bibous" });
       const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);
-      return send(response, 201, { checkoutId: order.payment.checkoutId, checkoutUrl: order.payment.checkoutUrl || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
+      return send(response, 201, { order, payment: order.payment, checkoutId: order.payment.checkoutId, checkoutUrl: order.payment.checkoutUrl || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
 
     if (["GET", "POST"].includes(request.method) && url.pathname === "/api/payments/sumup-return") {

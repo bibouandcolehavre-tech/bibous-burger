@@ -1,0 +1,16 @@
+node_modules/
+.git/
+.expo/
+.expo-home/
+.env*
+dist/
+server/
+restaurant-dashboard/
+backup-recovery/
+**/bibou-*.json.gz
+**/*.test.js
+*.md
+Dockerfile
+.dockerignore
+render.yaml
+scripts/

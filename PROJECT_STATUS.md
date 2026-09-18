@@ -31,7 +31,10 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
 - Sauvegardes automatiques horaires des données et stocks sur le disque persistant, rotation horaire/quotidienne sur une semaine, contrôle d’intégrité, accès restaurant pour créer/télécharger une copie, et outil de récupération séparée sans écrasement. Pas de nouvelle dépense ni de stockage externe activé.
-- 100 tests automatisés réussissent, dont consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
+- 110 tests automatisés réussissent, dont reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
+- Reprise persistante des paiements de commande et Bibou + après fermeture/actualisation : journal limité au compte, création idempotente, contrôle serveur, indication visible des erreurs et accès depuis l’accueil. Un succès indique la transmission au restaurant, sans prétendre que la préparation a déjà commencé.
+- Connexion persistante chiffrée sur iPhone/Android, déconnexion explicite, session conservée en cas de panne réseau. Les messages simples qui étaient silencieux dans le navigateur sont désormais visibles.
+- Exports web/iOS/Android réussis, Expo Doctor 21/21 et audit npm sans vulnérabilité connue après correction ciblée UUID. `.easignore` et `.dockerignore` excluent données locales et secrets. Aucune création de binaire signé ni soumission aux boutiques : Expo/EAS n’est pas connecté. Voir `RELEASE_READINESS.md`.
 - Export web réussi ; rupture/restauration de boissons, options de menu et blocage d’un panier existant vérifiés dans un environnement local avec données fictives.
 - Alertes vérifiées dans le navigateur : activation, test du son, arrivée simultanée d’une commande payée et d’une table fictives, compteurs, accès aux réservations et mise en sourdine ; aucune erreur JavaScript observée.
 - Écran Sauvegardes vérifié dans un navigateur local : création automatique et manuelle, téléchargement d’une archive fictive, lisibilité et absence d’erreurs JavaScript. Aucun téléchargement de données clients réelles ni restauration de production pendant ces tests.
@@ -44,7 +47,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 3. Étudier des notifications push pour recevoir une alerte lorsque le tableau est fermé (les sons dans la page sont maintenant implémentés).
 4. Synchroniser les remboursements réalisés dans SumUp à partir des transactions (la confirmation de paiement et la protection des annulations sont renforcées). Annuler dans l’application reste distinct du remboursement bancaire.
 5. Organiser une copie régulière hors du serveur et un exercice de récupération avant ouverture publique (l’historique automatique sur disque est implémenté).
-6. Générer une première version installable iPhone/Android et effectuer un test complet sur appareils réels.
+6. Se connecter au compte Expo du propriétaire, associer le projet EAS, générer les premières versions installables iPhone/Android et effectuer un test complet sur appareils réels. Les exports JavaScript ont réussi mais ne remplacent pas ces builds signés.
 7. Préparer les captures d’écran, les informations légales finales et les fiches Apple App Store et Google Play.
 
 ## Précautions
@@ -56,7 +59,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Les alertes nécessitent un clic sur « Activer le son », un tableau ouvert, un Mac éveillé et un volume audible. Le premier chargement est silencieux ; pas de notification en dehors de la page. Garder un seul onglet, idéalement au premier plan pendant le service.
 - Les données JSON utilisent un verrou mono-processus et des remplacements atomiques : conserver une seule instance serveur. La migration vers une base transactionnelle reste à prévoir.
 - Les copies `/var/data/backups` restent sur le même disque ; elles ne couvrent pas à elles seules une perte du disque. Téléchargements privés contenant des données clients, sans chiffrement individuel. Lire la procédure du README avant toute récupération réelle ; ne jamais restaurer en production sans validation et réconciliation des opérations plus récentes.
-- Aucune opération bancaire réelle faite pendant les tests. Pas de remboursement automatique : annuler dans le tableau restaurant ET rembourser dans SumUp. Le suivi automatique des remboursements et la reprise d’un paiement après rechargement de la page client restent à compléter.
+- Aucune opération bancaire réelle faite pendant les tests. Pas de remboursement automatique : annuler dans le tableau restaurant ET rembourser dans SumUp. Le suivi automatique des remboursements reste à compléter ; la reprise après rechargement est maintenant implémentée.
 
 ## Idées discutées, non lancées
 

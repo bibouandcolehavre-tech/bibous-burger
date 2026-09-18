@@ -90,7 +90,13 @@ Ce sont des alertes **dans la page**, pas des notifications push : garder le tab
 
 Les retours SumUp sont revérifiés côté serveur : identifiant, référence enregistrée, montant, devise et commerçant doivent correspondre. Un échec de vérification renvoie une erreur pour permettre une nouvelle tentative du fournisseur, conformément au fonctionnement des [webhooks SumUp](https://developer.sumup.com/online-payments/webhooks). Les réponses répétées ne recréditent ni fidélité, ni parrainage, ni jours Bibou +.
 
-Pour une même commande, un paiement existant est réutilisé. Une référence est enregistrée avant l’appel SumUp : si la réponse est perdue, le serveur recherche le paiement correspondant au lieu d’en créer un deuxième. En cas d’incertitude, la reprise est bloquée et invite à vérifier, sans lancer un nouvel encaissement. Dans la page client ouverte, les nouvelles tentatives du même panier réutilisent la commande connue. Cette mémoire client ne survit pas encore au rechargement de la page.
+Pour une même commande, un paiement existant est réutilisé. Une référence est enregistrée avant l’appel SumUp : si la réponse est perdue, le serveur recherche le paiement correspondant au lieu d’en créer un deuxième. En cas d’incertitude, la reprise est bloquée et invite à vérifier, sans lancer un nouvel encaissement.
+
+Le client conserve désormais un journal avant toute création : identifiant de tentative, identifiant du compte, produits/options, mode et créneau, sans nom, téléphone, adresse, carte bancaire ni token. Il survit aux rechargements et fermetures. La reprise nécessite une session du même compte et une vérification serveur. L’API `GET /api/customer/payment-attempts/:requestId` refuse les autres comptes ; `POST /api/orders` rejoue la même commande pour le même identifiant et refuse un contenu différent. Bibou + bénéficie aussi de la reprise, y compris après activation, sans nouvelle prolongation ni nouveau paiement. Une déconnexion conserve uniquement ce journal non secret (maximum sept jours à la lecture) ; la suppression de compte l’efface.
+
+La session mobile est stockée avec Expo SecureStore (trousseau iOS/stockage chiffré Android). Le journal non secret utilise AsyncStorage. Le web conserve ses clés existantes dans le stockage local ; aucun secret fournisseur n’y est enregistré. Une panne réseau ne supprime plus la session. Le bouton « Me déconnecter » efface la connexion mémorisée et les données affichées. Les notifications simples qui étaient silencieuses sous React Native Web sont maintenant visibles.
+
+Test navigateur reproductible sans données réelles : après `npm run build:web`, lancer `NODE_ENV=test node server/test-fixtures/preview-payments.cjs`, ouvrir l’adresse locale affichée, puis choisir un scénario. Le serveur de test n’utilise aucune configuration `.env` et interdit le réseau fournisseur ; seuls des fichiers temporaires sont modifiés. Ne pas utiliser ce dispositif avec une base ou des clés de production.
 
 Une commande annulée ne peut plus être réactivée par une action de service ou un retour tardif de paiement. Ses points, son bonus de parrainage et son cadeau de bienvenue suivent les règles d’annulation. La vérification client distingue erreur réseau, refus, expiration et annulation, au lieu d’afficher un succès pour une commande annulée.
 
@@ -103,6 +109,12 @@ Les tests HTTP de paiement utilisent un faux fournisseur dans un processus isol�
 ## Préparation des stores
 
 La configuration Expo/EAS est prête dans `app.json` et `eas.json`, avec l’identifiant `com.bibouandco.bibousburgers`. Les builds de production se lancent avec `npm run build:production` après connexion à un compte Expo et aux comptes développeur Apple/Google.
+
+Voir `RELEASE_READINESS.md` pour distinguer les contrôles effectués, les exports JavaScript et les vrais binaires signés restant à créer. `.easignore` exclut les données serveur, les sauvegardes et les secrets des envois mobiles. L’image serveur exclut également les fichiers de données locaux et démarre avec une base vide si aucun fichier persistant n’existe : elle ne copie jamais des clients de développement.
+
+Les réponses JSON portent `Cache-Control: no-store` et `X-Content-Type-Options: nosniff`. L’accès restaurant limite dix essais sur cinq minutes par adresse de connexion (potentiellement partagée derrière le proxy), avec délai `Retry-After` ; une réussite réinitialise les essais. La vérification SMS limite huit codes essayés par numéro sur quinze minutes, en plus de la limite existante de trois envois réussis. Ces compteurs et les sessions restaurant restent en mémoire : ils ne constituent pas une protection distribuée ni une garantie de plafond de facturation SMS. Ne pas faire de tests de force brute sur la production.
+
+L’override ciblé `xcode > uuid = 11.1.1` corrige l’alerte [GHSA-w5hq-g745-h8pq](https://github.com/advisories/GHSA-w5hq-g745-h8pq) sans rétrograder Expo. Le générateur d’identifiants Xcode reste vérifié ; l’audit npm n’indique plus de vulnérabilité connue à la date du contrôle. Cela ne remplace pas une revue de sécurité du produit.
 
 - Politique de confidentialité : `https://bibous-burger-app.onrender.com/?legal=privacy`
 - Suppression de compte : `https://bibous-burger-app.onrender.com/?legal=delete-account`

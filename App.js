@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Image, Linking, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { AppState, Image, Linking, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { customerAlert as Alert } from "./customer-alert";
+import { readSession, saveSession, clearSession, readAttempt, saveAttempt, clearAttempt } from "./client-storage";
+const { createAttempt, parseAttempt, paymentState, safeCheckoutUrl } = require("./payment-recovery");
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 
@@ -256,7 +259,7 @@ function BibouPlusHomeCard({ active, customer, onPress }) {
   </View>;
 }
 
-function MenuScreen({ onOpenProduct, onQuickAdd, cartCount, onOpenCart, loyaltyPoints, onOpenLoyalty, onOpenAccount, onOpenReservation, onOpenBibouPlus, onOpenPrivacy, onChooseOrderMethod, preferredMethod, customer, catalog, stockMessage }) {
+function MenuScreen({ onOpenProduct, onQuickAdd, cartCount, onOpenCart, loyaltyPoints, onOpenLoyalty, onOpenAccount, onOpenReservation, onOpenBibouPlus, onOpenPrivacy, onChooseOrderMethod, preferredMethod, customer, catalog, stockMessage, pendingPayment, onResumePayment }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
   const scrollRef = useRef(null);
@@ -272,14 +275,14 @@ function MenuScreen({ onOpenProduct, onQuickAdd, cartCount, onOpenCart, loyaltyP
     setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, menuPosition - 18), animated: true }), 50);
   };
   const bibouPlusActive = customerHasBibouPlus(customer);
-  return <ScrollView ref={scrollRef} contentContainerStyle={[styles.scrollContent, desktop && styles.scrollContentDesktop]} showsVerticalScrollIndicator={false}><Header right={cartCount ? `🛍  ${cartCount}` : "🛍"} onRight={onOpenCart} /><View style={[styles.homeTopRow, desktop && styles.homeTopRowDesktop]}><View style={styles.addressBox}><Text style={styles.addressLabel}>Zone de livraison</Text><Text style={styles.addressValue}>{DELIVERY_ZONE}</Text></View><Pressable onPress={onOpenAccount} style={[styles.accountShortcut, desktop && styles.accountShortcutDesktop]}><Text style={styles.accountShortcutIcon}>👤</Text><Text style={styles.accountShortcutText}>{customer.name ? customer.name.split(" ")[0] : "Mon compte"}</Text></Pressable></View><Text style={styles.serviceTitle}>Que souhaites-tu faire ?</Text><View style={[styles.serviceActions, desktop && styles.serviceActionsDesktop]}><Pressable onPress={() => chooseOrderMethod("pickup")} style={[styles.serviceAction, preferredMethod === "pickup" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛍</Text><Text style={styles.serviceActionTitle}>Click & Collect</Text><Text style={styles.serviceActionText}>Retrait sur place</Text></Pressable><Pressable onPress={() => chooseOrderMethod("delivery")} style={[styles.serviceAction, preferredMethod === "delivery" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛵</Text><Text style={styles.serviceActionTitle}>Livraison</Text><Text style={styles.serviceActionText}>Chez toi</Text></Pressable><Pressable onPress={onOpenReservation} style={[styles.serviceAction, styles.serviceActionReservation]}><Text style={styles.serviceActionIcon}>🍽</Text><Text style={styles.serviceActionTitle}>Réserver</Text><Text style={styles.serviceActionText}>Une table</Text></Pressable></View><BibouPlusHomeCard active={bibouPlusActive} customer={customer} onPress={onOpenBibouPlus} />{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Bienvenue ! −10 % sur ta première commande</Text><Text style={styles.welcomeRewardText}>La remise s’appliquera automatiquement au paiement.</Text></View></View>}<Pressable onPress={onOpenLoyalty} style={[styles.loyaltyShortcut, desktop && styles.loyaltyShortcutDesktop]}><View><Text style={styles.loyaltyShortcutEyebrow}>CLUB BIBOU</Text><Text style={styles.loyaltyShortcutTitle}>★ {loyaltyPoints} points disponibles</Text></View><Text style={styles.loyaltyShortcutArrow}>›</Text></Pressable><Text style={[styles.title, desktop && styles.titleDesktop]}>Une grosse faim?{"\n"}On s’en occupe.</Text><PromotionsCarousel onOpenProduct={onOpenProduct} /><GoogleReviewsCarousel />{stockMessage ? <Text style={styles.stockNotice}>{stockMessage}</Text> : null}<View onLayout={(event) => setMenuPosition(event.nativeEvent.layout.y)}><CategoryHeader title="Nos menus" subtitle="Burger + frites et boisson" size="menu" /></View><View style={desktop && styles.productGrid}>{menus.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Nos burgers" subtitle="Burgers seuls" size="burgers" /><View style={desktop && styles.productGrid}>{burgers.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Petites faims" subtitle="À partager… ou à garder rien que pour soi." size="snacks" /><View style={desktop && styles.productGrid}>{snacks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={product.kind === "duo" ? onOpenProduct : onQuickAdd} /></View>)}</View><CategoryHeader title="Boissons" subtitle="Une boisson fraîche pour compléter ta commande." /><View style={desktop && styles.productGrid}>{drinks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={onQuickAdd} /></View>)}</View>{desktop && <View style={styles.siteFooter}><View><Text style={styles.siteFooterTitle}>Bibou's Burgers</Text><Text style={styles.siteFooterText}>153 quai Georges V, 76600 Le Havre{"\n"}Livraison dans un rayon de 5 km · Retrait au restaurant</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.siteFooterButton}><Text style={styles.siteFooterButtonText}>Voir les avis Google ↗</Text></Pressable></View>}<Pressable onPress={onOpenPrivacy} style={styles.homePrivacyLink}><Text style={styles.homePrivacyLinkText}>Confidentialité et données personnelles</Text></Pressable><Pressable onPress={onOpenCart} style={[styles.floatingCart, desktop && styles.floatingCartDesktop]}><Text style={styles.floatingCartText}>Panier{cartCount ? ` · ${cartCount}` : ""}</Text><Text style={styles.floatingCartIcon}>🛍</Text></Pressable></ScrollView>;
+  return <ScrollView ref={scrollRef} contentContainerStyle={[styles.scrollContent, desktop && styles.scrollContentDesktop]} showsVerticalScrollIndicator={false}><Header right={cartCount ? `🛍  ${cartCount}` : "🛍"} onRight={onOpenCart} /><>{pendingPayment && <Pressable accessibilityRole="button" onPress={onResumePayment} style={styles.statusCard}><Text style={styles.statusTitle}>Retrouver mon paiement en cours ›</Text><Text style={styles.statusDescription}>Vérifie cette tentative avant de repasser commande.</Text></Pressable>}</><View style={[styles.homeTopRow, desktop && styles.homeTopRowDesktop]}><View style={styles.addressBox}><Text style={styles.addressLabel}>Zone de livraison</Text><Text style={styles.addressValue}>{DELIVERY_ZONE}</Text></View><Pressable onPress={onOpenAccount} style={[styles.accountShortcut, desktop && styles.accountShortcutDesktop]}><Text style={styles.accountShortcutIcon}>👤</Text><Text style={styles.accountShortcutText}>{customer.name ? customer.name.split(" ")[0] : "Mon compte"}</Text></Pressable></View><Text style={styles.serviceTitle}>Que souhaites-tu faire ?</Text><View style={[styles.serviceActions, desktop && styles.serviceActionsDesktop]}><Pressable onPress={() => chooseOrderMethod("pickup")} style={[styles.serviceAction, preferredMethod === "pickup" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛍</Text><Text style={styles.serviceActionTitle}>Click & Collect</Text><Text style={styles.serviceActionText}>Retrait sur place</Text></Pressable><Pressable onPress={() => chooseOrderMethod("delivery")} style={[styles.serviceAction, preferredMethod === "delivery" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛵</Text><Text style={styles.serviceActionTitle}>Livraison</Text><Text style={styles.serviceActionText}>Chez toi</Text></Pressable><Pressable onPress={onOpenReservation} style={[styles.serviceAction, styles.serviceActionReservation]}><Text style={styles.serviceActionIcon}>🍽</Text><Text style={styles.serviceActionTitle}>Réserver</Text><Text style={styles.serviceActionText}>Une table</Text></Pressable></View><BibouPlusHomeCard active={bibouPlusActive} customer={customer} onPress={onOpenBibouPlus} />{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Bienvenue ! −10 % sur ta première commande</Text><Text style={styles.welcomeRewardText}>La remise s’appliquera automatiquement au paiement.</Text></View></View>}<Pressable onPress={onOpenLoyalty} style={[styles.loyaltyShortcut, desktop && styles.loyaltyShortcutDesktop]}><View><Text style={styles.loyaltyShortcutEyebrow}>CLUB BIBOU</Text><Text style={styles.loyaltyShortcutTitle}>★ {loyaltyPoints} points disponibles</Text></View><Text style={styles.loyaltyShortcutArrow}>›</Text></Pressable><Text style={[styles.title, desktop && styles.titleDesktop]}>Une grosse faim?{"\n"}On s’en occupe.</Text><PromotionsCarousel onOpenProduct={onOpenProduct} /><GoogleReviewsCarousel />{stockMessage ? <Text style={styles.stockNotice}>{stockMessage}</Text> : null}<View onLayout={(event) => setMenuPosition(event.nativeEvent.layout.y)}><CategoryHeader title="Nos menus" subtitle="Burger + frites et boisson" size="menu" /></View><View style={desktop && styles.productGrid}>{menus.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Nos burgers" subtitle="Burgers seuls" size="burgers" /><View style={desktop && styles.productGrid}>{burgers.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Petites faims" subtitle="À partager… ou à garder rien que pour soi." size="snacks" /><View style={desktop && styles.productGrid}>{snacks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={product.kind === "duo" ? onOpenProduct : onQuickAdd} /></View>)}</View><CategoryHeader title="Boissons" subtitle="Une boisson fraîche pour compléter ta commande." /><View style={desktop && styles.productGrid}>{drinks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={onQuickAdd} /></View>)}</View>{desktop && <View style={styles.siteFooter}><View><Text style={styles.siteFooterTitle}>Bibou's Burgers</Text><Text style={styles.siteFooterText}>153 quai Georges V, 76600 Le Havre{"\n"}Livraison dans un rayon de 5 km · Retrait au restaurant</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.siteFooterButton}><Text style={styles.siteFooterButtonText}>Voir les avis Google ↗</Text></Pressable></View>}<Pressable onPress={onOpenPrivacy} style={styles.homePrivacyLink}><Text style={styles.homePrivacyLinkText}>Confidentialité et données personnelles</Text></Pressable><Pressable onPress={onOpenCart} style={[styles.floatingCart, desktop && styles.floatingCartDesktop]}><Text style={styles.floatingCartText}>Panier{cartCount ? ` · ${cartCount}` : ""}</Text><Text style={styles.floatingCartIcon}>🛍</Text></Pressable></ScrollView>;
 }
 
-function AccountScreen({ customer, loyalty, orders, reservations, onBack, onOpenOrders, onOpenReservations, onOpenLoyalty, onOpenBibouPlus, onOpenPrivacy, onDeleteAccount }) {
+function AccountScreen({ customer, loyalty, orders, reservations, onBack, onOpenOrders, onOpenReservations, onOpenLoyalty, onOpenBibouPlus, onOpenPrivacy, onDeleteAccount, onLogout }) {
   const activeOrder = orders.find((order) => order.progress < ORDER_STEPS.length - 1);
   const customerName = customer.name || "Client Bibou";
   const bibouPlusActive = customerHasBibouPlus(customer);
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.accountHero}><View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{customerName.slice(0, 1).toUpperCase()}</Text></View><View><Text style={styles.accountGreeting}>Bonjour, {customerName.split(" ")[0]} !</Text><Text style={styles.accountContact}>{customer.phone || "Ajoute ton téléphone lors de ta première commande"}</Text></View></View>{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Ton cadeau de bienvenue est prêt</Text><Text style={styles.welcomeRewardText}>−10 % automatiquement sur ta première commande.</Text></View></View>}{activeOrder && <Pressable onPress={onOpenOrders} style={styles.currentOrderCard}><View><Text style={styles.currentOrderEyebrow}>COMMANDE EN COURS</Text><Text style={styles.currentOrderTitle}>{activeOrder.product}</Text><Text style={styles.currentOrderText}>{ORDER_STEPS[activeOrder.progress]} · {activeOrder.slot}</Text></View><Text style={styles.currentOrderArrow}>›</Text></Pressable>}<Text style={styles.sectionTitle}>Mon espace</Text><Pressable onPress={onOpenBibouPlus} style={[styles.accountAction, bibouPlusActive && styles.accountActionPlusActive]}><View style={[styles.accountActionIcon, styles.accountActionPlusIcon]}><Text>✦</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Bibou +</Text><Text style={styles.accountActionText}>{bibouPlusActive ? `Actif jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Livraison offerte, −5 % et points ×2"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOrders} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🧾</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes commandes</Text><Text style={styles.accountActionText}>{orders.length} commande{orders.length > 1 ? "s" : ""} dans ton historique</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenReservations} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🍽</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes réservations</Text><Text style={styles.accountActionText}>{reservations.length ? `${reservations.length} réservation${reservations.length > 1 ? "s" : ""} retrouvée${reservations.length > 1 ? "s" : ""}` : "Suis ici la confirmation de ta table"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenLoyalty} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>★</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Club Bibou</Text><Text style={styles.accountActionText}>{loyalty.points} points disponibles</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenPrivacy} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🔒</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Confidentialité</Text><Text style={styles.accountActionText}>Tes données et tes choix</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onDeleteAccount} style={styles.accountDeleteAction}><Text style={styles.accountDeleteText}>Supprimer mon compte</Text></Pressable><View style={styles.accountAddress}><Text style={styles.accountAddressTitle}>Adresse enregistrée</Text><Text style={styles.accountAddressText}>{customer.address ? `${customer.address}, ${customer.postalCode} ${customer.city}` : "Elle sera enregistrée lors de ta première livraison."}</Text></View><Text style={styles.accountFinePrint}>Ton espace est sécurisé par ta connexion SMS.</Text></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.accountHero}><View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{customerName.slice(0, 1).toUpperCase()}</Text></View><View><Text style={styles.accountGreeting}>Bonjour, {customerName.split(" ")[0]} !</Text><Text style={styles.accountContact}>{customer.phone || "Ajoute ton téléphone lors de ta première commande"}</Text></View></View>{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Ton cadeau de bienvenue est prêt</Text><Text style={styles.welcomeRewardText}>−10 % automatiquement sur ta première commande.</Text></View></View>}{activeOrder && <Pressable onPress={onOpenOrders} style={styles.currentOrderCard}><View><Text style={styles.currentOrderEyebrow}>COMMANDE EN COURS</Text><Text style={styles.currentOrderTitle}>{activeOrder.product}</Text><Text style={styles.currentOrderText}>{ORDER_STEPS[activeOrder.progress]} · {activeOrder.slot}</Text></View><Text style={styles.currentOrderArrow}>›</Text></Pressable>}<Text style={styles.sectionTitle}>Mon espace</Text><Pressable onPress={onOpenBibouPlus} style={[styles.accountAction, bibouPlusActive && styles.accountActionPlusActive]}><View style={[styles.accountActionIcon, styles.accountActionPlusIcon]}><Text>✦</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Bibou +</Text><Text style={styles.accountActionText}>{bibouPlusActive ? `Actif jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Livraison offerte, −5 % et points ×2"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOrders} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🧾</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes commandes</Text><Text style={styles.accountActionText}>{orders.length} commande{orders.length > 1 ? "s" : ""} dans ton historique</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenReservations} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🍽</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes réservations</Text><Text style={styles.accountActionText}>{reservations.length ? `${reservations.length} réservation${reservations.length > 1 ? "s" : ""} retrouvée${reservations.length > 1 ? "s" : ""}` : "Suis ici la confirmation de ta table"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenLoyalty} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>★</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Club Bibou</Text><Text style={styles.accountActionText}>{loyalty.points} points disponibles</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenPrivacy} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🔒</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Confidentialité</Text><Text style={styles.accountActionText}>Tes données et tes choix</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable accessibilityRole="button" onPress={onLogout} style={styles.accountAction}><Text style={styles.accountActionTitle}>Me déconnecter</Text></Pressable><Pressable onPress={onDeleteAccount} style={styles.accountDeleteAction}><Text style={styles.accountDeleteText}>Supprimer mon compte</Text></Pressable><View style={styles.accountAddress}><Text style={styles.accountAddressTitle}>Adresse enregistrée</Text><Text style={styles.accountAddressText}>{customer.address ? `${customer.address}, ${customer.postalCode} ${customer.city}` : "Elle sera enregistrée lors de ta première livraison."}</Text></View><Text style={styles.accountFinePrint}>Ton espace est sécurisé par ta connexion SMS.</Text></ScrollView></SafeAreaView>;
 }
 
 function BibouPlusScreen({ customer, authToken, loading, onBack, onLogin, onSubscribe }) {
@@ -594,13 +597,23 @@ function PaymentScreen({ cart, customer, onBack, onPay }) {
   return <SafeAreaView style={styles.safeArea}><View style={styles.detailContent}><Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text><Text style={styles.deliveryIntro}>Tout est prêt pour le paiement sécurisé.</Text><View style={styles.paymentSummary}><Text style={styles.paymentProduct}>{cart.items.map((item) => item.product.name).join(" · ")}</Text><Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} /><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={customerHasWelcomeReward(customer) ? "Cadeau de bienvenue · −10 %" : "Remise Bibou + · −5 %"} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={isDelivery ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} />{pricing.bibouPlus && isDelivery && standardFee > 0 && <ReceiptLine label="Économie livraison Bibou +" value={`− ${money(standardFee)}`} />}<View style={styles.receiptDivider} /><ReceiptLine label="Total" value={money(pricing.total)} strong /></View>{pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après le paiement.</Text></View>}<View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? "Livrer à" : "Retrait par"}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View><View style={styles.securePayment}><Text style={styles.securePaymentIcon}>🔒</Text><View><Text style={styles.securePaymentTitle}>Paiement sécurisé avec SumUp</Text><Text style={styles.securePaymentText}>Carte bancaire · le paiement sera ouvert par SumUp.</Text></View></View></View><View style={styles.stickyAction}><Pressable disabled={paying} style={[styles.primaryButton, paying && styles.primaryButtonDisabled]} onPress={submitPayment}><Text style={styles.primaryButtonText}>{paying ? "Ouverture de SumUp…" : `Payer avec SumUp · ${money(pricing.total)}`}</Text></Pressable></View></SafeAreaView>;
 }
 
-function PaymentPendingScreen({ onCheckPayment, onBack }) {
-  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🔒</Text><Text style={styles.successTitle}>Paiement en cours</Text><Text style={styles.successText}>Finalise le paiement sur la page sécurisée SumUp, puis reviens ici. Nous vérifierons son statut avant de confirmer la commande.</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● En attente de SumUp</Text><Text style={styles.statusDescription}>Aucune commande n’est considérée comme payée tant que SumUp ne l’a pas confirmée.</Text></View><Pressable style={styles.primaryButton} onPress={onCheckPayment}><Text style={styles.primaryButtonText}>J’ai terminé le paiement</Text></Pressable><Pressable style={styles.trackOrderButton} onPress={onBack}><Text style={styles.trackOrderButtonText}>Retour au paiement</Text></Pressable></View></SafeAreaView>;
+function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onResume, onBack }) {
+  const state = paymentState(record, kind);
+  const terminal = ['paid', 'cancelled', 'expired'].includes(state);
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.successContent}>
+    <Text style={styles.successEmoji}>🔒</Text>
+    <Text style={styles.successTitle}>{kind === 'bibou-plus' ? 'Ton paiement Bibou +' : 'Ton paiement sécurisé'}</Text>
+    {record && <Text style={[styles.successText, styles.paymentRecoveryText]}>{kind === 'order' ? `Commande #${record.number} · ${money(record.total)}` : `Bibou + · ${money(record.amount)}`}</Text>}
+    <Text style={[styles.successText, styles.paymentRecoveryText]}>{terminal ? 'Statut retrouvé pour cette tentative.' : 'Ta tentative est sauvegardée. Reviens ici après SumUp, même si tu as fermé l’application.'}</Text>
+    <View style={styles.statusCard}><Text style={styles.statusTitle}>{busy ? 'Vérification en cours…' : 'Suivi du paiement'}</Text><Text accessibilityLiveRegion="polite" style={styles.statusDescription}>{message || 'Aucun paiement n’est confirmé sans vérification auprès de SumUp.'}</Text></View>
+    {!terminal && <><Pressable accessibilityRole="button" disabled={busy} style={[styles.primaryButton, styles.paymentRecoveryPrimary, busy && styles.primaryButtonDisabled]} onPress={onResume}><Text style={styles.primaryButtonText}>Reprendre le paiement SumUp</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} style={[styles.trackOrderButton, styles.paymentRecoverySecondary]} onPress={onCheckPayment}><Text style={[styles.trackOrderButtonText, styles.paymentRecoveryText]}>Vérifier mon paiement</Text></Pressable></>}
+    <Pressable accessibilityRole="button" disabled={busy} style={[styles.trackOrderButton, styles.paymentRecoverySecondary]} onPress={onBack}><Text style={[styles.trackOrderButtonText, styles.paymentRecoveryText]}>Retour à l’accueil</Text></Pressable>
+  </ScrollView></SafeAreaView>;
 }
 
-function SuccessScreen({ cart, onHome, onReview, onTrack }) {
-  const label = cart.delivery.method === "delivery" ? "Livraison" : "Retrait";
-  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>Commande confirmée!</Text><Text style={styles.successText}>Le restaurant prépare déjà ta commande.</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Préparation en cours</Text><Text style={styles.statusDescription}>{label} {cart.delivery.dayLabel.toLowerCase()} entre {cart.delivery.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
+function SuccessScreen({ order, onHome, onReview, onTrack }) {
+  const label = order?.method === "delivery" ? "Livraison" : "Retrait";
+  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>Paiement confirmé !</Text><Text style={styles.successText}>Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation.</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
 }
 
 function ReviewScreen({ onBack }) {
@@ -746,8 +759,14 @@ export default function App() {
   const [rewardClaims, setRewardClaims] = useState([]);
   const [rewardLoading, setRewardLoading] = useState("");
   const [authToken, setAuthToken] = useState("");
+  const sessionTokenRef = useRef('');
+  const sessionEpoch = useRef(0);
   const [pendingOrder, setPendingOrder] = useState(null);
-  const pendingPaymentAttempt = useRef(null);
+  const paymentAttempt = useRef(null);
+  const paymentBusyRef = useRef(false);
+  const paymentStartRef = useRef(false);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState("");
   const [pendingBibouPlus, setPendingBibouPlus] = useState(null);
   const [bibouPlusLoading, setBibouPlusLoading] = useState(false);
   const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
@@ -761,6 +780,7 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/customer/orders`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les commandes.");
+      if (sessionTokenRef.current !== token) return;
       setOrders(payload.orders.map(orderFromApi));
     } catch (error) {
       Alert.alert("Actualisation indisponible", error.message || "Réessaie dans un instant.");
@@ -772,6 +792,7 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/customer/reservations`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les réservations.");
+      if (sessionTokenRef.current !== token) return;
       setReservations(payload.reservations.map(reservationFromApi));
     } catch (error) {
       if (!silent) Alert.alert("Actualisation indisponible", error.message || "Réessaie dans un instant.");
@@ -783,14 +804,17 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/customer/rewards`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les récompenses.");
+      if (sessionTokenRef.current !== token) return;
       setRewardClaims(payload.claims || []);
     } catch (error) {
       if (!silent) Alert.alert("Récompenses indisponibles", error.message || "Réessaie dans un instant.");
     }
   };
-  const authenticate = ({ token, customer: savedCustomer }) => {
+  const authenticate = async ({ token, customer: savedCustomer }) => {
+    sessionEpoch.current += 1;
+    sessionTokenRef.current = token;
     setAuthToken(token);
-    if (typeof window !== "undefined") window.localStorage?.setItem("bibousCustomerSession", token);
+    try { await saveSession(token); } catch { setStockFeedback("Connexion active, mais elle ne peut pas être mémorisée sur cet appareil."); }
     setCustomer((current) => ({
       ...savedCustomer,
       name: current.name || savedCustomer.name || "",
@@ -807,23 +831,33 @@ export default function App() {
     void loadCustomerRewards({ token });
     setScreen(loginDestination);
     setLoginDestination("account");
+    void recoverPayment(token, savedCustomer.id).catch(() => setStockFeedback('Impossible de lire le suivi du paiement sur cet appareil.'));
   };
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedToken = window.localStorage?.getItem("bibousCustomerSession");
-    if (!savedToken) return;
-    fetch(`${API_BASE_URL}/auth/me`, { headers: { Authorization: `Bearer ${savedToken}` } })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.customer) throw new Error("expired");
+    let stopped = false;
+    const epoch = sessionEpoch.current;
+    const restore = async () => {
+      try {
+        const savedToken = await readSession();
+        if (!savedToken || stopped) return;
+        const response = await apiRequest('/auth/me', savedToken);
+        if (stopped || sessionEpoch.current !== epoch) return;
+        if (response.status === 401) { await clearSession(); return; }
+        const payload = response.payload;
+        if (!response.ok || !payload.customer) throw new Error("Connexion temporairement indisponible.");
+        if (stopped || sessionEpoch.current !== epoch) return;
+        sessionTokenRef.current = savedToken;
         setAuthToken(savedToken);
         setCustomer((current) => ({ ...current, ...payload.customer }));
         setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
         void loadCustomerOrders(savedToken);
         void loadCustomerReservations({ token: savedToken, silent: true });
         void loadCustomerRewards({ token: savedToken, silent: true });
-      })
-      .catch(() => window.localStorage?.removeItem("bibousCustomerSession"));
+        await recoverPayment(savedToken, payload.customer.id);
+      } catch { if (!stopped) setStockFeedback("Connexion non actualisée. Ton accès est conservé : réessaie lorsque le réseau revient."); }
+    };
+    void restore();
+    return () => { stopped = true; };
   }, []);
   const openProduct = (product) => {
     const current = applyProductStock(product, catalog);
@@ -869,114 +903,171 @@ export default function App() {
     setCart({ ...cart, delivery: { ...cart.delivery, fee: deliveryFee } });
     setScreen("payment");
   };
-  const pay = async (total) => {
-    let orderForAttempt = null;
+  const apiRequest = async (route, token, body) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
     try {
-      const stockResponse = await fetch(`${API_BASE_URL}/catalog`);
-      const latestCatalog = await stockResponse.json();
-      if (!stockResponse.ok || !Array.isArray(latestCatalog.products) || !latestCatalog.options) throw new Error("Impossible de vérifier les disponibilités. Réessaie dans un instant.");
-      setCatalog(latestCatalog);
-      const problem = cartStockProblem(cart?.items, latestCatalog);
-      if (problem) { setStockFeedback(problem); setScreen("cart"); return; }
-      if (!authToken || !customer.id) throw new Error("Connecte-toi par SMS avant de payer.");
-      const statusResponse = await fetch(`${API_BASE_URL}/integrations/sumup/status`);
-      const status = await statusResponse.json();
-      if (!status.checkoutReady) throw new Error("Le paiement sécurisé est encore en cours de configuration.");
-
-      const activeCustomer = customer;
-
-      const orderInput = { customerId: activeCustomer.id, items: cart.items.map((item) => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot };
-      const requestKey = JSON.stringify(orderInput);
-      const previousAttempt = pendingPaymentAttempt.current;
-      let orderPayload;
-      if (previousAttempt?.key === requestKey) orderPayload = { order: previousAttempt.order };
-      else {
-        const orderResponse = await fetch(`${API_BASE_URL}/orders`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: requestKey });
-        orderPayload = await orderResponse.json().catch(() => ({}));
-        if (!orderResponse.ok) throw new Error(orderPayload.error || "Impossible de créer la commande.");
-        pendingPaymentAttempt.current = { key: requestKey, order: orderPayload.order };
-      }
-      setPendingOrder(orderPayload.order);
-      orderForAttempt = orderPayload.order;
-
-      const checkoutResponse = await fetch(`${API_BASE_URL}/payments/sumup-checkout`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ orderId: orderPayload.order.id }) });
-      const checkoutPayload = await checkoutResponse.json();
-      if (checkoutPayload.code === "ORDER_EXPIRED") { pendingPaymentAttempt.current = null; orderForAttempt = null; setPendingOrder(null); }
-      if (!checkoutResponse.ok || !checkoutPayload.checkoutUrl) throw new Error(checkoutPayload.error || "Impossible d’ouvrir le paiement SumUp.");
-
-      setPendingOrder(orderPayload.order);
-      setScreen("payment-pending");
-      await Linking.openURL(checkoutPayload.checkoutUrl);
-    } catch (error) {
-      if (orderForAttempt) setScreen("payment-pending");
-      Alert.alert("Paiement indisponible", error.message || "Une erreur est survenue. Réessaie dans un instant.");
-    }
+      const response = await fetch(`${API_BASE_URL}${route}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        signal: controller.signal,
+      });
+      return { ok: response.ok, status: response.status, payload: await response.json().catch(() => ({})) };
+    } finally { clearTimeout(timer); }
   };
-  const checkPayment = async () => {
-    if (!pendingOrder) return;
-    try {
-      const response = await fetch(`${API_BASE_URL}/payments/sumup-checkout/${pendingOrder.id}`, { headers: { Authorization: `Bearer ${authToken}` } });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Impossible de vérifier le paiement pour le moment.");
-      if (payload.order?.status === "cancelled") {
-        Alert.alert("Commande annulée", "Cette commande a été annulée par le restaurant. Elle ne donne pas de points. Pour le remboursement, contacte le restaurant : l’annulation ne rembourse pas automatiquement le paiement.");
-        return;
-      }
-      if (payload.payment?.status === "PAID") {
-        if (payload.customer) {
-          setCustomer((current) => ({ ...current, ...payload.customer }));
+  const showPaymentRecord = (attempt, record) => {
+    if (attempt.kind === 'order') setPendingOrder(record);
+    else setPendingBibouPlus(record);
+    setScreen(attempt.kind === 'order' ? 'payment-pending' : 'bibou-plus-pending');
+  };
+  const finishPayment = async (attempt, record, token) => {
+    const state = paymentState(record, attempt.kind);
+    showPaymentRecord(attempt, record);
+    if (state === 'paid') {
+      // Confirmation comes exclusively from the authenticated server, never the return URL.
+      await clearAttempt();
+      paymentAttempt.current = null;
+      try {
+        const { ok, payload } = await apiRequest('/auth/me', token);
+        if (ok && payload.customer) {
+          setCustomer(current => ({ ...current, ...payload.customer }));
           setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
         }
-        setOrders((currentOrders) => currentOrders.some((order) => order.apiId === payload.order.id) ? currentOrders : [orderFromApi(payload.order), ...currentOrders]);
-        pendingPaymentAttempt.current = null;
-        setScreen("success");
-      } else if (payload.payment?.status === "FAILED") {
-        Alert.alert("Paiement non validé", "SumUp indique que la tentative de paiement a échoué. Vérifie la page SumUp avant de réessayer.");
-      } else if (payload.payment?.status === "EXPIRED") {
-        pendingPaymentAttempt.current = null;
-        Alert.alert("Paiement expiré", "Ce lien n’est plus utilisable. Reviens au panier pour choisir un créneau disponible et recommencer.");
+      } catch { /* The payment remains confirmed even if account refresh is temporarily unavailable. */ }
+      if (attempt.kind === 'order') {
+        setOrders(current => [orderFromApi(record), ...current.filter(order => order.apiId !== record.id)]);
+        setCart(null);
+        setScreen('success');
       } else {
-        Alert.alert("Paiement en attente", "SumUp n’a pas encore confirmé le paiement. Réessaie dans quelques instants.");
+        setPendingBibouPlus(null);
+        setStockFeedback('Bibou + activé : livraison offerte, remise de 5 % et points doublés.');
+        setScreen(cart && bibouPlusReturnScreen === 'delivery' ? 'delivery' : 'bibou-plus');
       }
-    } catch (error) {
-      Alert.alert("Vérification indisponible", error.message || "Impossible de vérifier le paiement pour le moment.");
+      return true;
     }
+    if (state === 'cancelled' || state === 'expired') {
+      await clearAttempt();
+      paymentAttempt.current = null;
+      setPaymentMessage(state === 'cancelled'
+        ? 'Cette commande est annulée et ne donne pas de points. Si un débit a eu lieu, contacte le restaurant : l’annulation ne rembourse pas automatiquement le paiement.'
+        : 'Ce paiement a expiré. Il ne sera pas rouvert. Reviens à l’accueil pour choisir un nouveau créneau.');
+      return true;
+    }
+    return false;
   };
-  const startBibouPlus = async () => {
-    if (!authToken) {
-      setLoginDestination("bibou-plus");
-      setScreen("login");
+  const processAttempt = async (attempt, token, openCheckout = false) => {
+    showPaymentRecord(attempt, null);
+    const health = await apiRequest('/health', token);
+    if (!health.ok || health.payload.capabilities?.paymentRecovery !== 1) throw new Error('Le service de paiement est en cours de mise à jour. Ta tentative est conservée. Réessaie dans un instant.');
+    const found = await apiRequest(`/customer/payment-attempts/${encodeURIComponent(attempt.requestId)}`, token);
+    if (!found.ok && found.status !== 404) throw new Error(found.payload.error || 'Impossible de retrouver le paiement.');
+    let record = found.payload.record || null;
+    if (record && found.payload.kind !== attempt.kind) throw new Error('Cette tentative ne correspond pas au paiement attendu.');
+    if (record && await finishPayment(attempt, record, token)) return;
+    if (record?.payment?.checkoutReference) {
+      const route = attempt.kind === 'order' ? '/payments/sumup-checkout/' : '/bibou-plus/checkout/';
+      const checked = await apiRequest(route + encodeURIComponent(record.id), token);
+      if (!checked.ok) throw new Error(checked.payload.error || 'Impossible de vérifier le paiement auprès de SumUp.');
+      record = checked.payload.order || checked.payload.purchase;
+      if (await finishPayment(attempt, record, token)) return;
+    }
+    if (!openCheckout) {
+      showPaymentRecord(attempt, record);
+      setPaymentMessage(record?.payment?.status === 'FAILED'
+        ? 'SumUp indique un échec de paiement. Tu peux reprendre la même page sécurisée sans créer une deuxième commande.'
+        : record ? 'SumUp n’a pas encore confirmé de paiement. Reprends le même paiement ou vérifie de nouveau son statut.'
+        : 'Ta tentative a été retrouvée. Clique sur « Reprendre » pour continuer avec la même référence.');
       return;
     }
-    setBibouPlusLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/bibou-plus/checkout`, { method: "POST", headers: { Authorization: `Bearer ${authToken}` } });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || "Impossible d’ouvrir le paiement Bibou +.");
-      setPendingBibouPlus(payload.purchase);
-      setScreen("bibou-plus-pending");
-      await Linking.openURL(payload.checkoutUrl);
-    } catch (error) {
-      Alert.alert("Bibou + indisponible", error.message || "Réessaie dans un instant.");
-    } finally { setBibouPlusLoading(false); }
-  };
-  const checkBibouPlusPayment = async () => {
-    if (!pendingBibouPlus || !authToken) return;
-    try {
-      const response = await fetch(`${API_BASE_URL}/bibou-plus/checkout/${pendingBibouPlus.id}`, { headers: { Authorization: `Bearer ${authToken}` } });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Impossible de vérifier le paiement.");
-      if (payload.bibouPlus?.active) {
-        setCustomer((current) => ({ ...current, ...payload.customer }));
-        Alert.alert("Bibou + activé", "La livraison offerte, les 5 % de remise et les points doublés sont maintenant actifs.");
-        setPendingBibouPlus(null);
-        setScreen(bibouPlusReturnScreen);
-      } else {
-        Alert.alert("Paiement en attente", "SumUp n’a pas encore confirmé le paiement. Réessaie dans quelques instants.");
+    if (!record && attempt.kind === 'order') {
+      const created = await apiRequest('/orders', token, { ...attempt.input, requestId: attempt.requestId });
+      if (!created.ok) {
+        if ([400, 422].includes(created.status) || (created.status === 409 && created.payload.code !== 'ATTEMPT_CONFLICT')) {
+          await clearAttempt(); paymentAttempt.current = null;
+          setScreen(cart ? 'cart' : 'menu');
+          setStockFeedback(created.payload.error || 'Choisis de nouveau tes produits et ton créneau.');
+        }
+        throw new Error(created.payload.error || 'Impossible de créer la commande.');
       }
-    } catch (error) {
-      Alert.alert("Vérification indisponible", error.message || "Réessaie dans un instant.");
+      record = created.payload.order;
+      if (await finishPayment(attempt, record, token)) return;
     }
+    const opened = attempt.kind === 'order'
+      ? await apiRequest('/payments/sumup-checkout', token, { orderId: record.id })
+      : await apiRequest('/bibou-plus/checkout', token, { requestId: attempt.requestId });
+    if (!opened.ok) throw new Error(opened.payload.error || 'Impossible d’ouvrir SumUp. Ta tentative est conservée.');
+    record = opened.payload.order || opened.payload.purchase;
+    if (await finishPayment(attempt, record, token)) return;
+    const checkoutUrl = opened.payload.checkoutUrl;
+    if (!safeCheckoutUrl(checkoutUrl)) throw new Error('Le lien sécurisé SumUp est indisponible. Aucun nouveau paiement ne sera créé.');
+    setPaymentMessage('Finalise le paiement chez SumUp, puis reviens ici pour vérifier la confirmation.');
+    await Linking.openURL(checkoutUrl);
+  };
+  const runPayment = async (attempt, token = authToken, openCheckout = false) => {
+    if (paymentBusyRef.current || !attempt || !token) return;
+    paymentBusyRef.current = true;
+    setPaymentBusy(true);
+    setPaymentMessage('');
+    try { await processAttempt(attempt, token, openCheckout); }
+    catch (error) { setPaymentMessage(error.name === 'AbortError' ? 'Le réseau met trop de temps à répondre. Ta tentative est conservée : réessaie sans refaire de commande.' : error.message || 'Vérification indisponible. Réessaie dans un instant.'); }
+    finally { paymentBusyRef.current = false; setPaymentBusy(false); }
+  };
+  const recoverPayment = async (token, customerId) => {
+    const attempt = parseAttempt(await readAttempt(), customerId);
+    if (!attempt) return;
+    paymentAttempt.current = attempt;
+    // Legal links remain readable even when a payment needs checking.
+    if (['privacy', 'delete-account'].includes(initialScreenFromUrl())) return;
+    await runPayment(attempt, token);
+  };
+  const beginPayment = async (kind, input) => {
+    if (paymentBusyRef.current || paymentStartRef.current) return;
+    paymentStartRef.current = true;
+    try {
+      const existing = parseAttempt(await readAttempt(), customer.id);
+      const attempt = existing || createAttempt(customer.id, kind, input);
+      // Persist before any server mutation. Storage failure must never start a payment.
+      await saveAttempt(attempt);
+      paymentAttempt.current = attempt;
+      await runPayment(attempt, authToken, true);
+    } catch {
+      setStockFeedback('Le paiement n’a pas été lancé : impossible de sauvegarder sa reprise sur cet appareil. Vérifie le stockage de ton navigateur.');
+      setScreen('menu');
+    } finally { paymentStartRef.current = false; }
+  };
+  const pay = async () => {
+    if (!authToken || !customer.id || !cart?.items?.length) { setScreen('login'); return; }
+    const input = { customerId: customer.id, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot };
+    await beginPayment('order', input);
+  };
+  const startBibouPlus = async () => {
+    if (!authToken) { setLoginDestination('bibou-plus'); setScreen('login'); return; }
+    setBibouPlusLoading(true);
+    try { await beginPayment('bibou-plus'); } finally { setBibouPlusLoading(false); }
+  };
+  const checkPayment = () => runPayment(paymentAttempt.current);
+  const resumePayment = () => runPayment(paymentAttempt.current, authToken, true);
+  useEffect(() => {
+    if (!authToken || !['payment-pending', 'bibou-plus-pending'].includes(screen)) return;
+    const refresh = () => { void runPayment(paymentAttempt.current); };
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    if (typeof window !== 'undefined') window.addEventListener('focus', refresh);
+    return () => { subscription.remove(); if (typeof window !== 'undefined') window.removeEventListener('focus', refresh); };
+  }, [screen, authToken]);
+  const logoutCustomer = async () => {
+    try {
+      await clearSession();
+      sessionEpoch.current += 1;
+      sessionTokenRef.current = '';
+      setAuthToken('');
+      setCustomer({ name: '', phone: '', address: '', postalCode: '', city: 'Le Havre', distance: '', sponsorCode: '' });
+      setLoyalty({ points: 0, orders: 0 });
+      setOrders([]); setReservations([]); setRewardClaims([]); setCart(null);
+      setPendingOrder(null); setPendingBibouPlus(null); paymentAttempt.current = null;
+      // Keep the non-secret payment journal: only the same authenticated account can resume it.
+      setScreen('menu');
+    } catch { Alert.alert('Déconnexion indisponible', 'Impossible de retirer la connexion mémorisée. Réessaie dans un instant.'); }
   };
   const deleteCustomerAccount = async () => {
     if (!authToken) return;
@@ -985,7 +1076,13 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/customer/account`, { method: "DELETE", headers: { Authorization: `Bearer ${authToken}` } });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.deleted) throw new Error(payload.error || "La suppression n’a pas pu être terminée.");
-      if (typeof window !== "undefined") window.localStorage?.removeItem("bibousCustomerSession");
+      await clearSession();
+      await clearAttempt();
+      sessionEpoch.current += 1;
+      sessionTokenRef.current = '';
+      paymentAttempt.current = null;
+      setPendingOrder(null);
+      setPendingBibouPlus(null);
       setAuthToken("");
       setCustomer({ name: "", phone: "", address: "", postalCode: "", city: "Le Havre", distance: "", sponsorCode: "" });
       setLoyalty({ points: 0, orders: 0, weeklyProgramPoints: 0 });
@@ -1043,20 +1140,20 @@ export default function App() {
   if (screen === "delivery") return <DeliveryScreen cart={cart} customer={customer} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => { if (authToken) setScreen("details"); else { setLoginDestination("details"); setScreen("login"); } }} onOpenBibouPlus={() => { setBibouPlusReturnScreen("delivery"); setScreen("bibou-plus"); }} />;
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} authToken={authToken} onChange={setCustomer} onBack={() => setScreen("delivery")} onContinue={continueWithCustomer} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} />;
-  if (screen === "payment-pending") return <PaymentPendingScreen onCheckPayment={checkPayment} onBack={() => setScreen("payment")} />;
-  if (screen === "success") return <SuccessScreen cart={cart} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
+  if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
+  if (screen === "success") return <SuccessScreen order={pendingOrder} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;
-  if (screen === "bibou-plus-pending") return <BibouPlusPendingScreen onCheckPayment={checkBibouPlusPayment} onBack={() => setScreen("bibou-plus")} />;
+  if (screen === "bibou-plus-pending") return <PaymentPendingScreen kind="bibou-plus" record={pendingBibouPlus} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
   if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} onBack={() => setScreen("menu")} onCreated={(reservation) => setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)])} onOpenReservations={() => setScreen("reservations")} />;
   if (screen === "login") return <SmsLoginScreen onBack={() => setScreen(loginDestination === "account" ? "menu" : loginDestination)} onAuthenticated={authenticate} />;
-  if (screen === "account") return authToken ? <AccountScreen customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
+  if (screen === "account") return authToken ? <AccountScreen onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "orders") return <OrdersScreen orders={orders} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
   if (screen === "reservations") return <ReservationsScreen reservations={reservations} onBack={() => setScreen("account")} onRefresh={(silent = false) => void loadCustomerReservations({ silent })} />;
-  return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen catalog={catalog} stockMessage={stockFeedback || stockMessage} cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={setPreferredMethod} onOpenReservation={() => { if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} catalog={catalog} stockMessage={stockFeedback || stockMessage} cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={setPreferredMethod} onOpenReservation={() => { if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
 }
 
 const APP_PALETTE = {
@@ -1101,6 +1198,9 @@ const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleS
 }));
 
 const styles = StyleSheet.create(applyAppPalette({
+  paymentRecoveryText: { color: '#25120B' },
+  paymentRecoveryPrimary: { backgroundColor: '#191919', width: '100%' },
+  paymentRecoverySecondary: { borderColor: '#25120B', backgroundColor: '#FFEBDC', width: '100%' },
   stockNotice: { backgroundColor: "#fff1dc", color: "#51251a", padding: 14, borderRadius: 12, fontSize: 13, lineHeight: 20, fontWeight: "600", marginVertical: 10 },
   optionSoldOut: { opacity: 0.55 },
   safeArea: { flex: 1, backgroundColor: "#FFF8F2" }, scrollContent: { width: "100%", maxWidth: 1180, alignSelf: "center", padding: 20, paddingBottom: 110 }, scrollContentDesktop: { paddingHorizontal: 32, paddingBottom: 60 }, detailContent: { flexGrow: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 20, paddingBottom: 120 },

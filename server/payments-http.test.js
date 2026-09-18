@@ -138,4 +138,46 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
     await request(`/bibou-plus/checkout/${first.data.purchase.id}`);
     assert.equal((await db()).customers[0].bibouPlusExpiresAt, expiry);
   });
+
+  await t.test('actualisation ou réponse perdue : même tentative, une seule commande, accès privé', async () => {
+    const body = { requestId: 'attempt-reload-test-001', customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00 – 19:30', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] };
+    const before = (await db()).orders.length;
+    const [first, second] = await Promise.all([request('/orders', { method: 'POST', body }), request('/orders', { method: 'POST', body })]);
+    assert.deepEqual([first.status, second.status].sort(), [200, 201]);
+    assert.equal(first.data.order.id, second.data.order.id);
+    assert.equal((await db()).orders.length, before + 1);
+    const route = '/customer/payment-attempts/' + body.requestId;
+    const recovered = await request(route);
+    assert.equal(recovered.status, 200);
+    assert.equal(recovered.data.record.id, first.data.order.id);
+    assert.equal((await request(route, { auth: '' })).status, 401);
+    assert.equal((await request(route, { auth: createCustomerSession('sponsor-test', 'test-secret') })).status, 404);
+    assert.equal((await request('/orders', { method: 'POST', body: { ...body, slot: '19:30 – 20:00' } })).status, 409);
+    const opened = await open(first.data.order);
+    const count = await creations();
+    await provider(state => { state.checkouts[opened.data.checkoutId].status = 'PAID'; });
+    await verify(first.data.order);
+    assert.equal((await open(first.data.order)).data.payment.status, 'PAID');
+    assert.equal(await creations(), count);
+    assert.equal((await request('/orders', { method: 'POST', body })).data.order.payment.status, 'PAID');
+  });
+
+  await t.test('reprise Bibou + après fermeture : aliases et paiement terminé ne redébitent pas', async () => {
+    const firstId = 'attempt-subscription-test-001';
+    const aliasId = 'attempt-subscription-test-002';
+    const first = await request('/bibou-plus/checkout', { method: 'POST', body: { requestId: firstId } });
+    const alias = await request('/bibou-plus/checkout', { method: 'POST', body: { requestId: aliasId } });
+    assert.equal(first.data.purchase.id, alias.data.purchase.id);
+    assert.equal((await request('/customer/payment-attempts/' + aliasId)).data.record.id, first.data.purchase.id);
+    const count = await creations();
+    const id = first.data.purchase.payment.checkoutId;
+    await provider(state => { state.checkouts[id].status = 'PAID'; });
+    await callback(id);
+    const expiry = (await db()).customers[0].bibouPlusExpiresAt;
+    const retried = await request('/bibou-plus/checkout', { method: 'POST', body: { requestId: aliasId } });
+    assert.equal(retried.status, 200);
+    assert.equal(retried.data.purchase.id, first.data.purchase.id);
+    assert.equal((await db()).customers[0].bibouPlusExpiresAt, expiry);
+    assert.equal(await creations(), count);
+  });
 });
