@@ -205,9 +205,8 @@ function AccessoryCard({ product, onPress }) {
   </Pressable>;
 }
 
-function CategoryHeader({ title, subtitle, size = "full" }) {
-  const compact = useWindowDimensions().width < 900;
-  return <View style={[styles.categoryHeader, compact && size === "menu" && styles.categoryHeaderMenu, compact && size === "burgers" && styles.categoryHeaderBurgers, compact && size === "snacks" && styles.categoryHeaderSnacks]}>
+function CategoryHeader({ title, subtitle }) {
+  return <View style={styles.categoryHeader}>
     <Text style={styles.categoryHeaderTitle}>{title}</Text>
     {subtitle ? <Text style={styles.categoryHeaderSubtitle}>{subtitle}</Text> : null}
   </View>;
@@ -1038,9 +1037,6 @@ const styles = StyleSheet.create(applyAppPalette({
   },
   categoryHeaderTitle: { color: "#2C201B", fontSize: 18, fontWeight: "900", letterSpacing: 0.2 },
   categoryHeaderSubtitle: { color: "#5B3A1B", fontSize: 12, fontWeight: "700", marginTop: 3 },
-  categoryHeaderMenu: { width: 275, maxWidth: "88%" },
-  categoryHeaderBurgers: { width: 220, maxWidth: "72%" },
-  categoryHeaderSnacks: { width: 325, maxWidth: "94%" },
   bibouPlusShortcut: { marginTop: 14, width: "100%", maxWidth: 640, borderRadius: 23, padding: 18, backgroundColor: "#7A2018", borderWidth: 1.5, borderColor: "#F0A65A", shadowColor: "#2C201B", shadowOpacity: 0.18, shadowRadius: 9, shadowOffset: { width: 0, height: 5 }, elevation: 4 },
   bibouPlusShortcutHeader: { flexDirection: "row", alignItems: "center" },
   bibouPlusShortcutMark: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#F0A65A", marginRight: 12 },
