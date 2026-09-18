@@ -2,7 +2,7 @@
 
 ## Ce qui fonctionne
 
-- L’accueil affiche « Nos actualités ». Quatre cartes par défaut : vidéo Epicu du 2 mai 2026, réseaux sociaux, préparation du concours et article Paris-Normandie. Aucun burger dans le carrousel ; la carte des produits est inchangée.
+- L’accueil affiche « Nos actualités ». Ordre demandé : préparation du concours, vidéo Epicu du 2 mai 2026, article Paris-Normandie / Étoiles gourmandes, puis réseaux sociaux. Aucun burger dans le carrousel ; la carte des produits est inchangée.
 - Dans **Actualités & concours** de l’espace restaurant : modifier textes/liens/photos par URL HTTPS, réordonner, masquer, retirer et ajouter des cartes (maximum huit). Enregistrer publie uniquement ces cartes, pas le concours. Les changements sont lus à l’ouverture de l’accueil et toutes les 60 secondes pendant son affichage.
 - Les changements concurrents sont refusés plutôt qu’écrasés. Une actualisation conserve les champs non enregistrés.
 - Brouillon privé du concours : titre, dates de Paris, zone, lots, règlement, aperçu, checklist, compteurs et classement. Aucun endpoint ni bouton d’activation.

@@ -55,7 +55,7 @@ test('Le paquet Docker démarre avec tous les modules des actualités', { timeou
   assert.equal(health.status, 200);
   const news = await (await fetch(base + '/api/news')).json();
   assert.equal(news.items.length, 4);
-  assert.equal(news.items[0].id, 'epicu');
+  assert.deepEqual(news.items.map(item => item.id), ['contest', 'epicu', 'paris-normandie', 'social']);
   assert.ok(news.items.every(item => item.kind !== 'product'));
   assert.deepEqual(await (await fetch(base + '/api/contest')).json(), { status: 'inactive' });
 });

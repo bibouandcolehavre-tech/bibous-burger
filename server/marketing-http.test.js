@@ -9,7 +9,7 @@ test('API marketing : permissions, brouillon privé, écritures limitées et té
   const client=createCustomerSession('c1','test-secret');
   for(const route of ['/dashboard/news','/dashboard/contest'])for(const auth of ['',client])assert.equal((await req(route,auth)).status,401);
   assert.deepEqual(await(await req('/contest')).json(),{status:'inactive'});
-  assert.equal((await(await req('/news')).json()).items[2].kind,'contest');
+  assert.equal((await(await req('/news')).json()).items[0].kind,'contest');
   assert.equal(await fs.readFile(dataFile,'utf8'),original);
   const auth=(await(await req('/dashboard/auth/login','','POST',{password:'test-password'})).json()).token;
   const draftResponse=await req('/dashboard/contest',auth);assert.equal(draftResponse.headers.get('cache-control'),'no-store');
