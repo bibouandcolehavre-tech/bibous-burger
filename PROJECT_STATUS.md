@@ -11,7 +11,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 
 ## État validé
 
-- Réseaux sociaux sur l’accueil, sous les avis Google : logos vectoriels Instagram, Facebook et TikTok avec les trois liens exacts fournis par le propriétaire. Ouverture externe, aucun SDK social, suivi publicitaire ou demande de connexion ajoutée. Rubrique vérifiée à 390 px et au clavier ; les liens web conservent l’application dans son onglet.
+- Réseaux sociaux intégrés au carrousel de l’accueil : diapositive « Suivez-nous » en deuxième position, fond sombre, trois logos vectoriels Instagram/Facebook/TikTok cliquables séparément avec les liens exacts fournis par le propriétaire. Ancien bloc indépendant supprimé. Cinq indicateurs permettent de choisir une carte ; le repère actif suit le défilement. Ouverture externe, aucun SDK social ou suivi publicitaire. Vérification à 390 px et au clavier ; l’application reste dans son onglet.
 - Les quatre en-têtes jaunes « Nos menus », « Nos burgers », « Petites faims » et « Boissons » occupent toute la largeur.
 - Carte comprenant menus, burgers seuls, petites faims et boissons.
 - Photos officielles des burgers et produits SumUp, avec boissons détourées sur fond crème neutre.

@@ -5,8 +5,8 @@ import { customerAlert } from "./customer-alert";
 const icons = require("./social-icons");
 const { SOCIAL_PROFILES, isSocialProfileUrl, openSocialProfile } = require("./social-links");
 
-export default function SocialLinks() {
-  return <View style={styles.section}>
+export default function SocialLinks({ style }) {
+  return <View style={[styles.section, style]}>
     <Text accessibilityRole="header" style={styles.title}>Suivez-nous</Text>
     <Text style={styles.description}>Les nouveautés et les coulisses de Bibou’s Burgers.</Text>
     <View style={styles.links}>
@@ -30,19 +30,17 @@ export default function SocialLinks() {
         </Pressable>;
       })}
     </View>
-    <Text style={styles.hint}>Un clic pour nous retrouver sur nos réseaux.</Text>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  section: { marginTop: 20, marginBottom: 24, padding: 18, borderRadius: 22, backgroundColor: "#FFF5E9" },
-  title: { color: "#241C18", fontSize: 22, fontWeight: "800" },
-  description: { color: "#58463D", fontSize: 14, lineHeight: 21, marginTop: 4 },
-  links: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 8, marginTop: 14 },
-  link: { flexGrow: 1, flexBasis: 80, maxWidth: 150, alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, borderRadius: 14, borderWidth: 2, borderColor: "transparent", minHeight: 82 },
-  focused: { borderColor: "#241C18", backgroundColor: "#FFE8C6" },
+  section: { height: 190, padding: 14, borderRadius: 23, backgroundColor: "#1D1917", justifyContent: "center" },
+  title: { color: "#FFFFFF", fontSize: 25, lineHeight: 30, fontWeight: "800" },
+  description: { color: "#F5DECA", fontSize: 13, lineHeight: 18, marginTop: 4 },
+  links: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 8 },
+  link: { flexGrow: 1, flexBasis: 0, maxWidth: 150, alignItems: "center", paddingVertical: 5, paddingHorizontal: 2, borderRadius: 12, borderWidth: 2, borderColor: "transparent", minHeight: 78 },
+  focused: { borderColor: "#F1B94F", backgroundColor: "#362B22" },
   pressed: { opacity: 0.75 },
-  icon: { width: 48, height: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  label: { color: "#241C18", fontSize: 13, lineHeight: 18, fontWeight: "700", marginTop: 7 },
-  hint: { color: "#58463D", fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: 10 },
+  icon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  label: { color: "#FFFFFF", fontSize: 13, lineHeight: 18, fontWeight: "700", marginTop: 4 },
 });
