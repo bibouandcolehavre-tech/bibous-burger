@@ -2,10 +2,13 @@ const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhos
 const statusLabel = { confirmed: "Nouvelle", preparing: "Acceptée", ready: "Prête", out_for_delivery: "En livraison", delivered: "Terminée", cancelled: "Refusée" };
 const statusForLabel = Object.fromEntries(Object.entries(statusLabel).map(([key, value]) => [value, key]));
 const reservationStatusLabel = { pending: "À confirmer", confirmed: "Confirmée", cancelled: "Refusée" };
+const rewardStatusLabel = { active: "À remettre", used: "Utilisée", cancelled: "Annulée" };
 let orders = [];
 let reservations = [];
+let rewardClaims = [];
 let filter = "all";
 let reservationFilter = "upcoming";
+let rewardFilter = "active";
 let soundOn = true;
 let currentView = "orders";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
@@ -32,6 +35,10 @@ function orderFromApi(order) {
 
 function reservationFromApi(reservation) {
   return { id: reservation.number, apiId: reservation.id, customer: reservation.customerName, phone: reservation.phone, guests: reservation.guests, serviceDate: reservation.serviceDate, date: serviceDateLabel(reservation.serviceDate), slot: reservation.slot, note: reservation.note || "", status: reservation.status, receivedAt: receivedTimeLabel(reservation.createdAt) };
+}
+
+function rewardClaimFromApi(claim) {
+  return { id: claim.number, apiId: claim.id, code: claim.code, customer: claim.customerName || "Client Bibou", title: claim.rewardTitle, points: claim.requiredPoints, status: claim.status, receivedAt: receivedTimeLabel(claim.createdAt) };
 }
 
 function actionMarkup(order) {
@@ -66,6 +73,10 @@ function refreshMetrics() {
   document.querySelector("#new-reservation-count").textContent = pendingReservations;
   document.querySelector("#new-reservation-count-mobile").textContent = pendingReservations;
   document.querySelector("#pending-reservation-count").textContent = pendingReservations;
+  const activeRewards = rewardClaims.filter((claim) => claim.status === "active").length;
+  document.querySelector("#new-reward-count").textContent = activeRewards;
+  document.querySelector("#new-reward-count-mobile").textContent = activeRewards;
+  document.querySelector("#active-reward-count").textContent = activeRewards;
 }
 
 function reservationActions(reservation) {
@@ -80,6 +91,13 @@ function renderReservations() {
   const sorted = [...visible].sort((a, b) => ((a.status === "pending" ? -1 : 1) - (b.status === "pending" ? -1 : 1)) || `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
   document.querySelector("#reservations-list").innerHTML = sorted.length ? sorted.map((reservation) => `<article class="reservation-card ${escapeHtml(reservation.status)}"><div class="reservation-grid"><div><div class="reservation-name">Réservation #${reservation.id} · ${escapeHtml(reservation.customer)}</div><div class="reservation-phone">☎ ${escapeHtml(reservation.phone)}${reservation.receivedAt ? ` · Reçue à ${escapeHtml(reservation.receivedAt)}` : ""}</div></div><div><div class="reservation-when">${escapeHtml(reservation.date)} · ${escapeHtml(reservation.slot)}</div><div class="reservation-guests">${reservation.guests} personne${reservation.guests > 1 ? "s" : ""}</div></div><div><span class="status ${escapeHtml(reservation.status)}">${reservationStatusLabel[reservation.status] || "À confirmer"}</span></div></div>${reservation.note ? `<p class="reservation-note">Note : ${escapeHtml(reservation.note)}</p>` : ""}${reservationActions(reservation)}</article>`).join("") : `<div class="empty">🍽<strong>Aucune réservation</strong>Les demandes de table apparaîtront ici.</div>`;
   document.querySelectorAll("[data-reservation-action]").forEach((button) => button.addEventListener("click", () => changeReservation(button.dataset.id, button.dataset.reservationAction)));
+}
+
+function renderRewardClaims() {
+  const visible = rewardClaims.filter((claim) => rewardFilter === "all" || claim.status === "active");
+  const sorted = [...visible].sort((left, right) => (left.status === "active" ? -1 : 1) - (right.status === "active" ? -1 : 1));
+  document.querySelector("#rewards-list").innerHTML = sorted.length ? sorted.map((claim) => `<article class="reservation-card ${escapeHtml(claim.status)}"><div class="reservation-grid"><div><div class="reservation-name">${escapeHtml(claim.customer)}</div><div class="reservation-phone">Code client · <strong>${escapeHtml(claim.code)}</strong>${claim.receivedAt ? ` · Réclamée à ${escapeHtml(claim.receivedAt)}` : ""}</div></div><div><div class="reservation-when">${escapeHtml(claim.title)}</div><div class="reservation-guests">Palier ${Number(claim.points)} points</div></div><div><span class="status ${escapeHtml(claim.status)}">${rewardStatusLabel[claim.status] || "À remettre"}</span></div></div>${claim.status === "active" ? `<div class="actions"><button class="confirm-reservation" data-reward-action="used" data-id="${escapeHtml(claim.apiId)}">Marquer comme utilisée</button></div>` : ""}</article>`).join("") : `<div class="empty">🎁<strong>Aucune récompense à remettre</strong>Les récompenses réclamées par les clients apparaîtront ici.</div>`;
+  document.querySelectorAll("[data-reward-action]").forEach((button) => button.addEventListener("click", () => changeRewardClaim(button.dataset.id, button.dataset.rewardAction)));
 }
 
 async function loadOrders({ notify = false } = {}) {
@@ -114,6 +132,23 @@ async function loadReservations({ notify = false } = {}) {
     if (notify && hasNewReservation && soundOn) showToast("Nouvelle réservation reçue !");
   } catch {
     showToast("Impossible de joindre les réservations pour le moment.");
+  }
+}
+
+async function loadRewardClaims({ notify = false } = {}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/reward-claims`, { headers: dashboardHeaders() });
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    if (!response.ok) throw new Error("Chargement impossible");
+    const payload = await response.json();
+    const nextClaims = payload.claims.map(rewardClaimFromApi);
+    const hasNewClaim = rewardClaims.length && nextClaims.some((claim) => !rewardClaims.some((current) => current.apiId === claim.apiId) && claim.status === "active");
+    rewardClaims = nextClaims;
+    refreshMetrics();
+    renderRewardClaims();
+    if (notify && hasNewClaim && soundOn) showToast("Nouvelle récompense réclamée !");
+  } catch {
+    showToast("Impossible de joindre les récompenses pour le moment.");
   }
 }
 
@@ -160,14 +195,36 @@ async function changeReservation(id, status) {
   }
 }
 
+async function changeRewardClaim(id, status) {
+  const claim = rewardClaims.find((item) => item.apiId === id);
+  if (!claim) return;
+  if (status === "used" && !window.confirm(`Confirmez-vous avoir remis « ${claim.title} » à ${claim.customer} ?`)) return;
+  const previousStatus = claim.status;
+  claim.status = status;
+  refreshMetrics();
+  renderRewardClaims();
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/reward-claims/${encodeURIComponent(id)}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Mise à jour impossible");
+    showToast(`Récompense ${claim.code} marquée comme utilisée.`);
+  } catch {
+    claim.status = previousStatus;
+    refreshMetrics();
+    renderRewardClaims();
+    showToast("La récompense n’a pas été mise à jour.");
+  }
+}
+
 function showView(view) {
-  if (!["orders", "reservations"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["orders", "reservations", "rewards"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
   document.querySelector("#reservations-view").hidden = view !== "reservations";
-  document.querySelector("#dashboard-title").textContent = view === "orders" ? "Commandes en direct" : "Réservations de tables";
-  document.querySelector("#refresh-orders").textContent = view === "orders" ? "↻ Actualiser" : "↻ Actualiser les réservations";
+  document.querySelector("#rewards-view").hidden = view !== "rewards";
+  document.querySelector("#dashboard-title").textContent = view === "orders" ? "Commandes en direct" : view === "reservations" ? "Réservations de tables" : "Récompenses clients";
+  document.querySelector("#refresh-orders").textContent = view === "orders" ? "↻ Actualiser" : view === "reservations" ? "↻ Actualiser les réservations" : "↻ Actualiser les récompenses";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
 }
 
@@ -178,9 +235,16 @@ document.querySelectorAll(".filter").forEach((button) => button.addEventListener
 }));
 
 document.querySelectorAll(".reservation-filter").forEach((button) => button.addEventListener("click", () => {
+  if (button.dataset.rewardFilter) return;
   reservationFilter = button.dataset.reservationFilter;
   document.querySelectorAll(".reservation-filter").forEach((item) => item.classList.toggle("active", item === button));
   renderReservations();
+}));
+
+document.querySelectorAll(".reward-filter").forEach((button) => button.addEventListener("click", () => {
+  rewardFilter = button.dataset.rewardFilter;
+  document.querySelectorAll(".reward-filter").forEach((item) => item.classList.toggle("active", item === button));
+  renderRewardClaims();
 }));
 
 document.querySelector("#sound-button").addEventListener("click", (event) => {
@@ -190,7 +254,7 @@ document.querySelector("#sound-button").addEventListener("click", (event) => {
 });
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
-document.querySelector("#refresh-orders").addEventListener("click", async () => { if (currentView === "orders") { await loadOrders(); showToast("Commandes actualisées."); } else { await loadReservations(); showToast("Réservations actualisées."); } });
+document.querySelector("#refresh-orders").addEventListener("click", async () => { if (currentView === "orders") { await loadOrders(); showToast("Commandes actualisées."); } else if (currentView === "reservations") { await loadReservations(); showToast("Réservations actualisées."); } else { await loadRewardClaims(); showToast("Récompenses actualisées."); } });
 document.querySelector("#dashboard-login").addEventListener("click", async () => {
   const button = document.querySelector("#dashboard-login");
   const password = document.querySelector("#dashboard-password").value;
@@ -206,6 +270,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     showDashboard();
     loadOrders();
     loadReservations();
+    loadRewardClaims();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
 });
@@ -215,5 +280,6 @@ refreshMetrics();
 document.querySelector("#service-date-heading").textContent = todayHeading();
 renderOrders();
 renderReservations();
-if (dashboardToken) { showDashboard(); loadOrders(); loadReservations(); } else { showLogin(); }
-window.setInterval(() => { if (dashboardToken) { loadOrders({ notify: true }); loadReservations({ notify: true }); } }, 10000);
+renderRewardClaims();
+if (dashboardToken) { showDashboard(); loadOrders(); loadReservations(); loadRewardClaims(); } else { showLogin(); }
+window.setInterval(() => { if (dashboardToken) { loadOrders({ notify: true }); loadReservations({ notify: true }); loadRewardClaims({ notify: true }); } }, 10000);

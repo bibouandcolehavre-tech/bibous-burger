@@ -5,6 +5,7 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   const customerPhone = customer.phone;
   let ordersAnonymized = 0;
   let reservationsAnonymized = 0;
+  let rewardClaimsAnonymized = 0;
 
   (database.orders || []).forEach((order) => {
     if (order.customerId !== customerId) return;
@@ -34,12 +35,21 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     }
   });
 
+  (database.rewardClaims || []).forEach((claim) => {
+    if (claim.customerId !== customerId) return;
+    claim.customerId = null;
+    claim.customerName = "Client supprimé";
+    if (claim.status === "active") claim.status = "cancelled";
+    claim.accountDeletedAt = deletedAt;
+    rewardClaimsAnonymized += 1;
+  });
+
   (database.customers || []).forEach((otherCustomer) => {
     if (otherCustomer.referredByCustomerId === customerId) delete otherCustomer.referredByCustomerId;
   });
   database.customers = (database.customers || []).filter((item) => item.id !== customerId);
 
-  return { customerId, deletedAt, ordersAnonymized, reservationsAnonymized };
+  return { customerId, deletedAt, ordersAnonymized, reservationsAnonymized, rewardClaimsAnonymized };
 };
 
 module.exports = { anonymizeCustomerAccount };

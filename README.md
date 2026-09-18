@@ -11,7 +11,7 @@ Application de commande et de fidélité de Bibou & Co pour iPhone, Android et l
 - paiement sécurisé hébergé par SumUp ;
 - connexion client par code SMS Twilio ;
 - suivi des commandes et espace restaurant séparé ;
-- programme fidélité, parrainage, prestiges et récompenses ;
+- programme fidélité, parrainage, prestiges et récompenses à code unique validées par le restaurant ;
 - Bibou + : livraison offerte, remise de 5 % et points doublés pendant 30 jours ;
 - cadeau de bienvenue de 10 % sur la première commande ;
 - réservation de table jusqu’à quatre personnes ;

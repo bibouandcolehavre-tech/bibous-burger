@@ -12,6 +12,7 @@ const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrd
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
+const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 
 const envPath = path.join(process.cwd(), ".env");
@@ -288,7 +289,8 @@ const server = http.createServer(async (request, response) => {
     const loyaltyWeekChanged = resetExpiredLoyaltyWeeks(database);
     const referralCodesChanged = ensureAllReferralCodes(database);
     const bibouPlusStoreChanged = ensureBibouPlusStore(database);
-    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged) await writeDatabase(database);
+    const rewardStoreChanged = ensureRewardStore(database);
+    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged) await writeDatabase(database);
 
     if (request.method === "GET" && url.pathname === "/api/availability") {
       const serviceDate = url.searchParams.get("date");
@@ -368,6 +370,29 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
       const customer = authenticatedCustomer(request, database);
       return customer ? send(response, 200, { customer }) : send(response, 401, { error: "Session expirée." });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/customer/rewards") {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: "Connecte-toi pour consulter tes récompenses." });
+      return send(response, 200, { claims: rewardClaimsForCustomer(database, customer.id) });
+    }
+
+    const rewardClaimMatch = url.pathname.match(/^\/api\/customer\/rewards\/([^/]+)\/claim$/);
+    if (request.method === "POST" && rewardClaimMatch) {
+      try {
+        const claimed = await serializeOrderCreation(async () => {
+          const latestDatabase = await readDatabase();
+          const customer = authenticatedCustomer(request, latestDatabase);
+          if (!customer) throw Object.assign(new Error("Connecte-toi pour réclamer cette récompense."), { statusCode: 401 });
+          const claim = claimReward(latestDatabase, customer, decodeURIComponent(rewardClaimMatch[1]));
+          await writeDatabase(latestDatabase);
+          return { claim, claims: rewardClaimsForCustomer(latestDatabase, customer.id) };
+        });
+        return send(response, 201, claimed);
+      } catch (error) {
+        return send(response, error.statusCode || 400, { error: error.message || "La récompense n’a pas pu être réclamée." });
+      }
     }
 
     if (request.method === "DELETE" && url.pathname === "/api/customer/account") {
@@ -461,6 +486,24 @@ const server = http.createServer(async (request, response) => {
         readyOrders: activeOrders.filter((order) => order.status === "ready").length,
         serviceRevenue: confirmedOrders.filter((order) => order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
       });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/dashboard/reward-claims") {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      return send(response, 200, { claims: [...database.rewardClaims].sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0)) });
+    }
+
+    if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/reward-claims/")) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      const input = await readBody(request);
+      try {
+        const claim = updateRewardClaimStatus(database, decodeURIComponent(url.pathname.split("/").pop()), input.status);
+        if (!claim) return send(response, 404, { error: "Récompense introuvable." });
+        await writeDatabase(database);
+        return send(response, 200, { claim });
+      } catch (error) {
+        return send(response, error.statusCode || 400, { error: error.message || "La récompense n’a pas pu être mise à jour." });
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/orders") {

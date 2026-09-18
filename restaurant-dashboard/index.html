@@ -30,6 +30,7 @@
         <nav>
           <button class="nav-item active" data-view="orders"><span>▦</span> Commandes <b id="new-order-count">1</b></button>
           <button class="nav-item" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count">0</b></button>
+          <button class="nav-item" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count">0</b></button>
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & disponibilité</button>
           <button class="nav-item" data-view="customers"><span>★</span> Fidélité clients</button>
         </nav>
@@ -55,6 +56,7 @@
         <nav class="mobile-view-switch" aria-label="Choisir la rubrique">
           <button class="nav-item mobile-view-button active" data-view="orders"><span>▦</span> Commandes</button>
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
+          <button class="nav-item mobile-view-button" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count-mobile">0</b></button>
         </nav>
 
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
@@ -88,6 +90,18 @@
             <button class="reservation-filter" data-reservation-filter="all">Toutes</button>
           </div>
           <div id="reservations-list" class="reservations-list"></div>
+        </section>
+
+        <section id="rewards-view" class="reservations-section" hidden>
+          <div class="reservation-summary">
+            <div><span id="active-reward-count">0</span><small>récompenses à remettre</small></div>
+            <p>Vérifiez le code présenté par le client, puis marquez la récompense comme utilisée.</p>
+          </div>
+          <div class="reservation-filters" role="tablist">
+            <button class="reservation-filter reward-filter active" data-reward-filter="active">À remettre</button>
+            <button class="reservation-filter reward-filter" data-reward-filter="all">Toutes</button>
+          </div>
+          <div id="rewards-list" class="reservations-list"></div>
         </section>
       </main>
     </div>

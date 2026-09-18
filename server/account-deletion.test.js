@@ -9,6 +9,7 @@ test("supprime le compte et anonymise les données opérationnelles", () => {
     orders: [{ id: "order-1", customerId: customer.id, customerName: "Camille", referralSponsorCustomerId: customer.id }],
     reservations: [{ id: "reservation-1", customerId: customer.id, customerName: "Camille", phone: customer.phone, note: "Anniversaire", status: "confirmed" }],
     bibouPlusPurchases: [{ id: "plus-1", customerId: customer.id }],
+    rewardClaims: [{ id: "reward-1", customerId: customer.id, customerName: "Camille", status: "active" }],
   };
 
   const result = anonymizeCustomerAccount(database, customer, new Date("2026-09-18T10:00:00.000Z"));
@@ -23,4 +24,8 @@ test("supprime le compte et anonymise les données opérationnelles", () => {
   assert.equal(database.reservations[0].note, "");
   assert.equal(database.reservations[0].status, "cancelled");
   assert.equal(database.bibouPlusPurchases[0].customerId, null);
+  assert.equal(database.rewardClaims[0].customerId, null);
+  assert.equal(database.rewardClaims[0].customerName, "Client supprimé");
+  assert.equal(database.rewardClaims[0].status, "cancelled");
+  assert.equal(result.rewardClaimsAnonymized, 1);
 });

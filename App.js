@@ -39,11 +39,11 @@ const POINT_EARNING_RULES = [
 const GOOGLE_REVIEW_URL = "https://share.google/ZnSdNG7pj8QtMieYO";
 const CUSTOMER_APP_URL = "https://bibous-burger-app.onrender.com/";
 const REWARDS = [
-  { points: 200, emoji: "🍟", title: "Une portion de frites offerte", detail: "Frites maison, tout simplement" },
-  { points: 400, emoji: "🥤", title: "Une boisson fraîche offerte", detail: "À ajouter à ta prochaine commande" },
-  { points: 700, emoji: "✨", title: "5 € de remise", detail: "À utiliser sur une prochaine commande" },
-  { points: 1500, emoji: "🍔", title: "Un menu classique offert", detail: "Le plaisir est pour Bibou's Burgers" },
-  { points: 5000, emoji: "👑", title: "Un menu pour deux offert", detail: "La récompense ultime du Club Bibou" },
+  { id: "fries", points: 200, emoji: "🍟", title: "Une portion de frites offerte", detail: "Frites maison, tout simplement" },
+  { id: "drink", points: 400, emoji: "🥤", title: "Une boisson fraîche offerte", detail: "À ajouter à ta prochaine commande" },
+  { id: "discount-5", points: 700, emoji: "✨", title: "5 € de remise", detail: "À utiliser sur une prochaine commande" },
+  { id: "classic-menu", points: 1500, emoji: "🍔", title: "Un menu classique offert", detail: "Le plaisir est pour Bibou's Burgers" },
+  { id: "duo-menu", points: 5000, emoji: "👑", title: "Un menu pour deux offert", detail: "La récompense ultime du Club Bibou" },
 ];
 const PRESTIGE_LEVELS = [
   { level: 1, name: "Débutant", metal: "Bronze", color: "#B66A35", softColor: "#F6E0D1", points: 200, reward: "Une portion de frites offerte" },
@@ -598,7 +598,7 @@ function ReviewScreen({ onBack }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis compte</Text><Text style={styles.reviewIntro}>Partagez votre expérience avec Bibou’s Burgers directement sur notre page Google.</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Merci pour votre commande !</Text><Text style={styles.ratingHelper}>Votre avis Google aide d’autres gourmands à nous découvrir.</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Laisser mon avis sur Google ↗</Text></Pressable><Text style={styles.reviewFinePrint}>Google ouvrira sa page officielle. Vous restez libre de publier ou non votre avis.</Text></ScrollView></SafeAreaView>;
 }
 
-function LoyaltyScreen({ loyalty, customer, onBack, onRefer }) {
+function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack, onRefer, onClaimReward }) {
   const multiplier = loyalty.orders ? Math.min(loyalty.orders, 3) : 1;
   const weeklyPoints = loyalty.weeklyProgramPoints || 0;
   const nextReward = REWARDS.find((reward) => loyalty.points < reward.points);
@@ -649,16 +649,25 @@ function LoyaltyScreen({ loyalty, customer, onBack, onRefer }) {
           {REWARDS.map((reward) => {
             const unlocked = loyalty.points >= reward.points;
             const difference = reward.points - loyalty.points;
+            const claim = rewardClaims.find((item) => item.rewardId === reward.id);
+            const used = claim?.status === "used";
             return <View key={reward.points} style={[styles.rewardRow, unlocked && styles.rewardRowUnlocked]}>
               <View style={styles.rewardIcon}><Text style={styles.rewardEmoji}>{reward.emoji}</Text></View>
               <View style={styles.rewardCopy}><Text style={styles.rewardTitle}>{reward.title}</Text><Text style={styles.rewardDetail}>{reward.detail}</Text></View>
-              <View style={[styles.rewardStatus, unlocked && styles.rewardStatusUnlocked]}>
-                <Text style={[styles.rewardStatusText, unlocked && styles.rewardStatusTextUnlocked]}>{unlocked ? "Disponible" : `+${difference}`}</Text>
-                <Text style={[styles.rewardStatusSubtext, unlocked && styles.rewardStatusTextUnlocked]}>{unlocked ? "à utiliser" : "points"}</Text>
-              </View>
+              {!unlocked ? <View style={styles.rewardStatus}>
+                <Text style={styles.rewardStatusText}>+{difference}</Text>
+                <Text style={styles.rewardStatusSubtext}>points</Text>
+              </View> : claim ? <View style={[styles.rewardClaimedStatus, used && styles.rewardUsedStatus]}>
+                <Text style={[styles.rewardClaimedLabel, used && styles.rewardUsedText]}>{used ? "Utilisée" : "À présenter"}</Text>
+                <Text style={[styles.rewardClaimCode, used && styles.rewardUsedText]}>{claim.code}</Text>
+              </View> : <Pressable disabled={rewardLoading === reward.id} onPress={() => onClaimReward(reward)} style={styles.rewardClaimButton}>
+                <Text style={styles.rewardClaimButtonText}>{rewardLoading === reward.id ? "…" : "Réclamer"}</Text>
+                <Text style={styles.rewardClaimButtonHint}>une fois</Text>
+              </Pressable>}
             </View>;
           })}
         </View>
+        <Text style={styles.rewardClaimFootnote}>Les points et les badges Prestige restent acquis. Chaque récompense peut être réclamée une seule fois puis présentée au restaurant.</Text>
 
         <Text style={styles.sectionTitle}>Comment gagner des points ?</Text>
         <View style={styles.pointsRulesTable}>{POINT_EARNING_RULES.map((rule) => <View key={rule.title} style={styles.pointsRuleRow}><View style={styles.pointsRuleIcon}><Text style={styles.pointsRuleEmoji}>{rule.emoji}</Text></View><View style={styles.pointsRuleCopy}><Text style={styles.pointsRuleTitle}>{rule.title}</Text><Text style={styles.pointsRuleDetail}>{rule.detail}</Text></View><Text style={styles.pointsRuleValue}>{rule.points}</Text></View>)}</View>
@@ -700,6 +709,8 @@ export default function App() {
   const [loyalty, setLoyalty] = useState({ points: 0, orders: 0 });
   const [orders, setOrders] = useState([]);
   const [reservations, setReservations] = useState([]);
+  const [rewardClaims, setRewardClaims] = useState([]);
+  const [rewardLoading, setRewardLoading] = useState("");
   const [authToken, setAuthToken] = useState("");
   const [pendingOrder, setPendingOrder] = useState(null);
   const [pendingBibouPlus, setPendingBibouPlus] = useState(null);
@@ -731,6 +742,17 @@ export default function App() {
       if (!silent) Alert.alert("Actualisation indisponible", error.message || "Réessaie dans un instant.");
     }
   };
+  const loadCustomerRewards = async ({ token = authToken, silent = false } = {}) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/customer/rewards`, { headers: { Authorization: `Bearer ${token}` } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les récompenses.");
+      setRewardClaims(payload.claims || []);
+    } catch (error) {
+      if (!silent) Alert.alert("Récompenses indisponibles", error.message || "Réessaie dans un instant.");
+    }
+  };
   const authenticate = ({ token, customer: savedCustomer }) => {
     setAuthToken(token);
     if (typeof window !== "undefined") window.localStorage?.setItem("bibousCustomerSession", token);
@@ -747,6 +769,7 @@ export default function App() {
     setLoyalty({ points: savedCustomer.points, orders: savedCustomer.weeklyOrders, weeklyProgramPoints: savedCustomer.weeklyProgramPoints || 0 });
     void loadCustomerOrders(token);
     void loadCustomerReservations({ token });
+    void loadCustomerRewards({ token });
     setScreen(loginDestination);
     setLoginDestination("account");
   };
@@ -763,6 +786,7 @@ export default function App() {
         setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
         void loadCustomerOrders(savedToken);
         void loadCustomerReservations({ token: savedToken, silent: true });
+        void loadCustomerRewards({ token: savedToken, silent: true });
       })
       .catch(() => window.localStorage?.removeItem("bibousCustomerSession"));
   }, []);
@@ -895,12 +919,32 @@ export default function App() {
       setLoyalty({ points: 0, orders: 0, weeklyProgramPoints: 0 });
       setOrders([]);
       setReservations([]);
+      setRewardClaims([]);
       setCart(null);
       setScreen("menu");
       Alert.alert("Compte supprimé", "Tes coordonnées et tes avantages ont été supprimés. Les anciennes commandes ont été anonymisées.");
     } catch (error) {
       Alert.alert("Suppression impossible", error.message || "Réessaie dans un instant.");
     } finally { setAccountDeletionLoading(false); }
+  };
+  const claimLoyaltyReward = async (reward) => {
+    if (!authToken) {
+      setLoginDestination("loyalty");
+      setScreen("login");
+      return;
+    }
+    setRewardLoading(reward.id);
+    try {
+      const response = await fetch(`${API_BASE_URL}/customer/rewards/${encodeURIComponent(reward.id)}/claim`, { method: "POST", headers: { Authorization: `Bearer ${authToken}` } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "La récompense n’a pas pu être réclamée.");
+      setRewardClaims(payload.claims || []);
+      Alert.alert("Récompense activée", `${reward.title}\n\nCode : ${payload.claim.code}\n\nPrésente ce code au restaurant. Tes points et ton prestige restent acquis.`);
+    } catch (error) {
+      Alert.alert("Récompense indisponible", error.message || "Réessaie dans un instant.");
+    } finally {
+      setRewardLoading("");
+    }
   };
   const referFriend = async () => {
     if (!customer.referralCode) {
@@ -930,7 +974,7 @@ export default function App() {
   if (screen === "payment-pending") return <PaymentPendingScreen onCheckPayment={checkPayment} onBack={() => setScreen("payment")} />;
   if (screen === "success") return <SuccessScreen cart={cart} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
-  if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} onBack={() => setScreen("menu")} onRefer={referFriend} />;
+  if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;
   if (screen === "bibou-plus-pending") return <BibouPlusPendingScreen onCheckPayment={checkBibouPlusPayment} onBack={() => setScreen("bibou-plus")} />;
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
@@ -1016,7 +1060,7 @@ const styles = StyleSheet.create(applyAppPalette({
   accountContent: { padding: 20, paddingBottom: 46 }, accountHero: { backgroundColor: "#2C201B", borderRadius: 22, padding: 19, marginTop: 20, flexDirection: "row", alignItems: "center" }, accountAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: "#E95122", alignItems: "center", justifyContent: "center", marginRight: 13 }, accountAvatarText: { color: "white", fontSize: 22, fontWeight: "900" }, accountGreeting: { color: "white", fontSize: 18, fontWeight: "800" }, accountContact: { color: "#F2C8B5", fontSize: 12, marginTop: 5, maxWidth: 230 }, currentOrderCard: { backgroundColor: "#EAF5E4", borderRadius: 20, padding: 16, marginTop: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, currentOrderEyebrow: { color: "#397353", fontSize: 10, fontWeight: "900", letterSpacing: 0.5 }, currentOrderTitle: { color: "#2C201B", fontSize: 15, fontWeight: "800", marginTop: 5 }, currentOrderText: { color: "#526D57", fontSize: 12, marginTop: 4 }, currentOrderArrow: { color: "#397353", fontSize: 30 }, accountAction: { backgroundColor: "#FFFDFC", borderRadius: 18, borderWidth: 1, borderColor: "#EADBD2", padding: 14, flexDirection: "row", alignItems: "center", marginBottom: 10 }, accountActionIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, accountActionCopy: { flex: 1 }, accountActionTitle: { color: "#2C201B", fontWeight: "800" }, accountActionText: { color: "#826E63", fontSize: 12, marginTop: 4 }, accountActionArrow: { color: "#D74318", fontSize: 26 }, accountAddress: { backgroundColor: "#F8EAE0", borderRadius: 18, padding: 15, marginTop: 15 }, accountAddressTitle: { color: "#2C201B", fontWeight: "800" }, accountAddressText: { color: "#826E63", fontSize: 13, lineHeight: 18, marginTop: 6 }, accountFinePrint: { color: "#826E63", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 19 }, trackingCard: { backgroundColor: "#FFFDFC", borderRadius: 20, borderWidth: 1, borderColor: "#EADBD2", padding: 16 }, trackingHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }, trackingOrder: { color: "#2C201B", fontSize: 15, fontWeight: "800", maxWidth: 230 }, trackingMeta: { color: "#826E63", fontSize: 12, marginTop: 5 }, trackingPrice: { color: "#2C201B", fontWeight: "800" }, trackingSteps: { flexDirection: "row", justifyContent: "space-between", marginTop: 24 }, trackingStep: { flex: 1, alignItems: "center" }, trackingDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#F3E9E2", borderWidth: 1, borderColor: "#D6BEB1", alignItems: "center", justifyContent: "center" }, trackingDotDone: { backgroundColor: "#E95122", borderColor: "#E95122" }, trackingCheck: { color: "white", fontSize: 12, fontWeight: "900" }, trackingLabel: { color: "#9B877B", fontSize: 8, fontWeight: "700", textAlign: "center", marginTop: 5 }, trackingLabelDone: { color: "#D74318" }, trackingMessage: { color: "#397353", fontWeight: "700", fontSize: 12, textAlign: "center", marginTop: 18 }, historyOrder: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 17, padding: 13, flexDirection: "row", alignItems: "center", marginBottom: 9 }, historyIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: "#EAF5E4", alignItems: "center", justifyContent: "center", marginRight: 10 }, historyCopy: { flex: 1 }, historyTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, historyMeta: { color: "#826E63", fontSize: 11, marginTop: 4 }, historyPrice: { color: "#2C201B", fontWeight: "800", fontSize: 12 },
   customerReservationCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 14, flexDirection: "row", alignItems: "flex-start", marginBottom: 10 }, customerReservationIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", marginRight: 12 }, customerReservationIconText: { fontSize: 21, fontWeight: "900" }, customerReservationCopy: { flex: 1 }, customerReservationTitle: { color: "#2C201B", fontSize: 14, fontWeight: "900", textTransform: "capitalize" }, customerReservationMeta: { color: "#826E63", fontSize: 11, marginTop: 4 }, customerReservationStatus: { fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 8 }, emptyReservationState: { alignItems: "center", paddingVertical: 28, backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18 },
   loginContent: { padding: 20, paddingBottom: 44 }, loginIcon: { width: 68, height: 68, borderRadius: 24, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginTop: 26 }, loginIconText: { color: "#E95122", fontSize: 31 }, loginIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, loginCard: { backgroundColor: "#F8EAE0", borderRadius: 22, padding: 17, marginTop: 23 }, loginFinePrint: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 2, marginBottom: 16 }, loginError: { color: "#A3472A", fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 2, marginBottom: 16 }, loginSecondary: { alignItems: "center", paddingTop: 17 }, loginSecondaryText: { color: "#D74318", fontWeight: "800" }, loginLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 18 }, codeInput: { fontSize: 24, fontWeight: "800", letterSpacing: 8, textAlign: "center" },
-  loyaltyContent: { padding: 20, paddingBottom: 44 }, loyaltyIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, pointsCard: { backgroundColor: "#2C201B", borderRadius: 24, padding: 21, marginTop: 22 }, pointsEyebrow: { color: "#FFB797", fontSize: 11, fontWeight: "900", letterSpacing: 0.8 }, pointsTotal: { color: "white", fontSize: 30, fontWeight: "800", marginTop: 7 }, pointsSubtext: { color: "#F9D6C8", fontWeight: "600", marginTop: 7 }, progressTrack: { height: 9, backgroundColor: "#5D4740", borderRadius: 6, overflow: "hidden", marginTop: 19 }, progressFill: { height: "100%", backgroundColor: "#E95122", borderRadius: 6 }, progressCaption: { color: "#EBC8B9", fontSize: 11, fontWeight: "700", marginTop: 8, textAlign: "right" }, prestigeCard: { backgroundColor: "#FFF0E9", borderRadius: 20, padding: 16, borderWidth: 1, borderColor: "#F2C7B7" }, prestigeTop: { flexDirection: "row", alignItems: "center" }, prestigeBadge: { width: 94, height: 60, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center", marginRight: 12 }, prestigeBadgeText: { color: "#826E63", fontSize: 16, fontWeight: "900" }, prestigeCopy: { flex: 1 }, prestigeTitle: { color: "#2C201B", fontSize: 15, fontWeight: "900" }, prestigeReward: { color: "#826E63", fontSize: 12, lineHeight: 16, marginTop: 4 }, prestigeLevels: { flexDirection: "row", justifyContent: "space-between", marginTop: 19 }, prestigeLevel: { alignItems: "center", flex: 1 }, prestigeAboveLabel: { color: "#826E63", fontSize: 9, fontWeight: "800", marginBottom: 5 }, prestigeDot: { width: 50, height: 40, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center" }, prestigeDotUnlocked: { backgroundColor: "#E95122", borderColor: "#E95122" }, prestigeDotText: { color: "#826E63", fontSize: 10, fontWeight: "900" }, prestigeDotTextUnlocked: { color: "white" }, prestigeLevelLabel: { color: "#9B877B", fontSize: 8, lineHeight: 12, fontWeight: "700", marginTop: 5, textAlign: "center" }, prestigeLevelLabelActive: { color: "#D74318" }, prestigeNext: { color: "#826E63", fontSize: 12, marginTop: 15, textAlign: "center" }, rewardsTable: { borderRadius: 19, overflow: "hidden", borderWidth: 1, borderColor: "#EADBD2", backgroundColor: "#FFFDFC" }, rewardRow: { minHeight: 76, padding: 12, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EADBD2" }, rewardRowUnlocked: { backgroundColor: "#F4F8F0" }, rewardIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, rewardEmoji: { fontSize: 21 }, rewardCopy: { flex: 1, paddingRight: 8 }, rewardTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, rewardDetail: { color: "#826E63", fontSize: 11, lineHeight: 14, marginTop: 3 }, rewardStatus: { minWidth: 56, borderRadius: 11, backgroundColor: "#F2E8E2", paddingVertical: 6, paddingHorizontal: 5, alignItems: "center" }, rewardStatusUnlocked: { backgroundColor: "#DDEED7" }, rewardStatusText: { color: "#826E63", fontSize: 11, fontWeight: "900" }, rewardStatusTextUnlocked: { color: "#397353" }, rewardStatusSubtext: { color: "#826E63", fontSize: 9, marginTop: 2 }, weeklyCard: { backgroundColor: "#F8EAE0", borderRadius: 20, padding: 17 }, weeklyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, weeklyTitle: { color: "#2C201B", fontSize: 16, fontWeight: "800" }, weeklySubtext: { color: "#826E63", fontSize: 12, marginTop: 4 }, multiplierBadge: { width: 53, height: 53, borderRadius: 18, backgroundColor: "#E95122", justifyContent: "center", alignItems: "center" }, multiplierText: { color: "white", fontSize: 22, fontWeight: "900" }, weeklyPoints: { color: "#397353", fontWeight: "800", marginTop: 16 }, stepsRow: { flexDirection: "row", alignItems: "center", marginTop: 20 }, step: { width: 48, alignItems: "center" }, stepActive: { opacity: 1 }, stepNumber: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: "#CDB7AB", color: "#826E63", textAlign: "center", lineHeight: 28, fontWeight: "800", backgroundColor: "#FFF8F2" }, stepNumberActive: { backgroundColor: "#E95122", borderColor: "#E95122", color: "white" }, stepLabel: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 5 }, stepLine: { flex: 1, height: 2, backgroundColor: "#D5BDB0", marginBottom: 17 }, weeklyFootnote: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 16 }, simulateButton: { borderRadius: 16, borderWidth: 1.5, borderColor: "#E95122", padding: 14, alignItems: "center", marginTop: 14 }, simulateButtonText: { color: "#D74318", fontWeight: "800" }, simulateHint: { color: "#826E63", fontSize: 11, marginTop: 4 }, referralCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 15, flexDirection: "row", alignItems: "center" }, referralIcon: { width: 45, height: 45, borderRadius: 15, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 12 }, referralEmoji: { fontSize: 22 }, referralCopy: { flex: 1 }, referralTitle: { color: "#2C201B", fontWeight: "800" }, referralText: { color: "#826E63", fontSize: 12, marginTop: 4, lineHeight: 16 }, loyaltyLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 18, textAlign: "center" },
+  loyaltyContent: { padding: 20, paddingBottom: 44 }, loyaltyIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, pointsCard: { backgroundColor: "#2C201B", borderRadius: 24, padding: 21, marginTop: 22 }, pointsEyebrow: { color: "#FFB797", fontSize: 11, fontWeight: "900", letterSpacing: 0.8 }, pointsTotal: { color: "white", fontSize: 30, fontWeight: "800", marginTop: 7 }, pointsSubtext: { color: "#F9D6C8", fontWeight: "600", marginTop: 7 }, progressTrack: { height: 9, backgroundColor: "#5D4740", borderRadius: 6, overflow: "hidden", marginTop: 19 }, progressFill: { height: "100%", backgroundColor: "#E95122", borderRadius: 6 }, progressCaption: { color: "#EBC8B9", fontSize: 11, fontWeight: "700", marginTop: 8, textAlign: "right" }, prestigeCard: { backgroundColor: "#FFF0E9", borderRadius: 20, padding: 16, borderWidth: 1, borderColor: "#F2C7B7" }, prestigeTop: { flexDirection: "row", alignItems: "center" }, prestigeBadge: { width: 94, height: 60, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center", marginRight: 12 }, prestigeBadgeText: { color: "#826E63", fontSize: 16, fontWeight: "900" }, prestigeCopy: { flex: 1 }, prestigeTitle: { color: "#2C201B", fontSize: 15, fontWeight: "900" }, prestigeReward: { color: "#826E63", fontSize: 12, lineHeight: 16, marginTop: 4 }, prestigeLevels: { flexDirection: "row", justifyContent: "space-between", marginTop: 19 }, prestigeLevel: { alignItems: "center", flex: 1 }, prestigeAboveLabel: { color: "#826E63", fontSize: 9, fontWeight: "800", marginBottom: 5 }, prestigeDot: { width: 50, height: 40, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center" }, prestigeDotUnlocked: { backgroundColor: "#E95122", borderColor: "#E95122" }, prestigeDotText: { color: "#826E63", fontSize: 10, fontWeight: "900" }, prestigeDotTextUnlocked: { color: "white" }, prestigeLevelLabel: { color: "#9B877B", fontSize: 8, lineHeight: 12, fontWeight: "700", marginTop: 5, textAlign: "center" }, prestigeLevelLabelActive: { color: "#D74318" }, prestigeNext: { color: "#826E63", fontSize: 12, marginTop: 15, textAlign: "center" }, rewardsTable: { borderRadius: 19, overflow: "hidden", borderWidth: 1, borderColor: "#EADBD2", backgroundColor: "#FFFDFC" }, rewardRow: { minHeight: 76, padding: 12, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EADBD2" }, rewardRowUnlocked: { backgroundColor: "#F4F8F0" }, rewardIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, rewardEmoji: { fontSize: 21 }, rewardCopy: { flex: 1, paddingRight: 8 }, rewardTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, rewardDetail: { color: "#826E63", fontSize: 11, lineHeight: 14, marginTop: 3 }, rewardStatus: { minWidth: 56, borderRadius: 11, backgroundColor: "#F2E8E2", paddingVertical: 6, paddingHorizontal: 5, alignItems: "center" }, rewardStatusText: { color: "#826E63", fontSize: 11, fontWeight: "900" }, rewardStatusSubtext: { color: "#826E63", fontSize: 9, marginTop: 2 }, rewardClaimButton: { minWidth: 70, borderRadius: 12, backgroundColor: "#397353", paddingVertical: 8, paddingHorizontal: 8, alignItems: "center" }, rewardClaimButtonText: { color: "white", fontSize: 11, fontWeight: "900" }, rewardClaimButtonHint: { color: "#DDF0E2", fontSize: 8, marginTop: 2 }, rewardClaimedStatus: { minWidth: 82, borderRadius: 12, backgroundColor: "#DDEED7", paddingVertical: 7, paddingHorizontal: 7, alignItems: "center" }, rewardClaimedLabel: { color: "#397353", fontSize: 9, fontWeight: "900" }, rewardClaimCode: { color: "#2E6144", fontSize: 9, fontWeight: "900", marginTop: 3 }, rewardUsedStatus: { backgroundColor: "#E8E2DE" }, rewardUsedText: { color: "#826E63" }, rewardClaimFootnote: { color: "#5A4A42", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 11 }, weeklyCard: { backgroundColor: "#F8EAE0", borderRadius: 20, padding: 17 }, weeklyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, weeklyTitle: { color: "#2C201B", fontSize: 16, fontWeight: "800" }, weeklySubtext: { color: "#826E63", fontSize: 12, marginTop: 4 }, multiplierBadge: { width: 53, height: 53, borderRadius: 18, backgroundColor: "#E95122", justifyContent: "center", alignItems: "center" }, multiplierText: { color: "white", fontSize: 22, fontWeight: "900" }, weeklyPoints: { color: "#397353", fontWeight: "800", marginTop: 16 }, stepsRow: { flexDirection: "row", alignItems: "center", marginTop: 20 }, step: { width: 48, alignItems: "center" }, stepActive: { opacity: 1 }, stepNumber: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: "#CDB7AB", color: "#826E63", textAlign: "center", lineHeight: 28, fontWeight: "800", backgroundColor: "#FFF8F2" }, stepNumberActive: { backgroundColor: "#E95122", borderColor: "#E95122", color: "white" }, stepLabel: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 5 }, stepLine: { flex: 1, height: 2, backgroundColor: "#D5BDB0", marginBottom: 17 }, weeklyFootnote: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 16 }, simulateButton: { borderRadius: 16, borderWidth: 1.5, borderColor: "#E95122", padding: 14, alignItems: "center", marginTop: 14 }, simulateButtonText: { color: "#D74318", fontWeight: "800" }, simulateHint: { color: "#826E63", fontSize: 11, marginTop: 4 }, referralCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 15, flexDirection: "row", alignItems: "center" }, referralIcon: { width: 45, height: 45, borderRadius: 15, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 12 }, referralEmoji: { fontSize: 22 }, referralCopy: { flex: 1 }, referralTitle: { color: "#2C201B", fontWeight: "800" }, referralText: { color: "#826E63", fontSize: 12, marginTop: 4, lineHeight: 16 }, loyaltyLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 18, textAlign: "center" },
   headerCart: { minWidth: 44, height: 38, borderRadius: 13, backgroundColor: "#FFF0E9", paddingHorizontal: 11, alignItems: "center", justifyContent: "center" },
   headerCartText: { color: "#D74318", fontSize: 16, fontWeight: "900" },
   categoryHeader: {
