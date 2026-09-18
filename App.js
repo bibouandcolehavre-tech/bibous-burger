@@ -584,10 +584,12 @@ function PaymentScreen({ cart, customer, onBack, onPay }) {
   const standardFee = cart.delivery.fee ?? deliveryCost(cart.delivery.method);
   const pricing = customerOrderPricing(cart.total, standardFee, customer, isDelivery);
   const [paying, setPaying] = useState(false);
+  const paymentInFlight = useRef(false);
   const submitPayment = async () => {
-    if (paying) return;
+    if (paymentInFlight.current) return;
+    paymentInFlight.current = true;
     setPaying(true);
-    try { await onPay(pricing.total); } finally { setPaying(false); }
+    try { await onPay(pricing.total); } finally { paymentInFlight.current = false; setPaying(false); }
   };
   return <SafeAreaView style={styles.safeArea}><View style={styles.detailContent}><Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text><Text style={styles.deliveryIntro}>Tout est prêt pour le paiement sécurisé.</Text><View style={styles.paymentSummary}><Text style={styles.paymentProduct}>{cart.items.map((item) => item.product.name).join(" · ")}</Text><Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} /><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={customerHasWelcomeReward(customer) ? "Cadeau de bienvenue · −10 %" : "Remise Bibou + · −5 %"} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={isDelivery ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} />{pricing.bibouPlus && isDelivery && standardFee > 0 && <ReceiptLine label="Économie livraison Bibou +" value={`− ${money(standardFee)}`} />}<View style={styles.receiptDivider} /><ReceiptLine label="Total" value={money(pricing.total)} strong /></View>{pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après le paiement.</Text></View>}<View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? "Livrer à" : "Retrait par"}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View><View style={styles.securePayment}><Text style={styles.securePaymentIcon}>🔒</Text><View><Text style={styles.securePaymentTitle}>Paiement sécurisé avec SumUp</Text><Text style={styles.securePaymentText}>Carte bancaire · le paiement sera ouvert par SumUp.</Text></View></View></View><View style={styles.stickyAction}><Pressable disabled={paying} style={[styles.primaryButton, paying && styles.primaryButtonDisabled]} onPress={submitPayment}><Text style={styles.primaryButtonText}>{paying ? "Ouverture de SumUp…" : `Payer avec SumUp · ${money(pricing.total)}`}</Text></Pressable></View></SafeAreaView>;
 }
@@ -745,6 +747,7 @@ export default function App() {
   const [rewardLoading, setRewardLoading] = useState("");
   const [authToken, setAuthToken] = useState("");
   const [pendingOrder, setPendingOrder] = useState(null);
+  const pendingPaymentAttempt = useRef(null);
   const [pendingBibouPlus, setPendingBibouPlus] = useState(null);
   const [bibouPlusLoading, setBibouPlusLoading] = useState(false);
   const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
@@ -867,6 +870,7 @@ export default function App() {
     setScreen("payment");
   };
   const pay = async (total) => {
+    let orderForAttempt = null;
     try {
       const stockResponse = await fetch(`${API_BASE_URL}/catalog`);
       const latestCatalog = await stockResponse.json();
@@ -881,18 +885,30 @@ export default function App() {
 
       const activeCustomer = customer;
 
-      const orderResponse = await fetch(`${API_BASE_URL}/orders`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ customerId: activeCustomer.id, items: cart.items.map((item) => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot }) });
-      const orderPayload = await orderResponse.json().catch(() => ({}));
-      if (!orderResponse.ok) throw new Error(orderPayload.error || "Impossible de créer la commande.");
+      const orderInput = { customerId: activeCustomer.id, items: cart.items.map((item) => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot };
+      const requestKey = JSON.stringify(orderInput);
+      const previousAttempt = pendingPaymentAttempt.current;
+      let orderPayload;
+      if (previousAttempt?.key === requestKey) orderPayload = { order: previousAttempt.order };
+      else {
+        const orderResponse = await fetch(`${API_BASE_URL}/orders`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: requestKey });
+        orderPayload = await orderResponse.json().catch(() => ({}));
+        if (!orderResponse.ok) throw new Error(orderPayload.error || "Impossible de créer la commande.");
+        pendingPaymentAttempt.current = { key: requestKey, order: orderPayload.order };
+      }
+      setPendingOrder(orderPayload.order);
+      orderForAttempt = orderPayload.order;
 
       const checkoutResponse = await fetch(`${API_BASE_URL}/payments/sumup-checkout`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ orderId: orderPayload.order.id }) });
       const checkoutPayload = await checkoutResponse.json();
+      if (checkoutPayload.code === "ORDER_EXPIRED") { pendingPaymentAttempt.current = null; orderForAttempt = null; setPendingOrder(null); }
       if (!checkoutResponse.ok || !checkoutPayload.checkoutUrl) throw new Error(checkoutPayload.error || "Impossible d’ouvrir le paiement SumUp.");
 
       setPendingOrder(orderPayload.order);
       setScreen("payment-pending");
       await Linking.openURL(checkoutPayload.checkoutUrl);
     } catch (error) {
+      if (orderForAttempt) setScreen("payment-pending");
       Alert.alert("Paiement indisponible", error.message || "Une erreur est survenue. Réessaie dans un instant.");
     }
   };
@@ -901,18 +917,29 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/payments/sumup-checkout/${pendingOrder.id}`, { headers: { Authorization: `Bearer ${authToken}` } });
       const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Impossible de vérifier le paiement pour le moment.");
+      if (payload.order?.status === "cancelled") {
+        Alert.alert("Commande annulée", "Cette commande a été annulée par le restaurant. Elle ne donne pas de points. Pour le remboursement, contacte le restaurant : l’annulation ne rembourse pas automatiquement le paiement.");
+        return;
+      }
       if (payload.payment?.status === "PAID") {
         if (payload.customer) {
           setCustomer((current) => ({ ...current, ...payload.customer }));
           setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
         }
         setOrders((currentOrders) => currentOrders.some((order) => order.apiId === payload.order.id) ? currentOrders : [orderFromApi(payload.order), ...currentOrders]);
+        pendingPaymentAttempt.current = null;
         setScreen("success");
+      } else if (payload.payment?.status === "FAILED") {
+        Alert.alert("Paiement non validé", "SumUp indique que la tentative de paiement a échoué. Vérifie la page SumUp avant de réessayer.");
+      } else if (payload.payment?.status === "EXPIRED") {
+        pendingPaymentAttempt.current = null;
+        Alert.alert("Paiement expiré", "Ce lien n’est plus utilisable. Reviens au panier pour choisir un créneau disponible et recommencer.");
       } else {
         Alert.alert("Paiement en attente", "SumUp n’a pas encore confirmé le paiement. Réessaie dans quelques instants.");
       }
-    } catch {
-      Alert.alert("Vérification indisponible", "Impossible de vérifier le paiement pour le moment.");
+    } catch (error) {
+      Alert.alert("Vérification indisponible", error.message || "Impossible de vérifier le paiement pour le moment.");
     }
   };
   const startBibouPlus = async () => {

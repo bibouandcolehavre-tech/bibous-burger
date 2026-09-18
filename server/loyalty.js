@@ -45,7 +45,7 @@ const ensureCurrentLoyaltyWeek = (customer, value = new Date()) => {
 
 const grantLoyaltyForOrder = (customer, order, value = new Date(), options = {}) => {
   const changedWeek = ensureCurrentLoyaltyWeek(customer, value);
-  if (order.loyaltyGrantedAt) return { pointsAdded: Number(order.loyaltyPointsAdded) || 0, changed: changedWeek };
+  if (order.loyaltyGrantedAt || order.status === "cancelled") return { pointsAdded: 0, changed: changedWeek };
 
   const previousOrders = Math.max(0, Number(customer.weeklyOrders) || 0);
   const nextOrders = previousOrders + 1;

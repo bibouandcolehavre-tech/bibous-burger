@@ -49,6 +49,20 @@ Ce sont des alertes **dans la page**, pas des notifications push : garder le tab
 
 `server/dashboard-alerts.test.js` vérifie les arrivées, paiements, doublons, erreurs réseau, reprise, mode silencieux et génération des sons, avec un contrôleur de tableau et des données simulés.
 
+## Paiements et annulations
+
+Les retours SumUp sont revérifiés côté serveur : identifiant, référence enregistrée, montant, devise et commerçant doivent correspondre. Un échec de vérification renvoie une erreur pour permettre une nouvelle tentative du fournisseur, conformément au fonctionnement des [webhooks SumUp](https://developer.sumup.com/online-payments/webhooks). Les réponses répétées ne recréditent ni fidélité, ni parrainage, ni jours Bibou +.
+
+Pour une même commande, un paiement existant est réutilisé. Une référence est enregistrée avant l’appel SumUp : si la réponse est perdue, le serveur recherche le paiement correspondant au lieu d’en créer un deuxième. En cas d’incertitude, la reprise est bloquée et invite à vérifier, sans lancer un nouvel encaissement. Dans la page client ouverte, les nouvelles tentatives du même panier réutilisent la commande connue. Cette mémoire client ne survit pas encore au rechargement de la page.
+
+Une commande annulée ne peut plus être réactivée par une action de service ou un retour tardif de paiement. Ses points, son bonus de parrainage et son cadeau de bienvenue suivent les règles d’annulation. La vérification client distingue erreur réseau, refus, expiration et annulation, au lieu d’afficher un succès pour une commande annulée.
+
+**Annuler n’effectue aucun remboursement bancaire.** Pour l’instant, annuler la commande dans l’espace restaurant ET effectuer son remboursement dans SumUp. Les remboursements faits uniquement dans SumUp ne sont pas encore synchronisés automatiquement ; cette étape reste à développer à partir des [transactions et événements de remboursement](https://developer.sumup.com/api/transactions). Aucun appel de remboursement n’est implémenté dans cette version.
+
+Le stockage JSON sérialise maintenant les opérations de lecture/modification/écriture, avec remplacement atomique du fichier, pour éviter qu’une confirmation de paiement écrase une annulation ou une modification de compte simultanée. Les appels externes dans cette section sont limités à 10 secondes. Cela reste une architecture **mono-processus** : ne pas lancer plusieurs instances serveur sur ce fichier ; utiliser une base transactionnelle avant de monter en charge. Ces protections ne remplacent pas les sauvegardes.
+
+Les tests HTTP de paiement utilisent un faux fournisseur dans un processus isolé, sans clés réelles, encaissement ou SMS.
+
 ## Préparation des stores
 
 La configuration Expo/EAS est prête dans `app.json` et `eas.json`, avec l’identifiant `com.bibouandco.bibousburgers`. Les builds de production se lancent avec `npm run build:production` après connexion à un compte Expo et aux comptes développeur Apple/Google.

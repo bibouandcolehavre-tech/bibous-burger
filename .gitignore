@@ -6,3 +6,4 @@ node_modules/
 dist/
 server/product-stock.json
 server/product-stock.json.*.tmp
+server/data.json.*.tmp

@@ -3,6 +3,8 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { createDatabaseLock } = require("./database-lock");
+const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
@@ -51,6 +53,7 @@ const menuProductIds = new Set(["taurus", "montagnes-menu", "atlas-menu", "class
 const burgerProductIds = new Set(["atlas", "classique", "duck", "dynamite", "hambagu", "basilic", "montagnes", "gros-lard", "pork"]);
 const smsAttemptLimiter = createSmsAttemptLimiter();
 const dashboardSessions = new Map();
+const acquireDatabase = createDatabaseLock();
 let googleReviewsCache = { value: null, expiresAt: 0 };
 let orderCreationQueue = Promise.resolve();
 
@@ -82,23 +85,43 @@ const ensureDatabase = async () => {
   try { await fs.access(databasePath); } catch { await fs.copyFile(seedDatabasePath, databasePath); }
 };
 const readDatabase = async () => { await ensureDatabase(); return JSON.parse(await fs.readFile(databasePath, "utf8")); };
-const writeDatabase = async (database) => { await ensureDatabase(); return fs.writeFile(databasePath, `${JSON.stringify(database, null, 2)}\n`); };
+const writeDatabase = async (database) => {
+  await ensureDatabase();
+  const temporary = `${databasePath}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, `${JSON.stringify(database, null, 2)}\n`, { mode: 0o600 });
+    await fs.rename(temporary, databasePath);
+  } finally { await fs.unlink(temporary).catch(() => {}); }
+};
 const send = (response, status, payload) => {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
   response.end(JSON.stringify(payload));
 };
 
-const readBody = (request) => new Promise((resolve, reject) => {
-  let body = "";
-  request.on("data", (chunk) => {
-    body += chunk;
-    if (body.length > 1_000_000) reject(new Error("Payload too large"));
+const requestBodies = new WeakMap();
+const readBody = (request) => {
+  if (requestBodies.has(request)) return requestBodies.get(request);
+  const result = new Promise((resolve, reject) => {
+    let body = "";
+    let failed = false;
+    const fail = (error) => { failed = true; body = ""; clearTimeout(timeout); reject(error); };
+    const timeout = setTimeout(() => fail(Object.assign(new Error("Requête trop lente."), { statusCode: 408 })), 10000);
+    request.on("data", (chunk) => {
+      if (failed) return;
+      body += chunk;
+      if (body.length > 1_000_000) fail(Object.assign(new Error("Requête trop volumineuse."), { statusCode: 413 }));
+    });
+    request.on("end", () => {
+      clearTimeout(timeout);
+      if (failed) return;
+      try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); }
+    });
+    request.on("error", fail);
+    request.on("aborted", () => fail(new Error("Request aborted")));
   });
-  request.on("end", () => {
-    try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); }
-  });
-  request.on("error", reject);
-});
+  requestBodies.set(request, result);
+  return result;
+};
 
 const deliveryFeeForDistance = (distanceKm) => {
   if (distanceKm <= 1.5) return 3.99;
@@ -111,6 +134,7 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
   if (!googleMapsApiKey) throw new Error("Le calcul automatique de livraison n’est pas encore disponible.");
   const destination = `${String(address || "").trim()}, ${String(postalCode || "").trim()} ${String(city || "").trim()}, France`;
   const routeResponse = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    signal: AbortSignal.timeout(10000),
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -166,6 +190,7 @@ const verifyWithTwilio = async (path, input) => {
   const body = new URLSearchParams(input);
   const credentials = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
   const response = await fetch(`https://verify.twilio.com/v2/Services/${twilioVerifyServiceSid}/${path}`, {
+    signal: AbortSignal.timeout(10000),
     method: "POST",
     headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" },
     body
@@ -177,7 +202,7 @@ const verifyWithTwilio = async (path, input) => {
 const getSumUpMerchantCode = async () => {
   if (sumupMerchantCode) return sumupMerchantCode;
   if (!sumupApiKey) return null;
-  const response = await fetch("https://api.sumup.com/v0.1/me", { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
+  const response = await fetch("https://api.sumup.com/v0.1/me", { signal: AbortSignal.timeout(10000), headers: { "Authorization": `Bearer ${sumupApiKey}` } });
   if (!response.ok) return null;
   const merchant = await response.json();
   return merchant.merchant_code || merchant.merchant?.merchant_code || merchant.merchant_profile?.merchant_code || merchant.merchant?.merchant_profile?.merchant_code || null;
@@ -187,6 +212,10 @@ const paidOrders = (database) => database.orders.filter((order) => order.payment
 const loyaltyPointsForItems = (items) => items.reduce((total, item) => total + (menuProductIds.has(item.productId) ? MENU_POINTS : burgerProductIds.has(item.productId) ? BURGER_POINTS : 0) * Math.max(1, Number(item.quantity) || 1), 0);
 const finalizePaidOrder = (order, database) => {
   if (order.payment?.status !== "PAID") return null;
+  if (order.status === "cancelled") {
+    revokeLoyaltyForCancelledOrder(order, database);
+    return null;
+  }
 
   const now = new Date().toISOString();
   order.payment.paidAt ||= now;
@@ -221,12 +250,54 @@ const finalizePaidBibouPlusPurchase = (purchase, database) => {
   return customer;
 };
 
+const sumupRequest = async (route, options = {}) => {
+  if (!sumupApiKey) throw paymentError();
+  try {
+    const response = await fetch(`https://api.sumup.com/v0.1/${route}`, {
+      ...options, signal: AbortSignal.timeout(10000),
+      headers: { Authorization: `Bearer ${sumupApiKey}`, "Content-Type": "application/json" }
+    });
+    if (!response.ok) throw paymentError();
+    return await response.json();
+  } catch { throw paymentError(); }
+};
+
+const refreshPayment = async (record) => {
+  const merchantCode = record.payment.merchantCode || await getSumUpMerchantCode();
+  let checkout;
+  if (record.payment.checkoutId) checkout = await sumupRequest(`checkouts/${encodeURIComponent(record.payment.checkoutId)}`);
+  else {
+    // Recover a creation whose response was lost, without creating another one.
+    const found = await sumupRequest(`checkouts?checkout_reference=${encodeURIComponent(record.payment.checkoutReference)}`);
+    if (!Array.isArray(found) || found.length !== 1) throw paymentError();
+    checkout = found[0];
+  }
+  applyVerifiedCheckout(record, checkout, merchantCode);
+};
+
+const openPayment = async (record, database, { merchantCode, expiresAt, description, prefix }) => {
+  if (record.payment?.checkoutReference) await refreshPayment(record);
+  else {
+    record.payment = { provider: "sumup", checkoutReference: `${prefix}-${record.number}-${crypto.randomUUID()}`, merchantCode, status: "PENDING", createdAt: new Date().toISOString(), validUntil: expiresAt.toISOString() };
+    await writeDatabase(database); // Persist intent before the network call.
+    const checkout = await sumupRequest("checkouts", {
+      method: "POST",
+      body: JSON.stringify({ checkout_reference: record.payment.checkoutReference, amount: record.total ?? record.amount, currency: "EUR", merchant_code: merchantCode, description, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: expiresAt.toISOString(), hosted_checkout: { enabled: true } })
+    });
+    applyVerifiedCheckout(record, checkout, merchantCode);
+  }
+  await writeDatabase(database);
+  if (record.payment.status === "EXPIRED") throw Object.assign(new Error("Ce paiement a expiré. Recommence la commande."), { statusCode: 409 });
+  if (!record.payment.checkoutUrl && record.payment.status !== "PAID") throw paymentError();
+};
+
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   const url = new URL(request.url, `http://${request.headers.host}`);
+  let releaseDatabase;
 
   try {
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API" });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null });
 
     if (request.method === "GET" && ["/api/catalog", "/api/dashboard/catalog"].includes(url.pathname)) {
       if (url.pathname.startsWith("/api/dashboard/") && !authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
@@ -302,6 +373,9 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { token });
     }
 
+    // Do not hold the database lock while waiting for a request body.
+    if (["POST", "PATCH", "DELETE"].includes(request.method)) await readBody(request);
+    releaseDatabase = await acquireDatabase();
     const database = await readDatabase();
     const loyaltyWeekChanged = resetExpiredLoyaltyWeeks(database);
     const referralCodesChanged = ensureAllReferralCodes(database);
@@ -434,40 +508,26 @@ const server = http.createServer(async (request, response) => {
 
       const createdAt = new Date();
       const validUntil = new Date(createdAt.getTime() + 30 * 60 * 1000);
-      const number = database.nextBibouPlusNumber++;
-      const purchase = { id: `bibou-plus-${number}`, number, customerId: customer.id, amount: BIBOU_PLUS_PRICE, status: "awaiting_payment", createdAt: createdAt.toISOString() };
-      const checkoutReference = `bibou-plus-${number}-${Date.now()}`;
-      const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ checkout_reference: checkoutReference, amount: BIBOU_PLUS_PRICE, currency: "EUR", merchant_code: merchantCode, description: "Bibou + · 30 jours", return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: validUntil.toISOString(), hosted_checkout: { enabled: true } })
-      });
-      if (!sumupResponse.ok) {
-        database.nextBibouPlusNumber -= 1;
-        console.error("SumUp Bibou + checkout creation failed", sumupResponse.status);
-        return send(response, 502, { error: "SumUp n’a pas pu ouvrir le paiement Bibou +." });
+      let purchase = database.bibouPlusPurchases.find(item => item.customerId === customer.id && !item.activatedAt && item.payment?.status !== "EXPIRED" && new Date(item.payment?.validUntil || 0) > createdAt);
+      if (!purchase) {
+        const number = database.nextBibouPlusNumber++;
+        purchase = { id: `bibou-plus-${number}`, number, customerId: customer.id, amount: BIBOU_PLUS_PRICE, status: "awaiting_payment", createdAt: createdAt.toISOString() };
+        database.bibouPlusPurchases.unshift(purchase);
       }
-      const checkout = await sumupResponse.json();
-      purchase.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "PENDING", createdAt: createdAt.toISOString(), validUntil: validUntil.toISOString() };
-      database.bibouPlusPurchases.unshift(purchase);
+      await openPayment(purchase, database, { merchantCode, expiresAt: validUntil, description: "Bibou + · 30 jours", prefix: "bibou-plus" });
+      finalizePaidBibouPlusPurchase(purchase, database);
       await writeDatabase(database);
-      return send(response, 201, { purchase, checkoutUrl: checkout.hosted_checkout_url || null });
+      return send(response, 201, { purchase, checkoutUrl: purchase.payment.checkoutUrl || null });
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/bibou-plus/checkout/")) {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
       const purchase = database.bibouPlusPurchases.find((item) => item.id === url.pathname.split("/").pop() && item.customerId === customer.id);
-      if (!purchase?.payment?.checkoutId) return send(response, 404, { error: "Paiement Bibou + introuvable." });
-      const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${purchase.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
-      if (sumupResponse.ok) {
-        const checkout = await sumupResponse.json();
-        purchase.payment.status = checkout.status || purchase.payment.status;
-        purchase.payment.updatedAt = new Date().toISOString();
-        if (checkout.status === "PAID") purchase.payment.paidAt = new Date().toISOString();
-        finalizePaidBibouPlusPurchase(purchase, database);
-        await writeDatabase(database);
-      }
+      if (!purchase?.payment?.checkoutReference) return send(response, 404, { error: "Paiement Bibou + introuvable." });
+      await refreshPayment(purchase);
+      finalizePaidBibouPlusPurchase(purchase, database);
+      await writeDatabase(database);
       return send(response, 200, { purchase, customer, bibouPlus: bibouPlusStatus(customer) });
     }
 
@@ -501,7 +561,7 @@ const server = http.createServer(async (request, response) => {
         activeOrders: activeOrders.length,
         newOrders: activeOrders.filter((order) => order.status === "confirmed").length,
         readyOrders: activeOrders.filter((order) => order.status === "ready").length,
-        serviceRevenue: confirmedOrders.filter((order) => order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
+        serviceRevenue: confirmedOrders.filter((order) => order.status !== "cancelled" && order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
       });
     }
 
@@ -556,6 +616,7 @@ const server = http.createServer(async (request, response) => {
       if (!order) return send(response, 404, { error: "Commande introuvable" });
       if (order.payment?.status !== "PAID") return send(response, 409, { error: "Le paiement doit être confirmé avant de traiter la commande." });
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
+      assertOrderTransition(order, input.status);
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
       revokeLoyaltyForCancelledOrder(order, database);
@@ -650,76 +711,56 @@ const server = http.createServer(async (request, response) => {
       assertStoredOrderAvailable(order.items, await productStockStore.read());
       const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
       if (!Number.isFinite(checkoutExpiresAt.getTime()) || checkoutExpiresAt.getTime() <= Date.now()) {
-        return send(response, 409, { error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
+        return send(response, 409, { code: "ORDER_EXPIRED", error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
       }
       const merchantCode = await getSumUpMerchantCode();
       if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "SumUp n’est pas encore configuré sur le serveur." });
 
       assertStoredOrderAvailable(order.items, await productStockStore.read());
-      const checkoutReference = `bibous-${order.number}-${Date.now()}`;
-      const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ checkout_reference: checkoutReference, amount: order.total, currency: "EUR", merchant_code: merchantCode, description: `Commande Bibou's Burgers #${order.number}`, return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: checkoutExpiresAt.toISOString(), hosted_checkout: { enabled: true } })
-      });
-      if (!sumupResponse.ok) {
-        console.error("SumUp checkout creation failed", sumupResponse.status);
-        return send(response, 502, { error: "SumUp n’a pas pu créer le paiement." });
-      }
-      const checkout = await sumupResponse.json();
-      order.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "pending", createdAt: new Date().toISOString(), validUntil: checkoutExpiresAt.toISOString() };
+      await openPayment(order, database, { merchantCode, expiresAt: checkoutExpiresAt, description: `Commande Bibou's Burgers #${order.number}`, prefix: "bibous" });
       const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);
-      return send(response, 201, { checkoutId: checkout.id, checkoutUrl: checkout.hosted_checkout_url || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
+      return send(response, 201, { checkoutId: order.payment.checkoutId, checkoutUrl: order.payment.checkoutUrl || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
 
     if (["GET", "POST"].includes(request.method) && url.pathname === "/api/payments/sumup-return") {
       const notification = request.method === "POST" ? await readBody(request) : Object.fromEntries(url.searchParams);
+      if (notification.event_type && notification.event_type !== "CHECKOUT_STATUS_CHANGED") return send(response, 204, {});
       const checkoutId = notification.checkout_id || notification.checkoutId || notification.id;
-      const order = database.orders.find((item) => item.payment?.checkoutId === checkoutId);
-      const bibouPlusPurchase = database.bibouPlusPurchases.find((item) => item.payment?.checkoutId === checkoutId);
-      if (order && sumupApiKey) {
-        const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
-        if (sumupResponse.ok) {
-          const checkout = await sumupResponse.json();
-          order.payment.status = checkout.status || order.payment.status;
-          order.payment.updatedAt = new Date().toISOString();
-          if (checkout.status === "PAID") order.payment.paidAt = new Date().toISOString();
-          finalizePaidOrder(order, database);
-          await writeDatabase(database);
-        }
+      if (typeof checkoutId !== "string" || !checkoutId) return send(response, 400, { error: "Identifiant de paiement requis." });
+      let order = database.orders.find((item) => item.payment?.checkoutId === checkoutId);
+      let bibouPlusPurchase = database.bibouPlusPurchases.find((item) => item.payment?.checkoutId === checkoutId);
+      if (!order && !bibouPlusPurchase) {
+        const checkout = await sumupRequest(`checkouts/${encodeURIComponent(checkoutId)}`);
+        const matches = item => !item.payment?.checkoutId && item.payment?.checkoutReference && item.payment.checkoutReference === checkout.checkout_reference;
+        order = database.orders.find(matches);
+        bibouPlusPurchase = database.bibouPlusPurchases.find(matches);
+        const record = order || bibouPlusPurchase;
+        if (record) applyVerifiedCheckout(record, checkout, record.payment.merchantCode || await getSumUpMerchantCode());
       }
-      if (bibouPlusPurchase && sumupApiKey) {
-        const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
-        if (sumupResponse.ok) {
-          const checkout = await sumupResponse.json();
-          bibouPlusPurchase.payment.status = checkout.status || bibouPlusPurchase.payment.status;
-          bibouPlusPurchase.payment.updatedAt = new Date().toISOString();
-          if (checkout.status === "PAID") bibouPlusPurchase.payment.paidAt = new Date().toISOString();
-          finalizePaidBibouPlusPurchase(bibouPlusPurchase, database);
-          await writeDatabase(database);
-        }
+      if (order) {
+        await refreshPayment(order);
+        finalizePaidOrder(order, database);
+        await writeDatabase(database);
       }
-      return send(response, 200, { ok: true });
+      if (bibouPlusPurchase) {
+        await refreshPayment(bibouPlusPurchase);
+        finalizePaidBibouPlusPurchase(bibouPlusPurchase, database);
+        await writeDatabase(database);
+      }
+      // Unknown IDs can be retried after a checkout creation response is lost.
+      if (!order && !bibouPlusPurchase) return send(response, 503, { error: "Paiement pas encore associé." });
+      return send(response, 204, {});
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/payments/sumup-checkout/")) {
       const order = database.orders.find((item) => item.id === url.pathname.split("/").pop());
-      if (!order?.payment?.checkoutId) return send(response, 404, { error: "Paiement introuvable" });
+      if (!order?.payment?.checkoutReference) return send(response, 404, { error: "Paiement introuvable" });
       const customer = authenticatedCustomer(request, database);
       if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour vérifier ce paiement." });
-      let confirmation = null;
-      if (sumupApiKey) {
-        const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${order.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
-        if (sumupResponse.ok) {
-          const checkout = await sumupResponse.json();
-          order.payment.status = checkout.status || order.payment.status;
-          order.payment.updatedAt = new Date().toISOString();
-          if (checkout.status === "PAID") order.payment.paidAt = new Date().toISOString();
-          confirmation = finalizePaidOrder(order, database);
-          await writeDatabase(database);
-        }
-      }
+      await refreshPayment(order);
+      const confirmation = finalizePaidOrder(order, database);
+      await writeDatabase(database);
       return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
 
@@ -730,6 +771,7 @@ const server = http.createServer(async (request, response) => {
       if (!order) return send(response, 404, { error: "Commande introuvable" });
       if (order.payment?.status !== "PAID") return send(response, 409, { error: "Le paiement doit être confirmé avant de traiter la commande." });
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
+      assertOrderTransition(order, input.status);
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
       revokeLoyaltyForCancelledOrder(order, database);
@@ -740,8 +782,10 @@ const server = http.createServer(async (request, response) => {
     return send(response, 404, { error: "Route introuvable" });
   } catch (error) {
     console.error(error);
-    if (error.statusCode === 400) return send(response, 400, { error: error.message });
+    if ([400, 408, 409, 413, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
     return send(response, error.message === "Invalid JSON" ? 400 : 500, { error: "Une erreur serveur est survenue." });
+  } finally {
+    releaseDatabase?.();
   }
 });
 
