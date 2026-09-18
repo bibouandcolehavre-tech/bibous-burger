@@ -2,6 +2,12 @@
   "expo": {
     "name": "Bibou's Burgers",
     "slug": "bibous-burger",
+    "owner": "bibou-and-co",
+    "extra": {
+      "eas": {
+        "projectId": "2c35adf5-23b6-474e-a790-c8cf39d4d70a"
+      }
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",

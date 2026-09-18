@@ -6,22 +6,24 @@ L’application web et l’API sont déployables. Les exports de code iOS et And
 
 ## Contrôles réalisés
 
-- 119 tests automatisés : paiements et doublons, annulation, fidélité/parrainage, créneaux, réservations, récompenses, stock, accès privés, sauvegardes, initialisation sans données clients embarquées, limitation des connexions et reprise après interruption.
+- 124 tests automatisés : liens sociaux, paiements et doublons, annulation, fidélité/parrainage, créneaux, réservations, récompenses, stock, accès privés, sauvegardes, initialisation sans données clients embarquées, limitation des connexions et reprise après interruption.
 - Export web et exports Hermes iOS/Android réussis.
 - Expo Doctor : 21 contrôles sur 21 réussis.
 - Audit des dépendances applicatives : aucune vulnérabilité connue après correctif ciblé UUID, sans mise à niveau majeure du framework.
 - Reprise de paiement vérifiée dans le navigateur avec faux client et faux fournisseur : attente, actualisation, succès, annulation, expiration et indisponibilité SumUp. Aucun encaissement ni SMS réel.
 - Session persistante mobile chiffrée, déconnexion explicite, journal de paiement sans coordonnées ni token, fichiers sensibles exclus des archives de compilation.
 
-## Blocage de compilation signée observé
+## Connexion Expo effectuée — builds suspendus à la demande du propriétaire
 
-`npx eas-cli whoami` répond « Not logged in ». Le projet n’est pas encore associé à un propriétaire/identifiant de projet EAS. Ne pas en inventer un, créer un compte au nom du propriétaire sans son intervention ou choisir un forfait payant.
+Connexion OAuth terminée par le propriétaire, compte CLI `bibouburgers`. Projet `bibous-burger` dans l’organisation `bibou-and-co` (Bibou & Co), identifiant `2c35adf5-23b6-474e-a790-c8cf39d4d70a`, sauvegardé dans `app.json`. Le propriétaire demande de poursuivre les modifications avant toute version installable : ne pas lancer de build APK/AAB/IPA ni de soumission pour le moment.
+
+EAS Update n’est pas installé/configuré. Certaines futures modifications de texte, style et images pourraient être distribuées par ce mécanisme compatible avec les règles des boutiques, une fois configuré et inclus dans un binaire. Les changements natifs imposent un nouveau build ; les changements de fonctionnalités doivent respecter la revue des plateformes. Ne pas confondre déploiement web et mise à jour de l’application installée.
 
 Le Mac dispose des Command Line Tools, pas d’une installation Xcode complète sélectionnée ni d’un runtime Java. Les exports de code réalisés ne sont donc pas des compilations natives locales. Utiliser EAS après connexion, sous réserve des conditions et quotas du compte existant ; aucune nouvelle dépense n’a été engagée.
 
 ### Intervention regroupée du propriétaire
 
-1. Se connecter à son compte Expo dans le terminal avec `npx eas-cli login`, sans communiquer le mot de passe ou un token dans la conversation. Si aucun compte n’existe, le propriétaire le crée et accepte lui-même les conditions.
+1. Confirmer la reprise des versions installables quand les modifications souhaitées sont prêtes. La connexion Expo est déjà effectuée ; ne pas recommencer ni demander de transmettre un mot de passe/token.
 2. Confirmer/ouvrir les comptes Apple Developer et Google Play Console de Bibou & Co ; toute inscription payante ou acceptation de contrat reste à valider par le propriétaire.
 3. Fournir les accès de signature et validations à deux facteurs au moment de créer les builds ; le propriétaire conserve ses identifiants.
 
@@ -29,7 +31,7 @@ Source officielle pour la connexion, les compilations et signatures : [Créer un
 
 ## Travail à enchaîner dès les accès disponibles
 
-- Associer ce dépôt au bon compte Expo et générer un APK de test Android ; générer le build iOS approprié pour appareil enregistré ou TestFlight.
+- Une fois la pause levée, générer un APK de test Android ; générer le build iOS approprié pour appareil enregistré ou TestFlight. Le dépôt est déjà associé au projet Expo du propriétaire.
 - Installer sur Android/iPhone réels : connexion et reconnexion SMS, fermeture pendant SumUp, retour de paiement, commandes, créneaux complets, réservation jusqu’à quatre personnes, Bibou +, fidélité, déconnexion et suppression du compte.
 - Test réel SMS vers un numéro autorisé par son titulaire, après approbation Twilio. Ne pas recommencer des essais en boucle ni consommer du crédit sans nécessité.
 - Captures d’écran issues des vrais builds et visuel Google Play ; reprendre les textes de `STORE_LISTING.md`.

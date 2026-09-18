@@ -11,6 +11,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 
 ## État validé
 
+- Réseaux sociaux sur l’accueil, sous les avis Google : logos vectoriels Instagram, Facebook et TikTok avec les trois liens exacts fournis par le propriétaire. Ouverture externe, aucun SDK social, suivi publicitaire ou demande de connexion ajoutée. Rubrique vérifiée à 390 px et au clavier ; les liens web conservent l’application dans son onglet.
 - Les quatre en-têtes jaunes « Nos menus », « Nos burgers », « Petites faims » et « Boissons » occupent toute la largeur.
 - Carte comprenant menus, burgers seuls, petites faims et boissons.
 - Photos officielles des burgers et produits SumUp, avec boissons détourées sur fond crème neutre.
@@ -31,10 +32,10 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
 - Sauvegardes automatiques horaires des données et stocks sur le disque persistant, rotation horaire/quotidienne sur une semaine, contrôle d’intégrité, accès restaurant pour créer/télécharger une copie, et outil de récupération séparée sans écrasement. Pas de nouvelle dépense ni de stockage externe activé.
-- 119 tests automatisés réussissent, dont reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
+- 124 tests automatisés réussissent, dont liens sociaux, reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
 - Reprise persistante des paiements de commande et Bibou + après fermeture/actualisation : journal limité au compte, création idempotente, contrôle serveur, indication visible des erreurs et accès depuis l’accueil. Un succès indique la transmission au restaurant, sans prétendre que la préparation a déjà commencé.
 - Connexion persistante chiffrée sur iPhone/Android, déconnexion explicite, session conservée en cas de panne réseau. Les messages simples qui étaient silencieux dans le navigateur sont désormais visibles.
-- Exports web/iOS/Android réussis, Expo Doctor 21/21 et audit npm sans vulnérabilité connue après correction ciblée UUID. `.easignore` et `.dockerignore` excluent données locales et secrets. Aucune création de binaire signé ni soumission aux boutiques : Expo/EAS n’est pas connecté. Voir `RELEASE_READINESS.md`.
+- Exports web/iOS/Android précédemment réussis, Expo Doctor 21/21 et audit npm sans vulnérabilité connue après correction ciblée UUID. Export web revérifié après ajout des réseaux sociaux. `.easignore` et `.dockerignore` excluent données locales et secrets. Expo connecté au compte `bibouburgers`, projet `bibous-burger` de `bibou-and-co` associé dans `app.json`. Aucune création de binaire signé ni soumission : le propriétaire a explicitement suspendu cette préparation pour poursuivre les modifications de l’application. Voir `RELEASE_READINESS.md`.
 - Export web réussi ; rupture/restauration de boissons, options de menu et blocage d’un panier existant vérifiés dans un environnement local avec données fictives.
 - Alertes vérifiées dans le navigateur : activation, test du son, arrivée simultanée d’une commande payée et d’une table fictives, compteurs, accès aux réservations et mise en sourdine ; aucune erreur JavaScript observée.
 - Écran Sauvegardes vérifié dans un navigateur local : création automatique et manuelle, téléchargement d’une archive fictive, lisibilité et absence d’erreurs JavaScript. Aucun téléchargement de données clients réelles ni restauration de production pendant ces tests.
@@ -47,7 +48,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 3. Étudier des notifications push pour recevoir une alerte lorsque le tableau est fermé (les sons dans la page sont maintenant implémentés).
 4. Synchroniser les remboursements réalisés dans SumUp à partir des transactions (la confirmation de paiement et la protection des annulations sont renforcées). Annuler dans l’application reste distinct du remboursement bancaire.
 5. Organiser une copie régulière hors du serveur et un exercice de récupération avant ouverture publique (l’historique automatique sur disque est implémenté).
-6. Se connecter au compte Expo du propriétaire, associer le projet EAS, générer les premières versions installables iPhone/Android et effectuer un test complet sur appareils réels. Les exports JavaScript ont réussi mais ne remplacent pas ces builds signés.
+6. Après accord explicite pour reprendre les versions installables : générer les premières versions iPhone/Android et effectuer un test complet sur appareils réels. Le compte Expo est connecté et le projet associé ; les exports JavaScript ne remplacent pas ces builds signés. EAS Update n’est pas encore configuré : ne pas promettre des mises à jour natives à distance déjà actives.
 7. Préparer les captures d’écran, les informations légales finales et les fiches Apple App Store et Google Play.
 
 ## Précautions
