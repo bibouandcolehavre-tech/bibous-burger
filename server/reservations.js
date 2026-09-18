@@ -18,7 +18,13 @@ const ensureReservationStore = (database) => {
   return database;
 };
 
-const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && reservation.slot === slot && reservation.status !== "cancelled";
+// Two tables per half hour, shared between :00/:15 or :30/:45.
+// Legacy interval reservations still consume capacity; no stored bookings are moved.
+const reservationBucket = (slot) => {
+  const match = /^(\d{2}):(\d{2})(?:$| – )/.exec(String(slot || ""));
+  return match ? `${match[1]}:${Number(match[2]) < 30 ? "00" : "30"}` : null;
+};
+const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && Boolean(reservationBucket(slot)) && reservationBucket(reservation.slot) === reservationBucket(slot) && reservation.status !== "cancelled";
 
 const remainingReservationPlaces = (database, dateKey, slot) => {
   ensureReservationStore(database);
@@ -27,9 +33,9 @@ const remainingReservationPlaces = (database, dateKey, slot) => {
 };
 
 const reservationAvailabilityForDate = (database, dateKey, now = new Date()) => Object.fromEntries(
-  slotsForDate(dateKey).map((slot) => {
+  slotsForDate(dateKey, "reservation").map((slot) => {
     const status = remainingReservationPlaces(database, dateKey, slot);
-    const unavailableReason = validateServiceSlot(dateKey, slot, now);
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, "reservation");
     return [slot, { ...status, unavailable: Boolean(unavailableReason), unavailableReason }];
   })
 );
@@ -50,7 +56,7 @@ const createReservation = (database, input, now = new Date()) => {
   if (customerName.length < 2) throw new Error("Indique ton nom pour réserver.");
   if (!phone) throw new Error("Indique un numéro de téléphone français valide.");
   if (!Number.isInteger(guests) || guests < 1 || guests > 4) throw new Error("Choisis entre 1 et 4 personnes.");
-  const slotError = validateServiceSlot(input.serviceDate, input.slot, now);
+  const slotError = validateServiceSlot(input.serviceDate, input.slot, now, "reservation");
   if (slotError) throw new Error(slotError.replace("livraison", "réservation"));
   if (remainingReservationPlaces(database, input.serviceDate, input.slot).full) throw new Error("Ce créneau de réservation est complet.");
 
@@ -78,6 +84,9 @@ const updateReservationStatus = (database, id, status, now = new Date()) => {
   if (!RESERVATION_STATUSES.includes(status)) throw new Error("Statut de réservation invalide.");
   const reservation = database.reservations.find((item) => item.id === id);
   if (!reservation) return null;
+  if (reservation.status === "cancelled" && status !== "cancelled" && remainingReservationPlaces(database, reservation.serviceDate, reservation.slot).full) {
+    throw new Error("Cette demi-heure est complète. Impossible de réactiver la réservation.");
+  }
   reservation.status = status;
   reservation.updatedAt = now.toISOString();
   return reservation;

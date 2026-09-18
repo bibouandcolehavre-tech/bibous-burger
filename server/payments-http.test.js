@@ -35,7 +35,7 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
   const provider = async mutate => { const state = JSON.parse(await fs.readFile(providerFile, 'utf8')); mutate(state); await fs.writeFile(providerFile, JSON.stringify(state)); };
   const creations = async () => (await fs.readFile(path.join(directory, 'calls.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(call => call.method === 'POST').length;
   const createOrder = async () => {
-    const result = await request('/orders', { method: 'POST', body: { customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00 – 19:30', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] } });
+    const result = await request('/orders', { method: 'POST', body: { customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] } });
     assert.equal(result.status, 201, JSON.stringify(result.data)); return result.data.order;
   };
   const open = order => request('/payments/sumup-checkout', { method: 'POST', body: { orderId: order.id } });
@@ -67,7 +67,9 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
   await t.test('confirmations simultanées : points et parrainage crédités une seule fois', async () => {
     await Promise.all([callback(checkoutId), callback(checkoutId), verify(order)]);
     const saved = await db();
-    assert.equal(saved.customers[0].points, 10);
+    assert.equal(saved.customers[0].points, 20);
+    assert.equal(saved.orders[0].pickupAdvanceBonusApplied, true);
+    assert.equal(saved.orders[0].loyaltyPickupMultiplier, 2);
     assert.equal(saved.customers[1].points, 100);
     assert.equal(saved.orders[0].status, 'confirmed');
     assert.equal(saved.customers[0].welcomeReward.status, 'used');
@@ -140,7 +142,7 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
   });
 
   await t.test('actualisation ou réponse perdue : même tentative, une seule commande, accès privé', async () => {
-    const body = { requestId: 'attempt-reload-test-001', customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00 – 19:30', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] };
+    const body = { requestId: 'attempt-reload-test-001', customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] };
     const before = (await db()).orders.length;
     const [first, second] = await Promise.all([request('/orders', { method: 'POST', body }), request('/orders', { method: 'POST', body })]);
     assert.deepEqual([first.status, second.status].sort(), [200, 201]);
@@ -152,7 +154,7 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
     assert.equal(recovered.data.record.id, first.data.order.id);
     assert.equal((await request(route, { auth: '' })).status, 401);
     assert.equal((await request(route, { auth: createCustomerSession('sponsor-test', 'test-secret') })).status, 404);
-    assert.equal((await request('/orders', { method: 'POST', body: { ...body, slot: '19:30 – 20:00' } })).status, 409);
+    assert.equal((await request('/orders', { method: 'POST', body: { ...body, slot: '19:30' } })).status, 409);
     const opened = await open(first.data.order);
     const count = await creations();
     await provider(state => { state.checkouts[opened.data.checkoutId].status = 'PAID'; });

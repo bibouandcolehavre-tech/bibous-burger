@@ -6,7 +6,7 @@ L’application web et l’API sont déployables. Les exports de code iOS et And
 
 ## Contrôles réalisés
 
-- 110 tests automatisés : paiements et doublons, annulation, fidélité/parrainage, créneaux, réservations, récompenses, stock, accès privés, sauvegardes, initialisation sans données clients embarquées, limitation des connexions et reprise après interruption.
+- 119 tests automatisés : paiements et doublons, annulation, fidélité/parrainage, créneaux, réservations, récompenses, stock, accès privés, sauvegardes, initialisation sans données clients embarquées, limitation des connexions et reprise après interruption.
 - Export web et exports Hermes iOS/Android réussis.
 - Expo Doctor : 21 contrôles sur 21 réussis.
 - Audit des dépendances applicatives : aucune vulnérabilité connue après correctif ciblé UUID, sans mise à niveau majeure du framework.

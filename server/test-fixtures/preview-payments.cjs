@@ -17,7 +17,7 @@ if (process.env.NODE_ENV !== 'test') throw new Error('NODE_ENV=test required');
   const secret = 'preview-only-never-production';
   const token = createCustomerSession(customerId, secret);
   const requestId = 'attempt-preview-recovery-0001';
-  const input = { customerId, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00 – 19:30', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] };
+  const input = { customerId, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] };
   const attempt = { version: 1, customerId, requestId, kind: 'order', input, createdAt: Date.now() };
   const seed = async scenario => {
     const payment = { checkoutId: 'preview-checkout', checkoutReference: 'preview-reference', merchantCode: 'TEST', status: 'PENDING', checkoutUrl: 'https://checkout.sumup.com/pay/preview-only', validUntil: new Date(Date.now() + 900000).toISOString() };

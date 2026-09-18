@@ -28,9 +28,36 @@ const dateFromKey = (dateKey) => {
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dateKey ? null : parsed;
 };
 
-const slotsForDate = (dateKey) => {
+const slotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
-  return date ? WEEKDAY_SLOTS[date.getUTCDay()] || [] : [];
+  const ranges = date ? WEEKDAY_SLOTS[date.getUTCDay()] || [] : [];
+  if (method === "delivery") return ranges;
+  if (!["pickup", "reservation"].includes(method)) return [];
+  return ranges.flatMap((range) => {
+    const start = range.slice(0, 5);
+    const [hour, minute] = start.split(":").map(Number);
+    return [start, `${String(hour).padStart(2, "0")}:${String(minute + 15).padStart(2, "0")}`];
+  });
+};
+
+// Paris wall clock converted without relying on the server's local time zone.
+// Service hours never overlap the ambiguous/nonexistent DST hours at night.
+const serviceSlotInstant = (dateKey, slot) => {
+  if (!slotsForDate(dateKey, "pickup").includes(slot)) return null;
+  const wallTime = Date.parse(`${dateKey}T${slot}:00Z`);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+  }).formatToParts(new Date(wallTime)).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  const localWallTime = Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`);
+  return new Date(wallTime - (localWallTime - wallTime));
+};
+
+const qualifiesForAdvancePickup = (order) => {
+  if (order.method !== "pickup") return false;
+  const arrival = serviceSlotInstant(order.serviceDate, order.slot);
+  const created = Date.parse(order.createdAt);
+  return Boolean(arrival && Number.isFinite(created) && arrival.getTime() - created >= 30 * 60 * 1000);
 };
 
 const validateServiceDate = (dateKey, now = new Date()) => {
@@ -42,10 +69,10 @@ const validateServiceDate = (dateKey, now = new Date()) => {
   return null;
 };
 
-const validateServiceSlot = (dateKey, slot, now = new Date()) => {
+const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery") => {
   const dateError = validateServiceDate(dateKey, now);
   if (dateError) return dateError;
-  if (!slotsForDate(dateKey).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là.";
+  if (!slotsForDate(dateKey, method).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
   if (dateKey === parisDateKey(now)) {
     const clockParts = Object.fromEntries(new Intl.DateTimeFormat("fr-FR", {
       timeZone: TIME_ZONE,
@@ -72,11 +99,12 @@ const remainingDeliveryPlaces = (database, dateKey, slot, now = new Date()) => {
   return { capacity: SLOT_CAPACITY, reserved, remaining: Math.max(0, SLOT_CAPACITY - reserved), full: reserved >= SLOT_CAPACITY };
 };
 
-const availabilityForDate = (database, dateKey, now = new Date()) => Object.fromEntries(
-  slotsForDate(dateKey).map((slot) => {
-    const status = remainingDeliveryPlaces(database, dateKey, slot, now);
-    const unavailableReason = validateServiceSlot(dateKey, slot, now);
-    return [slot, { ...status, unavailable: Boolean(unavailableReason), unavailableReason }];
+const availabilityForDate = (database, dateKey, now = new Date(), method = "delivery") => Object.fromEntries(
+  slotsForDate(dateKey, method).map((slot) => {
+    const status = method === "delivery" ? remainingDeliveryPlaces(database, dateKey, slot, now) : { full: false };
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, method);
+    return [slot, { ...status, unavailable: Boolean(unavailableReason), unavailableReason,
+      ...(method === "pickup" ? { pickupAdvanceEligible: qualifiesForAdvancePickup({ method, serviceDate: dateKey, slot, createdAt: now.toISOString() }) } : {}) }];
   })
 );
 
@@ -86,6 +114,8 @@ module.exports = {
   availabilityForDate,
   holdsDeliverySlot,
   parisDateKey,
+  serviceSlotInstant,
+  qualifiesForAdvancePickup,
   remainingDeliveryPlaces,
   slotsForDate,
   validateServiceDate,

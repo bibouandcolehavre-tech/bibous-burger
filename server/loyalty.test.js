@@ -55,3 +55,36 @@ test("ne donne aucun point à un produit explicitement hors barème", () => {
   assert.equal(grantLoyaltyForOrder(customer, order, value).pointsAdded, 0);
   assert.equal(customer.points, 0);
 });
+
+const advancePickup = (extra = {}) => ({
+  method: "pickup", serviceDate: "2026-09-18", slot: "19:00",
+  createdAt: "2026-09-18T16:30:00Z", pickupAdvanceBonusApplied: true,
+  loyaltyBasePoints: 10, ...extra
+});
+
+test("retrait anticipé ×2, cumul Bibou + et semaine, retrait du bonus si annulé", () => {
+  const customer = { points: 100, weeklyOrders: 0, loyaltyWeekStart: "2026-09-14" };
+  const now = new Date("2026-09-18T17:00:00Z");
+  const burger = advancePickup();
+  const menu = advancePickup({ loyaltyBasePoints: 15 });
+  assert.equal(grantLoyaltyForOrder(customer, burger, now).pointsAdded, 20);
+  assert.equal(grantLoyaltyForOrder(customer, menu, now, { bibouPlus: true }).pointsAdded, 140);
+  assert.equal(menu.loyaltyWeightedBasePoints, 60);
+  assert.equal(customer.points, 260); // existing 100 + (20 + 60) × weekly 2
+  assert.equal(grantLoyaltyForOrder(customer, menu, now, { bibouPlus: true }).pointsAdded, 0);
+  assert.equal(revokeLoyaltyForOrder(customer, menu, now), true);
+  assert.equal(customer.points, 120);
+  assert.equal(revokeLoyaltyForOrder(customer, menu, now), false);
+  assert.equal(grantLoyaltyForOrder(customer, menu, now).pointsAdded, 0);
+});
+
+test("pas de bonus anticipé pour livraison, retard, anciennes commandes ni hors barème", () => {
+  const now = new Date("2026-09-18T17:00:00Z");
+  for (const overrides of [{ method: "delivery" }, { createdAt: "2026-09-18T16:30:00.001Z" }, { pickupAdvanceBonusApplied: undefined }]) {
+    const order = advancePickup(overrides);
+    assert.equal(grantLoyaltyForOrder({ points: 0 }, order, now).pointsAdded, 10);
+    assert.equal(order.loyaltyPickupMultiplier, 1);
+  }
+  assert.equal(grantLoyaltyForOrder({ points: 0 }, advancePickup({ loyaltyBasePoints: 0 }), now).pointsAdded, 0);
+  assert.equal(grantLoyaltyForOrder({ points: 0 }, advancePickup({ status: "cancelled" }), now).pointsAdded, 0);
+});

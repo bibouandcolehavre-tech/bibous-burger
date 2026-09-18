@@ -2,6 +2,7 @@ const TIME_ZONE = "Europe/Paris";
 const POINTS_PER_ORDER = 20;
 const BURGER_POINTS = 10;
 const MENU_POINTS = 15;
+const { qualifiesForAdvancePickup } = require("./availability");
 
 const parisDateParts = (value = new Date()) => Object.fromEntries(
   new Intl.DateTimeFormat("en-CA", {
@@ -50,12 +51,14 @@ const grantLoyaltyForOrder = (customer, order, value = new Date(), options = {})
   const previousOrders = Math.max(0, Number(customer.weeklyOrders) || 0);
   const nextOrders = previousOrders + 1;
   const bibouPlusMultiplier = options.bibouPlus ? 2 : 1;
+  // Opt-in flag is set by the server on new orders only, never from client input.
+  const pickupMultiplier = order.pickupAdvanceBonusApplied === true && qualifiesForAdvancePickup(order) ? 2 : 1;
   const hasConfiguredBasePoints = Object.prototype.hasOwnProperty.call(order, "loyaltyBasePoints");
   const basePoints = hasConfiguredBasePoints
     ? Math.max(0, Number(order.loyaltyBasePoints) || 0)
     : POINTS_PER_ORDER;
   const previousWeightedBasePoints = Math.max(0, Number(customer.weeklyWeightedBasePoints) || (previousOrders * POINTS_PER_ORDER));
-  const nextWeightedBasePoints = previousWeightedBasePoints + (basePoints * bibouPlusMultiplier);
+  const nextWeightedBasePoints = previousWeightedBasePoints + (basePoints * bibouPlusMultiplier * pickupMultiplier);
   const previousProgramPoints = previousOrders ? previousWeightedBasePoints * Math.min(previousOrders, 3) : 0;
   const nextProgramPoints = nextWeightedBasePoints * Math.min(nextOrders, 3);
   const pointsAdded = nextProgramPoints - previousProgramPoints;
@@ -66,8 +69,9 @@ const grantLoyaltyForOrder = (customer, order, value = new Date(), options = {})
   order.loyaltyGrantedAt = value.toISOString();
   order.loyaltyPointsAdded = pointsAdded;
   order.loyaltyBasePoints = basePoints;
-  order.loyaltyWeightedBasePoints = basePoints * bibouPlusMultiplier;
+  order.loyaltyWeightedBasePoints = basePoints * bibouPlusMultiplier * pickupMultiplier;
   order.loyaltyBibouPlusMultiplier = bibouPlusMultiplier;
+  order.loyaltyPickupMultiplier = pickupMultiplier;
   order.loyaltyWeekStart = customer.loyaltyWeekStart;
   return { pointsAdded, changed: true };
 };

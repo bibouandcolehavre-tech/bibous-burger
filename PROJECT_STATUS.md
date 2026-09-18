@@ -16,13 +16,13 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Photos officielles des burgers et produits SumUp, avec boissons détourées sur fond crème neutre.
 - Personnalisation des produits, panier et suggestions de ventes additionnelles.
 - Livraison dans un rayon de 5 km avec tarification par distance et deux places par créneau.
-- Click & Collect et réservation de table jusqu’à quatre personnes, avec deux réservations par créneau.
+- Click & Collect et tables : heures fixes toutes les 15 minutes pendant les services. Tables jusqu’à quatre personnes ; deux réservations par demi-heure, partagées entre :00/:15 et :30/:45. Livraison inchangée (intervalles de 30 minutes, capacité deux). Les anciennes réservations conservent leur horaire et consomment toujours la capacité.
 - Paiement SumUp connecté et opérationnel.
 - Confirmation renforcée : contrôle montant/devise/commerçant/référence, reprise du même paiement, récupération après réponse perdue, erreurs SumUp explicites et aucun recrédit sur confirmations répétées. Une commande annulée reste annulée même après retour tardif de paiement.
 - Connexion par SMS Twilio configurée ; le profil professionnel a été approuvé.
 - Avis Google connectés et affichés en français.
 - Comptes clients, suivi des commandes et espace restaurant.
-- Fidélité, multiplicateurs hebdomadaires, parrainage, cinq prestiges et cadeau de bienvenue.
+- Fidélité, multiplicateurs hebdomadaires, parrainage, cinq prestiges et cadeau de bienvenue. Bonus retrait anticipé ×2 : commande enregistrée par le serveur au moins 30 minutes avant le retrait (Europe/Paris), attribué après paiement, cumulable avec Bibou + et le bonus hebdomadaire, jamais sur le parrainage. Les nouvelles commandes seulement ; annulations et callbacks répétés testés.
 - Récompenses de palier réclamables une seule fois, sans retrait de points, avec code unique validé dans l’espace restaurant.
 - Gestion des produits disponibles/en rupture dans l’espace restaurant, avec recherche et filtres. Propagation aux produits, aux options, aux suggestions et au panier. Contrôle serveur avant création de commande et de paiement.
 - Rubrique Fidélité clients active dans l’espace restaurant : recherche par prénom/téléphone/code, filtres et pagination, soldes et prestiges, Bibou +, état des récompenses, parrainages inscrits/validés/en attente et dernières commandes payées. Consultation seule, sans modification des points, sans adresses ni références de paiement. Comptes supprimés exclus.
@@ -31,7 +31,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
 - Sauvegardes automatiques horaires des données et stocks sur le disque persistant, rotation horaire/quotidienne sur une semaine, contrôle d’intégrité, accès restaurant pour créer/télécharger une copie, et outil de récupération séparée sans écrasement. Pas de nouvelle dépense ni de stockage externe activé.
-- 110 tests automatisés réussissent, dont reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
+- 119 tests automatisés réussissent, dont reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
 - Reprise persistante des paiements de commande et Bibou + après fermeture/actualisation : journal limité au compte, création idempotente, contrôle serveur, indication visible des erreurs et accès depuis l’accueil. Un succès indique la transmission au restaurant, sans prétendre que la préparation a déjà commencé.
 - Connexion persistante chiffrée sur iPhone/Android, déconnexion explicite, session conservée en cas de panne réseau. Les messages simples qui étaient silencieux dans le navigateur sont désormais visibles.
 - Exports web/iOS/Android réussis, Expo Doctor 21/21 et audit npm sans vulnérabilité connue après correction ciblée UUID. `.easignore` et `.dockerignore` excluent données locales et secrets. Aucune création de binaire signé ni soumission aux boutiques : Expo/EAS n’est pas connecté. Voir `RELEASE_READINESS.md`.

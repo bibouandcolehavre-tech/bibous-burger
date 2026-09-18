@@ -38,7 +38,7 @@ test("API : seuls les restaurateurs modifient le stock ; les ruptures bloquent c
   assert.equal(login.status, 200);
   assert.equal((await request("/dashboard/catalog/unknown", { method: "PATCH", token, body: { available: false } })).status, 400);
   assert.equal((await request("/dashboard/catalog/drink-coca", { method: "PATCH", token, body: { available: "false" } })).status, 400);
-  const order = { customerId: customer.id, items: [{ productId: "drink-coca", quantity: 1, selections: [] }], method: "pickup", serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: "19:00 – 19:30" };
+  const order = { customerId: customer.id, items: [{ productId: "drink-coca", quantity: 1, selections: [] }], method: "pickup", serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: "19:00" };
   const created = await request("/orders", { method: "POST", token: customerToken, body: order });
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const changed = await request("/dashboard/catalog/drink-coca", { method: "PATCH", token, body: { available: false } });
