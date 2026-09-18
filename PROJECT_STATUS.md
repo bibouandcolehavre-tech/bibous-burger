@@ -1,4 +1,4 @@
-# Point de reprise — 18 septembre 2026
+# Point de reprise — 19 septembre 2026
 
 Ce document sert de point de reprise pour le développement de l’application Bibou's Burgers.
 
@@ -11,7 +11,12 @@ Ce document sert de point de reprise pour le développement de l’application B
 
 ## État validé
 
-- Réseaux sociaux intégrés au carrousel de l’accueil : diapositive « Suivez-nous » en deuxième position, fond sombre, trois logos vectoriels Instagram/Facebook/TikTok cliquables séparément avec les liens exacts fournis par le propriétaire. Ancien bloc indépendant supprimé. Cinq indicateurs permettent de choisir une carte ; le repère actif suit le défilement. Ouverture externe, aucun SDK social ou suivi publicitaire. Vérification à 390 px et au clavier ; l’application reste dans son onglet.
+- Accueil : le carrousel est désormais « Nos actualités », sans carte de burger. Quatre cartes par défaut : vidéo Epicu du 2 mai 2026 (Reel DX1QN8DIdet, identifié sur le profil Instagram), réseaux sociaux, concours en préparation et article Paris-Normandie. Les burgers restent dans la carte des produits.
+- Nouvelle rubrique restaurant « Actualités & concours » : actualités modifiables, liens/photos par URL HTTPS, ordre, visibilité et ajout/retrait ; propagation à l’ouverture puis toutes les 60 secondes. Modifications non enregistrées préservées et contrôle de version contre les écrasements concurrents.
+- Concours préparé, NON LANCÉ : brouillon privé avec dates/lots/règlement/aperçu, suivi et classement ; parcours fictif vérifié de bout en bout (deux participants, un nouveau filleul, compteur personnel et restaurant concordants). Aucune activation possible depuis l’interface/API, aucune publication Instagram ou publicité. Voir `CONTEST_LAUNCH.md` pour les décisions restantes et la finalisation juridique/technique avant lancement.
+- Numéros clients : preuve de vérification enregistrée uniquement après accord Twilio ; changement de numéro impossible par simple modification de profil. Conservation limitée des participations et retrait lors de la suppression du compte. Aucun SMS réel envoyé pendant les tests.
+- 133 tests automatisés réussis et export web revérifié après les actualités, le concours et les protections des numéros. Premier montage tutoriel généré : `../video-demo/Bibous-Burgers-tutoriel-fr-v2.mp4`, 71 secondes, 1080 × 1920, captures réelles sur une base fictive et narration française de synthèse (voix macOS Thomas, pas un comédien enregistré). L’accueil montre bien Epicu. Images de contrôle et présence du son vérifiées ; aucune opération bancaire. Fichier conservé localement, hors du dépôt Git, à écouter/valider avant publication Instagram.
+- Réseaux sociaux intégrés au carrousel de l’accueil : diapositive « Suivez-nous » en deuxième position par défaut, fond sombre, trois logos vectoriels Instagram/Facebook/TikTok cliquables séparément avec les liens exacts fournis par le propriétaire. Ancien bloc indépendant supprimé. Les indicateurs suivent les cartes visibles ; le repère actif suit le défilement. Ouverture externe, aucun SDK social ou suivi publicitaire. Vérification à 390 px et au clavier ; l’application reste dans son onglet.
 - Les quatre en-têtes jaunes « Nos menus », « Nos burgers », « Petites faims » et « Boissons » occupent toute la largeur.
 - Carte comprenant menus, burgers seuls, petites faims et boissons.
 - Photos officielles des burgers et produits SumUp, avec boissons détourées sur fond crème neutre.
@@ -64,5 +69,5 @@ Ce document sert de point de reprise pour le développement de l’application B
 
 ## Idées discutées, non lancées
 
-- Concours Instagram de parrainage : lien personnel et comptage des nouveaux inscrits vérifiés par SMS, distinct des points fidélité (le parrainage habituel reste crédité après une première commande payée). Durée, lots, règlement, protection contre les doublons et départage restent à choisir. Aucun concours ni lot n’a été publié ou engagé.
+- Concours Instagram de parrainage : mécanisme et préparation maintenant implémentés et testés sur données fictives ; dates/lots/règlement et lancement restent à valider. Les règles de départage, le tirage et la désignation des gagnants ne sont pas encore implémentés. Aucun concours actif ni lot engagé. La vidéo Epicu s’ouvre sur Instagram (qui peut demander une connexion) ; ce n’est pas une copie hébergée de son contenu.
 - Avis Google : un avis contraire aux règles peut être signalé, mais aucune suppression n’est garantie. Ne pas offrir de récompenses en échange d’un avis ou de sa suppression (règles Google).

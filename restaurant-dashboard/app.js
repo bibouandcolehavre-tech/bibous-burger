@@ -30,6 +30,7 @@ const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, enabled: savedSoundPreference(), onChange: updateSoundControls });
 let currentView = "orders";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
+let marketingPanel = null;
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
 const serviceDateLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "Date non précisée";
 const receivedTimeLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
@@ -42,7 +43,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -491,7 +492,7 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["orders", "reservations", "rewards", "menu", "backups", "customers"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["orders", "reservations", "rewards", "menu", "backups", "customers", "marketing"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
@@ -500,12 +501,14 @@ function showView(view) {
   document.querySelector("#menu-view").hidden = view !== "menu";
   document.querySelector("#backups-view").hidden = view !== "backups";
   document.querySelector("#customers-view").hidden = view !== "customers";
-  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité", customers: "Fidélité clients" }[view];
+  document.querySelector("#marketing-view").hidden = view !== "marketing";
+  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité", customers: "Fidélité clients", marketing: "Actualités & concours" }[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
   if (view === "customers") void loadCustomers();
+  if (view === "marketing") void marketingPanel?.load();
 }
 
 document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => {
@@ -561,6 +564,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
+  if (currentView === "marketing") return marketingPanel?.load();
   if (currentView === "customers") return loadCustomers();
   if (currentView === "backups") return loadBackups();
   if (currentView === "menu") return loadMenu();
@@ -584,11 +588,13 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     if (currentView === "menu") loadMenu();
     if (currentView === "backups") loadBackups();
     if (currentView === "customers") loadCustomers();
+    if (currentView === "marketing") marketingPanel?.load();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
 });
 document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
+if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMarketing({ root: document.querySelector('#marketing-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 refreshMetrics();
 updateSoundControls();
 updateConnectionStatus();

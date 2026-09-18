@@ -7,6 +7,8 @@ const { createDatabaseLock } = require("./database-lock");
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
+const { dashboardNews, publicNews, saveNews } = require('./news');
+const { dashboardContest, saveContestDraft, publicContest, customerContest, joinContest, purgeExpiredContestEntries } = require('./referral-contest');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
@@ -429,6 +431,21 @@ const server = http.createServer(async (request, response) => {
     }
 
     // This reporting route is read-only, before the legacy read-time migrations.
+    if (['/api/news', '/api/contest', '/api/dashboard/news', '/api/dashboard/contest'].includes(url.pathname)) {
+      const privateRoute = url.pathname.startsWith('/api/dashboard/');
+      if (privateRoute && !authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      if (request.method !== 'GET' && !(privateRoute && request.method === 'PATCH')) return send(response, 405, { error: 'Action non disponible.' });
+      const input = request.method === 'PATCH' ? await readBody(request) : null;
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      const newsRoute = url.pathname.endsWith('/news');
+      if (request.method === 'PATCH') {
+        if (newsRoute) saveNews(database, input); else saveContestDraft(database, input);
+        await writeDatabase(database);
+      }
+      return send(response, 200, privateRoute ? (newsRoute ? dashboardNews(database) : dashboardContest(database)) : (newsRoute ? publicNews(database) : publicContest(database)));
+    }
+
     if (url.pathname === "/api/dashboard/customers" || url.pathname.startsWith("/api/dashboard/customers/")) {
       response.setHeader("Cache-Control", "no-store");
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
@@ -448,7 +465,20 @@ const server = http.createServer(async (request, response) => {
     const referralCodesChanged = ensureAllReferralCodes(database);
     const bibouPlusStoreChanged = ensureBibouPlusStore(database);
     const rewardStoreChanged = ensureRewardStore(database);
-    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged) await writeDatabase(database);
+    const contestPurged = purgeExpiredContestEntries(database);
+    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged) await writeDatabase(database);
+
+    if (url.pathname === '/api/customer/contest' || url.pathname === '/api/customer/contest/join') {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Connecte-toi par SMS pour participer.' });
+      if (request.method === 'GET' && url.pathname === '/api/customer/contest') return send(response, 200, customerContest(database, customer));
+      if (request.method === 'POST' && url.pathname.endsWith('/join')) {
+        const result = joinContest(database, customer, await readBody(request), customerSessionSecret);
+        if (result.changed) await writeDatabase(database);
+        return send(response, result.changed ? 201 : 200, result);
+      }
+      return send(response, 405, { error: 'Action non disponible.' });
+    }
 
     if (request.method === "GET" && url.pathname === "/api/availability") {
       const serviceDate = url.searchParams.get("date");
@@ -528,8 +558,12 @@ const server = http.createServer(async (request, response) => {
         ensureReferralCode(customer, database);
         grantWelcomeReward(customer);
         database.customers.push(customer);
-        await writeDatabase(database);
       }
+      customer.phone = normalizedPhone;
+      customer.verifiedPhone = normalizedPhone;
+      customer.phoneVerifiedAt = new Date().toISOString();
+      customer.firstPhoneVerifiedAt ||= customer.phoneVerifiedAt;
+      await writeDatabase(database);
       return send(response, 200, { token: createSession(customer.id), customer });
     }
 
@@ -742,7 +776,8 @@ const server = http.createServer(async (request, response) => {
       const customer = authenticatedCustomer(request, database);
       const requestedId = url.pathname.split("/").pop();
       if (!customer || customer.id !== requestedId) return send(response, 401, { error: "Reconnecte-toi pour modifier tes coordonnées." });
-      ["name", "phone", "address", "postalCode", "city"].forEach((field) => {
+      if (Object.hasOwn(input, 'phone') && normalizeFrenchPhone(input.phone) !== normalizeFrenchPhone(customer.phone)) return send(response, 400, { error: 'Pour utiliser un autre numéro, déconnecte-toi puis vérifie ce numéro par SMS.' });
+      ["name", "address", "postalCode", "city"].forEach((field) => {
         if (typeof input[field] === "string") customer[field] = input[field].trim();
       });
       if (input.sponsorCode) applyReferralCode(database, customer, input.sponsorCode);
@@ -900,4 +935,14 @@ const server = http.createServer(async (request, response) => {
 
 const stopBackups = backupStore.start({ onError: (message) => console.error(`Sauvegarde : ${message}`), onSuccess: (createdAt) => console.log(`Sauvegarde automatique vérifiée : ${createdAt}`) });
 server.on("close", stopBackups);
+const maintainContestPrivacy = async () => {
+  const release = await acquireDatabase();
+  try { const database = await readDatabase(); if (purgeExpiredContestEntries(database)) await writeDatabase(database); }
+  catch { console.error('Entretien des données du concours : échec, nouvelle tentative dans une heure.'); }
+  finally { release(); }
+};
+const contestPrivacyTimer = setInterval(maintainContestPrivacy, 60 * 60 * 1000);
+contestPrivacyTimer.unref();
+server.once('listening', maintainContestPrivacy);
+server.on('close', () => clearInterval(contestPrivacyTimer));
 server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`));

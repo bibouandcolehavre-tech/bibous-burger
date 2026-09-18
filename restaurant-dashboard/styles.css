@@ -127,3 +127,27 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .stock-toggle:focus-visible,.menu-toolbar input:focus-visible,.menu-toolbar select:focus-visible { outline:3px solid #e77a30; outline-offset:3px; }
 .menu-note { color:var(--muted); font-size:12px; line-height:1.7; margin-top:28px; }
 @media (max-width:820px) { .mobile-view-switch { grid-template-columns:repeat(2,1fr); } .menu-grid { grid-template-columns:1fr; } .menu-intro { padding:20px; } }
+/* News editor and private contest preparation. */
+.marketing-intro { margin: 24px 0; max-width: 780px; }
+.marketing-intro p, .marketing-panel p { line-height: 1.6; color: #575c56; }
+.marketing-panel { background: #fff; border: 1px solid #e3e5dd; border-radius: 20px; padding: 24px; margin: 24px 0; }
+.marketing-panel h2 { margin-top: 0; }
+.marketing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.marketing-panel label { display: flex; flex-direction: column; gap: 7px; font-size: 14px; font-weight: 650; color: #333c33; }
+.marketing-panel input, .marketing-panel select, .marketing-panel textarea { box-sizing: border-box; width: 100%; min-width: 0; background: #fff; border: 1px solid #afb7aa; border-radius: 9px; padding: 12px; font: inherit; color: #252a24; }
+.marketing-panel textarea { resize: vertical; }
+.news-editor { border: 1px solid #d7dccf; border-radius: 14px; padding: 18px; margin: 16px 0; background: #fafbf7; }
+.marketing-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.marketing-actions button:not(.login-button):not(.secondary-button) { border: 1px solid #b6bfae; background: #fff; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+.marketing-actions .inline-check { flex-direction: row; align-items: center; margin-right: auto; }
+.marketing-actions .inline-check input { width: 19px; height: 19px; }
+.marketing-panel .login-button { width: auto; padding: 14px 20px; }
+.marketing-badge { display: inline-block; background: #fff0ce; color: #6b4c04 !important; font-size: 11px; font-weight: 800; padding: 8px 12px; border-radius: 10px; letter-spacing: 1px; }
+.marketing-preview { background: #26251e; color: #fff; border: 1px solid #ffd07b; border-radius: 18px; max-width: 450px; padding: 24px; overflow-wrap: anywhere; }
+.marketing-preview p { color: #f7ead4; }
+.marketing-preview small { color: #ffd07b; letter-spacing: 2px; }
+.marketing-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+.marketing-stats p { flex: 1; min-width: 140px; padding: 16px; background: #f4f5f0; border-radius: 12px; }
+.marketing-stats strong { display: block; font-size: 30px; color: #273126; }
+#marketing-feedback { min-height: 22px; color: #494d36; font-weight: 650; }
+@media(max-width: 700px) { .marketing-panel { padding: 16px; } .marketing-grid { grid-template-columns: minmax(0,1fr); } .news-editor { padding: 12px; } }
