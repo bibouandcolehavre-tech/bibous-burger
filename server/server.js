@@ -380,15 +380,15 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/bibou-plus/status") {
       const customer = authenticatedCustomer(request, database);
-      if (!customer) return send(response, 401, { error: "Connecte-toi pour consulter Bibou Plus." });
+      if (!customer) return send(response, 401, { error: "Connecte-toi pour consulter Bibou +." });
       return send(response, 200, { bibouPlus: bibouPlusStatus(customer) });
     }
 
     if (request.method === "POST" && url.pathname === "/api/bibou-plus/checkout") {
       const customer = authenticatedCustomer(request, database);
-      if (!customer) return send(response, 401, { error: "Connecte-toi pour t’abonner à Bibou Plus." });
+      if (!customer) return send(response, 401, { error: "Connecte-toi pour t’abonner à Bibou +." });
       const merchantCode = await getSumUpMerchantCode();
-      if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "Le paiement Bibou Plus n’est pas encore disponible." });
+      if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "Le paiement Bibou + n’est pas encore disponible." });
 
       const createdAt = new Date();
       const validUntil = new Date(createdAt.getTime() + 30 * 60 * 1000);
@@ -398,12 +398,12 @@ const server = http.createServer(async (request, response) => {
       const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
         method: "POST",
         headers: { "Authorization": `Bearer ${sumupApiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ checkout_reference: checkoutReference, amount: BIBOU_PLUS_PRICE, currency: "EUR", merchant_code: merchantCode, description: "Bibou Plus · 30 jours", return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: validUntil.toISOString(), hosted_checkout: { enabled: true } })
+        body: JSON.stringify({ checkout_reference: checkoutReference, amount: BIBOU_PLUS_PRICE, currency: "EUR", merchant_code: merchantCode, description: "Bibou + · 30 jours", return_url: sumupReturnUrl, redirect_url: sumupRedirectUrl, valid_until: validUntil.toISOString(), hosted_checkout: { enabled: true } })
       });
       if (!sumupResponse.ok) {
         database.nextBibouPlusNumber -= 1;
-        console.error("SumUp Bibou Plus checkout creation failed", sumupResponse.status);
-        return send(response, 502, { error: "SumUp n’a pas pu ouvrir le paiement Bibou Plus." });
+        console.error("SumUp Bibou + checkout creation failed", sumupResponse.status);
+        return send(response, 502, { error: "SumUp n’a pas pu ouvrir le paiement Bibou +." });
       }
       const checkout = await sumupResponse.json();
       purchase.payment = { provider: "sumup", checkoutId: checkout.id, checkoutReference, status: checkout.status || "PENDING", createdAt: createdAt.toISOString(), validUntil: validUntil.toISOString() };
@@ -416,7 +416,7 @@ const server = http.createServer(async (request, response) => {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
       const purchase = database.bibouPlusPurchases.find((item) => item.id === url.pathname.split("/").pop() && item.customerId === customer.id);
-      if (!purchase?.payment?.checkoutId) return send(response, 404, { error: "Paiement Bibou Plus introuvable." });
+      if (!purchase?.payment?.checkoutId) return send(response, 404, { error: "Paiement Bibou + introuvable." });
       const sumupResponse = await fetch(`https://api.sumup.com/v0.1/checkouts/${purchase.payment.checkoutId}`, { headers: { "Authorization": `Bearer ${sumupApiKey}` } });
       if (sumupResponse.ok) {
         const checkout = await sumupResponse.json();

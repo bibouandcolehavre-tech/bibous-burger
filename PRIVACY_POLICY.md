@@ -6,7 +6,7 @@ Bibou & Co utilise uniquement les informations nécessaires pour prendre les com
 
 ## Données utilisées
 
-L'application peut traiter le nom, le numéro de téléphone, l'adresse de livraison, les commandes, les réservations, le solde fidélité et le statut Bibou Plus. Elle ne contient ni publicité ni suivi publicitaire.
+L'application peut traiter le nom, le numéro de téléphone, l'adresse de livraison, les commandes, les réservations, le solde fidélité et le statut Bibou +. Elle ne contient ni publicité ni suivi publicitaire.
 
 ## Utilisation des données
 

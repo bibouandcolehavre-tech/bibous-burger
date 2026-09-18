@@ -12,7 +12,7 @@ Application de commande et de fidélité de Bibou & Co pour iPhone, Android et l
 - connexion client par code SMS Twilio ;
 - suivi des commandes et espace restaurant séparé ;
 - programme fidélité, parrainage, prestiges et récompenses ;
-- Bibou Plus : livraison offerte, remise de 5 % et points doublés pendant 30 jours ;
+- Bibou + : livraison offerte, remise de 5 % et points doublés pendant 30 jours ;
 - cadeau de bienvenue de 10 % sur la première commande ;
 - réservation de table jusqu’à quatre personnes ;
 - avis Google, politique de confidentialité et suppression de compte.

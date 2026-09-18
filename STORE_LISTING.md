@@ -32,7 +32,7 @@ Avec l'application, vous pouvez :
 - parrainer vos proches ;
 - consulter les avis Google de Bibou's Burgers.
 
-Bibou Plus est proposé à 9,99 € pour une période de 30 jours. Il offre la livraison, 5 % de remise sur les produits et le doublement des points fidélité. Il n'y a aucun renouvellement automatique : le client choisit lui-même s'il souhaite prolonger.
+Bibou + est proposé à 9,99 € pour une période de 30 jours. Il offre la livraison, 5 % de remise sur les produits et le doublement des points fidélité. Il n'y a aucun renouvellement automatique : le client choisit lui-même s'il souhaite prolonger.
 
 La livraison est disponible dans un rayon de 5 km autour du 153 quai Georges V, 76600 Le Havre. Les horaires et créneaux disponibles sont affichés directement dans l'application.
 
@@ -48,7 +48,7 @@ burger,restaurant,livraison,le havre,click collect,fidélité,réservation,repas
 
 ## Notes pour l'équipe de vérification
 
-Bibou's Burgers vend exclusivement des repas, leur livraison et des avantages liés à ces achats physiques. Aucun contenu numérique n'est vendu. Les commandes et Bibou Plus sont payés sur la page sécurisée de SumUp. Bibou Plus est une période de 30 jours renouvelée uniquement à la demande du client, sans débit automatique.
+Bibou's Burgers vend exclusivement des repas, leur livraison et des avantages liés à ces achats physiques. Aucun contenu numérique n'est vendu. Les commandes et Bibou + sont payés sur la page sécurisée de SumUp. Bibou + est une période de 30 jours renouvelée uniquement à la demande du client, sans débit automatique.
 
 La consultation de la carte, des tarifs, des avis Google, de la fidélité et des informations légales est possible sans compte. Une connexion par code SMS est demandée avant une commande ou une réservation afin de sécuriser les coordonnées du client.
 
@@ -67,7 +67,7 @@ Le paiement SumUp est conforme au principe des achats physiques : Apple demande 
 - adresse de livraison ;
 - identifiant interne du compte ;
 - commandes, réservations et statut de paiement ;
-- solde de fidélité, parrainage et statut Bibou Plus.
+- solde de fidélité, parrainage et statut Bibou +.
 
 ### Finalités
 
@@ -89,7 +89,7 @@ L'application n'intègre ni publicité ni suivi publicitaire et ne vend pas les 
 
 - icône 1024 × 1024 : prête dans `assets/icon.png` ;
 - icône Android adaptative : prête dans `assets/adaptive-icon.png` ;
-- captures d'écran téléphone : accueil, produit, créneaux, fidélité, Bibou Plus, réservation et suivi ;
+- captures d'écran téléphone : accueil, produit, créneaux, fidélité, Bibou +, réservation et suivi ;
 - visuel promotionnel Google Play : à créer à partir de l'identité vermillon, crème et noire.
 
 ## Dernières actions qui nécessitent le propriétaire des comptes
