@@ -315,7 +315,11 @@ const server = http.createServer(async (request, response) => {
       if (attempt.count >= 3) return send(response, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
       attempt.count += 1;
       smsAttempts.set(normalizedPhone, attempt);
-      const { response: twilioResponse, payload } = await verifyWithTwilio("Verifications", { To: normalizedPhone, Channel: "sms" });
+      const { response: twilioResponse, payload } = await verifyWithTwilio("Verifications", {
+        To: normalizedPhone,
+        Channel: "sms",
+        Locale: "fr",
+      });
       if (!twilioResponse.ok) return send(response, 502, { error: payload.message || "Le SMS n’a pas pu être envoyé." });
       return send(response, 200, { ok: true, phone: normalizedPhone });
     }
