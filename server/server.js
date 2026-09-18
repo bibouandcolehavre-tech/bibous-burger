@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot } = require("./availability");
@@ -36,7 +37,7 @@ const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
 const googlePlaceSearchQuery = "Bibou's Burgers, 153 Quai Georges V, 76600 Le Havre, France";
 const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
-const smsAttempts = new Map();
+const smsAttemptLimiter = createSmsAttemptLimiter();
 const sessions = new Map();
 const dashboardSessions = new Map();
 let googleReviewsCache = { value: null, expiresAt: 0 };
@@ -310,17 +311,22 @@ const server = http.createServer(async (request, response) => {
       const normalizedPhone = normalizeFrenchPhone(phone);
       if (!normalizedPhone) return send(response, 400, { error: "Saisissez un numéro français commençant par 06 ou 07." });
       if (!twilioConfigured()) return send(response, 503, { error: "La connexion par SMS n’est pas encore activée." });
-      const attempt = smsAttempts.get(normalizedPhone) || { count: 0, startedAt: Date.now() };
-      if (Date.now() - attempt.startedAt > 15 * 60 * 1000) { attempt.count = 0; attempt.startedAt = Date.now(); }
-      if (attempt.count >= 3) return send(response, 429, { error: "Trop de tentatives. Réessayez dans quelques minutes." });
-      attempt.count += 1;
-      smsAttempts.set(normalizedPhone, attempt);
+      const rateLimit = smsAttemptLimiter.check(normalizedPhone);
+      if (!rateLimit.allowed) {
+        const retryAfterMinutes = Math.max(1, Math.ceil(rateLimit.retryAfterSeconds / 60));
+        response.setHeader("Retry-After", String(rateLimit.retryAfterSeconds));
+        return send(response, 429, {
+          error: `Trop de tentatives. Réessayez dans ${retryAfterMinutes} minute${retryAfterMinutes > 1 ? "s" : ""}.`,
+          retryAfterSeconds: rateLimit.retryAfterSeconds,
+        });
+      }
       const { response: twilioResponse, payload } = await verifyWithTwilio("Verifications", {
         To: normalizedPhone,
         Channel: "sms",
         Locale: "fr",
       });
       if (!twilioResponse.ok) return send(response, 502, { error: payload.message || "Le SMS n’a pas pu être envoyé." });
+      smsAttemptLimiter.recordSuccess(normalizedPhone);
       return send(response, 200, { ok: true, phone: normalizedPhone });
     }
 
