@@ -33,7 +33,32 @@ Dans l’espace restaurant, « Carte & disponibilité » permet de chercher un p
 
 Les boissons et accompagnements en rupture sont aussi bloqués dans les options. Les menus incluant des frites sont bloqués si les frites maison sont en rupture ; le Menu Duo dépend également des tenders. Le client se rafraîchit toutes les 15 secondes lorsqu’il est connecté, ainsi qu’au retour dans l’application. Son panier est revérifié avant la commande puis côté serveur avant la création du lien SumUp. Un lien SumUp déjà émis n’est pas révoqué par un changement de disponibilité ; les commandes déjà payées restent à traiter.
 
-Les choix persistent dans `product-stock.json`, à côté de `DATA_FILE_PATH` (donc `/var/data/product-stock.json` sur Render). Ce fichier est distinct des commandes et clients, ignoré par Git, et doit être inclus dans les sauvegardes du disque. Il ne faut pas le remplacer au déploiement. En l’absence du fichier, les disponibilités initiales du catalogue sont utilisées ; une erreur de lecture bloque les validations au lieu de rouvrir tous les produits.
+Les choix persistent dans `product-stock.json`, à côté de `DATA_FILE_PATH` (donc `/var/data/product-stock.json` sur Render). Ce fichier est distinct des commandes et clients, ignoré par Git, et inclus dans les sauvegardes automatiques. Il ne faut pas le remplacer au déploiement. En l’absence du fichier, les disponibilités initiales du catalogue sont utilisées ; une erreur de lecture bloque les validations au lieu de rouvrir tous les produits.
+
+## Sauvegardes automatiques et récupération
+
+Le serveur vérifie au démarrage puis toutes les cinq minutes si une copie est nécessaire (dernière copie vieille d’au moins une heure). Une copie contient l’intégralité de `DATA_FILE_PATH` et les disponibilités `product-stock.json`, lus sous le même verrou que les modifications de données et de stock. Aucune réinitialisation depuis les données de démonstration si le fichier à sauvegarder manque. Les secrets de configuration, sessions restaurant en mémoire et fichiers de l’application ne sont pas inclus.
+
+Les copies compressées sont stockées dans le dossier `backups` à côté de `DATA_FILE_PATH`, soit `/var/data/backups` sur Render : dossier privé 0700 et fichiers 0600. Écriture temporaire synchronisée puis remplacement atomique, vérification SHA-256 et relecture avant rotation. Le contrôle détecte une corruption ; ce n’est ni du chiffrement ni une signature contre la falsification. Les fichiers sont ignorés par Git et Docker.
+
+Conservation : copie la plus récente de chaque heure sur 24 heures et de chaque journée UTC sur 7 jours, avec chevauchement entre ces deux historiques. La toute dernière copie est toujours préservée, même après une longue interruption. Les copies manuelles suivent cette rotation. Plafonds de sécurité : 32 Mio de données JSON, 16 Mio par archive, 200 Mio d’archives au total et réserve de 32 Mio libres sur le disque. Si une limite ou une erreur empêche la copie, les anciennes copies restent intactes et l’espace restaurant affiche l’erreur ; faire adapter l’architecture avant d’atteindre ces limites.
+
+Dans **Espace restaurant → Sauvegardes**, le mot de passe restaurant protège l’état des copies, leur création et leur téléchargement. Une copie de plus de deux heures déclenche un avertissement dans cet écran. Il n’y a pas d’alerte par email ni de restauration depuis l’interface. Les liens de téléchargement nécessitent une session restaurant et ne sont pas publics.
+
+**Limite importante : les copies sont sur le même disque que les données.** Conserver régulièrement une archive téléchargée dans un stockage distinct, privé et sécurisé. Aucun stockage externe payant n’est activé. Render fournit aussi des instantanés quotidiens du disque ; un instantané du 18 septembre a été constaté dans le tableau Render. Ce mécanisme et ses limites sont décrits dans [la documentation Render](https://render.com/docs/disks#disk-snapshots). Un retour de version du code ne restaure pas les données du disque.
+
+### Vérifier et préparer une récupération (hors production)
+
+Depuis le projet, utiliser un chemin explicite vers une archive téléchargée et un **nouveau dossier inexistant** :
+
+```sh
+node server/restore-backup.js --check /chemin/prive/bibou-COPIE.json.gz
+node server/restore-backup.js --extract /chemin/prive/bibou-COPIE.json.gz /chemin/prive/nouvelle-recuperation
+```
+
+La première commande ne modifie rien. La seconde extrait uniquement `data.json` et `product-stock.json` dans le nouveau dossier ; elle refuse tout dossier existant et ne touche jamais au serveur en service. Les tests automatisés vérifient cette récupération sur données fictives, ainsi que corruption, disque plein, accès refusé aux clients, rotation et redémarrage.
+
+Pour une vraie restauration : faire valider l’opération par le responsable, mettre la prise de commandes et le serveur en pause, conserver l’état actuel séparément, vérifier les deux fichiers extraits, puis faire remplacer les deux fichiers ensemble par l’opérateur. Ne jamais démarrer un serveur de test sur la copie avec des clés de paiement/SMS de production. Avant réouverture, réconcilier les paiements, remboursements, abonnements, points, stocks et réservations survenus après la copie ; réappliquer les suppressions/anonymisations de comptes intervenues depuis. Une sauvegarde ancienne ne révoque aucun paiement bancaire et peut contenir des données d’un compte supprimé depuis. Les téléchargements conservés ailleurs sont sous la responsabilité du restaurant et doivent suivre une durée de conservation adaptée.
 
 `npm test` couvre les droits d’accès, les ruptures, les options, la persistance, les écritures concurrentes et les blocages de commande/paiement avec des données temporaires, sans appel SumUp ou SMS.
 

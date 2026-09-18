@@ -327,18 +327,76 @@ async function changeProductStock(id) {
 document.querySelector("#menu-search").addEventListener("input", renderMenu);
 document.querySelector("#menu-filter").addEventListener("change", renderMenu);
 
+let backupBusy = false;
+const backupDate = (value) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+async function loadBackups(create = false) {
+  if (!dashboardToken || backupBusy) return;
+  const token = dashboardToken;
+  backupBusy = true;
+  document.querySelector("#backup-create").disabled = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/backups`, { method: create ? "POST" : "GET", headers: dashboardHeaders(), signal: controller.signal });
+    if (token !== dashboardToken) return;
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Impossible de vérifier les sauvegardes.");
+    document.querySelector("#backup-latest").textContent = payload.copies.length ? backupDate(payload.copies[0].createdAt) : "Aucune copie disponible";
+    document.querySelector("#backup-health").textContent = payload.lastError || (payload.stale ? "Attention : aucune copie récente. Faites vérifier la sauvegarde." : "Copie récente disponible · sauvegarde automatique toutes les heures.");
+    document.querySelector("#backup-health").classList.toggle("backup-warning", Boolean(payload.lastError || payload.stale));
+    document.querySelector("#backup-list").innerHTML = payload.copies.length ? payload.copies.map((copy) => `<article class="backup-row"><div><strong>${escapeHtml(backupDate(copy.createdAt))}</strong><small>${Math.max(1, Math.ceil(copy.bytes / 1024))} Ko · fichier privé compressé</small></div><button type="button" class="secondary-button" data-backup-id="${escapeHtml(copy.id)}">Télécharger</button></article>`).join("") : '<p class="empty">Aucune copie enregistrée pour le moment.</p>';
+    document.querySelectorAll("[data-backup-id]").forEach((button) => button.addEventListener("click", () => downloadBackup(button)));
+    document.querySelector("#backup-feedback").textContent = create ? "Copie enregistrée et contrôle d’intégrité réussi." : "";
+  } catch (error) {
+    if (token === dashboardToken) {
+      document.querySelector("#backup-health").textContent = "Vérification impossible : ne vous fiez pas au statut précédent.";
+      document.querySelector("#backup-health").classList.add("backup-warning");
+      document.querySelector("#backup-feedback").textContent = error.name === "AbortError" ? "Le serveur met trop de temps à répondre. Actualisez pour vérifier si la copie a été créée." : error.message;
+    }
+  } finally { clearTimeout(timeout); backupBusy = false; document.querySelector("#backup-create").disabled = false; }
+}
+
+async function downloadBackup(button) {
+  const token = dashboardToken;
+  button.disabled = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/backups/${encodeURIComponent(button.dataset.backupId)}`, { headers: dashboardHeaders(), signal: controller.signal });
+    if (token !== dashboardToken) return;
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    if (!response.ok) throw new Error((await response.json()).error || "Téléchargement impossible.");
+    const blob = await response.blob();
+    if (token !== dashboardToken) return;
+    const link = document.createElement("a");
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = button.dataset.backupId;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    document.querySelector("#backup-feedback").textContent = "Téléchargement lancé. Vérifiez le fichier dans vos téléchargements et conservez-le dans un espace privé.";
+  } catch (error) { document.querySelector("#backup-feedback").textContent = error.name === "AbortError" ? "Téléchargement trop lent. Réessayez." : error.message; }
+  finally { clearTimeout(timeout); button.disabled = false; }
+}
+document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
+
 function showView(view) {
-  if (!["orders", "reservations", "rewards", "menu"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["orders", "reservations", "rewards", "menu", "backups"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
   document.querySelector("#reservations-view").hidden = view !== "reservations";
   document.querySelector("#rewards-view").hidden = view !== "rewards";
   document.querySelector("#menu-view").hidden = view !== "menu";
-  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité" }[view];
+  document.querySelector("#backups-view").hidden = view !== "backups";
+  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité" }[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   if (view === "menu") { renderMenu(); void loadMenu(); }
+  if (view === "backups") void loadBackups();
 }
 
 document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => {
@@ -394,6 +452,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
+  if (currentView === "backups") return loadBackups();
   if (currentView === "menu") return loadMenu();
   const results = await refreshFeeds();
   if (dashboardToken) showToast(results.every(Boolean) ? "Demandes actualisées." : "Actualisation incomplète. Vérifiez la connexion.");
@@ -413,6 +472,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     showDashboard();
     void refreshFeeds({ notify: false });
     if (currentView === "menu") loadMenu();
+    if (currentView === "backups") loadBackups();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
 });
@@ -432,6 +492,7 @@ const resumeUpdates = () => {
   updateSoundControls();
   void refreshFeeds();
   if (currentView === "menu") void loadMenu();
+  if (currentView === "backups" && !document.hidden) void loadBackups();
 };
 window.setInterval(resumeUpdates, 10000);
 window.addEventListener("online", resumeUpdates);

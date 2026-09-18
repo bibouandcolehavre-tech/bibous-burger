@@ -29,9 +29,11 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Bibou + à 9,99 € pour 30 jours : livraison offerte, remise de 5 % et points doublés.
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
-- 82 tests automatisés réussissent, dont les parcours HTTP stock et paiement isolés, confirmations/annulation concurrentes, pannes, reprise et Bibou + (sans paiement ni SMS réels).
+- Sauvegardes automatiques horaires des données et stocks sur le disque persistant, rotation horaire/quotidienne sur une semaine, contrôle d’intégrité, accès restaurant pour créer/télécharger une copie, et outil de récupération séparée sans écrasement. Pas de nouvelle dépense ni de stockage externe activé.
+- 90 tests automatisés réussissent, dont sauvegarde/récupération isolées, permissions, panne de disque, corruption, rotation, parcours HTTP stock et paiement, confirmations/annulation concurrentes, reprise et Bibou + (sans paiement ni SMS réels).
 - Export web réussi ; rupture/restauration de boissons, options de menu et blocage d’un panier existant vérifiés dans un environnement local avec données fictives.
 - Alertes vérifiées dans le navigateur : activation, test du son, arrivée simultanée d’une commande payée et d’une table fictives, compteurs, accès aux réservations et mise en sourdine ; aucune erreur JavaScript observée.
+- Écran Sauvegardes vérifié dans un navigateur local : création automatique et manuelle, téléchargement d’une archive fictive, lisibilité et absence d’erreurs JavaScript. Aucun téléchargement de données clients réelles ni restauration de production pendant ces tests.
 
 ## Prochaines priorités recommandées
 
@@ -39,7 +41,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 2. Terminer l’espace restaurant : modification de la carte et gestion détaillée de la fidélité clients (la disponibilité est maintenant implémentée).
 3. Étudier des notifications push pour recevoir une alerte lorsque le tableau est fermé (les sons dans la page sont maintenant implémentés).
 4. Synchroniser les remboursements réalisés dans SumUp à partir des transactions (la confirmation de paiement et la protection des annulations sont renforcées). Annuler dans l’application reste distinct du remboursement bancaire.
-5. Ajouter des sauvegardes automatiques des données de production.
+5. Organiser une copie régulière hors du serveur et un exercice de récupération avant ouverture publique (l’historique automatique sur disque est implémenté).
 6. Générer une première version installable iPhone/Android et effectuer un test complet sur appareils réels.
 7. Préparer les captures d’écran, les informations légales finales et les fiches Apple App Store et Google Play.
 
@@ -50,7 +52,8 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Les données de production sont conservées sur le disque persistant du service Render et ne doivent pas être remplacées par le fichier local.
 - Les ruptures persistent dans `product-stock.json` à côté du fichier de données ; inclure ce fichier dans les sauvegardes. Une rupture ne révoque pas les liens SumUp déjà ouverts ni les commandes payées.
 - Les alertes nécessitent un clic sur « Activer le son », un tableau ouvert, un Mac éveillé et un volume audible. Le premier chargement est silencieux ; pas de notification en dehors de la page. Garder un seul onglet, idéalement au premier plan pendant le service.
-- Les données JSON utilisent un verrou mono-processus et des remplacements atomiques : conserver une seule instance serveur. Sauvegardes et migration vers une base transactionnelle restent à prévoir.
+- Les données JSON utilisent un verrou mono-processus et des remplacements atomiques : conserver une seule instance serveur. La migration vers une base transactionnelle reste à prévoir.
+- Les copies `/var/data/backups` restent sur le même disque ; elles ne couvrent pas à elles seules une perte du disque. Téléchargements privés contenant des données clients, sans chiffrement individuel. Lire la procédure du README avant toute récupération réelle ; ne jamais restaurer en production sans validation et réconciliation des opérations plus récentes.
 - Aucune opération bancaire réelle faite pendant les tests. Pas de remboursement automatique : annuler dans le tableau restaurant ET rembourser dans SumUp. Le suivi automatique des remboursements et la reprise d’un paiement après rechargement de la page client restent à compléter.
 
 ## Idées discutées, non lancées

@@ -3,3 +3,6 @@ node_modules
 .env
 restaurant-dashboard
 assets
+server/backups
+**/bibou-*.json.gz
+backup-recovery

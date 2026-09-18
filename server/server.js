@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 const { createDatabaseLock } = require("./database-lock");
+const { createBackupStore } = require("./backups");
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
@@ -93,6 +94,18 @@ const writeDatabase = async (database) => {
     await fs.rename(temporary, databasePath);
   } finally { await fs.unlink(temporary).catch(() => {}); }
 };
+const backupStore = createBackupStore({
+  directory: path.join(path.dirname(databasePath), "backups"),
+  capture: async () => {
+    const release = await acquireDatabase();
+    try {
+      // Read existing data only: a missing file must not silently restore seed data.
+      const database = JSON.parse(await fs.readFile(databasePath, "utf8"));
+      const stock = await productStockStore.read();
+      return { database, stock };
+    } finally { release(); }
+  }
+});
 const send = (response, status, payload) => {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
   response.end(JSON.stringify(payload));
@@ -299,6 +312,25 @@ const server = http.createServer(async (request, response) => {
   try {
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null });
 
+    if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
+      response.setHeader("Cache-Control", "no-store");
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      try {
+        if (url.pathname === "/api/dashboard/backups") {
+          if (request.method === "POST") { await readBody(request); await backupStore.create(); }
+          else if (request.method !== "GET") return send(response, 405, { error: "Méthode non autorisée." });
+          return send(response, 200, await backupStore.status());
+        }
+        if (request.method !== "GET") return send(response, 405, { error: "Méthode non autorisée." });
+        const id = decodeURIComponent(url.pathname.slice("/api/dashboard/backups/".length));
+        const buffer = await backupStore.download(id);
+        response.writeHead(200, { "Content-Type": "application/gzip", "Content-Disposition": `attachment; filename="${id}"`, "Content-Length": buffer.length, "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*" });
+        return response.end(buffer);
+      } catch (error) {
+        return send(response, error.statusCode === 404 || error.code === "ENOENT" ? 404 : 503, { error: error.statusCode ? error.message : "Sauvegardes indisponibles. Réessayez ou faites vérifier le disque du serveur." });
+      }
+    }
+
     if (request.method === "GET" && ["/api/catalog", "/api/dashboard/catalog"].includes(url.pathname)) {
       if (url.pathname.startsWith("/api/dashboard/") && !authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       response.setHeader("Cache-Control", "no-store");
@@ -309,6 +341,7 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const id = decodeURIComponent(url.pathname.slice("/api/dashboard/catalog/".length));
       const input = await readBody(request);
+      releaseDatabase = await acquireDatabase();
       const stock = await productStockStore.update(id, input.available);
       response.setHeader("Cache-Control", "no-store");
       return send(response, 200, availabilityCatalog(stock));
@@ -789,4 +822,6 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
+const stopBackups = backupStore.start({ onError: (message) => console.error(`Sauvegarde : ${message}`), onSuccess: (createdAt) => console.log(`Sauvegarde automatique vérifiée : ${createdAt}`) });
+server.on("close", stopBackups);
 server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`));

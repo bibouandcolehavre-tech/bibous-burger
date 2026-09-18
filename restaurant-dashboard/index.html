@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bibou's Burgers — Espace restaurant</title>
-    <link rel="stylesheet" href="./styles.css?v=service-alerts-1" />
+    <link rel="stylesheet" href="./styles.css?v=backups-1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -33,6 +33,7 @@
           <button class="nav-item" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count">0</b></button>
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & disponibilité</button>
           <button class="nav-item" data-view="customers"><span>★</span> Fidélité clients</button>
+          <button class="nav-item" data-view="backups"><span>▤</span> Sauvegardes</button>
         </nav>
         <div class="sidebar-bottom">
           <p>Connecté en tant que</p>
@@ -66,6 +67,7 @@
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
+          <button class="nav-item mobile-view-button" data-view="backups"><span>▤</span> Sauvegardes</button>
         </nav>
 
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
@@ -121,10 +123,20 @@
           <div id="menu-list"></div>
           <p class="menu-note">Les boissons et accompagnements sont aussi bloqués dans les options. Une rupture de frites maison bloque les menus ; une rupture de tenders bloque aussi le Menu Duo. Les burgers seuls et leurs menus se règlent séparément. Les commandes déjà réglées ou avec un paiement SumUp déjà ouvert restent à traiter.</p>
         </section>
+        <section id="backups-view" class="backup-section" hidden>
+          <div class="menu-intro"><p class="eyebrow">VOS DONNÉES, À L’ABRI DES FAUSSES MANIPULATIONS</p><h2>Des copies pour pouvoir revenir en arrière.</h2><p>Commandes, comptes clients, fidélité, réservations, Bibou + et disponibilités des produits sont copiés ensemble toutes les heures, tant que le serveur fonctionne.</p></div>
+          <div class="backup-status-panel"><div><span class="eyebrow">DERNIÈRE COPIE</span><h3 id="backup-latest">Vérification…</h3><p id="backup-health" role="status" aria-live="polite"></p></div><button type="button" id="backup-create" class="secondary-button">Créer une copie maintenant</button></div>
+          <div class="backup-notice"><strong>Gardez aussi une copie hors du serveur.</strong><p>Ces sauvegardes sont sur le même disque que l’application. Elles ne suffisent pas en cas de perte de ce disque. Téléchargez régulièrement une copie et conservez-la dans un emplacement privé et sécurisé.</p><p>Les fichiers contiennent les coordonnées des clients. Ils ne sont pas chiffrés individuellement : ne les partagez pas. Les clés API et mots de passe de configuration ne sont pas inclus.</p></div>
+          <p id="backup-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
+          <h3>Copies disponibles</h3>
+          <p class="menu-note">La copie la plus récente de chaque heure sur 24 heures, et de chaque journée sur 7 jours. Les copies manuelles suivent la même conservation. Horaires affichés à l’heure de Paris.</p>
+          <div id="backup-list" class="backup-list"></div>
+          <p class="menu-note">Une récupération doit être vérifiée avant de remplacer les données en service. Aucun bouton ici n’efface ou ne restaure la production. Les fichiers de l’application restent sauvegardés séparément dans GitHub.</p>
+        </section>
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
     <script src="./alerts.js?v=service-alerts-1"></script>
-    <script src="./app.js?v=service-alerts-1"></script>
+    <script src="./app.js?v=backups-1"></script>
   </body>
 </html>
