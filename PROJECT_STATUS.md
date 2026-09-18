@@ -11,6 +11,7 @@ Ce document sert de point de reprise pour le développement de l’application B
 
 ## État validé
 
+- Correctif de packaging Render : `news-config.js` est désormais inclus explicitement dans l’image serveur. Le premier déploiement des actualités (`3a358a6`) avait échoué au démarrage avec `MODULE_NOT_FOUND` ; un test reproduisant les fichiers copiés par Docker vérifie désormais le démarrage et les routes publiques avant publication, sans données réelles. Suite complète après correction : 134/134 tests réussis.
 - Accueil : le carrousel est désormais « Nos actualités », sans carte de burger. Quatre cartes par défaut : vidéo Epicu du 2 mai 2026 (Reel DX1QN8DIdet, identifié sur le profil Instagram), réseaux sociaux, concours en préparation et article Paris-Normandie. Les burgers restent dans la carte des produits.
 - Nouvelle rubrique restaurant « Actualités & concours » : actualités modifiables, liens/photos par URL HTTPS, ordre, visibilité et ajout/retrait ; propagation à l’ouverture puis toutes les 60 secondes. Modifications non enregistrées préservées et contrôle de version contre les écrasements concurrents.
 - Concours préparé, NON LANCÉ : brouillon privé avec dates/lots/règlement/aperçu, suivi et classement ; parcours fictif vérifié de bout en bout (deux participants, un nouveau filleul, compteur personnel et restaurant concordants). Aucune activation possible depuis l’interface/API, aucune publication Instagram ou publicité. Voir `CONTEST_LAUNCH.md` pour les décisions restantes et la finalisation juridique/technique avant lancement.
