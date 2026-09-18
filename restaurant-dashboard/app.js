@@ -31,6 +31,7 @@ const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextC
 let currentView = "orders";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 let marketingPanel = null;
+let notificationsPanel = null;
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
 const serviceDateLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "Date non précisée";
 const receivedTimeLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
@@ -43,7 +44,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -492,7 +493,7 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["orders", "reservations", "rewards", "menu", "backups", "customers", "marketing"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["orders", "reservations", "rewards", "menu", "backups", "customers", "marketing", "notifications"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
@@ -502,13 +503,15 @@ function showView(view) {
   document.querySelector("#backups-view").hidden = view !== "backups";
   document.querySelector("#customers-view").hidden = view !== "customers";
   document.querySelector("#marketing-view").hidden = view !== "marketing";
-  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité", customers: "Fidélité clients", marketing: "Actualités & concours" }[view];
+  document.querySelector("#notifications-view").hidden = view !== "notifications";
+  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité", customers: "Fidélité clients", marketing: "Actualités & concours", notifications: "Notifications clients" }[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
   if (view === "customers") void loadCustomers();
   if (view === "marketing") void marketingPanel?.load();
+  if (view === "notifications") void notificationsPanel?.load();
 }
 
 document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => {
@@ -565,6 +568,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
   if (currentView === "marketing") return marketingPanel?.load();
+  if (currentView === "notifications") return notificationsPanel?.load();
   if (currentView === "customers") return loadCustomers();
   if (currentView === "backups") return loadBackups();
   if (currentView === "menu") return loadMenu();
@@ -589,12 +593,14 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     if (currentView === "backups") loadBackups();
     if (currentView === "customers") loadCustomers();
     if (currentView === "marketing") marketingPanel?.load();
+    if (currentView === "notifications") notificationsPanel?.load();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
 });
 document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
 if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMarketing({ root: document.querySelector('#marketing-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
+if (typeof window.BibouNotifications === 'function') notificationsPanel = window.BibouNotifications({ root: document.querySelector('#notifications-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 refreshMetrics();
 updateSoundControls();
 updateConnectionStatus();

@@ -1,8 +1,10 @@
 const { withdrawContest } = require('./referral-contest');
+const { deleteCustomerPush } = require('./push-notifications');
 const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   if (!database || !customer) return null;
   const deletedAt = value.toISOString();
   withdrawContest(database, customer, value);
+  deleteCustomerPush(database, customer.id);
   const customerId = customer.id;
   const customerPhone = customer.phone;
   let ordersAnonymized = 0;

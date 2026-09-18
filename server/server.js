@@ -11,6 +11,7 @@ const { dashboardNews, publicNews, saveNews } = require('./news');
 const { dashboardContest, saveContestDraft, publicContest, customerContest, joinContest, purgeExpiredContestEntries } = require('./referral-contest');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
+const push = require('./push-notifications');
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { createProductStockStore } = require("./product-stock");
@@ -37,6 +38,7 @@ if (fsSync.existsSync(envPath)) {
 }
 
 const port = Number(process.env.PORT || 3001);
+const pushConfig = push.configFromEnv(process.env);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
 const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
@@ -247,6 +249,7 @@ const finalizePaidOrder = (order, database) => {
   if (order.status === "awaiting_payment") {
     order.status = "confirmed";
     order.updatedAt = now;
+    push.queueServiceNotification(database, order, 'order', 'awaiting_payment', pushConfig);
   }
 
   const customer = database.customers.find((item) => item.id === order.customerId);
@@ -323,7 +326,7 @@ const server = http.createServer(async (request, response) => {
   let releaseDatabase;
 
   try {
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -467,6 +470,29 @@ const server = http.createServer(async (request, response) => {
     const rewardStoreChanged = ensureRewardStore(database);
     const contestPurged = purgeExpiredContestEntries(database);
     if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged) await writeDatabase(database);
+
+    if (url.pathname === '/api/customer/push' || url.pathname.startsWith('/api/customer/push/')) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Connecte-toi pour gérer tes notifications.' });
+      if (request.method === 'GET' && url.pathname === '/api/customer/push') return send(response, 200, push.customerPushState(database, customer, pushConfig));
+      if (request.method === 'PATCH' && url.pathname === '/api/customer/push') push.updatePreferences(database, customer, await readBody(request));
+      else if (request.method === 'POST' && url.pathname === '/api/customer/push/devices') push.registerDevice(database, customer, await readBody(request));
+      else if (request.method === 'DELETE' && /^\/api\/customer\/push\/devices\/[a-f0-9-]+$/i.test(url.pathname)) push.removeDevice(database, customer, url.pathname.split('/').pop());
+      else return send(response, 405, { error: 'Action non disponible.' });
+      await writeDatabase(database);
+      return send(response, 200, push.customerPushState(database, customer, pushConfig));
+    }
+
+    if (url.pathname === '/api/dashboard/push' || url.pathname.startsWith('/api/dashboard/push/')) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      if (request.method === 'GET' && url.pathname === '/api/dashboard/push') return send(response, 200, push.dashboardPush(database, pushConfig));
+      let campaign;
+      if (request.method === 'POST' && url.pathname === '/api/dashboard/push/preview') campaign = push.prepareCampaign(database, await readBody(request), pushConfig);
+      else if (request.method === 'POST' && /^\/api\/dashboard\/push\/campaigns\/[a-f0-9-]+\/send$/i.test(url.pathname)) campaign = push.sendCampaign(database, url.pathname.split('/').at(-2), await readBody(request), pushConfig);
+      else return send(response, 405, { error: 'Action non disponible.' });
+      await writeDatabase(database);
+      return send(response, 200, { campaign, ...push.dashboardPush(database, pushConfig) });
+    }
 
     if (url.pathname === '/api/customer/contest' || url.pathname === '/api/customer/contest/join') {
       const customer = authenticatedCustomer(request, database);
@@ -729,8 +755,10 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const input = await readBody(request);
       try {
+        const previousStatus = database.reservations?.find(item => item.id === url.pathname.split('/').pop())?.status;
         const reservation = updateReservationStatus(database, url.pathname.split("/").pop(), input.status);
         if (!reservation) return send(response, 404, { error: "Réservation introuvable." });
+        push.queueServiceNotification(database, reservation, 'reservation', previousStatus, pushConfig);
         await writeDatabase(database);
         return send(response, 200, { reservation });
       } catch (error) {
@@ -746,9 +774,11 @@ const server = http.createServer(async (request, response) => {
       if (order.payment?.status !== "PAID") return send(response, 409, { error: "Le paiement doit être confirmé avant de traiter la commande." });
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       assertOrderTransition(order, input.status);
+      const previousStatus = order.status;
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
       revokeLoyaltyForCancelledOrder(order, database);
+      push.queueServiceNotification(database, order, 'order', previousStatus, pushConfig);
       await writeDatabase(database);
       return send(response, 200, { order });
     }
@@ -916,9 +946,11 @@ const server = http.createServer(async (request, response) => {
       if (order.payment?.status !== "PAID") return send(response, 409, { error: "Le paiement doit être confirmé avant de traiter la commande." });
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       assertOrderTransition(order, input.status);
+      const previousStatus = order.status;
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
       revokeLoyaltyForCancelledOrder(order, database);
+      push.queueServiceNotification(database, order, 'order', previousStatus, pushConfig);
       await writeDatabase(database);
       return send(response, 200, { order });
     }
@@ -926,7 +958,7 @@ const server = http.createServer(async (request, response) => {
     return send(response, 404, { error: "Route introuvable" });
   } catch (error) {
     console.error(error);
-    if ([400, 408, 409, 413, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
+    if ([400, 404, 408, 409, 413, 429, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
     return send(response, error.message === "Invalid JSON" ? 400 : 500, { error: "Une erreur serveur est survenue." });
   } finally {
     releaseDatabase?.();
@@ -935,6 +967,22 @@ const server = http.createServer(async (request, response) => {
 
 const stopBackups = backupStore.start({ onError: (message) => console.error(`Sauvegarde : ${message}`), onSuccess: (createdAt) => console.log(`Sauvegarde automatique vérifiée : ${createdAt}`) });
 server.on("close", stopBackups);
+const pushWorker = push.createPushWorker({ config: pushConfig, transact: async task => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase();
+    const before = JSON.stringify(database.pushNotifications);
+    const result = task(database);
+    if (JSON.stringify(database.pushNotifications) !== before) await writeDatabase(database);
+    return result;
+  } finally { release(); }
+} });
+const tickPush = () => pushWorker.tick().catch(() => console.error('Notifications : traitement indisponible, nouvelle tentative automatique.'));
+// No outgoing network request is possible without the explicit server-side activation flags.
+const pushTimer = setInterval(tickPush, pushConfig.enabled ? 15000 : 60 * 60000);
+pushTimer.unref();
+server.once('listening', tickPush);
+server.on('close', () => clearInterval(pushTimer));
 const maintainContestPrivacy = async () => {
   const release = await acquireDatabase();
   try { const database = await readDatabase(); if (purgeExpiredContestEntries(database)) await writeDatabase(database); }

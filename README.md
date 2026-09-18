@@ -21,6 +21,12 @@ Application de commande et de fidélité de Bibou & Co pour iPhone, Android et l
 
 ## Développement local
 
+### Notifications clients
+
+Le compte client propose deux choix indépendants (suivi des commandes/tables et offres), tous deux désactivés par défaut. L’espace restaurant contient « Notifications clients » pour préparer un message, vérifier les destinataires et confirmer l’envoi. Les envois restent désactivés tant que les identifiants Apple/Android et les tests sur téléphone ne sont pas terminés. Le navigateur ne reçoit pas de push natif et aucun binaire signé n’a été généré. Voir [PUSH_NOTIFICATIONS.md](PUSH_NOTIFICATIONS.md) pour l’activation et les limites.
+
+### Lancement local
+
 1. Installer les dépendances avec `npm install`.
 2. Lancer l’API avec `npm run server`.
 3. Lancer l’application avec `npm start`.

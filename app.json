@@ -44,7 +44,8 @@
           "resizeMode": "contain"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      ["expo-notifications", { "color": "#E95122", "defaultChannel": "commandes" }]
     ]
   }
 }

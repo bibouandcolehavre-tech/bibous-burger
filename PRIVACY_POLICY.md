@@ -1,6 +1,6 @@
 # Politique de confidentialité — Bibou's Burgers
 
-Dernière mise à jour : 18 septembre 2026
+Dernière mise à jour : 19 septembre 2026
 
 Bibou & Co utilise uniquement les informations nécessaires pour prendre les commandes, livrer, réserver une table et faire fonctionner le programme de fidélité Bibou's Burgers.
 
@@ -17,6 +17,17 @@ Ces informations servent à sécuriser la connexion par SMS, préparer et livrer
 - Twilio envoie les codes de connexion par SMS.
 - SumUp traite les paiements par carte. Bibou & Co ne reçoit jamais le numéro complet de la carte.
 - Google aide à calculer la distance de livraison et à afficher les avis publics du restaurant.
+- Expo, Apple et Google transmettent les notifications push aux téléphones associés et autorisés. Ce service est distinct de l’envoi des codes SMS.
+
+## Notifications et choix
+
+Le suivi des commandes/réservations et les promotions sont deux choix séparés, désactivés par défaut. Les promotions nécessitent un choix explicite ; les refuser n’empêche ni de commander ni de bénéficier de la fidélité. Chaque choix peut être retiré depuis **Mon compte → Mes notifications**, indépendamment de l’autorisation du système du téléphone.
+
+Nous conservons les préférences datées, un identifiant d’installation et un jeton technique pour transmettre les notifications. Les messages de suivi ne contiennent ni nom, ni numéro de téléphone, ni adresse, ni détail bancaire. Les destinataires sont revérifiés avant transmission. Une notification déjà confiée au service de transmission ne peut pas être rappelée.
+
+Les associations d’appareils inactifs sont retirées après 90 jours ; les campagnes et journaux techniques d’envoi sont conservés 7 jours. La déconnexion retire l’appareil associé ; la suppression du compte supprime toutes ses associations et journaux nominatifs. Les sauvegardes de sécurité préexistantes expirent selon leur rotation d’une semaine. Après une restauration, les envois doivent rester désactivés jusqu’à réconciliation des préférences et suppressions intervenues depuis la copie.
+
+Le service ne mesure pas la lecture des notifications. Une confirmation technique signifie une transmission au fournisseur, pas une lecture par le client. Aucun suivi publicitaire tiers n’est ajouté.
 
 ## Conservation et sécurité
 

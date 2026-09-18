@@ -1,0 +1,50 @@
+const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+const { spawn } = require('node:child_process'), { once } = require('node:events');
+const { createCustomerSession } = require('./customer-session');
+
+test('API notifications : autorisations, préférences, transitions, isolation et suppression', { timeout: 15000 }, async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-push-http-')), dataFile = path.join(dir, 'data.json');
+  await fs.writeFile(dataFile, JSON.stringify({ customers: [1, 2].map(i => ({ id: `c${i}`, name: 'Fictif', phone: `+3360000000${i}`, points: 0 })), orders: [{ id: 'o1', number: 1, customerId: 'c1', status: 'confirmed', payment: { status: 'PAID' }, method: 'pickup', items: [] }, { id: 'unpaid', customerId: 'c1', status: 'awaiting_payment', payment: { status: 'PENDING' }, items: [] }], reservations: [{ id: 'r1', customerId: 'c1', status: 'pending' }], nextCustomerId: 3, nextOrderNumber: 2 }));
+  const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/push-provider.cjs'), path.join(__dirname, 'server.js')], { cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: dataFile, SESSION_SECRET: 'push-test-only', RESTAURANT_DASHBOARD_PASSWORD: 'push-test-only', PUSH_ENABLED: 'true', PUSH_IOS_ENABLED: 'true' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
+  const base = await new Promise((resolve, reject) => { child.stdout.on('data', v => { const match = String(v).match(/http:\/\/localhost:\d+/); if (match) resolve(match[0] + '/api'); }); child.on('error', reject); child.on('exit', code => reject(Error('Server exit ' + code))); });
+  const req = (route, auth = '', method = 'GET', input) => fetch(base + route, { method, headers: { Authorization: 'Bearer ' + auth, 'Content-Type': 'application/json' }, ...(input ? { body: JSON.stringify(input) } : {}) });
+  const c1 = createCustomerSession('c1', 'push-test-only'), c2 = createCustomerSession('c2', 'push-test-only');
+  const admin = (await (await req('/dashboard/auth/login', '', 'POST', { password: 'push-test-only' })).json()).token;
+  assert.equal((await req('/customer/push')).status, 401);
+  for (const auth of ['', c1]) {
+    assert.equal((await req('/dashboard/push', auth)).status, 401);
+    assert.equal((await req('/dashboard/push/preview', auth, 'POST', {})).status, 401);
+  }
+  assert.equal((await req('/customer/push', admin)).status, 401);
+  const before = await (await req('/customer/push', c1)).json(); assert.equal(before.preferences.marketing, false);
+  const d = { installationId: crypto.randomUUID(), secret: crypto.randomUUID(), token: 'ExpoPushToken[FAKE_ONLY_1234567890]', platform: 'ios' };
+  assert.equal((await req('/customer/push/devices', c1, 'POST', d)).status, 200);
+  assert.equal((await req('/customer/push', c1, 'PATCH', { service: true, marketing: true })).status, 200);
+  assert.equal((await req('/customer/push', c1, 'PATCH', { marketing: 'true' })).status, 400);
+  assert.equal((await req('/customer/push/devices', c2, 'POST', { ...d, secret: crypto.randomUUID() })).status, 409);
+  await req(`/customer/push/devices/${d.installationId}`, c2, 'DELETE');
+  assert.equal((await (await req('/customer/push', c1)).json()).devices.length, 1);
+  assert.equal((await (await req('/customer/push', c2)).json()).devices.length, 0);
+  assert.equal((await req('/dashboard/orders/unpaid', admin, 'PATCH', { status: 'preparing' })).status, 409);
+  assert.equal((await req('/dashboard/orders/o1', admin, 'PATCH', { status: 'preparing' })).status, 200);
+  await req('/dashboard/orders/o1', admin, 'PATCH', { status: 'preparing' });
+  let db = JSON.parse(await fs.readFile(dataFile, 'utf8')); assert.equal(db.pushNotifications.jobs.length, 1);
+  assert.equal(db.pushNotifications.jobs[0].title, 'Commande acceptée');
+  assert.equal((await req('/orders/o1', admin, 'PATCH', { status: 'ready' })).status, 200);
+  assert.equal((await req('/dashboard/reservations/r1', admin, 'PATCH', { status: 'confirmed' })).status, 200);
+  const input = { requestId: crypto.randomUUID(), title: 'Test <script>', body: 'Un message fictif uniquement', screen: 'menu', audience: 'all' };
+  const preview = await (await req('/dashboard/push/preview', admin, 'POST', input)).json();
+  assert.equal(preview.campaign.customers, 1); assert.equal(preview.campaign.devices, 1);
+  assert.equal((await req(`/dashboard/push/campaigns/${input.requestId}/send`, admin, 'POST', {})).status, 400);
+  await req(`/dashboard/push/campaigns/${input.requestId}/send`, admin, 'POST', { confirm: true });
+  await req(`/dashboard/push/campaigns/${input.requestId}/send`, admin, 'POST', { confirm: true });
+  db = JSON.parse(await fs.readFile(dataFile, 'utf8')); assert.equal(db.pushNotifications.jobs.filter(j => j.kind === 'marketing').length, 1);
+  const dashboard = await req('/dashboard/push', admin); assert.equal(dashboard.headers.get('cache-control'), 'no-store');
+  const visible = JSON.stringify(await dashboard.json()); assert.ok(!visible.includes(d.token)); assert.ok(!visible.includes(d.secret)); assert.ok(!visible.includes('+336'));
+  await req('/customer/push', c1, 'PATCH', { marketing: false });
+  db = JSON.parse(await fs.readFile(dataFile, 'utf8')); assert.equal(db.pushNotifications.jobs.find(j => j.kind === 'marketing').status, 'cancelled');
+  await req('/customer/account', c1, 'DELETE');
+  db = JSON.parse(await fs.readFile(dataFile, 'utf8')); assert.equal(db.pushNotifications.devices.length, 0); assert.equal(db.pushNotifications.jobs.length, 0);
+  assert.ok(!JSON.stringify(db.pushNotifications).includes('"c1"'));
+});

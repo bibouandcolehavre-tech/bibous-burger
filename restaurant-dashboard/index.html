@@ -34,6 +34,7 @@
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & disponibilité</button>
           <button class="nav-item" data-view="customers"><span>★</span> Fidélité clients</button>
           <button class="nav-item" data-view="marketing"><span>✦</span> Actualités & concours</button>
+          <button class="nav-item" data-view="notifications"><span>◉</span> Notifications clients</button>
           <button class="nav-item" data-view="backups"><span>▤</span> Sauvegardes</button>
         </nav>
         <div class="sidebar-bottom">
@@ -71,9 +72,11 @@
           <button class="nav-item mobile-view-button" data-view="backups"><span>▤</span> Sauvegardes</button>
           <button class="nav-item mobile-view-button" data-view="customers"><span>★</span> Clients</button>
           <button class="nav-item mobile-view-button" data-view="marketing"><span>✦</span> Actualités</button>
+          <button class="nav-item mobile-view-button" data-view="notifications"><span>◉</span> Notifications</button>
         </nav>
 
         <section id="marketing-view" hidden></section>
+        <section id="notifications-view" hidden></section>
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
           <article><span class="metric-icon red">●</span><div><strong id="new-count">1</strong><small>nouvelle à accepter</small></div></article>
@@ -151,6 +154,7 @@
     <div id="toast" class="toast" role="status"></div>
     <script src="./alerts.js?v=service-alerts-1"></script>
     <script src="./marketing.js?v=actualites-1"></script>
-    <script src="./app.js?v=actualites-1"></script>
+    <script src="./notifications.js?v=push-1"></script>
+    <script src="./app.js?v=push-1"></script>
   </body>
 </html>

@@ -15,6 +15,8 @@ L’application web et l’API sont déployables. Les exports de code iOS et And
 
 ## Connexion Expo effectuée — builds suspendus à la demande du propriétaire
 
+Notifications clients préparées le 19 septembre : préférences séparées, association privée d’appareils, mises à jour de commandes payées/réservations, éditeur promotionnel restaurant et traitement des retours Expo. **Non activées sur téléphone** : la page Credentials du projet Expo a été contrôlée et ne contient encore aucun identifiant Apple ou Android ; aucun `google-services.json` n’est présent. Les versions installables restent suspendues. Les exports JavaScript et les tests avec fournisseur simulé ne valident ni la signature ni la réception réelle. Étapes restantes et réglages dans `PUSH_NOTIFICATIONS.md`.
+
 Connexion OAuth terminée par le propriétaire, compte CLI `bibouburgers`. Projet `bibous-burger` dans l’organisation `bibou-and-co` (Bibou & Co), identifiant `2c35adf5-23b6-474e-a790-c8cf39d4d70a`, sauvegardé dans `app.json`. Le propriétaire demande de poursuivre les modifications avant toute version installable : ne pas lancer de build APK/AAB/IPA ni de soumission pour le moment.
 
 EAS Update n’est pas installé/configuré. Certaines futures modifications de texte, style et images pourraient être distribuées par ce mécanisme compatible avec les règles des boutiques, une fois configuré et inclus dans un binaire. Les changements natifs imposent un nouveau build ; les changements de fonctionnalités doivent respecter la revue des plateformes. Ne pas confondre déploiement web et mise à jour de l’application installée.

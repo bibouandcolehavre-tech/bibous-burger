@@ -151,3 +151,24 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .marketing-stats strong { display: block; font-size: 30px; color: #273126; }
 #marketing-feedback { min-height: 22px; color: #494d36; font-weight: 650; }
 @media(max-width: 700px) { .marketing-panel { padding: 16px; } .marketing-grid { grid-template-columns: minmax(0,1fr); } .news-editor { padding: 12px; } }
+/* Notifications: readable previews and explicit two-stage sending. */
+.push-layout { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:22px; align-items:start; }
+.push-layout > * { min-width:0; }
+.push-layout label { display:flex; flex-direction:column; gap:8px; margin:14px 0; font-weight:700; }
+.push-layout input,.push-layout textarea,.push-layout select { width:100%; min-width:0; box-sizing:border-box; padding:12px; border:1px solid #d5c6ba; border-radius:10px; background:#fffdf9; font:inherit; color:#2c201b; }
+.push-layout .inline-check { flex-direction:row; align-items:flex-start; font-size:14px; line-height:1.5; }
+.push-layout .inline-check input { width:20px; flex:none; }
+.push-status { border:1px solid #dcc7b0; border-radius:18px; background:#fff3de; padding:20px; margin-bottom:20px; }
+.push-status > strong { font-size:19px; }
+.push-status p { line-height:1.6; }
+.push-phone { padding:22px; background:#eee9e4; border:7px solid #27201c; border-radius:28px; max-width:370px; margin:20px auto; box-shadow:0 10px 25px #251b1615; overflow-wrap:anywhere; }
+.push-phone-top { display:flex; justify-content:space-between; gap:12px; font-size:10px; letter-spacing:.7px; color:#5c5049; margin-bottom:16px; }
+.push-phone > strong { display:block; color:#241a14; font-size:17px; }
+.push-phone p { white-space:pre-wrap; color:#44372e; line-height:1.5; }
+.push-muted { font-size:12px; line-height:1.6; color:#6c5748; }
+.push-history-item { padding:18px 0; border-bottom:1px solid #e4d8ca; overflow-wrap:anywhere; }
+.push-history-item > div { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.push-history-item span,.push-history-item small { color:#705a48; font-size:12px; line-height:1.6; }
+#push-feedback:not(:empty) { padding:14px 18px; border-radius:12px; background:#fff3de; line-height:1.5; }
+#push-send { width:100%; margin-top:14px; }
+@media(max-width:850px) { .push-layout { grid-template-columns:1fr; } }
