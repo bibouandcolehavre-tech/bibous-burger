@@ -4,3 +4,5 @@ node_modules/
 .expo/
 .expo-home/
 dist/
+server/product-stock.json
+server/product-stock.json.*.tmp

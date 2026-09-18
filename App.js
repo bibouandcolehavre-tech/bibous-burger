@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Image, Linking, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Alert, AppState, Image, Linking, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 const { normalizeFrenchMobile } = require("./phone");
+const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
@@ -198,10 +199,10 @@ function ProductCard({ product, onPress }) {
 }
 
 function AccessoryCard({ product, onPress }) {
-  return <Pressable onPress={() => onPress(product)} style={styles.productCard}>
+  return <Pressable disabled={product.soldOut} onPress={() => onPress(product)} style={[styles.productCard, product.soldOut && styles.productCardSoldOut]}>
     {product.image ? product.kind === "drink" ? <View style={styles.drinkImageFrame}><Image source={product.image} style={styles.drinkProductImage} /></View> : <Image source={product.image} style={styles.productImage} /> : <View style={styles.productEmojiImage}><Text style={styles.productEmoji}>{product.emoji}</Text></View>}
-    <View style={styles.productInfo}><Text style={styles.productName}>{product.name}</Text><Text numberOfLines={2} style={styles.productDescription}>{product.description}</Text><Text style={styles.productPrice}>{money(product.price)}</Text></View>
-    <View style={styles.plus}><Text style={styles.plusText}>+</Text></View>
+    <View style={styles.productInfo}><Text style={styles.productName}>{product.name}</Text><Text numberOfLines={2} style={styles.productDescription}>{product.description}</Text><Text style={[styles.productPrice, product.soldOut && styles.soldOutText]}>{product.soldOut ? "Épuisé" : money(product.price)}</Text></View>
+    <View style={[styles.plus, product.soldOut && styles.plusSoldOut]}><Text style={styles.plusText}>{product.soldOut ? "–" : "+"}</Text></View>
   </Pressable>;
 }
 
@@ -255,20 +256,23 @@ function BibouPlusHomeCard({ active, customer, onPress }) {
   </View>;
 }
 
-function MenuScreen({ onOpenProduct, onQuickAdd, cartCount, onOpenCart, loyaltyPoints, onOpenLoyalty, onOpenAccount, onOpenReservation, onOpenBibouPlus, onOpenPrivacy, onChooseOrderMethod, preferredMethod, customer }) {
+function MenuScreen({ onOpenProduct, onQuickAdd, cartCount, onOpenCart, loyaltyPoints, onOpenLoyalty, onOpenAccount, onOpenReservation, onOpenBibouPlus, onOpenPrivacy, onChooseOrderMethod, preferredMethod, customer, catalog, stockMessage }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
   const scrollRef = useRef(null);
   const [menuPosition, setMenuPosition] = useState(0);
-  const taurus = PRODUCTS[0];
-  const menus = PRODUCTS.filter((product) => product.isMenu && product.id !== taurus.id);
-  const burgers = PRODUCTS.filter((product) => !product.isMenu);
+  const products = PRODUCTS.map((product) => applyProductStock(product, catalog));
+  const snacks = SNACK_PRODUCTS.map((product) => applyProductStock(product, catalog));
+  const drinks = DRINK_PRODUCTS.map((product) => applyProductStock(product, catalog));
+  const taurus = products[0];
+  const menus = products.filter((product) => product.isMenu && product.id !== taurus.id);
+  const burgers = products.filter((product) => !product.isMenu);
   const chooseOrderMethod = (method) => {
     onChooseOrderMethod(method);
     setTimeout(() => scrollRef.current?.scrollTo({ y: Math.max(0, menuPosition - 18), animated: true }), 50);
   };
   const bibouPlusActive = customerHasBibouPlus(customer);
-  return <ScrollView ref={scrollRef} contentContainerStyle={[styles.scrollContent, desktop && styles.scrollContentDesktop]} showsVerticalScrollIndicator={false}><Header right={cartCount ? `🛍  ${cartCount}` : "🛍"} onRight={onOpenCart} /><View style={[styles.homeTopRow, desktop && styles.homeTopRowDesktop]}><View style={styles.addressBox}><Text style={styles.addressLabel}>Zone de livraison</Text><Text style={styles.addressValue}>{DELIVERY_ZONE}</Text></View><Pressable onPress={onOpenAccount} style={[styles.accountShortcut, desktop && styles.accountShortcutDesktop]}><Text style={styles.accountShortcutIcon}>👤</Text><Text style={styles.accountShortcutText}>{customer.name ? customer.name.split(" ")[0] : "Mon compte"}</Text></Pressable></View><Text style={styles.serviceTitle}>Que souhaites-tu faire ?</Text><View style={[styles.serviceActions, desktop && styles.serviceActionsDesktop]}><Pressable onPress={() => chooseOrderMethod("pickup")} style={[styles.serviceAction, preferredMethod === "pickup" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛍</Text><Text style={styles.serviceActionTitle}>Click & Collect</Text><Text style={styles.serviceActionText}>Retrait sur place</Text></Pressable><Pressable onPress={() => chooseOrderMethod("delivery")} style={[styles.serviceAction, preferredMethod === "delivery" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛵</Text><Text style={styles.serviceActionTitle}>Livraison</Text><Text style={styles.serviceActionText}>Chez toi</Text></Pressable><Pressable onPress={onOpenReservation} style={[styles.serviceAction, styles.serviceActionReservation]}><Text style={styles.serviceActionIcon}>🍽</Text><Text style={styles.serviceActionTitle}>Réserver</Text><Text style={styles.serviceActionText}>Une table</Text></Pressable></View><BibouPlusHomeCard active={bibouPlusActive} customer={customer} onPress={onOpenBibouPlus} />{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Bienvenue ! −10 % sur ta première commande</Text><Text style={styles.welcomeRewardText}>La remise s’appliquera automatiquement au paiement.</Text></View></View>}<Pressable onPress={onOpenLoyalty} style={[styles.loyaltyShortcut, desktop && styles.loyaltyShortcutDesktop]}><View><Text style={styles.loyaltyShortcutEyebrow}>CLUB BIBOU</Text><Text style={styles.loyaltyShortcutTitle}>★ {loyaltyPoints} points disponibles</Text></View><Text style={styles.loyaltyShortcutArrow}>›</Text></Pressable><Text style={[styles.title, desktop && styles.titleDesktop]}>Une grosse faim?{"\n"}On s’en occupe.</Text><PromotionsCarousel onOpenProduct={onOpenProduct} /><GoogleReviewsCarousel /><View onLayout={(event) => setMenuPosition(event.nativeEvent.layout.y)}><CategoryHeader title="Nos menus" subtitle="Burger + frites et boisson" size="menu" /></View><View style={desktop && styles.productGrid}>{menus.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Nos burgers" subtitle="Burgers seuls" size="burgers" /><View style={desktop && styles.productGrid}>{burgers.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Petites faims" subtitle="À partager… ou à garder rien que pour soi." size="snacks" /><View style={desktop && styles.productGrid}>{SNACK_PRODUCTS.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={product.kind === "duo" ? onOpenProduct : onQuickAdd} /></View>)}</View><CategoryHeader title="Boissons" subtitle="Une boisson fraîche pour compléter ta commande." /><View style={desktop && styles.productGrid}>{DRINK_PRODUCTS.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={onQuickAdd} /></View>)}</View>{desktop && <View style={styles.siteFooter}><View><Text style={styles.siteFooterTitle}>Bibou's Burgers</Text><Text style={styles.siteFooterText}>153 quai Georges V, 76600 Le Havre{"\n"}Livraison dans un rayon de 5 km · Retrait au restaurant</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.siteFooterButton}><Text style={styles.siteFooterButtonText}>Voir les avis Google ↗</Text></Pressable></View>}<Pressable onPress={onOpenPrivacy} style={styles.homePrivacyLink}><Text style={styles.homePrivacyLinkText}>Confidentialité et données personnelles</Text></Pressable><Pressable onPress={onOpenCart} style={[styles.floatingCart, desktop && styles.floatingCartDesktop]}><Text style={styles.floatingCartText}>Panier{cartCount ? ` · ${cartCount}` : ""}</Text><Text style={styles.floatingCartIcon}>🛍</Text></Pressable></ScrollView>;
+  return <ScrollView ref={scrollRef} contentContainerStyle={[styles.scrollContent, desktop && styles.scrollContentDesktop]} showsVerticalScrollIndicator={false}><Header right={cartCount ? `🛍  ${cartCount}` : "🛍"} onRight={onOpenCart} /><View style={[styles.homeTopRow, desktop && styles.homeTopRowDesktop]}><View style={styles.addressBox}><Text style={styles.addressLabel}>Zone de livraison</Text><Text style={styles.addressValue}>{DELIVERY_ZONE}</Text></View><Pressable onPress={onOpenAccount} style={[styles.accountShortcut, desktop && styles.accountShortcutDesktop]}><Text style={styles.accountShortcutIcon}>👤</Text><Text style={styles.accountShortcutText}>{customer.name ? customer.name.split(" ")[0] : "Mon compte"}</Text></Pressable></View><Text style={styles.serviceTitle}>Que souhaites-tu faire ?</Text><View style={[styles.serviceActions, desktop && styles.serviceActionsDesktop]}><Pressable onPress={() => chooseOrderMethod("pickup")} style={[styles.serviceAction, preferredMethod === "pickup" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛍</Text><Text style={styles.serviceActionTitle}>Click & Collect</Text><Text style={styles.serviceActionText}>Retrait sur place</Text></Pressable><Pressable onPress={() => chooseOrderMethod("delivery")} style={[styles.serviceAction, preferredMethod === "delivery" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛵</Text><Text style={styles.serviceActionTitle}>Livraison</Text><Text style={styles.serviceActionText}>Chez toi</Text></Pressable><Pressable onPress={onOpenReservation} style={[styles.serviceAction, styles.serviceActionReservation]}><Text style={styles.serviceActionIcon}>🍽</Text><Text style={styles.serviceActionTitle}>Réserver</Text><Text style={styles.serviceActionText}>Une table</Text></Pressable></View><BibouPlusHomeCard active={bibouPlusActive} customer={customer} onPress={onOpenBibouPlus} />{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Bienvenue ! −10 % sur ta première commande</Text><Text style={styles.welcomeRewardText}>La remise s’appliquera automatiquement au paiement.</Text></View></View>}<Pressable onPress={onOpenLoyalty} style={[styles.loyaltyShortcut, desktop && styles.loyaltyShortcutDesktop]}><View><Text style={styles.loyaltyShortcutEyebrow}>CLUB BIBOU</Text><Text style={styles.loyaltyShortcutTitle}>★ {loyaltyPoints} points disponibles</Text></View><Text style={styles.loyaltyShortcutArrow}>›</Text></Pressable><Text style={[styles.title, desktop && styles.titleDesktop]}>Une grosse faim?{"\n"}On s’en occupe.</Text><PromotionsCarousel onOpenProduct={onOpenProduct} /><GoogleReviewsCarousel />{stockMessage ? <Text style={styles.stockNotice}>{stockMessage}</Text> : null}<View onLayout={(event) => setMenuPosition(event.nativeEvent.layout.y)}><CategoryHeader title="Nos menus" subtitle="Burger + frites et boisson" size="menu" /></View><View style={desktop && styles.productGrid}>{menus.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Nos burgers" subtitle="Burgers seuls" size="burgers" /><View style={desktop && styles.productGrid}>{burgers.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Petites faims" subtitle="À partager… ou à garder rien que pour soi." size="snacks" /><View style={desktop && styles.productGrid}>{snacks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={product.kind === "duo" ? onOpenProduct : onQuickAdd} /></View>)}</View><CategoryHeader title="Boissons" subtitle="Une boisson fraîche pour compléter ta commande." /><View style={desktop && styles.productGrid}>{drinks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={onQuickAdd} /></View>)}</View>{desktop && <View style={styles.siteFooter}><View><Text style={styles.siteFooterTitle}>Bibou's Burgers</Text><Text style={styles.siteFooterText}>153 quai Georges V, 76600 Le Havre{"\n"}Livraison dans un rayon de 5 km · Retrait au restaurant</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.siteFooterButton}><Text style={styles.siteFooterButtonText}>Voir les avis Google ↗</Text></Pressable></View>}<Pressable onPress={onOpenPrivacy} style={styles.homePrivacyLink}><Text style={styles.homePrivacyLinkText}>Confidentialité et données personnelles</Text></Pressable><Pressable onPress={onOpenCart} style={[styles.floatingCart, desktop && styles.floatingCartDesktop]}><Text style={styles.floatingCartText}>Panier{cartCount ? ` · ${cartCount}` : ""}</Text><Text style={styles.floatingCartIcon}>🛍</Text></Pressable></ScrollView>;
 }
 
 function AccountScreen({ customer, loyalty, orders, reservations, onBack, onOpenOrders, onOpenReservations, onOpenLoyalty, onOpenBibouPlus, onOpenPrivacy, onDeleteAccount }) {
@@ -365,23 +369,25 @@ function ReservationsScreen({ reservations, onBack, onRefresh }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes réservations</Text><Text style={styles.deliveryIntro}>Retrouve ici les demandes associées à ton numéro de téléphone. Leur statut s’actualise automatiquement.</Text><Pressable onPress={() => onRefresh(false)} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser maintenant</Text><Text style={styles.simulateHint}>Mise à jour automatique toutes les 10 secondes</Text></Pressable><Text style={styles.sectionTitle}>À venir</Text>{upcoming.length ? upcoming.map(card) : <View style={styles.emptyReservationState}><Text style={styles.emptyIcon}>🍽</Text><Text style={styles.emptyTitle}>Aucune table à venir</Text><Text style={styles.emptyText}>Tu peux réserver depuis l’accueil.</Text></View>}{history.length > 0 && <><Text style={styles.sectionTitle}>Historique</Text>{history.map(card)}</>}</ScrollView></SafeAreaView>;
 }
 
-function ProductScreen({ product, onBack, onAdd }) {
-  const optionGroups = product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS);
+function ProductScreen({ product, catalog, onBack, onAdd }) {
+  const optionGroups = availableOptionGroups(product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS), catalog);
   const [choices, setChoices] = useState({});
   const [openGroups, setOpenGroups] = useState({ protein: true, salad: true, sauces: true });
   const selectedOptions = useMemo(() => optionGroups.flatMap((group) => group.options.filter((option) => choices[group.id]?.includes(option.id)).map((option) => ({ ...option, groupId: group.id }))), [choices, optionGroups]);
   const total = product.price + selectedOptions.reduce((sum, option) => sum + option.price, 0);
-  const hasRequiredChoices = optionGroups.filter((group) => group.required).every((group) => (choices[group.id] || []).length >= group.min);
+  const stockProblem = cartStockProblem([{ product, selections: selectedOptions }], catalog);
+  const hasRequiredChoices = !stockProblem && optionGroups.filter((group) => group.required).every((group) => (choices[group.id] || []).length >= group.min);
   const toggleChoice = (group, option) => {
     const current = choices[group.id] || [];
     const isSelected = current.includes(option.id);
     let next;
     if (isSelected) next = current.filter((id) => id !== option.id);
+    else if (option.soldOut) return;
     else if (option.exclusive) next = [option.id];
     else { const withoutExclusive = current.filter((id) => !group.options.find((item) => item.id === id)?.exclusive); next = group.max === 1 ? [option.id] : [...withoutExclusive, option.id]; if (group.max && next.length > group.max) return; }
     setChoices({ ...choices, [group.id]: next });
   };
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Image source={product.image} style={styles.detailImage} /><View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View><Text style={styles.detailDescription}>{product.detail}</Text>{product.isMenu && <Text style={styles.includedText}>Frites maison incluses dans le menu</Text>}<Text style={styles.sectionTitle}>{product.kind === "duo" ? "Choisis les deux boissons" : product.isMenu ? "Compose ton menu" : "Compose ton burger"}</Text>{optionGroups.map((group) => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} isOpen={!!openGroups[group.id]} onToggleOpen={() => setOpenGroups({ ...openGroups, [group.id]: !openGroups[group.id] })} onToggleChoice={(option) => toggleChoice(group, option)} />)}</ScrollView><View style={styles.stickyAction}>{!hasRequiredChoices && <Text style={styles.requiredHint}>Choisis les options marquées « requis » pour continuer.</Text>}<Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map((option) => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Image source={product.image} style={styles.detailImage} /><View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View><Text style={styles.detailDescription}>{product.detail}</Text>{product.isMenu && <Text style={styles.includedText}>Frites maison incluses dans le menu</Text>}<Text style={styles.sectionTitle}>{product.kind === "duo" ? "Choisis les deux boissons" : product.isMenu ? "Compose ton menu" : "Compose ton burger"}</Text>{optionGroups.map((group) => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} isOpen={!!openGroups[group.id]} onToggleOpen={() => setOpenGroups({ ...openGroups, [group.id]: !openGroups[group.id] })} onToggleChoice={(option) => toggleChoice(group, option)} />)}</ScrollView><View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>Choisis les options marquées « requis » pour continuer.</Text>}<Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map((option) => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable></View></SafeAreaView>;
 }
 
 function OptionGroup({ group, selectedIds, isOpen, onToggleOpen, onToggleChoice }) {
@@ -391,17 +397,18 @@ function OptionGroup({ group, selectedIds, isOpen, onToggleOpen, onToggleChoice 
 }
 
 function OptionRow({ option, selected, onPress }) {
-  return <Pressable onPress={onPress} style={styles.option}><View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.optionName}>{option.label}</Text>{option.price > 0 && <Text style={styles.optionValue}>+ {money(option.price)}</Text>}</Pressable>;
+  return <Pressable disabled={option.soldOut && !selected} onPress={onPress} style={[styles.option, option.soldOut && styles.optionSoldOut]}><View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected && <Text style={styles.checkmark}>✓</Text>}</View><Text style={styles.optionName}>{option.label}</Text>{option.soldOut ? <Text style={styles.soldOutText}>Épuisé</Text> : option.price > 0 && <Text style={styles.optionValue}>+ {money(option.price)}</Text>}</Pressable>;
 }
 
 function ReceiptLine({ label, value, strong }) { return <View style={styles.receiptLine}><Text style={strong && styles.strong}>{label}</Text><Text style={strong && styles.strong}>{value}</Text></View>; }
 
-function CartScreen({ cart, customer, onBack, onCheckout, onAddMore, onRemove, onQuickAdd }) {
+function CartScreen({ cart, customer, catalog, onBack, onCheckout, onAddMore, onRemove, onQuickAdd }) {
   const standardFee = cart ? (cart.delivery.fee ?? deliveryCost(cart.delivery.method)) : 0;
   const pricing = cart ? customerOrderPricing(cart.total, standardFee, customer, cart.delivery.method === "delivery") : { total: 0, deliveryFee: 0, discount: 0, bibouPlus: false };
   const hasExactFee = cart?.delivery.fee !== undefined || pricing.bibouPlus;
   const productIds = new Set(cart?.items?.map((item) => item.product.id) || []);
-  const suggestions = [...SNACK_PRODUCTS.filter((product) => product.kind === "simple"), ...DRINK_PRODUCTS].filter((product) => !productIds.has(product.id)).slice(0, 3);
+  const stockProblem = cartStockProblem(cart?.items, catalog);
+  const suggestions = [...SNACK_PRODUCTS.filter((product) => product.kind === "simple"), ...DRINK_PRODUCTS].map((product) => applyProductStock(product, catalog)).filter((product) => !product.soldOut && !productIds.has(product.id)).slice(0, 3);
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
       <Header onBack={onBack} />
@@ -420,7 +427,7 @@ function CartScreen({ cart, customer, onBack, onCheckout, onAddMore, onRemove, o
         <Text style={styles.eta}>● Choisis ton créneau avant le paiement</Text>
       </>}
     </ScrollView>
-    {cart && <View style={styles.stickyAction}><Pressable style={styles.primaryButton} onPress={onCheckout}><Text style={styles.primaryButtonText}>Choisir mon créneau · {hasExactFee ? "" : "dès "}{money(pricing.total)}</Text></Pressable></View>}
+    {cart && <View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem} Retire cet article puis choisis un remplacement.</Text> : null}<Pressable disabled={!!stockProblem} style={[styles.primaryButton, !!stockProblem && styles.primaryButtonDisabled]} onPress={onCheckout}><Text style={styles.primaryButtonText}>Choisir mon créneau · {hasExactFee ? "" : "dès "}{money(pricing.total)}</Text></Pressable></View>}
   </SafeAreaView>;
 }
 
@@ -702,6 +709,31 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
 }
 
 export default function App() {
+  const [catalog, setCatalog] = useState(null);
+  const [stockMessage, setStockMessage] = useState("Vérification des disponibilités…");
+  const [stockFeedback, setStockFeedback] = useState("");
+  useEffect(() => {
+    let stopped = false;
+    let loading = false;
+    const refresh = async () => {
+      if (loading) return;
+      loading = true;
+      try {
+        const response = await fetch(`${API_BASE_URL}/catalog`);
+        const payload = await response.json();
+        if (!response.ok || !Array.isArray(payload.products) || !payload.options) throw new Error("Catalogue indisponible");
+        if (!stopped) { setCatalog(payload); setStockMessage(""); }
+      } catch {
+        if (!stopped) setStockMessage("Disponibilités non actualisées. Une nouvelle vérification aura lieu avant le paiement.");
+      } finally { loading = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 15000);
+    const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void refresh(); });
+    const onFocus = () => { void refresh(); };
+    if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
+    return () => { stopped = true; clearInterval(timer); subscription.remove(); if (typeof window !== "undefined") window.removeEventListener("focus", onFocus); };
+  }, []);
   const [screen, setScreen] = useState(initialScreenFromUrl);
   const [activeProduct, setActiveProduct] = useState(null);
   const [cart, setCart] = useState(null);
@@ -790,8 +822,15 @@ export default function App() {
       })
       .catch(() => window.localStorage?.removeItem("bibousCustomerSession"));
   }, []);
-  const openProduct = (product) => { setActiveProduct(product); setScreen("product"); };
+  const openProduct = (product) => {
+    const current = applyProductStock(product, catalog);
+    if (current.soldOut) { setStockFeedback(current.stockReason || "Ce produit est momentanément indisponible."); return; }
+    setStockFeedback(""); setActiveProduct(current); setScreen("product");
+  };
   const addToCart = (item) => {
+    const problem = cartStockProblem([item], catalog);
+    if (problem) { setStockFeedback(problem); return; }
+    setStockFeedback("");
     setCart((current) => {
       const items = [...(current?.items || []), { ...item, lineId: `${Date.now()}-${Math.random().toString(36).slice(2)}` }];
       return { items, total: Math.round(items.reduce((sum, entry) => sum + entry.total, 0) * 100) / 100, delivery: current?.delivery || { method: preferredMethod, fee: preferredMethod === "pickup" ? 0 : undefined, day: DEFAULT_DELIVERY_DAY.id, date: DEFAULT_DELIVERY_DAY.date, dayLabel: DEFAULT_DELIVERY_DAY.dayLabel, slot: null } };
@@ -829,6 +868,12 @@ export default function App() {
   };
   const pay = async (total) => {
     try {
+      const stockResponse = await fetch(`${API_BASE_URL}/catalog`);
+      const latestCatalog = await stockResponse.json();
+      if (!stockResponse.ok || !Array.isArray(latestCatalog.products) || !latestCatalog.options) throw new Error("Impossible de vérifier les disponibilités. Réessaie dans un instant.");
+      setCatalog(latestCatalog);
+      const problem = cartStockProblem(cart?.items, latestCatalog);
+      if (problem) { setStockFeedback(problem); setScreen("cart"); return; }
       if (!authToken || !customer.id) throw new Error("Connecte-toi par SMS avant de payer.");
       const statusResponse = await fetch(`${API_BASE_URL}/integrations/sumup/status`);
       const status = await statusResponse.json();
@@ -966,8 +1011,8 @@ export default function App() {
       if (error?.name !== "AbortError") Alert.alert("Ton code de parrainage", `${customer.referralCode}\n\n${referralUrl}`);
     }
   };
-  if (screen === "product") return <ProductScreen product={activeProduct} onBack={() => setScreen("menu")} onAdd={addToCart} />;
-  if (screen === "cart") return <CartScreen cart={cart} customer={customer} onBack={() => setScreen("menu")} onAddMore={() => setScreen("menu")} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onCheckout={() => setScreen("delivery")} />;
+  if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen("menu")} onAdd={addToCart} />;
+  if (screen === "cart") return <CartScreen catalog={catalog} cart={cart} customer={customer} onBack={() => setScreen("menu")} onAddMore={() => setScreen("menu")} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onCheckout={() => setScreen("delivery")} />;
   if (screen === "delivery") return <DeliveryScreen cart={cart} customer={customer} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => { if (authToken) setScreen("details"); else { setLoginDestination("details"); setScreen("login"); } }} onOpenBibouPlus={() => { setBibouPlusReturnScreen("delivery"); setScreen("bibou-plus"); }} />;
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} authToken={authToken} onChange={setCustomer} onBack={() => setScreen("delivery")} onContinue={continueWithCustomer} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} />;
@@ -984,7 +1029,7 @@ export default function App() {
   if (screen === "account") return authToken ? <AccountScreen customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "orders") return <OrdersScreen orders={orders} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
   if (screen === "reservations") return <ReservationsScreen reservations={reservations} onBack={() => setScreen("account")} onRefresh={(silent = false) => void loadCustomerReservations({ silent })} />;
-  return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={setPreferredMethod} onOpenReservation={() => { if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen catalog={catalog} stockMessage={stockFeedback || stockMessage} cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={setPreferredMethod} onOpenReservation={() => { if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
 }
 
 const APP_PALETTE = {
@@ -1029,6 +1074,8 @@ const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleS
 }));
 
 const styles = StyleSheet.create(applyAppPalette({
+  stockNotice: { backgroundColor: "#fff1dc", color: "#51251a", padding: 14, borderRadius: 12, fontSize: 13, lineHeight: 20, fontWeight: "600", marginVertical: 10 },
+  optionSoldOut: { opacity: 0.55 },
   safeArea: { flex: 1, backgroundColor: "#FFF8F2" }, scrollContent: { width: "100%", maxWidth: 1180, alignSelf: "center", padding: 20, paddingBottom: 110 }, scrollContentDesktop: { paddingHorizontal: 32, paddingBottom: 60 }, detailContent: { flexGrow: 1, width: "100%", maxWidth: 760, alignSelf: "center", padding: 20, paddingBottom: 120 },
   header: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, headerBrand: { flexDirection: "row", alignItems: "center" }, wordmarkBadge: { width: 140, height: 50, alignItems: "center", justifyContent: "center" }, wordmarkBadgeDesktop: { width: 158, height: 56 }, wordmarkImage: { width: 134, height: 48 }, wordmarkImageDesktop: { width: 152, height: 54 }, headerRight: { fontSize: 18 }, backButton: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#F8EAE0", alignItems: "center", justifyContent: "center" }, backText: { fontSize: 30, lineHeight: 32, color: "#2C201B" },
   headerDesktop: { height: 76, borderBottomWidth: 1, borderBottomColor: "#EADBD2", marginBottom: 4 }, wordmarkDesktop: { fontSize: 29, letterSpacing: -1.1 }, wordmarkTagline: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 2 },

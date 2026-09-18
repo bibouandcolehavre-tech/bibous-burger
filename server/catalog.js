@@ -112,6 +112,53 @@ const SIMPLE_GROUPS = new Set();
 const cents = (value) => Math.round(Number(value) * 100);
 const orderInputError = (message) => Object.assign(new Error(message), { statusCode: 400 });
 
+// Stock is shared by a standalone product and the same product selected in a menu.
+const optionProductId = ({ groupId, id }) => {
+  if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
+  if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
+    const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;
+    return Object.hasOwn(PRODUCT_CATALOG, productId) ? productId : null;
+  }
+  return null;
+};
+
+const productStock = (id, overrides = {}) => {
+  const product = Object.hasOwn(PRODUCT_CATALOG, id) ? PRODUCT_CATALOG[id] : null;
+  if (!product) return { available: false, enabled: false, reason: "Ce produit n’est plus à la carte." };
+  const enabled = Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
+  if (!enabled) return { available: false, enabled: false, reason: `${product.name} est momentanément indisponible.` };
+  const included = product.menu ? ["frites-maison"] : product.kind === "duo" ? ["frites-maison", "tenders-xl-3"] : [];
+  for (const includedId of included) {
+    if (!productStock(includedId, overrides).available) return { available: false, enabled: true, reason: `${product.name} : ${PRODUCT_CATALOG[includedId].name} indisponibles.` };
+  }
+  return { available: true, enabled: true, reason: "" };
+};
+
+const availabilityCatalog = (overrides = {}) => ({
+  products: Object.entries(PRODUCT_CATALOG).map(([id, product]) => ({
+    id, name: product.menu ? `Menu - ${product.name}` : product.name, price: product.price,
+    category: product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers",
+    ...productStock(id, overrides)
+  })),
+  options: Object.fromEntries(OPTIONS.map((entry) => {
+    const productId = optionProductId(entry);
+    return [`${entry.groupId}:${entry.id}`, !productId || productStock(productId, overrides).available];
+  }))
+});
+
+const assertItemAvailable = (productId, selections, overrides = {}) => {
+  const stock = productStock(productId, overrides);
+  if (!stock.available) throw orderInputError(stock.reason);
+  for (const selection of selections || []) {
+    const selectedProduct = optionProductId(selection);
+    if (selectedProduct && !productStock(selectedProduct, overrides).available) throw orderInputError(`${PRODUCT_CATALOG[selectedProduct].name} n’est plus disponible. Modifie les options de ton panier.`);
+  }
+};
+
+const assertStoredOrderAvailable = (items, overrides = {}) => {
+  for (const item of items) assertItemAvailable(item.productId, item.options, overrides);
+};
+
 const validatedSelections = (product, selections) => {
   if (!Array.isArray(selections)) throw orderInputError("Actualise l’application avant de commander.");
   const allowedGroups = product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
@@ -133,17 +180,17 @@ const validatedSelections = (product, selections) => {
   return resolved;
 };
 
-const validateAndPriceOrderItems = (inputItems) => {
+const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
   if (!Array.isArray(inputItems) || !inputItems.length || inputItems.length > 20) throw orderInputError("Le panier est invalide.");
   let subtotalCents = 0;
   const items = inputItems.map((input) => {
     const productId = String(input?.productId || "");
-    const product = PRODUCT_CATALOG[productId];
+    const product = Object.hasOwn(PRODUCT_CATALOG, productId) ? PRODUCT_CATALOG[productId] : null;
     if (!product) throw orderInputError("Un produit du panier n’existe plus.");
-    if (product.soldOut) throw orderInputError("Ce produit est momentanément indisponible.");
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw orderInputError("La quantité demandée est invalide.");
     const selections = validatedSelections(product, input.selections);
+    assertItemAvailable(productId, selections, overrides);
     const unitPriceCents = cents(product.price) + selections.reduce((sum, entry) => sum + cents(entry.price), 0);
     subtotalCents += unitPriceCents * quantity;
     return {
@@ -157,4 +204,4 @@ const validateAndPriceOrderItems = (inputItems) => {
   return { items, subtotal: subtotalCents / 100 };
 };
 
-module.exports = { PRODUCT_CATALOG, validateAndPriceOrderItems };
+module.exports = { PRODUCT_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };

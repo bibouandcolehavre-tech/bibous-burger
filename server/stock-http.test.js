@@ -1,0 +1,61 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+const { once } = require("node:events");
+const { createCustomerSession } = require("./customer-session");
+const { parisDateKey } = require("./availability");
+
+test("API : seuls les restaurateurs modifient le stock ; les ruptures bloquent commande et paiement", { timeout: 15000 }, async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "bibou-stock-http-"));
+  const databaseFile = path.join(directory, "data.json");
+  const customer = { id: "stock-test-customer", name: "Client de test", phone: "+33600000000", points: 0, weeklyOrders: 0 };
+  await fs.writeFile(databaseFile, JSON.stringify({ customers: [customer], orders: [], nextOrderNumber: 1 }));
+  const child = spawn(process.execPath, [path.join(__dirname, "server.js")], { cwd: directory, env: { PATH: process.env.PATH, PORT: "0", DATA_FILE_PATH: databaseFile, RESTAURANT_DASHBOARD_PASSWORD: "test-only-stock", SESSION_SECRET: "test-only-secret" }, stdio: ["ignore", "pipe", "pipe"] });
+  t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, "exit"); await fs.rm(directory, { recursive: true, force: true }); });
+  const base = await new Promise((resolve, reject) => {
+    let output = "";
+    let errors = "";
+    child.stderr.on("data", (data) => { errors += data; });
+    child.stdout.on("data", (data) => { output += data; const match = output.match(/http:\/\/localhost:(\d+)/); if (match) resolve(`${match[0]}/api`); });
+    child.on("error", reject);
+    child.on("exit", (code) => reject(new Error(`API arrêtée : ${code} ${errors}`)));
+  });
+  const request = async (route, { token = "", body, method = "GET" } = {}) => {
+    const response = await fetch(`${base}${route}`, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: response.status, headers: response.headers, data: await response.json() };
+  };
+  const customerToken = createCustomerSession(customer.id, "test-only-secret");
+  const publicCatalog = await request("/catalog");
+  assert.equal(publicCatalog.status, 200);
+  assert.equal(publicCatalog.headers.get("cache-control"), "no-store");
+  assert.equal((await request("/dashboard/catalog")).status, 401);
+  assert.equal((await request("/dashboard/catalog/drink-coca", { method: "PATCH", token: customerToken, body: { available: false } })).status, 401);
+  const login = await request("/dashboard/auth/login", { method: "POST", body: { password: "test-only-stock" } });
+  const token = login.data.token;
+  assert.equal(login.status, 200);
+  assert.equal((await request("/dashboard/catalog/unknown", { method: "PATCH", token, body: { available: false } })).status, 400);
+  assert.equal((await request("/dashboard/catalog/drink-coca", { method: "PATCH", token, body: { available: "false" } })).status, 400);
+  const order = { customerId: customer.id, items: [{ productId: "drink-coca", quantity: 1, selections: [] }], method: "pickup", serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: "19:00 – 19:30" };
+  const created = await request("/orders", { method: "POST", token: customerToken, body: order });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const changed = await request("/dashboard/catalog/drink-coca", { method: "PATCH", token, body: { available: false } });
+  assert.equal(changed.status, 200);
+  assert.equal((await request("/catalog")).data.products.find((p) => p.id === "drink-coca").available, false);
+  const blocked = await request("/orders", { method: "POST", token: customerToken, body: order });
+  assert.equal(blocked.status, 400);
+  assert.match(blocked.data.error, /indisponible/);
+  const payment = await request("/payments/sumup-checkout", { method: "POST", token: customerToken, body: { orderId: created.data.order.id } });
+  assert.equal(payment.status, 400);
+  assert.match(payment.data.error, /indisponible/);
+  // No credentials or external payment service are used by this test.
+  const database = JSON.parse(await fs.readFile(databaseFile, "utf8"));
+  assert.equal(database.orders.length, 1);
+  assert.equal(database.orders[0].payment, undefined);
+  assert.equal(database.customers[0].name, customer.name);
+  assert.equal(database.customers[0].points, 0);
+  await request("/dashboard/catalog/drink-coca", { method: "PATCH", token, body: { available: true } });
+  assert.equal((await request("/orders", { method: "POST", token: customerToken, body: order })).status, 201);
+});

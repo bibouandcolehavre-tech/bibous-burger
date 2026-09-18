@@ -5,7 +5,8 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
-const { validateAndPriceOrderItems } = require("./catalog");
+const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
+const { createProductStockStore } = require("./product-stock");
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
@@ -30,6 +31,7 @@ if (fsSync.existsSync(envPath)) {
 const port = Number(process.env.PORT || 3001);
 const seedDatabasePath = path.join(__dirname, "data.json");
 const databasePath = process.env.DATA_FILE_PATH || seedDatabasePath;
+const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
 const sumupApiKey = process.env.SUMUP_API_KEY;
 const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE;
@@ -225,6 +227,21 @@ const server = http.createServer(async (request, response) => {
 
   try {
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API" });
+
+    if (request.method === "GET" && ["/api/catalog", "/api/dashboard/catalog"].includes(url.pathname)) {
+      if (url.pathname.startsWith("/api/dashboard/") && !authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      response.setHeader("Cache-Control", "no-store");
+      return send(response, 200, availabilityCatalog(await productStockStore.read()));
+    }
+
+    if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/catalog/")) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      const id = decodeURIComponent(url.pathname.slice("/api/dashboard/catalog/".length));
+      const input = await readBody(request);
+      const stock = await productStockStore.update(id, input.available);
+      response.setHeader("Cache-Control", "no-store");
+      return send(response, 200, availabilityCatalog(stock));
+    }
 
     if (request.method === "GET" && url.pathname === "/api/integrations/sumup/status") {
       const merchantCode = await getSumUpMerchantCode();
@@ -585,7 +602,7 @@ const server = http.createServer(async (request, response) => {
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
-      const pricedCart = validateAndPriceOrderItems(input.items);
+      const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
       const subtotal = pricedCart.subtotal;
       let distanceKm = 0;
       let deliveryFee = 0;
@@ -600,6 +617,7 @@ const server = http.createServer(async (request, response) => {
       }
       if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
       const order = await serializeOrderCreation(async () => {
+        assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());
         const latestDatabase = await readDatabase();
         ensureBibouPlusStore(latestDatabase);
         const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId);
@@ -628,6 +646,8 @@ const server = http.createServer(async (request, response) => {
       if (!order) return send(response, 404, { error: "Commande introuvable" });
       const customer = authenticatedCustomer(request, database);
       if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour payer cette commande." });
+      if (order.status !== "awaiting_payment") return send(response, 409, { error: "Cette commande n’est plus en attente de paiement." });
+      assertStoredOrderAvailable(order.items, await productStockStore.read());
       const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
       if (!Number.isFinite(checkoutExpiresAt.getTime()) || checkoutExpiresAt.getTime() <= Date.now()) {
         return send(response, 409, { error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
@@ -635,6 +655,7 @@ const server = http.createServer(async (request, response) => {
       const merchantCode = await getSumUpMerchantCode();
       if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "SumUp n’est pas encore configuré sur le serveur." });
 
+      assertStoredOrderAvailable(order.items, await productStockStore.read());
       const checkoutReference = `bibous-${order.number}-${Date.now()}`;
       const sumupResponse = await fetch("https://api.sumup.com/v0.1/checkouts", {
         method: "POST",
@@ -724,4 +745,4 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${port}`));
+server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`));

@@ -6,6 +6,10 @@ const rewardStatusLabel = { active: "À remettre", used: "Utilisée", cancelled:
 let orders = [];
 let reservations = [];
 let rewardClaims = [];
+let menuProducts = [];
+let menuLoaded = false;
+let menuSaving = false;
+let menuRequest = 0;
 let filter = "all";
 let reservationFilter = "upcoming";
 let rewardFilter = "active";
@@ -216,16 +220,77 @@ async function changeRewardClaim(id, status) {
   }
 }
 
+function renderMenu() {
+  const query = document.querySelector("#menu-search").value.trim().toLocaleLowerCase("fr");
+  const category = document.querySelector("#menu-filter").value;
+  const visible = menuProducts.filter((product) => product.name.toLocaleLowerCase("fr").includes(query) && (category === "all" || (category === "unavailable" ? !product.available : product.category === category)));
+  const categories = { menus: "Nos menus", burgers: "Nos burgers", snacks: "Petites faims", drinks: "Boissons" };
+  document.querySelector("#menu-list").innerHTML = !menuLoaded ? '<p class="empty">Chargement de la carte…</p>' : !visible.length ? '<p class="empty">Aucun produit ne correspond à cette recherche.</p>' : Object.entries(categories).map(([key, title]) => {
+    const products = visible.filter((product) => product.category === key);
+    if (!products.length) return "";
+    return `<section class="menu-group"><h3>${title}<span>${products.length}</span></h3><div class="menu-grid">${products.map((product) => `<article class="menu-product ${product.available ? "" : "is-unavailable"}"><div class="menu-product-copy"><h4>${escapeHtml(product.name)}</h4><p class="menu-product-price">${euro(product.price)}</p><span class="stock-label ${product.available ? "available" : "unavailable"}">${product.available ? "● Disponible" : "● En rupture"}</span>${product.enabled && !product.available ? `<p class="stock-reason">${escapeHtml(product.reason)}</p>` : ""}</div><button type="button" class="stock-toggle ${product.enabled ? "" : "restore"}" data-stock-id="${escapeHtml(product.id)}" ${menuSaving ? "disabled" : ""} aria-label="${product.enabled ? "Mettre en rupture" : "Remettre disponible"} : ${escapeHtml(product.name)}">${product.enabled ? "Mettre en rupture" : "Remettre disponible"}</button></article>`).join("")}</div></section>`;
+  }).join("");
+  document.querySelectorAll("[data-stock-id]").forEach((button) => button.addEventListener("click", () => changeProductStock(button.dataset.stockId)));
+}
+
+async function loadMenu() {
+  if (menuSaving) return;
+  const requestId = ++menuRequest;
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/catalog`, { headers: dashboardHeaders(), cache: "no-store" });
+    if (requestId !== menuRequest) return;
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    if (!response.ok) throw new Error("Impossible de charger la carte. Réessayez avec Actualiser.");
+    const payload = await response.json();
+    if (requestId !== menuRequest) return;
+    menuProducts = payload.products;
+    menuLoaded = true;
+    renderMenu();
+    document.querySelector("#menu-feedback").textContent = `${menuProducts.filter((product) => product.available).length} produits disponibles · ${menuProducts.filter((product) => !product.available).length} en rupture`;
+  } catch (error) {
+    if (requestId === menuRequest) document.querySelector("#menu-feedback").textContent = error.message;
+  }
+}
+
+async function changeProductStock(id) {
+  const product = menuProducts.find((item) => item.id === id);
+  if (!product || menuSaving) return;
+  menuSaving = true;
+  ++menuRequest; // Ignore any catalogue read that started before this update.
+  renderMenu();
+  document.querySelector("#menu-feedback").textContent = "Enregistrement…";
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/catalog/${encodeURIComponent(id)}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ available: !product.enabled }) });
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Modification non enregistrée. Réessayez.");
+    menuProducts = payload.products;
+    const updated = menuProducts.find((item) => item.id === id);
+    document.querySelector("#menu-feedback").textContent = `${updated.name} : ${updated.available ? "disponible" : "en rupture"}. Modification enregistrée.${updated.enabled && !updated.available ? ` ${updated.reason}` : ""}`;
+  } catch (error) {
+    document.querySelector("#menu-feedback").textContent = error.message || "Modification non enregistrée. Vérifiez votre connexion puis actualisez.";
+  } finally {
+    menuSaving = false;
+    renderMenu();
+    document.querySelector(`[data-stock-id="${id}"]`)?.focus();
+  }
+}
+
+document.querySelector("#menu-search").addEventListener("input", renderMenu);
+document.querySelector("#menu-filter").addEventListener("change", renderMenu);
+
 function showView(view) {
-  if (!["orders", "reservations", "rewards"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["orders", "reservations", "rewards", "menu"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
   document.querySelector("#reservations-view").hidden = view !== "reservations";
   document.querySelector("#rewards-view").hidden = view !== "rewards";
-  document.querySelector("#dashboard-title").textContent = view === "orders" ? "Commandes en direct" : view === "reservations" ? "Réservations de tables" : "Récompenses clients";
-  document.querySelector("#refresh-orders").textContent = view === "orders" ? "↻ Actualiser" : view === "reservations" ? "↻ Actualiser les réservations" : "↻ Actualiser les récompenses";
+  document.querySelector("#menu-view").hidden = view !== "menu";
+  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité" }[view];
+  document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  if (view === "menu") { renderMenu(); void loadMenu(); }
 }
 
 document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => {
@@ -254,7 +319,7 @@ document.querySelector("#sound-button").addEventListener("click", (event) => {
 });
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
-document.querySelector("#refresh-orders").addEventListener("click", async () => { if (currentView === "orders") { await loadOrders(); showToast("Commandes actualisées."); } else if (currentView === "reservations") { await loadReservations(); showToast("Réservations actualisées."); } else { await loadRewardClaims(); showToast("Récompenses actualisées."); } });
+document.querySelector("#refresh-orders").addEventListener("click", async () => { if (currentView === "menu") return loadMenu(); if (currentView === "orders") { await loadOrders(); showToast("Commandes actualisées."); } else if (currentView === "reservations") { await loadReservations(); showToast("Réservations actualisées."); } else { await loadRewardClaims(); showToast("Récompenses actualisées."); } });
 document.querySelector("#dashboard-login").addEventListener("click", async () => {
   const button = document.querySelector("#dashboard-login");
   const password = document.querySelector("#dashboard-password").value;
@@ -271,6 +336,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     loadOrders();
     loadReservations();
     loadRewardClaims();
+    if (currentView === "menu") loadMenu();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
 });
@@ -282,4 +348,4 @@ renderOrders();
 renderReservations();
 renderRewardClaims();
 if (dashboardToken) { showDashboard(); loadOrders(); loadReservations(); loadRewardClaims(); } else { showLogin(); }
-window.setInterval(() => { if (dashboardToken) { loadOrders({ notify: true }); loadReservations({ notify: true }); loadRewardClaims({ notify: true }); } }, 10000);
+window.setInterval(() => { if (dashboardToken) { loadOrders({ notify: true }); loadReservations({ notify: true }); loadRewardClaims({ notify: true }); if (currentView === "menu") loadMenu(); } }, 10000);

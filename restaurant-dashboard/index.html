@@ -57,6 +57,7 @@
           <button class="nav-item mobile-view-button active" data-view="orders"><span>▦</span> Commandes</button>
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count-mobile">0</b></button>
+          <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
         </nav>
 
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
@@ -102,6 +103,16 @@
             <button class="reservation-filter reward-filter" data-reward-filter="all">Toutes</button>
           </div>
           <div id="rewards-list" class="reservations-list"></div>
+        </section>
+        <section id="menu-view" class="menu-section" hidden>
+          <div class="menu-intro"><p class="eyebrow">LA CARTE, EN TEMPS RÉEL</p><h2>Un produit épuisé ? Un clic suffit.</h2><p>Les changements sont enregistrés automatiquement et apparaissent dans l’application sous 15 secondes. Ils restent en place jusqu’à votre prochaine modification.</p></div>
+          <div class="menu-toolbar">
+            <label for="menu-search">Rechercher un produit<input id="menu-search" type="search" placeholder="Burger, frites, boisson…" /></label>
+            <label for="menu-filter">Afficher<select id="menu-filter"><option value="all">Toute la carte</option><option value="unavailable">En rupture</option><option value="menus">Nos menus</option><option value="burgers">Nos burgers</option><option value="snacks">Petites faims</option><option value="drinks">Boissons</option></select></label>
+          </div>
+          <p id="menu-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
+          <div id="menu-list"></div>
+          <p class="menu-note">Les boissons et accompagnements sont aussi bloqués dans les options. Une rupture de frites maison bloque les menus ; une rupture de tenders bloque aussi le Menu Duo. Les burgers seuls et leurs menus se règlent séparément. Les commandes déjà réglées ou avec un paiement SumUp déjà ouvert restent à traiter.</p>
         </section>
       </main>
     </div>
