@@ -5,6 +5,7 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const { createDatabaseLock } = require("./database-lock");
 const { createBackupStore } = require("./backups");
+const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
@@ -404,6 +405,18 @@ const server = http.createServer(async (request, response) => {
       const token = crypto.randomBytes(32).toString("base64url");
       dashboardSessions.set(token, { expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
       return send(response, 200, { token });
+    }
+
+    // This reporting route is read-only, before the legacy read-time migrations.
+    if (url.pathname === "/api/dashboard/customers" || url.pathname.startsWith("/api/dashboard/customers/")) {
+      response.setHeader("Cache-Control", "no-store");
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
+      if (request.method !== "GET") return send(response, 405, { error: "La fiche client est en consultation uniquement." });
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      if (url.pathname === "/api/dashboard/customers") return send(response, 200, listDashboardCustomers(database, { query: url.searchParams.get("q") || "", filter: url.searchParams.get("filter"), offset: url.searchParams.get("offset"), limit: url.searchParams.get("limit") || 25 }));
+      const detail = dashboardCustomerDetail(database, decodeURIComponent(url.pathname.slice("/api/dashboard/customers/".length)));
+      return detail ? send(response, 200, detail) : send(response, 404, { error: "Ce compte n’existe plus ou est introuvable." });
     }
 
     // Do not hold the database lock while waiting for a request body.

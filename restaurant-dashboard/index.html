@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bibou's Burgers — Espace restaurant</title>
-    <link rel="stylesheet" href="./styles.css?v=backups-1" />
+    <link rel="stylesheet" href="./styles.css?v=customers-1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -68,6 +68,7 @@
           <button class="nav-item mobile-view-button" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
           <button class="nav-item mobile-view-button" data-view="backups"><span>▤</span> Sauvegardes</button>
+          <button class="nav-item mobile-view-button" data-view="customers"><span>★</span> Clients</button>
         </nav>
 
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
@@ -123,6 +124,15 @@
           <div id="menu-list"></div>
           <p class="menu-note">Les boissons et accompagnements sont aussi bloqués dans les options. Une rupture de frites maison bloque les menus ; une rupture de tenders bloque aussi le Menu Duo. Les burgers seuls et leurs menus se règlent séparément. Les commandes déjà réglées ou avec un paiement SumUp déjà ouvert restent à traiter.</p>
         </section>
+        <section id="customers-view" class="customers-section" hidden>
+          <div class="menu-intro"><p class="eyebrow">LE CLUB BIBOU, CÔTÉ RESTAURANT</p><h2>Vos clients fidèles, en un coup d’œil.</h2><p>Retrouvez leurs points, leurs avantages et leurs parrainages. Cet espace est en consultation uniquement : aucun point n’est ajouté ou retiré ici.</p></div>
+          <div class="metrics customer-metrics" aria-label="Ensemble des comptes clients"><article><div><strong id="customer-total">—</strong><small>comptes clients</small></div></article><article><div><strong id="customer-plus">—</strong><small>membres Bibou + actifs</small></div></article><article><div><strong id="customer-referrals">—</strong><small>parrainages validés</small></div></article><article><div><strong id="customer-points">—</strong><small>points cumulés des clients</small></div></article></div>
+          <div class="menu-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><label for="customer-filter">Afficher<select id="customer-filter"><option value="all">Tous les clients</option><option value="plus">Membres Bibou + actifs</option><option value="sponsors">Clients avec des filleuls</option></select></label></div>
+          <p id="customer-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
+          <div class="customers-layout"><div><div id="customer-list" class="customer-list"></div><div class="customer-pagination"><button type="button" id="customer-previous" class="secondary-button" disabled>← Précédents</button><span id="customer-page"></span><button type="button" id="customer-next" class="secondary-button" disabled>Suivants →</button></div></div><section id="customer-detail" class="customer-detail" aria-label="Fiche client"><p class="empty">Sélectionnez un client pour consulter sa fiche.</p></section></div>
+          <p class="menu-note">Les compteurs du haut concernent tous les comptes encore présents, indépendamment de la recherche. Un parrainage est validé après la première commande payée non annulée et l’attribution du bonus de 100 points. Ce suivi ne constitue pas un classement de concours.</p>
+          <p class="menu-note">Les montants affichés excluent les commandes annulées dans l’application. Un remboursement effectué uniquement dans SumUp n’est pas encore synchronisé ici : pensez aussi à annuler la commande dans le tableau restaurant.</p>
+        </section>
         <section id="backups-view" class="backup-section" hidden>
           <div class="menu-intro"><p class="eyebrow">VOS DONNÉES, À L’ABRI DES FAUSSES MANIPULATIONS</p><h2>Des copies pour pouvoir revenir en arrière.</h2><p>Commandes, comptes clients, fidélité, réservations, Bibou + et disponibilités des produits sont copiés ensemble toutes les heures, tant que le serveur fonctionne.</p></div>
           <div class="backup-status-panel"><div><span class="eyebrow">DERNIÈRE COPIE</span><h3 id="backup-latest">Vérification…</h3><p id="backup-health" role="status" aria-live="polite"></p></div><button type="button" id="backup-create" class="secondary-button">Créer une copie maintenant</button></div>
@@ -137,6 +147,6 @@
     </div>
     <div id="toast" class="toast" role="status"></div>
     <script src="./alerts.js?v=service-alerts-1"></script>
-    <script src="./app.js?v=backups-1"></script>
+    <script src="./app.js?v=customers-1"></script>
   </body>
 </html>

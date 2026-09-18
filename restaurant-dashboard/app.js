@@ -10,6 +10,13 @@ let menuProducts = [];
 let menuLoaded = false;
 let menuSaving = false;
 let menuRequest = 0;
+let customerData = null;
+let customerOffset = 0;
+let selectedCustomerId = null;
+let customerRequest = 0;
+let customerDetailRequest = 0;
+let customerSearchTimer = null;
+let customerLastUpdate = 0;
 let filter = "all";
 let reservationFilter = "upcoming";
 let rewardFilter = "active";
@@ -35,7 +42,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { dashboardToken = ""; sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -327,6 +334,106 @@ async function changeProductStock(id) {
 document.querySelector("#menu-search").addEventListener("input", renderMenu);
 document.querySelector("#menu-filter").addEventListener("change", renderMenu);
 
+function clearCustomerView() {
+  customerData = null;
+  selectedCustomerId = null;
+  customerOffset = 0;
+  ++customerRequest;
+  ++customerDetailRequest;
+  clearTimeout(customerSearchTimer);
+  document.querySelector("#customer-list").innerHTML = "";
+  document.querySelector("#customer-detail").innerHTML = '<p class="empty">Sélectionnez un client pour consulter sa fiche.</p>';
+  for (const id of ["total", "plus", "referrals", "points"]) document.querySelector(`#customer-${id}`).textContent = "—";
+  document.querySelector("#customer-search").value = "";
+  document.querySelector("#customer-page").textContent = "";
+  document.querySelector("#customer-previous").disabled = true;
+  document.querySelector("#customer-next").disabled = true;
+}
+const customerDate = (value) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium" }).format(new Date(value)) : "Non renseigné";
+const customerNumber = (value) => Number(value || 0).toLocaleString("fr-FR");
+const customerPrestige = (customer) => customer.prestige ? `Prestige ${customer.prestige.level} · ${customer.prestige.name}` : "En route vers le Prestige 1";
+
+function renderCustomers() {
+  if (!customerData) return;
+  const { customers, summary, total, offset, limit } = customerData;
+  for (const [key, value] of Object.entries({ total: summary.customers, plus: summary.bibouPlus, referrals: summary.validatedReferrals, points: summary.points })) document.querySelector(`#customer-${key}`).textContent = customerNumber(value);
+  document.querySelector("#customer-list").innerHTML = customers.length ? customers.map((customer) => `<article class="customer-card ${customer.id === selectedCustomerId ? "selected" : ""}"><div class="customer-card-heading"><div><h3>${escapeHtml(customer.name)}</h3><p>${escapeHtml(customer.phone || "Téléphone non renseigné")}</p></div><strong class="customer-balance">${customerNumber(customer.points)}<small>points</small></strong></div><p class="customer-prestige">${escapeHtml(customerPrestige(customer))}${customer.bibouPlus.active ? '<span class="plus-label">Bibou +</span>' : ""}</p><p class="customer-card-meta">${customerNumber(customer.orders.count)} commande(s) payée(s) · ${customerNumber(customer.referrals.validated)} parrainage(s) validé(s)</p><button type="button" class="secondary-button" data-customer-id="${escapeHtml(customer.id)}" aria-label="Voir la fiche de ${escapeHtml(customer.name)}" aria-pressed="${customer.id === selectedCustomerId}">Voir la fiche →</button></article>`).join("") : '<p class="empty">Aucun client ne correspond à votre recherche.</p>';
+  document.querySelector("#customer-page").textContent = total ? `${offset + 1}–${Math.min(offset + limit, total)} sur ${total}` : "0 résultat";
+  document.querySelector("#customer-previous").disabled = offset <= 0;
+  document.querySelector("#customer-next").disabled = offset + limit >= total;
+  document.querySelectorAll("[data-customer-id]").forEach((button) => button.addEventListener("click", () => loadCustomerDetail(button.dataset.customerId, true)));
+}
+
+async function loadCustomers() {
+  if (!dashboardToken || currentView !== "customers") return;
+  const token = dashboardToken;
+  const requestId = ++customerRequest;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  const query = encodeURIComponent(document.querySelector("#customer-search").value.trim());
+  const filter = encodeURIComponent(document.querySelector("#customer-filter").value || "all");
+  document.querySelector("#customer-feedback").textContent = "Actualisation des clients…";
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/customers?q=${query}&filter=${filter}&offset=${customerOffset}&limit=10`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
+    if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    if (!response.ok) throw new Error("Impossible de charger les clients. Cliquez sur Actualiser pour réessayer.");
+    const payload = await response.json();
+    if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
+    customerData = payload;
+    customerOffset = payload.offset;
+    customerLastUpdate = Date.now();
+    renderCustomers();
+    document.querySelector("#customer-feedback").textContent = `À jour à ${new Date().toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })} · clients classés par points décroissants.`;
+    if (selectedCustomerId) void loadCustomerDetail(selectedCustomerId);
+  } catch (error) {
+    if (requestId === customerRequest && token === dashboardToken && currentView === "customers") document.querySelector("#customer-feedback").textContent = `${error.name === "AbortError" ? "Le serveur ne répond pas. Réessayez avec Actualiser." : error.message} Les données précédentes peuvent être anciennes.`;
+  } finally { clearTimeout(timeout); }
+}
+
+function renderCustomerDetail(payload, focus) {
+  const { customer, rewards, recentOrders } = payload;
+  const next = customer.nextPrestige;
+  const rewardLabels = { available: "À réclamer par le client", locked: "Palier non atteint", active: "À remettre", used: "Déjà utilisée", cancelled: "Annulée" };
+  const historyStatuses = { ...statusLabel, delivered: "Terminée", cancelled: "Annulée" };
+  document.querySelector("#customer-detail").innerHTML = `<div class="customer-detail-header"><p class="eyebrow">FICHE CLIENT · CONSULTATION</p><h2 id="customer-detail-title" tabindex="-1">${escapeHtml(customer.name)}</h2><p>${escapeHtml(customer.phone || "Téléphone non renseigné")} · Inscription : ${customerDate(customer.createdAt)}</p></div><div class="customer-loyalty-panel"><strong>${customerNumber(customer.points)} points</strong><p>${escapeHtml(customerPrestige(customer))}${customer.prestige ? ` · ${escapeHtml(customer.prestige.metal)}` : ""}</p><small>${next ? `Encore ${customerNumber(next.points - customer.points)} points pour le Prestige ${next.level} · ${escapeHtml(next.name)}.` : "Le plus haut prestige est atteint."}</small></div><dl class="customer-facts"><div><dt>Bibou +</dt><dd>${customer.bibouPlus.active ? `Actif jusqu’au ${customerDate(customer.bibouPlus.expiresAt)}` : customer.bibouPlus.expiresAt ? `Expiré le ${customerDate(customer.bibouPlus.expiresAt)}` : "Pas d’abonnement actif"}</dd></div><div><dt>Cette semaine</dt><dd>${customerNumber(customer.weekly.orders)} commande(s) · multiplicateur ×${customer.weekly.multiplier}</dd></div><div><dt>Commandes payées non annulées</dt><dd>${customerNumber(customer.orders.count)} · ${euro(customer.orders.amount)}</dd></div></dl><h3>Parrainages</h3><p class="customer-referral-code">Code personnel : <strong>${escapeHtml(customer.referralCode || "Pas encore attribué")}</strong></p><div class="customer-referral-counts"><div><strong>${customerNumber(customer.referrals.invited)}</strong><small>filleuls inscrits</small></div><div><strong>${customerNumber(customer.referrals.validated)}</strong><small>validés</small></div><div><strong>${customerNumber(customer.referrals.pending)}</strong><small>en attente</small></div></div><h3>Récompenses de palier</h3><div class="customer-rewards">${rewards.map((reward) => `<div class="customer-reward"><div><strong>${escapeHtml(reward.title)}</strong><small>${customerNumber(reward.points)} points${reward.status === "locked" ? ` · encore ${customerNumber(reward.remainingPoints)}` : ""}</small></div><span class="customer-reward-status ${["active", "available", "used", "cancelled", "locked"].includes(reward.status) ? reward.status : "locked"}">${rewardLabels[reward.status] || "À vérifier"}${reward.code ? `<strong>${escapeHtml(reward.code)}</strong>` : ""}</span></div>`).join("")}</div><p class="menu-note">Pour remettre une récompense déjà réclamée, utilisez la rubrique Récompenses et vérifiez son code. Les paliers ne consomment pas les points.</p><h3>Dernières commandes payées</h3><div class="customer-history">${recentOrders.length ? recentOrders.map((order) => `<div><span><strong>#${Number(order.number)} · ${customerDate(order.paidAt)}</strong><small>${escapeHtml(historyStatuses[order.status] || order.status)} · ${order.method === "delivery" ? "Livraison" : "Retrait"}</small></span><strong>${euro(order.total)}</strong></div>`).join("") : '<p class="menu-note">Aucune commande payée pour ce client.</p>'}</div><p class="menu-note">Les 10 dernières commandes payées sont affichées, y compris celles annulées ensuite.</p>`;
+  if (focus) document.querySelector("#customer-detail-title")?.focus();
+}
+
+async function loadCustomerDetail(id, focus = false) {
+  if (!dashboardToken || currentView !== "customers") return;
+  const token = dashboardToken;
+  const requestId = ++customerDetailRequest;
+  selectedCustomerId = id;
+  if (focus) { renderCustomers(); document.querySelector("#customer-detail").innerHTML = '<p class="empty">Chargement de la fiche…</p>'; }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/customers/${encodeURIComponent(id)}`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
+    if (requestId !== customerDetailRequest || token !== dashboardToken || currentView !== "customers") return;
+    if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
+    if (!response.ok) throw new Error(response.status === 404 ? "Ce compte n’existe plus ou est introuvable." : "La fiche n’a pas pu être chargée. Réessayez avec Actualiser.");
+    const payload = await response.json();
+    if (requestId !== customerDetailRequest || token !== dashboardToken || currentView !== "customers") return;
+    renderCustomerDetail(payload, focus);
+  } catch (error) {
+    if (requestId === customerDetailRequest && token === dashboardToken && currentView === "customers") document.querySelector("#customer-detail").innerHTML = `<p class="empty" role="status">${escapeHtml(error.name === "AbortError" ? "La fiche met trop de temps à arriver. Réessayez avec Actualiser." : error.message)}</p>`;
+  } finally { clearTimeout(timeout); }
+}
+function searchCustomers() {
+  ++customerRequest;
+  ++customerDetailRequest;
+  selectedCustomerId = null;
+  customerOffset = 0;
+  document.querySelector("#customer-detail").innerHTML = '<p class="empty">Sélectionnez un client pour consulter sa fiche.</p>';
+  clearTimeout(customerSearchTimer);
+  customerSearchTimer = setTimeout(() => { void loadCustomers(); }, 250);
+}
+document.querySelector("#customer-search").addEventListener("input", searchCustomers);
+document.querySelector("#customer-filter").addEventListener("change", searchCustomers);
+document.querySelector("#customer-previous").addEventListener("click", () => { customerOffset = Math.max(0, customerOffset - (customerData?.limit || 25)); void loadCustomers(); });
+document.querySelector("#customer-next").addEventListener("click", () => { customerOffset += customerData?.limit || 25; void loadCustomers(); });
+
 let backupBusy = false;
 const backupDate = (value) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 async function loadBackups(create = false) {
@@ -384,7 +491,7 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["orders", "reservations", "rewards", "menu", "backups"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["orders", "reservations", "rewards", "menu", "backups", "customers"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
@@ -392,11 +499,13 @@ function showView(view) {
   document.querySelector("#rewards-view").hidden = view !== "rewards";
   document.querySelector("#menu-view").hidden = view !== "menu";
   document.querySelector("#backups-view").hidden = view !== "backups";
-  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité" }[view];
+  document.querySelector("#customers-view").hidden = view !== "customers";
+  document.querySelector("#dashboard-title").textContent = { orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité", customers: "Fidélité clients" }[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
+  if (view === "customers") void loadCustomers();
 }
 
 document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => {
@@ -452,6 +561,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
+  if (currentView === "customers") return loadCustomers();
   if (currentView === "backups") return loadBackups();
   if (currentView === "menu") return loadMenu();
   const results = await refreshFeeds();
@@ -473,6 +583,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     void refreshFeeds({ notify: false });
     if (currentView === "menu") loadMenu();
     if (currentView === "backups") loadBackups();
+    if (currentView === "customers") loadCustomers();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
 });
@@ -493,6 +604,7 @@ const resumeUpdates = () => {
   void refreshFeeds();
   if (currentView === "menu") void loadMenu();
   if (currentView === "backups" && !document.hidden) void loadBackups();
+  if (currentView === "customers" && !document.hidden && Date.now() - customerLastUpdate >= 30000) void loadCustomers();
 };
 window.setInterval(resumeUpdates, 10000);
 window.addEventListener("online", resumeUpdates);

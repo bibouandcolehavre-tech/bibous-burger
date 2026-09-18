@@ -35,6 +35,18 @@ Les boissons et accompagnements en rupture sont aussi bloqués dans les options.
 
 Les choix persistent dans `product-stock.json`, à côté de `DATA_FILE_PATH` (donc `/var/data/product-stock.json` sur Render). Ce fichier est distinct des commandes et clients, ignoré par Git, et inclus dans les sauvegardes automatiques. Il ne faut pas le remplacer au déploiement. En l’absence du fichier, les disponibilités initiales du catalogue sont utilisées ; une erreur de lecture bloque les validations au lieu de rouvrir tous les produits.
 
+## Fidélité clients dans l’espace restaurant
+
+La rubrique **Fidélité clients** est une consultation privée, protégée par la connexion restaurant. Recherche par prénom, téléphone français (`06…` ou `+33…`) ou code de parrainage, filtres Bibou + actif et clients avec filleuls, pages de dix clients classés par points. Les compteurs du haut concernent tous les comptes présents, pas seulement la recherche.
+
+Chaque fiche affiche le solde enregistré, le prestige et le prochain palier (200, 400, 700, 1 500, 5 000 points), le statut et l’expiration Bibou +, le multiplicateur de la semaine courante, les récompenses et les dix dernières commandes payées. Les commandes annulées apparaissent dans l’historique, mais sont exclues du nombre et du montant des commandes actives payées. Les remboursements effectués uniquement chez SumUp ne sont pas encore connus de ces statistiques.
+
+Le suivi de parrainage distingue filleuls inscrits, validés et en attente. Une validation exige le bonus effectivement attribué et une commande associée payée non annulée, sans révocation. Un compte supprimé n’apparaît plus dans les résultats ou les statistiques de filleuls. Aucun concours n’est activé et aucune règle de récompense n’est modifiée.
+
+Les routes `GET /api/dashboard/customers` et `GET /api/dashboard/customers/:id` ne modifient pas les données, refusent les sessions clients et renvoient `Cache-Control: no-store`. Elles ne renvoient ni adresses de livraison ni liens/références de paiement. Les fiches sont effacées de l’écran à l’expiration de la session. Les réponses tardives après une nouvelle recherche, un changement de fiche ou une déconnexion sont ignorées. Actualisation toutes les 30 secondes dans cette rubrique ouverte, avec bouton manuel et messages d’erreur.
+
+Les tests couvrent ces permissions, la consultation sans écriture, recherche, pagination, paliers alignés avec l’application, parrainages annulés, suppression de compte, abonnements/semaine expirés et protection de l’interface contre les textes malveillants et réponses tardives. Pas de correction manuelle de points ni d’export de fichier client dans cette version.
+
 ## Sauvegardes automatiques et récupération
 
 Le serveur vérifie au démarrage puis toutes les cinq minutes si une copie est nécessaire (dernière copie vieille d’au moins une heure). Une copie contient l’intégralité de `DATA_FILE_PATH` et les disponibilités `product-stock.json`, lus sous le même verrou que les modifications de données et de stock. Aucune réinitialisation depuis les données de démonstration si le fichier à sauvegarder manque. Les secrets de configuration, sessions restaurant en mémoire et fichiers de l’application ne sont pas inclus.

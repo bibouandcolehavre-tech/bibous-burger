@@ -25,20 +25,22 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Fidélité, multiplicateurs hebdomadaires, parrainage, cinq prestiges et cadeau de bienvenue.
 - Récompenses de palier réclamables une seule fois, sans retrait de points, avec code unique validé dans l’espace restaurant.
 - Gestion des produits disponibles/en rupture dans l’espace restaurant, avec recherche et filtres. Propagation aux produits, aux options, aux suggestions et au panier. Contrôle serveur avant création de commande et de paiement.
+- Rubrique Fidélité clients active dans l’espace restaurant : recherche par prénom/téléphone/code, filtres et pagination, soldes et prestiges, Bibou +, état des récompenses, parrainages inscrits/validés/en attente et dernières commandes payées. Consultation seule, sans modification des points, sans adresses ni références de paiement. Comptes supprimés exclus.
 - Alertes sonores réelles pour nouvelles commandes payées, réservations et récompenses, avec activation, test et mise en sourdine. Compteurs cliquables, total dans l’onglet, indicateur de connexion et protection contre les alertes répétées.
 - Bibou + à 9,99 € pour 30 jours : livraison offerte, remise de 5 % et points doublés.
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
 - Sauvegardes automatiques horaires des données et stocks sur le disque persistant, rotation horaire/quotidienne sur une semaine, contrôle d’intégrité, accès restaurant pour créer/télécharger une copie, et outil de récupération séparée sans écrasement. Pas de nouvelle dépense ni de stockage externe activé.
-- 90 tests automatisés réussissent, dont sauvegarde/récupération isolées, permissions, panne de disque, corruption, rotation, parcours HTTP stock et paiement, confirmations/annulation concurrentes, reprise et Bibou + (sans paiement ni SMS réels).
+- 100 tests automatisés réussissent, dont consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
 - Export web réussi ; rupture/restauration de boissons, options de menu et blocage d’un panier existant vérifiés dans un environnement local avec données fictives.
 - Alertes vérifiées dans le navigateur : activation, test du son, arrivée simultanée d’une commande payée et d’une table fictives, compteurs, accès aux réservations et mise en sourdine ; aucune erreur JavaScript observée.
 - Écran Sauvegardes vérifié dans un navigateur local : création automatique et manuelle, téléchargement d’une archive fictive, lisibilité et absence d’erreurs JavaScript. Aucun téléchargement de données clients réelles ni restauration de production pendant ces tests.
+- Fidélité clients vérifiée localement avec 29 comptes fictifs : recherche, pagination, filtre Bibou +, fiche avec parrainages et récompenses, affichage de bureau et largeur mobile de 390 px sans débordement horizontal. Aucun compte réel consulté pour ces tests.
 
 ## Prochaines priorités recommandées
 
 1. Retester l’envoi d’un SMS vers un numéro réel non vérifié après l’approbation Twilio.
-2. Terminer l’espace restaurant : modification de la carte et gestion détaillée de la fidélité clients (la disponibilité est maintenant implémentée).
+2. Compléter la modification de la carte dans l’espace restaurant ; la disponibilité et la consultation détaillée des clients/fidélité sont maintenant implémentées. Une correction manuelle de points demanderait un historique audité dédié.
 3. Étudier des notifications push pour recevoir une alerte lorsque le tableau est fermé (les sons dans la page sont maintenant implémentés).
 4. Synchroniser les remboursements réalisés dans SumUp à partir des transactions (la confirmation de paiement et la protection des annulations sont renforcées). Annuler dans l’application reste distinct du remboursement bancaire.
 5. Organiser une copie régulière hors du serveur et un exercice de récupération avant ouverture publique (l’historique automatique sur disque est implémenté).
