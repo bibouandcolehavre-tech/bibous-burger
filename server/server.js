@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
@@ -34,11 +35,12 @@ const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 const restaurantDashboardPassword = process.env.RESTAURANT_DASHBOARD_PASSWORD;
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
+const configuredCustomerSessionSecret = process.env.SESSION_SECRET;
+const customerSessionSecret = configuredCustomerSessionSecret || crypto.randomBytes(32).toString("base64url");
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
 const googlePlaceSearchQuery = "Bibou's Burgers, 153 Quai Georges V, 76600 Le Havre, France";
 const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
 const smsAttemptLimiter = createSmsAttemptLimiter();
-const sessions = new Map();
 const dashboardSessions = new Map();
 let googleReviewsCache = { value: null, expiresAt: 0 };
 let orderCreationQueue = Promise.resolve();
@@ -134,15 +136,11 @@ const normalizeFrenchPhone = (value) => {
   return null;
 };
 const twilioConfigured = () => Boolean(twilioAccountSid && twilioAuthToken && twilioVerifyServiceSid);
-const createSession = (customerId) => {
-  const token = crypto.randomBytes(32).toString("base64url");
-  sessions.set(token, { customerId, expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30 });
-  return token;
-};
+const createSession = (customerId) => createCustomerSession(customerId, customerSessionSecret);
 const authenticatedCustomer = (request, database) => {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
-  const session = token && sessions.get(token);
-  if (!session || session.expiresAt < Date.now()) return null;
+  const session = readCustomerSession(token, customerSessionSecret);
+  if (!session) return null;
   return database.customers.find((customer) => customer.id === session.customerId) || null;
 };
 const authenticatedDashboard = (request) => {
