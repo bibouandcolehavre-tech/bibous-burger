@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bibou's Burgers — Espace restaurant</title>
     <link rel="stylesheet" href="./styles.css?v=push-1" />
+    <link rel="stylesheet" href="./crm.css?v=crm-1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -33,9 +34,11 @@
           <button class="nav-item" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count">0</b></button>
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & disponibilité</button>
           <button class="nav-item" data-view="customers"><span>★</span> Fidélité clients</button>
+          <button class="nav-item" data-view="crm"><span>↗</span> CRM & statistiques</button>
           <button class="nav-item" data-view="marketing"><span>✦</span> Actualités & concours</button>
           <button class="nav-item" data-view="notifications"><span>◉</span> Notifications clients</button>
           <button class="nav-item" data-view="backups"><span>▤</span> Sauvegardes</button>
+          <button class="nav-item" data-view="settings"><span>⚙</span> Paramètres</button>
         </nav>
         <div class="sidebar-bottom">
           <p>Connecté en tant que</p>
@@ -71,12 +74,16 @@
           <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
           <button class="nav-item mobile-view-button" data-view="backups"><span>▤</span> Sauvegardes</button>
           <button class="nav-item mobile-view-button" data-view="customers"><span>★</span> Clients</button>
+          <button class="nav-item mobile-view-button" data-view="crm"><span>↗</span> CRM & statistiques</button>
+          <button class="nav-item mobile-view-button" data-view="settings"><span>⚙</span> Paramètres</button>
           <button class="nav-item mobile-view-button" data-view="marketing"><span>✦</span> Actualités</button>
           <button class="nav-item mobile-view-button" data-view="notifications"><span>◉</span> Notifications</button>
         </nav>
 
         <section id="marketing-view" hidden></section>
         <section id="notifications-view" hidden></section>
+        <section id="crm-view" hidden></section>
+        <section id="settings-view" hidden></section>
         <section id="orders-metrics" class="metrics" aria-label="Résumé des commandes">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
           <article><span class="metric-icon red">●</span><div><strong id="new-count">1</strong><small>nouvelle à accepter</small></div></article>
@@ -155,6 +162,7 @@
     <script src="./alerts.js?v=service-alerts-1"></script>
     <script src="./marketing.js?v=actualites-1"></script>
     <script src="./notifications.js?v=push-1"></script>
-    <script src="./app.js?v=push-1"></script>
+    <script src="./crm.js?v=crm-1"></script>
+    <script src="./app.js?v=crm-1"></script>
   </body>
 </html>

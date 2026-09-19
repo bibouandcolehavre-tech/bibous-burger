@@ -29,6 +29,14 @@ Les associations d’appareils inactifs sont retirées après 90 jours ; les cam
 
 Le service ne mesure pas la lecture des notifications. Une confirmation technique signifie une transmission au fournisseur, pas une lecture par le client. Aucun suivi publicitaire tiers n’est ajouté.
 
+## Offres personnelles et anniversaire facultatif
+
+Après la création du compte, puis dans **Mon compte → Mes offres**, le client peut renseigner son jour et son mois d’anniversaire, sans année. Le champ peut être laissé vide ou effacé. Il peut également accepter séparément que son historique de commandes (fréquence et montants) et cet anniversaire servent à attribuer des bons personnels. Ce choix est désactivé par défaut et peut être retiré à tout moment. Aucun ancien compte n’est inscrit automatiquement. La fidélité habituelle ne dépend pas de cet accord.
+
+Les règles peuvent proposer un bon après une période sans achat, à la veille de l’anniversaire ou selon les achats et leur fréquence. Les offres, leurs conditions, leurs dates et les utilisations restent enregistrées pour gérer leur validité, éviter les doublons et mesurer leur utilisation. Les statistiques restaurant utilisent les commandes de cette application ; elles ne mesurent pas la lecture des messages ni l’impact causal d’une promotion.
+
+Ces offres apparaissent dans le compte client. Un push exige en plus l’accord distinct aux promotions et un appareil autorisé. Aucun SMS ni e-mail promotionnel n’est connecté à ces règles. Retirer l’accord bloque les nouvelles attributions et les push encore en attente, sans retirer les bons déjà attribués. Les offres personnelles et les données de ciblage du profil sont effacées à la suppression du compte ; les anciennes commandes sont anonymisées selon les règles ci-dessous.
+
 ## Conservation et sécurité
 
 Les données du compte sont conservées tant que le compte est actif. Après suppression, les coordonnées personnelles sont effacées ou anonymisées. Les informations strictement nécessaires aux obligations comptables peuvent être conservées sans profil client directement identifiable.

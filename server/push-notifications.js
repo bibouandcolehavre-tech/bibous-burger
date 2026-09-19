@@ -149,10 +149,24 @@ function canDispatch(db, job, config, now) {
   const s = store(db), device = s.devices.find(d => d.installationId === job.deviceId && d.customerId === job.customerId), customer = db.customers.find(c => c.id === job.customerId);
   if (!customer || !device || !prefs(customer)[job.kind] || !activeDevice(device, now)) return null;
   if (job.kind === 'marketing') {
-    const campaign = s.campaigns.find(c => c.id === job.campaignId);
-    if (!campaign || campaign.status !== 'sent' || (campaign.audience === 'plus' && !bibouPlusStatus(customer, new Date(now)).active)) return null;
+    if (job.crmOfferId) {
+      const offer = db.crm?.offers.find(o => o.id === job.crmOfferId && o.customerId === customer.id);
+      if (!db.crm?.settings.enabled || !offer || offer.expiresAt <= now || customer.crmPreferences?.personalizedOffers !== true || !db.crm.settings.rules.some(r => r.id === offer.ruleId && r.enabled && r.channel === 'in_app_push')) return null;
+    } else {
+      const campaign = s.campaigns.find(c => c.id === job.campaignId);
+      if (!campaign || campaign.status !== 'sent' || (campaign.audience === 'plus' && !bibouPlusStatus(customer, new Date(now)).active)) return null;
+    }
   }
   return live(config, device.platform) ? device : null;
+}
+
+function queueCrmNotification(db, offer, config, now = Date.now()) {
+  const customer = db.customers.find(c => c.id === offer.customerId);
+  if (!customer || customer.crmPreferences?.personalizedOffers !== true || !prefs(customer).marketing) return;
+  const devices = customerDevices(db, customer, now).filter(d => live(config, d.platform));
+  if (!devices.length) return;
+  enqueue(db, customer, devices, { kind:'marketing', crmOfferId:offer.id, eventKey:`crm:${offer.id}`, title:offer.title,
+    body:`Une offre personnelle de −${offer.discountPercent} % t’attend. Consulte ses conditions dans Mon compte > Mes offres.`, screen:'account' }, now);
 }
 
 function purgePush(db, now = Date.now()) {
@@ -233,4 +247,4 @@ function createPushWorker({ config, transact, fetchImpl = fetch, clock = Date.no
   return { tick };
 }
 
-module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };
+module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueCrmNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };

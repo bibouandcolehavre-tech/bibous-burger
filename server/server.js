@@ -12,6 +12,7 @@ const { dashboardContest, saveContestDraft, publicContest, customerContest, join
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const push = require('./push-notifications');
+const crm = require('./crm');
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { createProductStockStore } = require("./product-stock");
@@ -326,7 +327,7 @@ const server = http.createServer(async (request, response) => {
   let releaseDatabase;
 
   try {
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -433,6 +434,19 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { token });
     }
 
+    if (url.pathname === '/api/dashboard/crm' || url.pathname === '/api/dashboard/crm/preview' || url.pathname === '/api/dashboard/settings') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error:'Accès restaurant requis.' });
+      const days = Number(url.searchParams.get('days') || 30);
+      if (![7,30,90,365].includes(days)) return send(response, 400, {error:'Période invalide.'});
+      const input = ['PATCH','POST'].includes(request.method) ? await readBody(request) : null;
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      if (url.pathname.endsWith('/preview') && request.method === 'POST') return send(response, 200, { previews:crm.preview(database,input) });
+      if (url.pathname.endsWith('/settings') && request.method === 'PATCH') { crm.saveSettings(database,input); await writeDatabase(database); }
+      else if (request.method !== 'GET' || url.pathname.endsWith('/preview')) return send(response, 405, { error:'Action non disponible.' });
+      return send(response, 200, crm.dashboard(database,pushConfig,days));
+    }
+
     // This reporting route is read-only, before the legacy read-time migrations.
     if (['/api/news', '/api/contest', '/api/dashboard/news', '/api/dashboard/contest'].includes(url.pathname)) {
       const privateRoute = url.pathname.startsWith('/api/dashboard/');
@@ -481,6 +495,14 @@ const server = http.createServer(async (request, response) => {
       else return send(response, 405, { error: 'Action non disponible.' });
       await writeDatabase(database);
       return send(response, 200, push.customerPushState(database, customer, pushConfig));
+    }
+
+    if (url.pathname === '/api/customer/crm') {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error:'Connecte-toi pour gérer tes offres.' });
+      if (request.method === 'PATCH') { crm.updateCustomerPreferences(database,customer,await readBody(request)); await writeDatabase(database); }
+      else if (request.method !== 'GET') return send(response, 405, { error:'Action non disponible.' });
+      return send(response, 200, crm.customerState(database,customer));
     }
 
     if (url.pathname === '/api/dashboard/push' || url.pathname.startsWith('/api/dashboard/push/')) {
@@ -579,6 +601,7 @@ const server = http.createServer(async (request, response) => {
       if (!twilioResponse.ok || payload.status !== "approved") return send(response, 401, { error: "Le code est incorrect ou a expiré." });
       smsCodeLimiter.reset(normalizedPhone);
       let customer = database.customers.find((item) => normalizeFrenchPhone(item.phone) === normalizedPhone);
+      const isNewCustomer = !customer;
       if (!customer) {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
         ensureReferralCode(customer, database);
@@ -590,7 +613,7 @@ const server = http.createServer(async (request, response) => {
       customer.phoneVerifiedAt = new Date().toISOString();
       customer.firstPhoneVerifiedAt ||= customer.phoneVerifiedAt;
       await writeDatabase(database);
-      return send(response, 200, { token: createSession(customer.id), customer });
+      return send(response, 200, { token: createSession(customer.id), customer, isNewCustomer });
     }
 
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
@@ -855,11 +878,14 @@ const server = http.createServer(async (request, response) => {
         const benefitsAllowed = sessionCustomer?.id === latestCustomer.id;
         const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
         const welcomeRewardApplied = benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
-        const discountRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
+        const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
+        const crmOffer = benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
+        const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;
         const pricing = bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate });
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         createdOrder.requestId = requestId;
+        if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
         const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
@@ -993,4 +1019,19 @@ const contestPrivacyTimer = setInterval(maintainContestPrivacy, 60 * 60 * 1000);
 contestPrivacyTimer.unref();
 server.once('listening', maintainContestPrivacy);
 server.on('close', () => clearInterval(contestPrivacyTimer));
+// Persistent eligibility/deduplication under the same lock as checkout. No network call.
+const tickCrm = async () => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase();
+    if (!database.crm?.settings.enabled) return;
+    crm.evaluate(database,pushConfig);
+    await writeDatabase(database);
+  } catch { console.error('CRM : évaluation indisponible, nouvel essai dans 15 minutes.'); }
+  finally { release(); }
+};
+const crmTimer = setInterval(tickCrm, 15*60000);
+crmTimer.unref();
+server.once('listening', tickCrm);
+server.on('close', () => clearInterval(crmTimer));
 server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`));
