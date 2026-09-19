@@ -10,3 +10,16 @@ server/data.json.*.tmp
 server/backups/
 **/bibou-*.json.gz
 backup-recovery/
+
+# Private signing and push credentials must never enter version control.
+credentials.json
+credentials/
+secrets/
+**/*.p8
+**/*.p12
+**/*.mobileprovision
+**/*.jks
+**/*.keystore
+**/*service-account*.json
+**/*serviceAccount*.json
+**/*firebase-adminsdk*.json

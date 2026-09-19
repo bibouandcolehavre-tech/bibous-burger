@@ -11,3 +11,14 @@ server/product-stock.json
 server/*.tmp
 server/*.test.js
 server/test-fixtures
+credentials.json
+credentials
+secrets
+**/*.p8
+**/*.p12
+**/*.mobileprovision
+**/*.jks
+**/*.keystore
+**/*service-account*.json
+**/*serviceAccount*.json
+**/*firebase-adminsdk*.json

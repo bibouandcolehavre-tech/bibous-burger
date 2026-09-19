@@ -1,4 +1,4 @@
-# Préparation Android et iPhone — 18 septembre 2026
+# Préparation Android et iPhone — 19 septembre 2026
 
 ## État réel
 
@@ -13,19 +13,21 @@ L’application web et l’API sont déployables. Les exports de code iOS et And
 - Reprise de paiement vérifiée dans le navigateur avec faux client et faux fournisseur : attente, actualisation, succès, annulation, expiration et indisponibilité SumUp. Aucun encaissement ni SMS réel.
 - Session persistante mobile chiffrée, déconnexion explicite, journal de paiement sans coordonnées ni token, fichiers sensibles exclus des archives de compilation.
 
-## Connexion Expo effectuée — builds suspendus à la demande du propriétaire
+## Reprise autorisée — iPhone prioritaire
 
-Notifications clients préparées le 19 septembre : préférences séparées, association privée d’appareils, mises à jour de commandes payées/réservations, éditeur promotionnel restaurant et traitement des retours Expo. **Non activées sur téléphone** : la page Credentials du projet Expo a été contrôlée et ne contient encore aucun identifiant Apple ou Android ; aucun `google-services.json` n’est présent. Les versions installables restent suspendues. Les exports JavaScript et les tests avec fournisseur simulé ne valident ni la signature ni la réception réelle. Étapes restantes et réglages dans `PUSH_NOTIFICATIONS.md`.
+Notifications clients préparées le 19 septembre : préférences séparées, association privée d’appareils, mises à jour de commandes payées/réservations, éditeur promotionnel restaurant et traitement des retours Expo. **Non activées sur téléphone** : la page Credentials du projet Expo a été contrôlée et ne contient encore aucun identifiant Apple ou Android ; aucun `google-services.json` n’est présent. Le propriétaire a maintenant autorisé la reprise des versions de test et précisé qu’il utilise un iPhone. Les exports JavaScript et les tests avec fournisseur simulé ne valident ni la signature ni la réception réelle. Étapes restantes et réglages dans `PUSH_NOTIFICATIONS.md`.
 
-Connexion OAuth terminée par le propriétaire, compte CLI `bibouburgers`. Projet `bibous-burger` dans l’organisation `bibou-and-co` (Bibou & Co), identifiant `2c35adf5-23b6-474e-a790-c8cf39d4d70a`, sauvegardé dans `app.json`. Le propriétaire demande de poursuivre les modifications avant toute version installable : ne pas lancer de build APK/AAB/IPA ni de soumission pour le moment.
+Connexion OAuth terminée par le propriétaire, compte CLI `bibouburgers`. Projet `bibous-burger` dans l’organisation `bibou-and-co` (Bibou & Co), identifiant `2c35adf5-23b6-474e-a790-c8cf39d4d70a`, sauvegardé dans `app.json`. **Pause levée pour les versions installables de test**, pas pour une publication sur les boutiques ni une nouvelle dépense. Connexion Apple effectuée par le propriétaire ; le contrat gratuit « Apple Developer Agreement » a ensuite été accepté avec son autorisation explicite. Communications promotionnelles laissées désactivées et profil personnalisé facultatif ignoré. Le compte affiche « Rejoindre l’Apple Developer Program » : **l’adhésion payante n’est pas active**. Ne pas la souscrire ni accepter un nouveau contrat sans accord spécifique. Aucun binaire signé n’a encore été lancé ; l’historique iOS Expo est vide.
 
 EAS Update n’est pas installé/configuré. Certaines futures modifications de texte, style et images pourraient être distribuées par ce mécanisme compatible avec les règles des boutiques, une fois configuré et inclus dans un binaire. Les changements natifs imposent un nouveau build ; les changements de fonctionnalités doivent respecter la revue des plateformes. Ne pas confondre déploiement web et mise à jour de l’application installée.
+
+L’inscription Apple sur le web est ouverte à l’étape `https://developer.apple.com/enroll/identity/edit`. Seuls prénom et nom déjà fournis par le propriétaire sont préremplis ; aucun formulaire d’identité soumis. L’adresse personnelle reste à compléter par le propriétaire (ne pas substituer l’adresse du restaurant). Tarif officiel consulté le 19 septembre : 99 USD par an, prix local affiché pendant l’inscription ; aucun montant exact en euros encore présenté. L’autorisation de préparer la suite ne vaut pas accord de paiement. Source : https://developer.apple.com/programs/enroll/.
 
 Le Mac dispose des Command Line Tools, pas d’une installation Xcode complète sélectionnée ni d’un runtime Java. Les exports de code réalisés ne sont donc pas des compilations natives locales. Utiliser EAS après connexion, sous réserve des conditions et quotas du compte existant ; aucune nouvelle dépense n’a été engagée.
 
 ### Intervention regroupée du propriétaire
 
-1. Confirmer la reprise des versions installables quand les modifications souhaitées sont prêtes. La connexion Expo est déjà effectuée ; ne pas recommencer ni demander de transmettre un mot de passe/token.
+1. Reprise des versions de test confirmée, iPhone prioritaire : ne pas redemander cette autorisation. La connexion Expo est déjà effectuée ; ne pas recommencer ni demander de transmettre un mot de passe/token.
 2. Confirmer/ouvrir les comptes Apple Developer et Google Play Console de Bibou & Co ; toute inscription payante ou acceptation de contrat reste à valider par le propriétaire.
 3. Fournir les accès de signature et validations à deux facteurs au moment de créer les builds ; le propriétaire conserve ses identifiants.
 
@@ -33,7 +35,7 @@ Source officielle pour la connexion, les compilations et signatures : [Créer un
 
 ## Travail à enchaîner dès les accès disponibles
 
-- Une fois la pause levée, générer un APK de test Android ; générer le build iOS approprié pour appareil enregistré ou TestFlight. Le dépôt est déjà associé au projet Expo du propriétaire.
+- Vérifier l’adhésion Apple après connexion, enregistrer l’iPhone avec autorisation puis générer le build iOS de test approprié ; préparer ensuite Android avec FCM. Le dépôt est déjà associé au projet Expo du propriétaire. Vérifier le quota/coût de compilation avant lancement et demander accord avant toute dépense.
 - Installer sur Android/iPhone réels : connexion et reconnexion SMS, fermeture pendant SumUp, retour de paiement, commandes, créneaux complets, réservation jusqu’à quatre personnes, Bibou +, fidélité, déconnexion et suppression du compte.
 - Test réel SMS vers un numéro autorisé par son titulaire, après approbation Twilio. Ne pas recommencer des essais en boucle ni consommer du crédit sans nécessité.
 - Captures d’écran issues des vrais builds et visuel Google Play ; reprendre les textes de `STORE_LISTING.md`.
