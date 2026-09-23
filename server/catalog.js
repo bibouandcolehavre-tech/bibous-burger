@@ -117,7 +117,7 @@ const OPTION_CATALOG = new Map(OPTIONS.map((entry) => [`${entry.groupId}:${entry
 const GROUP_RULES = {
   protein: { min: 1, max: 1 },
   salad: { min: 1, max: 4 },
-  sauces: { min: 1 },
+  sauces: { min: 1, max: 1 },
   drink: { max: 1 },
   "duo-drink-one": { min: 1, max: 1 },
   "duo-drink-two": { min: 1, max: 1 },
@@ -201,7 +201,8 @@ const validatedSelections = (product, selections) => {
   for (const groupId of allowedGroups) {
     const rule = GROUP_RULES[groupId];
     const count = byGroup[groupId].length;
-    if ((rule.min && count < rule.min) || (rule.max && count > rule.max)) throw orderInputError("Complète les choix requis avant de commander.");
+    if (rule.min && count < rule.min) throw orderInputError("Complète les choix requis avant de commander.");
+    if (rule.max && count > rule.max) throw orderInputError(`Tu peux sélectionner au maximum ${rule.max} choix dans cette catégorie.`);
     if (count > 1 && byGroup[groupId].some((entry) => entry.exclusive)) throw orderInputError("Deux choix incompatibles ont été sélectionnés.");
   }
   if (product.fixedSauce && (byGroup.sauces.length !== 1 || byGroup.sauces[0].id !== product.fixedSauce)) throw orderInputError("La sauce de ce burger est imposée. Actualise l’application avant de commander.");

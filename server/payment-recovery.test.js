@@ -19,6 +19,13 @@ test('journal de reprise : compte, format et durée strictement contrôlés', ()
   assert.throws(() => validateRequestId('short'), { statusCode: 400 });
 });
 
+test('une modification du commentaire distingue les tentatives de commande', () => {
+  const input = { customerId: 'alice', method: 'pickup', serviceDate: '2026-09-23', slot: '19:00', items: [] };
+  assert.equal(orderFingerprint(input), orderFingerprint({ ...input, comment: '   ' }));
+  assert.equal(orderFingerprint({ ...input, comment: 'Sans oignons' }), orderFingerprint({ ...input, comment: '  Sans oignons  ' }));
+  assert.notEqual(orderFingerprint(input), orderFingerprint({ ...input, comment: 'Sans oignons' }));
+});
+
 test('une expiration locale ne vaut pas refus bancaire et une annulation reste prioritaire', () => {
   const old = new Date(Date.now() - 3600000).toISOString();
   assert.equal(paymentState({ createdAt: old }, 'order'), 'expired');

@@ -49,9 +49,13 @@ test("API : seuls les restaurateurs modifient le stock ; les ruptures bloquent c
   assert.equal(dessertChanged.data.products.find((product) => product.id === "dessert-oreo").category, "desserts");
   assert.equal(dessertChanged.data.options["desserts:oreo"], false);
   await request("/dashboard/catalog/dessert-oreo", { method: "PATCH", token, body: { available: true } });
-  const order = { customerId: customer.id, items: [{ productId: "drink-coca", quantity: 1, selections: [] }], method: "pickup", serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: "19:00" };
+  const order = { customerId: customer.id, items: [{ productId: "drink-coca", quantity: 1, selections: [] }], method: "pickup", serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: "19:00", comment: "  Sans serviette, merci  " };
   const created = await request("/orders", { method: "POST", token: customerToken, body: order });
   assert.equal(created.status, 201, JSON.stringify(created.data));
+  assert.equal(created.data.order.comment, "Sans serviette, merci");
+  const commentTooLong = await request("/orders", { method: "POST", token: customerToken, body: { ...order, comment: "x".repeat(501) } });
+  assert.equal(commentTooLong.status, 400);
+  assert.match(commentTooLong.data.error, /500 caractères/);
   const changed = await request("/dashboard/catalog/drink-coca", { method: "PATCH", token, body: { available: false } });
   assert.equal(changed.status, 200);
   assert.equal((await request("/catalog")).data.products.find((p) => p.id === "drink-coca").available, false);
@@ -64,6 +68,7 @@ test("API : seuls les restaurateurs modifient le stock ; les ruptures bloquent c
   // No credentials or external payment service are used by this test.
   const database = JSON.parse(await fs.readFile(databaseFile, "utf8"));
   assert.equal(database.orders.length, 1);
+  assert.equal(database.orders[0].comment, "Sans serviette, merci");
   assert.equal(database.orders[0].payment, undefined);
   assert.equal(database.customers[0].name, customer.name);
   assert.equal(database.customers[0].points, 0);

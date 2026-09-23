@@ -97,7 +97,7 @@ function dashboardCustomerDetail(database, id, now = new Date()) {
       return { ...reward, status: claim?.status || (summary.points >= reward.points ? "available" : "locked"), remainingPoints: Math.max(0, reward.points - summary.points), code: claim?.status === "active" ? claim.code : null };
     }),
     recentOrders: paidOrders.map((order) => ({
-      number: order.number, status: order.status, paidAt: orderDate(order), serviceDate: order.serviceDate || null, slot: order.slot || "", method: order.method,
+      number: order.number, status: order.status, paidAt: orderDate(order), serviceDate: order.serviceDate || null, slot: order.slot || "", method: order.method, comment: String(order.comment || ""),
       items: (order.items || []).map((item) => ({ productId: item.productId, name: item.name, quantity: finite(item.quantity) || 1, price: finite(item.price), options: (item.options || []).map((option) => ({ groupId: option.groupId, label: option.label, price: finite(option.price) })) })),
       subtotal: finite(order.subtotal), discount: finite(order.discount), discountLabel: order.discountLabel || "", discountRate: finite(order.discountRate),
       welcomeRewardApplied: order.welcomeRewardApplied === true, bibouPlusApplied: order.bibouPlusApplied === true,

@@ -46,6 +46,12 @@ test("rejects unavailable products and incompatible exclusive choices", () => {
   assert.throws(() => validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: [requiredSelections[0], { groupId: "salad", id: "roquette" }, { groupId: "salad", id: "sans-crudites" }, requiredSelections[2]] }]), /incompatibles/);
 });
 
+test("accepts exactly one sauce and rejects multiple sauces", () => {
+  const oneSauce = validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: requiredSelections }]);
+  assert.equal(oneSauce.items[0].options.filter((option) => option.groupId === "sauces").length, 1);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: [...requiredSelections, { groupId: "sauces", id: "ketchup" }] }]), /maximum 1 choix/);
+});
+
 test("prices simple snacks and drinks from the server catalog", () => {
   const result = validateAndPriceOrderItems([
     { productId: "frites-maison", quantity: 1, price: 0.01, selections: [] },

@@ -17,6 +17,7 @@ function orderFingerprint(input) {
       selections: Array.isArray(item.selections) ? item.selections.map(selection) : item.selections,
     })) : input.items,
   };
+  if (typeof input.comment === 'string' && input.comment.trim()) canonical.comment = input.comment.trim();
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 

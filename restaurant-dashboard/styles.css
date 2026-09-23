@@ -194,6 +194,7 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 @media(max-width:850px) { .push-layout { grid-template-columns:1fr; } }
 
 .order-contact { display:grid; gap:8px; margin-top:12px; padding:12px; background:var(--cream, #fff7f0); border-radius:10px; font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.order-comment { margin-top:12px; padding:12px 14px; border:2px solid #e95122; border-radius:10px; background:#fff0e9; color:var(--ink); overflow-wrap:anywhere; }.order-comment strong { display:block; color:#d74318; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }.order-comment p { margin:5px 0 0; white-space:pre-wrap; line-height:1.5; }
 
 .order-options { margin:4px 0 0; padding-left:20px; color:var(--muted); font-size:13px; line-height:1.5; }
 .order-options li { margin:3px 0; overflow-wrap:anywhere; }

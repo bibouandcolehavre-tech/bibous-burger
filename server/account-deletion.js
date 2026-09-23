@@ -19,6 +19,7 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     order.customerName = "Client supprimé";
     delete order.customerPhone;
     delete order.deliveryAddress;
+    order.comment = "";
     order.accountDeletedAt = deletedAt;
     delete order.referralSponsorCustomerId;
     ordersAnonymized += 1;

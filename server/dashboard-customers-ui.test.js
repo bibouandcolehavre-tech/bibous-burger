@@ -95,7 +95,7 @@ test("interface clients : erreurs réseau visibles, compte disparu et accès exp
 
 test("commandes : coordonnées échappées, choix verticaux et anciennes commandes explicites", async () => {
   const h = await harness();
-  h.context.fixtureOrder = { id: 'order-test', number: 1, customerName: 'Test', customerPhone: '+33600000000', deliveryAddress: { address: '<img src=x onerror=bad()>', postalCode: '76600', city: 'Le Havre' }, method: 'delivery', createdAt: new Date().toISOString(), status: 'confirmed', subtotal: 10, discount: 0, standardDeliveryFee: 0, deliveryFee: 0, total: 10, items: [{ name: 'Burger', quantity: 1, price: 10, options: [{ groupId: 'protein', label: 'Bœuf', price: 0 }, { groupId: 'salad', label: 'Roquette', price: 0 }, { groupId: 'salad', label: 'Tomate', price: 0 }, { groupId: 'sauces', label: '<script>bad()</script>', price: 0 }] }] };
+  h.context.fixtureOrder = { id: 'order-test', number: 1, customerName: 'Test', customerPhone: '+33600000000', deliveryAddress: { address: '<img src=x onerror=bad()>', postalCode: '76600', city: 'Le Havre' }, comment: '<script>Sans oignons</script>', method: 'delivery', createdAt: new Date().toISOString(), status: 'confirmed', subtotal: 10, discount: 0, standardDeliveryFee: 0, deliveryFee: 0, total: 10, items: [{ name: 'Burger', quantity: 1, price: 10, options: [{ groupId: 'protein', label: 'Bœuf', price: 0 }, { groupId: 'salad', label: 'Roquette', price: 0 }, { groupId: 'salad', label: 'Tomate', price: 0 }, { groupId: 'sauces', label: '<script>bad()</script>', price: 0 }] }] };
   h.run('orders = [orderFromApi(fixtureOrder)]; renderOrders()');
   const html = h.element('#orders-list').innerHTML;
   assert.match(html, /Téléphone : \+33600000000/);
@@ -107,6 +107,8 @@ test("commandes : coordonnées échappées, choix verticaux et anciennes command
   assert.equal(html.includes('<script>'), false);
   assert.equal(html.includes('<img'), false);
   assert.match(html, /Total débité par SumUp/);
+  assert.match(html, /Commentaire client/);
+  assert.match(html, /&lt;script&gt;Sans oignons/);
   h.run('delete fixtureOrder.deliveryAddress; delete fixtureOrder.customerPhone; orders = [orderFromApi(fixtureOrder)]; renderOrders()');
   assert.match(h.element('#orders-list').innerHTML, /Adresse non enregistrée/);
   h.run('fixtureOrder.method = "pickup"; orders = [orderFromApi(fixtureOrder)]; renderOrders()');
