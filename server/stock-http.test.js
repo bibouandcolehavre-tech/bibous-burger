@@ -44,6 +44,11 @@ test("API : seuls les restaurateurs modifient le stock ; les ruptures bloquent c
   assert.equal(galetteChanged.data.options["extras:galette-plus"], false);
   assert.equal(galetteChanged.data.options["protein:galette"], false);
   await request("/dashboard/catalog/ingredient-potato-patty", { method: "PATCH", token, body: { available: true } });
+  const dessertChanged = await request("/dashboard/catalog/dessert-oreo", { method: "PATCH", token, body: { available: false } });
+  assert.equal(dessertChanged.status, 200);
+  assert.equal(dessertChanged.data.products.find((product) => product.id === "dessert-oreo").category, "desserts");
+  assert.equal(dessertChanged.data.options["desserts:oreo"], false);
+  await request("/dashboard/catalog/dessert-oreo", { method: "PATCH", token, body: { available: true } });
   const order = { customerId: customer.id, items: [{ productId: "drink-coca", quantity: 1, selections: [] }], method: "pickup", serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: "19:00" };
   const created = await request("/orders", { method: "POST", token: customerToken, body: order });
   assert.equal(created.status, 201, JSON.stringify(created.data));

@@ -338,7 +338,7 @@ function renderMenu() {
   const query = document.querySelector("#menu-search").value.trim().toLocaleLowerCase("fr");
   const category = document.querySelector("#menu-filter").value;
   const visible = menuProducts.filter((product) => product.name.toLocaleLowerCase("fr").includes(query) && (category === "all" || (category === "unavailable" ? !product.available : product.category === category)));
-  const categories = { menus: "Nos menus", burgers: "Nos burgers", supplements: "Suppléments des burgers", snacks: "Petites faims", drinks: "Boissons" };
+  const categories = { menus: "Nos menus", burgers: "Nos burgers", supplements: "Suppléments des burgers", desserts: "Desserts", snacks: "Petites faims", drinks: "Boissons" };
   document.querySelector("#menu-list").innerHTML = !menuLoaded ? '<p class="empty">Chargement de la carte…</p>' : !visible.length ? '<p class="empty">Aucun produit ne correspond à cette recherche.</p>' : Object.entries(categories).map(([key, title]) => {
     const products = visible.filter((product) => product.category === key);
     if (!products.length) return "";

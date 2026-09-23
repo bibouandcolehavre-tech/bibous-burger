@@ -41,7 +41,10 @@ const STOCK_ONLY_CATALOG = {
   "ingredient-mozzarella": { name: "Supplément · Mozzarella", price: 1, category: "supplements" },
   "ingredient-fourme": { name: "Supplément · Fourme d'Ambert", price: 1, category: "supplements" },
   "ingredient-lard": { name: "Supplément · Lard fumé", price: 1.5, category: "supplements" },
-  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" }
+  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" },
+  "dessert-oreo": { name: "Tiramisu Oreo", price: 3.9, category: "desserts" },
+  "dessert-cookie": { name: "Tiramisu cookie", price: 3.9, category: "desserts" },
+  "dessert-framboise": { name: "Tiramisu framboise pistache", price: 3.9, category: "desserts" }
 };
 const STOCK_CATALOG = { ...PRODUCT_CATALOG, ...STOCK_ONLY_CATALOG };
 
@@ -137,6 +140,7 @@ const optionProductId = ({ groupId, id }) => {
     "second-steak": "ingredient-second-steak", "galette-plus": "ingredient-potato-patty", cheddar: "ingredient-cheddar",
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
+  if (groupId === "desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;

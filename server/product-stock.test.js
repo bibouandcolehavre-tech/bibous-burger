@@ -51,6 +51,16 @@ test("les suppléments ont leur propre stock et la galette végétarienne partag
   assert.throws(() => validateAndPriceOrderItems([item("classique", [{ groupId: "protein", id: "galette" }, selections[1], selections[2]])], stock), /plus disponible/);
 });
 
+test("chaque tiramisu peut être mis en rupture dans tous les choix dessert", () => {
+  const stock = { "dessert-oreo": false, "dessert-framboise": false };
+  const catalog = availabilityCatalog(stock);
+  assert.equal(catalog.products.filter((product) => product.category === "desserts").length, 3);
+  assert.equal(catalog.options["desserts:oreo"], false);
+  assert.equal(catalog.options["desserts:cookie"], true);
+  assert.equal(catalog.options["desserts:framboise"], false);
+  assert.throws(() => validateAndPriceOrderItems([item("classique", [...selections, { groupId: "desserts", id: "oreo" }])], stock), /plus disponible/);
+});
+
 test("un panier déjà créé est revérifié avant son paiement", () => {
   const cart = validateAndPriceOrderItems([item("taurus", [...selections, { groupId: "drink", id: "coca" }])]);
   assert.doesNotThrow(() => assertStoredOrderAvailable(cart.items, {}));
