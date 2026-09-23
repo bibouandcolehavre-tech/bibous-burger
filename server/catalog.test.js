@@ -21,8 +21,28 @@ test("rejects an unknown product, invalid option and missing required choice", (
   assert.throws(() => validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: [] }]), /choix requis/);
 });
 
+test("records the imposed sauce and rejects a replacement sauce", () => {
+  const recipes = {
+    atlas: ["fixed-atlas", "Sauce imposée · Barbecue miel"],
+    dynamite: ["fixed-dynamite", "Sauce imposée · Sauce thaï"],
+    duck: ["fixed-duck", "Sauce imposée · Sauce chinoise"],
+    hambagu: ["fixed-hambagu", "Sauce imposée · Sauce Hambagu (à base de mirin, de soja et de saké)"],
+    basilic: ["fixed-basilic", "Sauce imposée · Pesto"],
+    pork: ["fixed-pork", "Sauce imposée · Barbecue coréenne"]
+  };
+  for (const [burgerId, [sauceId, label]] of Object.entries(recipes)) {
+    for (const productId of [burgerId, `${burgerId}-menu`]) {
+      const fixedSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: sauceId }];
+      const result = validateAndPriceOrderItems([{ productId, quantity: 1, selections: fixedSelections }], { "atlas-menu": true });
+      assert.equal(result.items[0].options[2].label, label);
+      assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: requiredSelections }], { "atlas-menu": true }), /sauce de ce burger est imposée/);
+    }
+  }
+});
+
 test("rejects unavailable products and incompatible exclusive choices", () => {
-  assert.throws(() => validateAndPriceOrderItems([{ productId: "atlas-menu", quantity: 1, selections: requiredSelections }]), /indisponible/);
+  const atlasSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: "fixed-atlas" }];
+  assert.throws(() => validateAndPriceOrderItems([{ productId: "atlas-menu", quantity: 1, selections: atlasSelections }]), /indisponible/);
   assert.throws(() => validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: [requiredSelections[0], { groupId: "salad", id: "roquette" }, { groupId: "salad", id: "sans-crudites" }, requiredSelections[2]] }]), /incompatibles/);
 });
 

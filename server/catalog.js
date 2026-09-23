@@ -1,23 +1,23 @@
 const PRODUCT_CATALOG = {
   taurus: { name: "Le Taurus", price: 16.9, menu: true },
   "montagnes-menu": { name: "À travers les montagnes", price: 16.9, menu: true },
-  "atlas-menu": { name: "Au sommet de l'Atlas", price: 18.9, menu: true, soldOut: true },
+  "atlas-menu": { name: "Au sommet de l'Atlas", price: 18.9, menu: true, soldOut: true, fixedSauce: "fixed-atlas" },
   "classique-menu": { name: "Classique, simple et efficace", price: 14.9, menu: true },
-  "duck-menu": { name: "Duck", price: 18.9, menu: true },
-  "dynamite-menu": { name: "Dynamite Chicken", price: 16.9, menu: true },
+  "duck-menu": { name: "Duck", price: 18.9, menu: true, fixedSauce: "fixed-duck" },
+  "dynamite-menu": { name: "Dynamite Chicken", price: 16.9, menu: true, fixedSauce: "fixed-dynamite" },
   "gros-lard-menu": { name: "Le gros lard", price: 16.9, menu: true },
-  "hambagu-menu": { name: "Hambagu", price: 16.9, menu: true },
-  "basilic-menu": { name: "Le basilic du potager", price: 16.9, menu: true },
-  "pork-menu": { name: "Le Pork", price: 16.9, menu: true },
-  atlas: { name: "Au sommet de l'Atlas", price: 13.9 },
+  "hambagu-menu": { name: "Hambagu", price: 16.9, menu: true, fixedSauce: "fixed-hambagu" },
+  "basilic-menu": { name: "Le basilic du potager", price: 16.9, menu: true, fixedSauce: "fixed-basilic" },
+  "pork-menu": { name: "Le Pork", price: 16.9, menu: true, fixedSauce: "fixed-pork" },
+  atlas: { name: "Au sommet de l'Atlas", price: 13.9, fixedSauce: "fixed-atlas" },
   classique: { name: "Classique, simple et efficace", price: 9.9 },
-  duck: { name: "Duck", price: 13.9 },
-  dynamite: { name: "Dynamite Chicken", price: 11.9 },
-  hambagu: { name: "Hambagu", price: 11.9 },
-  basilic: { name: "Le basilic du potager", price: 11.9 },
+  duck: { name: "Duck", price: 13.9, fixedSauce: "fixed-duck" },
+  dynamite: { name: "Dynamite Chicken", price: 11.9, fixedSauce: "fixed-dynamite" },
+  hambagu: { name: "Hambagu", price: 11.9, fixedSauce: "fixed-hambagu" },
+  basilic: { name: "Le basilic du potager", price: 11.9, fixedSauce: "fixed-basilic" },
   montagnes: { name: "À travers les montagnes", price: 11.9 },
   "gros-lard": { name: "Le gros lard", price: 11.9 },
-  pork: { name: "Le Pork", price: 11.9 },
+  pork: { name: "Le Pork", price: 11.9, fixedSauce: "fixed-pork" },
   "frites-maison": { name: "Frites maison", price: 3.9, kind: "simple" },
   "frites-cheddar-bacon": { name: "Frites cheddar bacon", price: 6.9, kind: "simple" },
   "tenders-xl-3": { name: "Tenders XL par 3", price: 6.9, kind: "simple" },
@@ -50,6 +50,12 @@ const OPTIONS = [
   option("sauces", "blanche", "Blanche"),
   option("sauces", "bearnaise", "Béarnaise"),
   option("sauces", "sans-sauce", "Pas de sauce", 0, { exclusive: true }),
+  option("sauces", "fixed-atlas", "Sauce imposée · Barbecue miel"),
+  option("sauces", "fixed-dynamite", "Sauce imposée · Sauce thaï"),
+  option("sauces", "fixed-duck", "Sauce imposée · Sauce chinoise"),
+  option("sauces", "fixed-hambagu", "Sauce imposée · Sauce Hambagu (à base de mirin, de soja et de saké)"),
+  option("sauces", "fixed-basilic", "Sauce imposée · Pesto"),
+  option("sauces", "fixed-pork", "Sauce imposée · Barbecue coréenne"),
   option("extras", "second-steak", "Second steak", 3),
   option("extras", "galette-plus", "Galette de pomme de terre", 2),
   option("extras", "cheddar", "Cheddar", 1),
@@ -177,6 +183,7 @@ const validatedSelections = (product, selections) => {
     if ((rule.min && count < rule.min) || (rule.max && count > rule.max)) throw orderInputError("Complète les choix requis avant de commander.");
     if (count > 1 && byGroup[groupId].some((entry) => entry.exclusive)) throw orderInputError("Deux choix incompatibles ont été sélectionnés.");
   }
+  if (product.fixedSauce && (byGroup.sauces.length !== 1 || byGroup.sauces[0].id !== product.fixedSauce)) throw orderInputError("La sauce de ce burger est imposée. Actualise l’application avant de commander.");
   return resolved;
 };
 
