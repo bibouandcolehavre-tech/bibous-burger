@@ -25,6 +25,7 @@ const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDel
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
+const { applySupportCredits } = require("./support-credits");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -483,7 +484,8 @@ const server = http.createServer(async (request, response) => {
     const bibouPlusStoreChanged = ensureBibouPlusStore(database);
     const rewardStoreChanged = ensureRewardStore(database);
     const contestPurged = purgeExpiredContestEntries(database);
-    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged) await writeDatabase(database);
+    const supportCreditsChanged = applySupportCredits(database);
+    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged) await writeDatabase(database);
 
     if (url.pathname === '/api/customer/push' || url.pathname.startsWith('/api/customer/push/')) {
       const customer = authenticatedCustomer(request, database);

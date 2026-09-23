@@ -153,13 +153,16 @@ const DRINK_VISUALS = {
   coca: require("./assets/drinks/cutout/coca.png"),
   "coca-zero": require("./assets/drinks/cutout/coca.png"),
   "coca-cherry": require("./assets/drinks/cutout/coca-cherry.png"),
+  "coca-vanille": require("./assets/drinks/cutout/coca-vanille.png"),
   "lipton-peche": require("./assets/drinks/cutout/lipton-peche.png"),
   "lipton-framboise": require("./assets/drinks/cutout/lipton-framboise.png"),
   "fuse-menthe": require("./assets/drinks/cutout/fuse-menthe.png"),
   "oasis-pomme": require("./assets/drinks/cutout/oasis-pomme.png"),
   "oasis-tropical": require("./assets/drinks/cutout/oasis-tropical.png"),
+  "fanta-orange": require("./assets/drinks/cutout/fanta-orange.png"),
   perrier: require("./assets/drinks/cutout/perrier.png"),
-  tropico: require("./assets/drinks/cutout/tropico.png")
+  tropico: require("./assets/drinks/cutout/tropico.png"),
+  eau: require("./assets/drinks/cutout/cristaline.png")
 };
 const MENU_DRINK_OPTIONS = [
   { id: "coca", label: "Coca 33 cl", price: 0 },
@@ -243,8 +246,7 @@ function PrestigeEmblem({ level, unlocked = true, large = false }) {
 }
 
 function ProductCard({ product, onPress }) {
-  const composition = compositionForProduct(product);
-  return <Pressable disabled={product.soldOut} onPress={() => onPress(product)} style={[styles.productCard, styles.burgerProductCard, product.soldOut && styles.productCardSoldOut]}><Image source={product.image} style={styles.productImage} /><View style={styles.productInfo}><Text style={styles.productName}>{product.isMenu ? `Menu · ${product.name}` : product.name}</Text><View style={styles.productComposition}>{composition.map(([title, ingredients]) => <View key={title} style={styles.productCompositionSection}><Text style={styles.productCompositionTitle}>{title}</Text>{ingredients.split(" · ").map((ingredient) => <Text key={ingredient} style={styles.productCompositionItem}>• {ingredient}</Text>)}</View>)}</View><Text style={[styles.productPrice, product.soldOut && styles.soldOutText]}>{product.soldOut ? "Épuisé" : money(product.price)}</Text></View><View style={[styles.plus, product.soldOut && styles.plusSoldOut]}><Text style={styles.plusText}>{product.soldOut ? "–" : "+"}</Text></View></Pressable>;
+  return <Pressable disabled={product.soldOut} onPress={() => onPress(product)} style={[styles.productCard, product.soldOut && styles.productCardSoldOut]}><Image source={product.image} style={styles.productImage} /><View style={styles.productInfo}><Text style={styles.productName}>{product.isMenu ? `Menu - ${product.name}` : product.name}</Text><Text numberOfLines={2} style={styles.productDescription}>{product.description}</Text><Text style={[styles.productPrice, product.soldOut && styles.soldOutText]}>{product.soldOut ? "Épuisé" : money(product.price)}</Text></View><View style={[styles.plus, product.soldOut && styles.plusSoldOut]}><Text style={styles.plusText}>{product.soldOut ? "–" : "+"}</Text></View></Pressable>;
 }
 
 function AccessoryCard({ product, onPress }) {
