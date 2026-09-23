@@ -130,7 +130,17 @@ const SAUCE_VISUALS = {
   blanche: require("./assets/sauces/photoreal/blanche.png"),
   bearnaise: require("./assets/sauces/photoreal/bearnaise.png"),
 };
-const SUPPLEMENTS = { id: "extras", title: "UN SUPPLÉMENT DANS VOTRE BURGER ?", options: [{ id: "second-steak", label: "Second steak", price: 3 }, { id: "galette-plus", label: "Galette de pomme de terre", price: 2 }, { id: "cheddar", label: "Cheddar", price: 1 }, { id: "raclette", label: "Raclette", price: 1 }, { id: "mozzarella", label: "Mozzarella", price: 1 }, { id: "fourme", label: "Fourme d'Ambert", price: 1 }, { id: "lard", label: "Lard fumé", price: 1.5 }, { id: "bacon", label: "Bacon", price: 1 }] };
+const SUPPLEMENT_VISUALS = {
+  "second-steak": require("./assets/supplements/steak-hache-cuit.png"),
+  "galette-plus": require("./assets/supplements/rosti-pomme-de-terre.png"),
+  cheddar: require("./assets/supplements/cheddar.png"),
+  raclette: require("./assets/supplements/raclette.png"),
+  mozzarella: require("./assets/supplements/mozzarella.png"),
+  fourme: require("./assets/supplements/fourme-d-ambert.png"),
+  lard: require("./assets/supplements/lard-fume.png"),
+  bacon: require("./assets/supplements/bacon.png"),
+};
+const SUPPLEMENTS = { id: "extras", title: "UN SUPPLÉMENT DANS VOTRE BURGER ?", options: [{ id: "second-steak", label: "Second steak", price: 3 }, { id: "galette-plus", label: "Galette de pomme de terre", price: 2 }, { id: "cheddar", label: "Cheddar", price: 1 }, { id: "raclette", label: "Raclette", price: 1 }, { id: "mozzarella", label: "Mozzarella", price: 1 }, { id: "fourme", label: "Fourme d'Ambert", price: 1 }, { id: "lard", label: "Lard fumé", price: 1.5 }, { id: "bacon", label: "Bacon", price: 1 }].map((option) => ({ ...option, image: SUPPLEMENT_VISUALS[option.id] })) };
 const SIDE_VISUALS = {
   frites: require("./assets/extras/frites-maison.png"),
   "frites-cheddar": require("./assets/extras/frites-cheddar-bacon.png"),
@@ -429,7 +439,7 @@ function OptionGroup({ group, selectedIds, onToggleChoice }) {
 }
 
 function OptionRow({ groupId, option, selected, onPress }) {
-  if (groupId === "sides") return <Pressable disabled={option.soldOut && !selected} onPress={onPress} style={[styles.option, styles.sideOption, selected && styles.optionSelected, option.soldOut && styles.optionSoldOut]}><Image source={option.image} style={styles.optionSideImage} /><View style={styles.sideOptionChoice}><View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected && <Text style={styles.checkmark}>✓</Text>}</View><Text style={[styles.optionName, selected && styles.optionNameSelected]}>{option.label}</Text></View>{option.soldOut ? <Text style={styles.soldOutText}>Épuisé</Text> : option.price > 0 && <Text style={styles.sideOptionValue}>+ {money(option.price)}</Text>}</Pressable>;
+  if (groupId === "sides" || groupId === "extras") return <Pressable disabled={option.soldOut && !selected} onPress={onPress} style={[styles.option, styles.sideOption, selected && styles.optionSelected, option.soldOut && styles.optionSoldOut]}><Image source={option.image} style={styles.optionSideImage} /><View style={styles.sideOptionChoice}><View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected && <Text style={styles.checkmark}>✓</Text>}</View><Text style={[styles.optionName, selected && styles.optionNameSelected]}>{option.label}</Text></View>{option.soldOut ? <Text style={styles.soldOutText}>Épuisé</Text> : option.price > 0 && <Text style={styles.sideOptionValue}>+ {money(option.price)}</Text>}</Pressable>;
   return <Pressable disabled={option.soldOut && !selected} onPress={onPress} style={[styles.option, selected && styles.optionSelected, option.soldOut && styles.optionSoldOut]}><OptionVisual groupId={groupId} option={option} /><View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected && <Text style={styles.checkmark}>✓</Text>}</View><Text style={[styles.optionName, selected && styles.optionNameSelected]}>{option.label}</Text>{option.soldOut ? <Text style={styles.soldOutText}>Épuisé</Text> : option.price > 0 && <Text style={styles.optionValue}>+ {money(option.price)}</Text>}</Pressable>;
 }
 
