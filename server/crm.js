@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 const { queueCrmNotification } = require('./push-notifications');
+const { orderProductInsights } = require('./order-insights');
 
 const DAY = 86400000;
 const TYPES = ['inactive', 'birthday', 'large_order', 'frequency', 'spend'];
@@ -92,18 +93,19 @@ function trigger(rule, customer, orders, now) {
 function eligibility(db, settings, rule, now) {
   const offers = db.crm?.offers || [], results = { matched: 0, noConsent: 0, cooldown: 0, alreadyOffered: 0, eligible: [] };
   for (const c of db.customers || []) {
-    const key = trigger(rule, c, customerOrders(db, c, now), now); if (!key) continue;
+    const orders = customerOrders(db, c, now);
+    const key = trigger(rule, c, orders, now); if (!key) continue;
     results.matched++;
     if (!optedIn(c)) { results.noConsent++; continue; }
     if (offers.some(o => o.customerId === c.id && o.eventKey === key)) { results.alreadyOffered++; continue; }
     if (offers.some(o => o.customerId === c.id && o.createdAt > now - settings.cooldownDays * DAY)) { results.cooldown++; continue; }
-    results.eligible.push({ customerId: c.id, name: c.name || 'Client Bibou', eventKey: key });
+    results.eligible.push({ customerId: c.id, name: c.name || 'Client Bibou', eventKey: key, favoriteProduct: orderProductInsights(orders)[0]?.name || null });
   }
   return results;
 }
 function preview(db, settings = config(db), now = Date.now()) {
   const checked = validateSettings(settings);
-  return checked.rules.map(r => { const result = eligibility(db, checked, r, now); return { id:r.id, matched:result.matched, noConsent:result.noConsent, cooldown:result.cooldown, alreadyOffered:result.alreadyOffered, eligible:result.eligible.length, sample:result.eligible.slice(0,10).map(c => ({ name:c.name })), configured:!!r.discountPercent && (r.type !== 'frequency' || !!r.minOrders) && (!['large_order','spend'].includes(r.type) || r.minAmount > 0) }; });
+  return checked.rules.map(r => { const result = eligibility(db, checked, r, now); return { id:r.id, matched:result.matched, noConsent:result.noConsent, cooldown:result.cooldown, alreadyOffered:result.alreadyOffered, eligible:result.eligible.length, sample:result.eligible.slice(0,10).map(c => ({ name:c.name, favoriteProduct:c.favoriteProduct })), configured:!!r.discountPercent && (r.type !== 'frequency' || !!r.minOrders) && (!['large_order','spend'].includes(r.type) || r.minAmount > 0) }; });
 }
 function evaluate(db, pushConfig, now = Date.now()) {
   const settings = config(db);
@@ -151,6 +153,7 @@ function statistics(db, days = 30, now = Date.now()) {
     orders:valid.length, revenue:money(valid.reduce((n,o)=>n+Number(o.total||0),0)), averageBasket:valid.length?money(valid.reduce((n,o)=>n+Number(o.total||0),0)/valid.length):null,
     consenting:customers.filter(optedIn).length, birthdays:customers.filter(c=>c.crmPreferences?.birthday).length, neverOrdered:customers.filter(c=>!customerOrders(db,c,now).length).length,
     inactive45:customers.filter(c=>{const o=customerOrders(db,c,now)[0];return o && paidAt(o)<=now-45*DAY;}).length,
+    popularProducts:orderProductInsights(valid).slice(0,5),
     offers:offers.length, used:issuedMetrics.used, discounts:issuedMetrics.discounts, attributedOrders:issuedMetrics.orders, attributedRevenue:issuedMetrics.revenue, conversion:offers.length?Math.round(issuedMetrics.used/offers.length*1000)/10:null,
     rules:config(db).rules.map(r=>{const own=offers.filter(o=>o.ruleId===r.id);return {id:r.id,title:r.title,issued:own.length,...metrics(new Set(own.map(o=>o.id)))};}) };
 }

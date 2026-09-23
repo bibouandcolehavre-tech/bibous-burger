@@ -16,7 +16,7 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
   await fs.writeFile(databaseFile, JSON.stringify({ customers: [customer, { id: 'sponsor-test', name: 'Parrain fictif', points: 0 }], orders: [], nextOrderNumber: 1 }));
   await fs.writeFile(providerFile, JSON.stringify({ checkouts: {} }));
   const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/sumup-provider.cjs'), path.join(__dirname, 'server.js')], {
-    cwd: directory, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: databaseFile, FAKE_SUMUP_FILE: providerFile, RESTAURANT_DASHBOARD_PASSWORD: 'test-only', SESSION_SECRET: 'test-secret', SUMUP_API_KEY: 'FAKE', SUMUP_MERCHANT_CODE: 'TEST', SUMUP_RETURN_URL: 'https://example.invalid/return', SUMUP_REDIRECT_URL: 'https://example.invalid/app' }, stdio: ['ignore', 'pipe', 'pipe']
+    cwd: directory, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: databaseFile, FAKE_SUMUP_FILE: providerFile, RESTAURANT_DASHBOARD_PASSWORD: 'test-only', SESSION_SECRET: 'test-secret', GOOGLE_MAPS_API_KEY: 'FAKE', SUMUP_API_KEY: 'FAKE', SUMUP_MERCHANT_CODE: 'TEST', SUMUP_RETURN_URL: 'https://example.invalid/return', SUMUP_REDIRECT_URL: 'https://example.invalid/app' }, stdio: ['ignore', 'pipe', 'pipe']
   });
   t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(directory, { recursive: true, force: true }); });
   const base = await new Promise((resolve, reject) => {
@@ -34,8 +34,8 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
   const db = async () => JSON.parse(await fs.readFile(databaseFile, 'utf8'));
   const provider = async mutate => { const state = JSON.parse(await fs.readFile(providerFile, 'utf8')); mutate(state); await fs.writeFile(providerFile, JSON.stringify(state)); };
   const creations = async () => (await fs.readFile(path.join(directory, 'calls.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse).filter(call => call.method === 'POST').length;
-  const createOrder = async () => {
-    const result = await request('/orders', { method: 'POST', body: { customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] } });
+  const createOrder = async (delivery = false) => {
+    const result = await request('/orders', { method: 'POST', body: { customerId: customer.id, method: delivery ? 'delivery' : 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: delivery ? '19:00 – 19:30' : '19:00', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] } });
     assert.equal(result.status, 201, JSON.stringify(result.data)); return result.data.order;
   };
   const open = order => request('/payments/sumup-checkout', { method: 'POST', body: { orderId: order.id } });
@@ -182,4 +182,23 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
     assert.equal((await db()).customers[0].bibouPlusExpiresAt, expiry);
     assert.equal(await creations(), count);
   });
+  await t.test('les coordonnées de livraison restent celles de la commande après changement de profil', async () => {
+    const address = { address: '1 rue de Test', postalCode: '76600', city: 'Le Havre' };
+    assert.equal((await request(`/customers/${customer.id}`, { method: 'PATCH', body: address })).status, 200);
+    const delivery = await createOrder(true);
+    assert.deepEqual(delivery.deliveryAddress, address);
+    assert.equal(delivery.customerPhone, customer.phone);
+    const opened = await open(delivery);
+    await provider(state => { state.checkouts[opened.data.checkoutId].status = 'PAID'; });
+    await verify(delivery);
+    await request(`/customers/${customer.id}`, { method: 'PATCH', body: { address: '99 autre rue' } });
+    const received = (await request('/dashboard/orders', { auth: admin })).data.orders.find(item => item.id === delivery.id);
+    assert.deepEqual(received.deliveryAddress, address);
+    assert.equal(received.customerPhone, customer.phone);
+    assert.deepEqual((await db()).orders.find(item => item.id === delivery.id).deliveryAddress, address);
+    assert.equal(order.deliveryAddress, null);
+    assert.equal(order.customerPhone, customer.phone);
+    assert.equal((await request('/dashboard/orders', { auth: '' })).status, 401);
+  });
+
 });

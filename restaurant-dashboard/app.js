@@ -51,7 +51,7 @@ const showDashboard = () => { document.querySelector("#login-screen").hidden = t
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
   const minutes = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
-  return { id: order.number, apiId: order.id, customer: order.customerName, age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
+  return { id: order.number, apiId: order.id, customer: order.customerName, phone: order.customerPhone || "", deliveryAddress: order.deliveryAddress, age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, subtotal: order.subtotal, discount: order.discount, discountLabel: order.discountLabel, discountRate: order.discountRate, welcomeRewardApplied: order.welcomeRewardApplied, bibouPlusApplied: order.bibouPlusApplied, standardDeliveryFee: order.standardDeliveryFee, deliveryFee: order.deliveryFee, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
 }
 
 function reservationFromApi(reservation) {
@@ -66,15 +66,70 @@ function actionMarkup(order) {
   if (order.status === "Nouvelle") return `<div class="actions"><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
   if (order.status === "Acceptée") return `<div class="actions"><button class="advance" data-action="Prête" data-id="${order.id}">Marquer prête</button></div>`;
   if (order.status === "Prête") return `<div class="actions"><button class="advance ready" data-action="En livraison" data-id="${order.id}">${order.type === "Livraison" ? "Confier au livreur" : "Remettre au client"}</button></div>`;
-  return `<div class="actions"><button class="advance delivery" data-action="Terminée" data-id="${order.id}">Terminer la commande</button></div>`;
+  if (order.status === "En livraison") return `<div class="actions"><button class="advance delivery" data-action="Terminée" data-id="${order.id}">Terminer la commande</button></div>`;
+  return "";
+}
+
+function orderItemMarkup(item) {
+  const categories = [
+    ["protein", "Protéine"], ["salad", "Crudités"], ["sauces", "Sauces"],
+    ["extras", "Suppléments"], ["sides", "Accompagnements"], ["drink", "Boisson"],
+    ["duo-drink-one", "Boisson 1"], ["duo-drink-two", "Boisson 2"], ["desserts", "Desserts"],
+    ["other", "Autres choix"]
+  ];
+  const grouped = new Map();
+  for (const option of item.options || []) {
+    const key = categories.some(([id]) => id === option.groupId) ? option.groupId : "other";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(option);
+  }
+  const isBurgerMenu = item.productId === "taurus" || item.productId?.endsWith("-menu");
+  const name = isBurgerMenu && !/^menu\b/i.test(item.name) ? `Menu · ${item.name}` : item.name;
+  const composition = categories.filter(([id]) => grouped.has(id)).map(([id, title]) =>
+    `<div class="order-option-group"><div class="order-option-title">${title}</div><ul class="order-options">${grouped.get(id).map(option => `<li><span>${escapeHtml(option.label)}</span>${Number(option.price) > 0 ? `<strong>+ ${euro(option.price)}</strong>` : ""}</li>`).join("")}</ul></div>`
+  ).join("");
+  const quantity = Math.max(1, Number(item.quantity) || 1);
+  const unitPrice = Number(item.price) || 0;
+  return `<div class="order-line"><div class="order-product-heading"><strong class="order-product-name">${quantity > 1 ? `${quantity} × ` : ""}${escapeHtml(name)}</strong><strong>${euro(unitPrice * quantity)}</strong></div>${quantity > 1 ? `<div class="order-unit-price">${euro(unitPrice)} l’unité</div>` : ""}${composition}</div>`;
+}
+
+function orderPricingMarkup(order) {
+  const itemSubtotal = (order.items || []).reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
+  const subtotal = Number.isFinite(Number(order.subtotal)) ? Number(order.subtotal) : itemSubtotal;
+  const discount = Math.max(0, Number(order.discount) || 0);
+  const deliveryFee = Math.max(0, Number(order.deliveryFee) || 0);
+  const standardDeliveryFee = Math.max(deliveryFee, Number(order.standardDeliveryFee) || 0);
+  const discountLabel = order.discountLabel || (order.welcomeRewardApplied ? "Cadeau de bienvenue" : order.bibouPlusApplied ? "Remise Bibou +" : "Réduction");
+  const rate = Number(order.discountRate) > 0 ? ` · −${Math.round(Number(order.discountRate) * 100)} %` : "";
+  const rows = [`<div><span>Sous-total des articles</span><strong>${euro(subtotal)}</strong></div>`];
+  if (discount > 0) rows.push(`<div class="order-pricing-saving"><span>${escapeHtml(discountLabel)}${rate}</span><strong>− ${euro(discount)}</strong></div>`);
+  if (order.type === "Livraison" || order.method === "delivery") {
+    if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>Économie livraison Bibou +</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
+    rows.push(`<div><span>Livraison facturée</span><strong>${deliveryFee ? euro(deliveryFee) : "Offerte"}</strong></div>`);
+  } else rows.push(`<div><span>Retrait</span><strong>Gratuit</strong></div>`);
+  rows.push(`<div class="order-pricing-total"><span>Total débité par SumUp</span><strong>${euro(order.total)}</strong></div>`);
+  return `<div class="order-pricing">${rows.join("")}</div>`;
+}
+
+function customerOrderHistoryMarkup(order, historyStatuses) {
+  const type = order.method === "delivery" ? "Livraison" : "Retrait";
+  const status = historyStatuses[order.status] || order.status;
+  const service = [serviceDateLabel(order.serviceDate), order.slot].filter(Boolean).join(" · ");
+  const points = Number(order.pointsAdded) > 0 ? `<div class="customer-order-points">+ ${customerNumber(order.pointsAdded)} points de fidélité</div>` : "";
+  return `<details class="customer-history-order"><summary><span><strong>#${Number(order.number)} · ${customerDate(order.paidAt)}</strong><small>${escapeHtml(status)} · ${type}</small></span><span><strong>${euro(order.total)}</strong><small>Voir le détail</small></span></summary><div class="customer-history-order-body">${service ? `<p class="customer-order-service">🕒 ${escapeHtml(service)}</p>` : ""}<div class="order-items">${(order.items || []).map(orderItemMarkup).join("") || '<p class="menu-note">Le détail des articles n’a pas été enregistré pour cette ancienne commande.</p>'}</div>${orderPricingMarkup(order)}${points}</div></details>`;
 }
 
 function renderOrders() {
-  const visible = active().filter((order) => filter === "all" || order.status === filter);
+  const completedView = filter === "Terminée";
+  const visible = completedView ? orders.filter((order) => order.status === "Terminée") : active().filter((order) => filter === "all" || order.status === filter);
   document.querySelector("#orders-list").innerHTML = visible.length ? visible.map((order) => {
-    const lines = order.items.map((item) => `<div class="order-line"><strong>${item.quantity > 1 ? `${Number(item.quantity)} × ` : ""}${escapeHtml(item.name)}</strong>${item.options?.length ? `<small>${item.options.map((option) => escapeHtml(option.label)).join(" · ")}</small>` : ""}</div>`).join("");
-    return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div><div class="order-items">${lines}</div><div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}<span class="order-total">${euro(order.total)}</span></div>${actionMarkup(order)}</div></article>`;
-  }).join("") : `<div class="empty">🍔<strong>Aucune commande ici</strong>Les nouvelles commandes apparaîtront dès leur réception.</div>`;
+    const lines = order.items.map(orderItemMarkup).join("");
+    const address = order.deliveryAddress;
+    const contact = `<div class="order-contact"><div>Téléphone : ${escapeHtml(order.phone || "Non enregistré sur cette commande")}</div>${order.type === "Livraison" ? `<div><strong>Adresse de livraison</strong>${address?.address ? `<div>${escapeHtml(address.address)}</div><div>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(" "))}</div>` : `<div>Adresse non enregistrée sur cette commande</div>`}</div>` : ""}</div>`;
+    const body = `${contact}<div class="order-items">${lines}</div>${orderPricingMarkup(order)}<div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}</div>${actionMarkup(order)}</div>`;
+    if (completedView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status Terminée">Terminée</span></div>${body}</div></details>`;
+    return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
+  }).join("") : `<div class="empty">🍔<strong>${completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
   document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
 }
 
@@ -90,6 +145,7 @@ function refreshMetrics() {
   document.querySelector("#new-order-count").textContent = newOrders.length;
   document.querySelector("#all-filter-count").textContent = current.length;
   document.querySelector("#new-filter-count").textContent = newOrders.length;
+  document.querySelector("#completed-filter-count").textContent = orders.filter((order) => order.status === "Terminée").length;
   const pendingReservations = reservations.filter((reservation) => reservation.status === "pending").length;
   document.querySelector("#new-reservation-count").textContent = pendingReservations;
   document.querySelector("#new-reservation-count-mobile").textContent = pendingReservations;
@@ -395,11 +451,12 @@ async function loadCustomers() {
 }
 
 function renderCustomerDetail(payload, focus) {
-  const { customer, rewards, recentOrders } = payload;
+  const { customer, rewards, recentOrders, favoriteProducts = [] } = payload;
   const next = customer.nextPrestige;
   const rewardLabels = { available: "À réclamer par le client", locked: "Palier non atteint", active: "À remettre", used: "Déjà utilisée", cancelled: "Annulée" };
   const historyStatuses = { ...statusLabel, delivered: "Terminée", cancelled: "Annulée" };
-  document.querySelector("#customer-detail").innerHTML = `<div class="customer-detail-header"><p class="eyebrow">FICHE CLIENT · CONSULTATION</p><h2 id="customer-detail-title" tabindex="-1">${escapeHtml(customer.name)}</h2><p>${escapeHtml(customer.phone || "Téléphone non renseigné")} · Inscription : ${customerDate(customer.createdAt)}</p></div><div class="customer-loyalty-panel"><strong>${customerNumber(customer.points)} points</strong><p>${escapeHtml(customerPrestige(customer))}${customer.prestige ? ` · ${escapeHtml(customer.prestige.metal)}` : ""}</p><small>${next ? `Encore ${customerNumber(next.points - customer.points)} points pour le Prestige ${next.level} · ${escapeHtml(next.name)}.` : "Le plus haut prestige est atteint."}</small></div><dl class="customer-facts"><div><dt>Bibou +</dt><dd>${customer.bibouPlus.active ? `Actif jusqu’au ${customerDate(customer.bibouPlus.expiresAt)}` : customer.bibouPlus.expiresAt ? `Expiré le ${customerDate(customer.bibouPlus.expiresAt)}` : "Pas d’abonnement actif"}</dd></div><div><dt>Cette semaine</dt><dd>${customerNumber(customer.weekly.orders)} commande(s) · multiplicateur ×${customer.weekly.multiplier}</dd></div><div><dt>Commandes payées non annulées</dt><dd>${customerNumber(customer.orders.count)} · ${euro(customer.orders.amount)}</dd></div></dl><h3>Parrainages</h3><p class="customer-referral-code">Code personnel : <strong>${escapeHtml(customer.referralCode || "Pas encore attribué")}</strong></p><div class="customer-referral-counts"><div><strong>${customerNumber(customer.referrals.invited)}</strong><small>filleuls inscrits</small></div><div><strong>${customerNumber(customer.referrals.validated)}</strong><small>validés</small></div><div><strong>${customerNumber(customer.referrals.pending)}</strong><small>en attente</small></div></div><h3>Récompenses de palier</h3><div class="customer-rewards">${rewards.map((reward) => `<div class="customer-reward"><div><strong>${escapeHtml(reward.title)}</strong><small>${customerNumber(reward.points)} points${reward.status === "locked" ? ` · encore ${customerNumber(reward.remainingPoints)}` : ""}</small></div><span class="customer-reward-status ${["active", "available", "used", "cancelled", "locked"].includes(reward.status) ? reward.status : "locked"}">${rewardLabels[reward.status] || "À vérifier"}${reward.code ? `<strong>${escapeHtml(reward.code)}</strong>` : ""}</span></div>`).join("")}</div><p class="menu-note">Pour remettre une récompense déjà réclamée, utilisez la rubrique Récompenses et vérifiez son code. Les paliers ne consomment pas les points.</p><h3>Dernières commandes payées</h3><div class="customer-history">${recentOrders.length ? recentOrders.map((order) => `<div><span><strong>#${Number(order.number)} · ${customerDate(order.paidAt)}</strong><small>${escapeHtml(historyStatuses[order.status] || order.status)} · ${order.method === "delivery" ? "Livraison" : "Retrait"}</small></span><strong>${euro(order.total)}</strong></div>`).join("") : '<p class="menu-note">Aucune commande payée pour ce client.</p>'}</div><p class="menu-note">Les 10 dernières commandes payées sont affichées, y compris celles annulées ensuite.</p>`;
+  const favorites = favoriteProducts.length ? `<div class="customer-favorites">${favoriteProducts.map((product, index) => `<div><span>${index === 0 ? "Préférence principale" : `Préférence ${index + 1}`}</span><strong>${escapeHtml(product.name)}</strong><small>${customerNumber(product.quantity)} article(s) dans ${customerNumber(product.orders)} commande(s)</small></div>`).join("")}</div>` : '<p class="menu-note">Pas encore assez de commandes détaillées pour identifier ses produits préférés.</p>';
+  document.querySelector("#customer-detail").innerHTML = `<div class="customer-detail-header"><p class="eyebrow">FICHE CLIENT · CONSULTATION</p><h2 id="customer-detail-title" tabindex="-1">${escapeHtml(customer.name)}</h2><p>${escapeHtml(customer.phone || "Téléphone non renseigné")} · Inscription : ${customerDate(customer.createdAt)}</p></div><div class="customer-loyalty-panel"><strong>${customerNumber(customer.points)} points</strong><p>${escapeHtml(customerPrestige(customer))}${customer.prestige ? ` · ${escapeHtml(customer.prestige.metal)}` : ""}</p><small>${next ? `Encore ${customerNumber(next.points - customer.points)} points pour le Prestige ${next.level} · ${escapeHtml(next.name)}.` : "Le plus haut prestige est atteint."}</small></div><dl class="customer-facts"><div><dt>Bibou +</dt><dd>${customer.bibouPlus.active ? `Actif jusqu’au ${customerDate(customer.bibouPlus.expiresAt)}` : customer.bibouPlus.expiresAt ? `Expiré le ${customerDate(customer.bibouPlus.expiresAt)}` : "Pas d’abonnement actif"}</dd></div><div><dt>Cette semaine</dt><dd>${customerNumber(customer.weekly.orders)} commande(s) · multiplicateur ×${customer.weekly.multiplier}</dd></div><div><dt>Commandes payées non annulées</dt><dd>${customerNumber(customer.orders.count)} · ${euro(customer.orders.amount)}</dd></div></dl><h3>Produits préférés</h3>${favorites}<h3>Parrainages</h3><p class="customer-referral-code">Code personnel : <strong>${escapeHtml(customer.referralCode || "Pas encore attribué")}</strong></p><div class="customer-referral-counts"><div><strong>${customerNumber(customer.referrals.invited)}</strong><small>filleuls inscrits</small></div><div><strong>${customerNumber(customer.referrals.validated)}</strong><small>validés</small></div><div><strong>${customerNumber(customer.referrals.pending)}</strong><small>en attente</small></div></div><h3>Récompenses de palier</h3><div class="customer-rewards">${rewards.map((reward) => `<div class="customer-reward"><div><strong>${escapeHtml(reward.title)}</strong><small>${customerNumber(reward.points)} points${reward.status === "locked" ? ` · encore ${customerNumber(reward.remainingPoints)}` : ""}</small></div><span class="customer-reward-status ${["active", "available", "used", "cancelled", "locked"].includes(reward.status) ? reward.status : "locked"}">${rewardLabels[reward.status] || "À vérifier"}${reward.code ? `<strong>${escapeHtml(reward.code)}</strong>` : ""}</span></div>`).join("")}</div><p class="menu-note">Pour remettre une récompense déjà réclamée, utilisez la rubrique Récompenses et vérifiez son code. Les paliers ne consomment pas les points.</p><h3>Historique des commandes payées</h3><div class="customer-history">${recentOrders.length ? recentOrders.map((order) => customerOrderHistoryMarkup(order, historyStatuses)).join("") : '<p class="menu-note">Aucune commande payée pour ce client.</p>'}</div><p class="menu-note">Toutes les commandes payées restent consultables, y compris celles annulées ensuite.</p>`;
   if (focus) document.querySelector("#customer-detail-title")?.focus();
 }
 

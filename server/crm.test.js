@@ -52,6 +52,18 @@ test('sales overview is distinct from marketing-attributed revenue',()=>{
   const db={customers:[customer('c1')],orders:[order('a','c1',2,30),order('b','c1',5,40)]};
   const s=crm.statistics(db,30,NOW);assert.equal(s.orders,2);assert.equal(s.revenue,70);assert.equal(s.averageBasket,35);assert.equal(s.attributedOrders,0);assert.equal(s.attributedRevenue,0);
 });
+test('CRM derives favorite products from paid non-cancelled order contents',()=>{
+  const db={customers:[customer('c1'),customer('c2')],orders:[
+    order('a','c1',2,30,{items:[{productId:'taurus',name:'Gros Lard',quantity:2,price:16.9}]}),
+    order('b','c2',3,20,{items:[{productId:'frites',name:'Frites maison',quantity:1,price:3.9}]}),
+    order('cancelled','c1',1,30,{status:'cancelled',items:[{productId:'frites',name:'Frites maison',quantity:20,price:3.9}]})
+  ]};
+  const s=crm.statistics(db,30,NOW);
+  assert.deepEqual(s.popularProducts.map(p=>[p.name,p.quantity,p.customers]),[['Menu · Gros Lard',2,1],['Frites maison',1,1]]);
+  activate(db,'frequency',{minOrders:1});
+  const sample=crm.preview(db,db.crm.settings,NOW).find(p=>p.id==='frequency').sample;
+  assert.equal(sample.find(c=>c.name==='Fictif c1').favoriteProduct,'Menu · Gros Lard');
+});
 test('push CRM requires independent consent and live flags; deletion removes targeting data',async()=>{
   const db=database();activate(db,'inactive',{channel:'in_app_push'});db.customers[0].pushPreferences={marketing:true};push.registerDevice(db,db.customers[0],{installationId:'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',secret:'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',token:'ExpoPushToken[abcdefghij123456]',platform:'ios'},NOW);
   crm.evaluate(db,off,NOW);assert.equal(db.pushNotifications.jobs.length,0);

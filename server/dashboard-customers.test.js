@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const { PRESTIGES, listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const now = new Date("2026-09-18T12:00:00Z");
-const paid = (id, customerId, status = "delivered", total = 16.90) => ({ id, customerId, number: Number(id.replace(/\D/g, "")) || 1, total, status, payment: { status: "PAID", paidAt: now.toISOString(), checkoutUrl: "SECRET-PAYMENT" }, createdAt: now.toISOString(), method: "delivery" });
+const paid = (id, customerId, status = "delivered", total = 16.90) => ({ id, customerId, number: Number(id.replace(/\D/g, "")) || 1, subtotal: total, discount: 0, deliveryFee: 0, total, status, items: [{ productId: "taurus", name: "Gros Lard", quantity: 1, price: total, options: [{ groupId: "salad", label: "Roquette", price: 0 }] }], payment: { status: "PAID", paidAt: now.toISOString(), checkoutUrl: "SECRET-PAYMENT" }, createdAt: now.toISOString(), method: "delivery" });
 function fixture() {
   const a = { id: "a", name: "Hélène", phone: "+33601020304", points: 400, referralCode: "BIBOU-TEST", loyaltyWeekStart: "2026-09-14", weeklyOrders: 2, weeklyProgramPoints: 40, bibouPlusExpiresAt: "2026-09-20T12:00:00Z", address: "SECRET-ADDRESS" };
   const b = { id: "b", name: "Arnaud", phone: "+33600000001", points: 0, referredByCustomerId: "a", referralRewardGrantedAt: now.toISOString(), referralRewardOrderId: "order-1" };
@@ -55,6 +55,9 @@ test("clients : paliers cohérents avec l’application et récompenses déjà r
   assert.equal(detail.rewards[2].remainingPoints, 300);
   assert.equal(detail.recentOrders.length, 2);
   assert.ok(detail.recentOrders.some((order) => order.status === "cancelled"));
+  assert.equal(detail.recentOrders[0].items[0].options[0].label, "Roquette");
+  assert.equal(detail.favoriteProducts[0].name, "Menu · Gros Lard");
+  assert.equal(detail.favoriteProducts[0].quantity, 1);
   assert.equal(JSON.stringify(detail).includes("SECRET"), false);
   assert.equal(dashboardCustomerDetail(fixture(), "missing", now), null);
 });
@@ -78,10 +81,10 @@ test("clients : parrainage annulé, impayé ou bonus révoqué non validé", () 
   }
 });
 
-test("clients : comptes supprimés absents et historique limité à dix commandes", () => {
+test("clients : comptes supprimés absents et historique payé conservé sans limite arbitraire", () => {
   const db = fixture();
   db.orders.push(...Array.from({ length: 15 }, (_, i) => paid(`order-${i + 10}`, "a")));
-  assert.equal(dashboardCustomerDetail(db, "a", now).recentOrders.length, 10);
+  assert.equal(dashboardCustomerDetail(db, "a", now).recentOrders.length, 17);
   anonymizeCustomerAccount(db, db.customers[1], now);
   assert.equal(listDashboardCustomers(db, {}, now).summary.customers, 2);
   assert.equal(listDashboardCustomers(db, {}, now).summary.validatedReferrals, 0);

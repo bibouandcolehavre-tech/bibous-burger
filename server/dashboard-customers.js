@@ -1,6 +1,7 @@
 const { REWARD_DEFINITIONS } = require("./rewards");
 const { bibouPlusStatus } = require("./bibou-plus");
 const { weekStartKey } = require("./loyalty");
+const { orderProductInsights } = require("./order-insights");
 
 const PRESTIGES = REWARD_DEFINITIONS.map((reward, index) => ({
   level: index + 1, points: reward.points,
@@ -86,13 +87,23 @@ function dashboardCustomerDetail(database, id, now = new Date()) {
   const index = customerIndex(database, now);
   const summary = customerSummary(customer, index, now);
   const claims = index.claims.get(id) || [];
+  const paidOrders = (index.orders.get(id) || []).filter((order) => order.payment?.status === "PAID").sort(latestFirst);
+  const favoriteProducts = orderProductInsights(paidOrders.filter((order) => order.status !== "cancelled")).slice(0, 3);
   return {
     customer: summary,
+    favoriteProducts,
     rewards: REWARD_DEFINITIONS.map((reward) => {
       const claim = claims.find((item) => item.rewardId === reward.id);
       return { ...reward, status: claim?.status || (summary.points >= reward.points ? "available" : "locked"), remainingPoints: Math.max(0, reward.points - summary.points), code: claim?.status === "active" ? claim.code : null };
     }),
-    recentOrders: (index.orders.get(id) || []).filter((order) => order.payment?.status === "PAID").sort(latestFirst).slice(0, 10).map((order) => ({ number: order.number, status: order.status, paidAt: orderDate(order), total: finite(order.total), method: order.method })),
+    recentOrders: paidOrders.map((order) => ({
+      number: order.number, status: order.status, paidAt: orderDate(order), serviceDate: order.serviceDate || null, slot: order.slot || "", method: order.method,
+      items: (order.items || []).map((item) => ({ productId: item.productId, name: item.name, quantity: finite(item.quantity) || 1, price: finite(item.price), options: (item.options || []).map((option) => ({ groupId: option.groupId, label: option.label, price: finite(option.price) })) })),
+      subtotal: finite(order.subtotal), discount: finite(order.discount), discountLabel: order.discountLabel || "", discountRate: finite(order.discountRate),
+      welcomeRewardApplied: order.welcomeRewardApplied === true, bibouPlusApplied: order.bibouPlusApplied === true,
+      standardDeliveryFee: finite(order.standardDeliveryFee), deliveryFee: finite(order.deliveryFee), total: finite(order.total),
+      pointsAdded: finite(order.loyaltyPointsAdded)
+    })),
     // No delivery addresses, session tokens, payment references or provider URLs.
   };
 }

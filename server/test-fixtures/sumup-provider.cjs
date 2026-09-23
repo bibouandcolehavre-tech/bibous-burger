@@ -5,6 +5,7 @@ const path = require('node:path');
 if (process.env.NODE_ENV !== 'test' || !process.env.FAKE_SUMUP_FILE) throw new Error('Test fixture only');
 global.fetch = async (url, options = {}) => {
   const parsed = new URL(url);
+  if (parsed.hostname === 'routes.googleapis.com') return Response.json({ routes: [{ distanceMeters: 1500 }] });
   if (parsed.hostname !== 'api.sumup.com') throw new Error('External network forbidden in payment tests');
   const file = process.env.FAKE_SUMUP_FILE;
   const state = JSON.parse(await fs.readFile(file, 'utf8'));

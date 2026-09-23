@@ -44,6 +44,22 @@ test("interface clients : contenu échappé, premier palier à 200, détail et r
   assert.match(h.element("#customer-detail").innerHTML, /Sélectionnez/);
 });
 
+test("interface clients : historique complet ouvrable, calcul et préférence produit", async () => {
+  const h = await harness();
+  const detailed = { customers: [{ ...db.customers[0], points: 15 }], orders: [{ id: "paid-1", number: 71, customerId: "safe", status: "delivered", method: "delivery", serviceDate: "2026-09-18", slot: "19:30", items: [{ productId: "taurus", name: "Gros Lard", quantity: 1, price: 16.9, options: [{ groupId: "sides", label: "Portion de frites maison ajoutée", price: 3.9 }] }], subtotal: 20.8, discount: 2.08, discountLabel: "Cadeau de bienvenue", discountRate: 0.1, standardDeliveryFee: 4.99, deliveryFee: 4.99, total: 23.71, loyaltyPointsAdded: 15, payment: { status: "PAID", paidAt: "2026-09-18T18:00:00Z" }, createdAt: "2026-09-18T18:00:00Z" }] };
+  h.context.fetch = async () => result(dashboardCustomerDetail(detailed, "safe"));
+  await h.run('loadCustomerDetail("safe")');
+  const html = h.element("#customer-detail").innerHTML;
+  assert.match(html, /Produits préférés/);
+  assert.match(html, /Menu · Gros Lard/);
+  assert.match(html, /<details class="customer-history-order">/);
+  assert.match(html, /Portion de frites maison ajoutée/);
+  assert.match(html, /Cadeau de bienvenue · −10 %/);
+  assert.match(html, /Total débité par SumUp/);
+  assert.match(html, /23,71 €/);
+  assert.match(html, /\+ 15 points de fidélité/);
+});
+
 test("interface clients : réponse tardive ignorée après changement de recherche ou de session", async () => {
   const h = await harness();
   let resolve;
@@ -74,4 +90,42 @@ test("interface clients : erreurs réseau visibles, compte disparu et accès exp
   await h.run("loadCustomers()");
   assert.equal(h.element("#dashboard-app").hidden, true);
   assert.match(h.element("#login-error").textContent, /session a expiré/);
+});
+
+
+test("commandes : coordonnées échappées, choix verticaux et anciennes commandes explicites", async () => {
+  const h = await harness();
+  h.context.fixtureOrder = { id: 'order-test', number: 1, customerName: 'Test', customerPhone: '+33600000000', deliveryAddress: { address: '<img src=x onerror=bad()>', postalCode: '76600', city: 'Le Havre' }, method: 'delivery', createdAt: new Date().toISOString(), status: 'confirmed', subtotal: 10, discount: 0, standardDeliveryFee: 0, deliveryFee: 0, total: 10, items: [{ name: 'Burger', quantity: 1, price: 10, options: [{ groupId: 'protein', label: 'Bœuf', price: 0 }, { groupId: 'salad', label: 'Roquette', price: 0 }, { groupId: 'salad', label: 'Tomate', price: 0 }, { groupId: 'sauces', label: '<script>bad()</script>', price: 0 }] }] };
+  h.run('orders = [orderFromApi(fixtureOrder)]; renderOrders()');
+  const html = h.element('#orders-list').innerHTML;
+  assert.match(html, /Téléphone : \+33600000000/);
+  assert.match(html, /76600 Le Havre/);
+  assert.match(html, /&lt;img/);
+  assert.match(html, /Crudités<\/div><ul[^>]*><li><span>Roquette<\/span><\/li><li><span>Tomate<\/span><\/li>/);
+  assert.match(html, /Sauces<\/div><ul[^>]*><li><span>&lt;script&gt;/);
+  assert.match(html, /<strong class="order-product-name">Burger<\/strong>/);
+  assert.equal(html.includes('<script>'), false);
+  assert.equal(html.includes('<img'), false);
+  assert.match(html, /Total débité par SumUp/);
+  h.run('delete fixtureOrder.deliveryAddress; delete fixtureOrder.customerPhone; orders = [orderFromApi(fixtureOrder)]; renderOrders()');
+  assert.match(h.element('#orders-list').innerHTML, /Adresse non enregistrée/);
+  h.run('fixtureOrder.method = "pickup"; orders = [orderFromApi(fixtureOrder)]; renderOrders()');
+  assert.equal(h.element('#orders-list').innerHTML.includes('Adresse de livraison'), false);
+});
+
+test("commandes : les commandes terminées ont un onglet et un détail ouvrable", async () => {
+  const h = await harness();
+  h.context.completedOrder = { id: "order-249", number: 249, customerName: "Alexandre", customerPhone: "+33600000000", method: "delivery", serviceDate: "2026-09-22", slot: "20:00", createdAt: "2026-09-22T18:00:00Z", status: "delivered", subtotal: 20.8, discount: 2.08, discountLabel: "Cadeau de bienvenue", discountRate: 0.1, standardDeliveryFee: 4.99, deliveryFee: 4.99, total: 23.71, items: [{ productId: "gros-lard-menu", name: "Le gros lard", quantity: 1, price: 20.8, options: [{ groupId: "drink", label: "Coca 33 cl", price: 0 }] }] };
+  h.run("orders = [orderFromApi(completedOrder)]; filter = 'all'; renderOrders(); refreshMetrics()");
+  assert.equal(h.element("#orders-list").innerHTML.includes("#249"), false);
+  assert.equal(h.element("#completed-filter-count").textContent, 1);
+  h.run("filter = 'Terminée'; renderOrders()");
+  const html = h.element("#orders-list").innerHTML;
+  assert.match(html, /<details class="order-card completed-order">/);
+  assert.match(html, /#249 · Alexandre/);
+  assert.match(html, /Ouvrir la commande/);
+  assert.match(html, /Menu · Le gros lard/);
+  assert.match(html, /Coca 33 cl/);
+  assert.match(html, /23,71 €/);
+  assert.equal(html.includes("data-action"), false);
 });

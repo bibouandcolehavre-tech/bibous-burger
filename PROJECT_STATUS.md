@@ -2,6 +2,13 @@
 
 Ce document sert de point de reprise pour le développement de l’application Bibou's Burgers.
 
+## Corrections locales — 23 septembre 2026
+
+- Commandes : téléphone et adresse de livraison figés à la création, à partir du profil utilisé pour calculer le trajet. Adresse complète requise pour une livraison. Suppression de ces coordonnées lors de l’anonymisation du compte.
+- Espace restaurant : coordonnées visibles par commande ; nom de chaque article en gras, choix regroupés sous Protéine, Crudités, Sauces, Suppléments, Accompagnements, Boisson(s), Desserts selon les choix présents, un élément par ligne. Options anciennes sans catégorie conservées sous Autres choix. Menus identifiés explicitement. L’onglet « Terminées » conserve un accès direct aux commandes finies et permet d’ouvrir leur détail complet sans passer par la fiche client.
+- Anciennes commandes sans coordonnées : indication explicite de l’absence de données enregistrées ; aucune adresse historique inventée à partir du profil actuel.
+- Validation locale : 182 tests réussis, dont livraison payée fictive, conservation de l’adresse après changement de profil, accès restaurant privé, historique des commandes terminées, CRM produits préférés, anonymisation et rendu échappé des coordonnées et catégories. Aucun test sur téléphone réel.
+
 ## Version actuellement publiée
 
 - Application client : https://bibous-burger-app.onrender.com/
@@ -39,13 +46,13 @@ Ce document sert de point de reprise pour le développement de l’application B
 - Fidélité, multiplicateurs hebdomadaires, parrainage, cinq prestiges et cadeau de bienvenue. Bonus retrait anticipé ×2 : commande enregistrée par le serveur au moins 30 minutes avant le retrait (Europe/Paris), attribué après paiement, cumulable avec Bibou + et le bonus hebdomadaire, jamais sur le parrainage. Les nouvelles commandes seulement ; annulations et callbacks répétés testés.
 - Récompenses de palier réclamables une seule fois, sans retrait de points, avec code unique validé dans l’espace restaurant.
 - Gestion des produits disponibles/en rupture dans l’espace restaurant, avec recherche et filtres. Propagation aux produits, aux options, aux suggestions et au panier. Contrôle serveur avant création de commande et de paiement.
-- Rubrique Fidélité clients active dans l’espace restaurant : recherche par prénom/téléphone/code, filtres et pagination, soldes et prestiges, Bibou +, état des récompenses, parrainages inscrits/validés/en attente et dernières commandes payées. Consultation seule, sans modification des points, sans adresses ni références de paiement. Comptes supprimés exclus.
+- Rubrique Fidélité clients active dans l’espace restaurant : recherche par prénom/téléphone/code, filtres et pagination, soldes et prestiges, Bibou +, état des récompenses, parrainages inscrits/validés/en attente, produits préférés et historique complet des commandes payées. Chaque commande peut être ouverte pour revoir les articles, les choix, la remise, la livraison, le total débité et les points gagnés. Consultation seule, sans modification des points, sans adresses ni références de paiement. Comptes supprimés exclus.
 - Alertes sonores réelles pour nouvelles commandes payées, réservations et récompenses, avec activation, test et mise en sourdine. Compteurs cliquables, total dans l’onglet, indicateur de connexion et protection contre les alertes répétées.
 - Bibou + à 9,99 € pour 30 jours : livraison offerte, remise de 5 % et points doublés.
 - Politique de confidentialité et suppression de compte.
 - Configuration Expo/EAS préparée pour iOS et Android.
 - Sauvegardes automatiques horaires des données et stocks sur le disque persistant, rotation horaire/quotidienne sur une semaine, contrôle d’intégrité, accès restaurant pour créer/télécharger une copie, et outil de récupération séparée sans écrasement. Pas de nouvelle dépense ni de stockage externe activé.
-- 124 tests automatisés réussissent, dont liens sociaux, reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
+- 182 tests automatisés réussissent, dont liens sociaux, reprise des paiements/commandes après interruption, limitation des connexions, initialisation sans données embarquées, consultation clients sans écriture, historique complet et onglet des commandes terminées, préférences produits dans le CRM, accès privés, recherche, paliers, parrainages, abonnements expirés, suppression de compte, réponses tardives et échappement HTML ; sauvegardes, stock, paiements et annulations restent vérifiés (sans paiement ni SMS réels).
 - Reprise persistante des paiements de commande et Bibou + après fermeture/actualisation : journal limité au compte, création idempotente, contrôle serveur, indication visible des erreurs et accès depuis l’accueil. Un succès indique la transmission au restaurant, sans prétendre que la préparation a déjà commencé.
 - Connexion persistante chiffrée sur iPhone/Android, déconnexion explicite, session conservée en cas de panne réseau. Les messages simples qui étaient silencieux dans le navigateur sont désormais visibles.
 - Exports web/iOS/Android précédemment réussis, Expo Doctor 21/21 et audit npm sans vulnérabilité connue après correction ciblée UUID. Export web revérifié après ajout des réseaux sociaux. `.easignore` et `.dockerignore` excluent données locales et secrets. Expo connecté au compte `bibouburgers`, projet `bibous-burger` de `bibou-and-co` associé dans `app.json`. Aucune création de binaire signé ni soumission : le propriétaire a explicitement suspendu cette préparation pour poursuivre les modifications de l’application. Voir `RELEASE_READINESS.md`.
