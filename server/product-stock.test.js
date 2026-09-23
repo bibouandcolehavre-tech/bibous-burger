@@ -39,6 +39,18 @@ test("les accompagnements en rupture bloquent leurs options et les menus qui les
   assert.equal(availabilityCatalog({ "tenders-xl-3": false }).products.find((p) => p.id === "menu-duo-tenders").available, false);
 });
 
+test("les suppléments ont leur propre stock et la galette végétarienne partage le même réglage", () => {
+  const stock = { "ingredient-raclette": false, "ingredient-potato-patty": false };
+  const catalog = availabilityCatalog(stock);
+  assert.equal(catalog.products.find((product) => product.id === "ingredient-raclette").category, "supplements");
+  assert.equal(catalog.options["extras:raclette"], false);
+  assert.equal(catalog.options["extras:galette-plus"], false);
+  assert.equal(catalog.options["protein:galette"], false);
+  assert.equal(catalog.options["protein:viande"], true);
+  assert.throws(() => validateAndPriceOrderItems([item("classique", [...selections, { groupId: "extras", id: "raclette" }])], stock), /plus disponible/);
+  assert.throws(() => validateAndPriceOrderItems([item("classique", [{ groupId: "protein", id: "galette" }, selections[1], selections[2]])], stock), /plus disponible/);
+});
+
 test("un panier déjà créé est revérifié avant son paiement", () => {
   const cart = validateAndPriceOrderItems([item("taurus", [...selections, { groupId: "drink", id: "coca" }])]);
   assert.doesNotThrow(() => assertStoredOrderAvailable(cart.items, {}));

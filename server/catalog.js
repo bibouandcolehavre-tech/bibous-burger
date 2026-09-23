@@ -33,6 +33,18 @@ const PRODUCT_CATALOG = {
   "drink-tropico": { name: "Tropico", price: 1.8, kind: "simple" }
 };
 
+const STOCK_ONLY_CATALOG = {
+  "ingredient-second-steak": { name: "Supplément · Steak haché", price: 3, category: "supplements" },
+  "ingredient-potato-patty": { name: "Supplément · Galette de pomme de terre", price: 2, category: "supplements" },
+  "ingredient-cheddar": { name: "Supplément · Cheddar", price: 1, category: "supplements" },
+  "ingredient-raclette": { name: "Supplément · Raclette", price: 1, category: "supplements" },
+  "ingredient-mozzarella": { name: "Supplément · Mozzarella", price: 1, category: "supplements" },
+  "ingredient-fourme": { name: "Supplément · Fourme d'Ambert", price: 1, category: "supplements" },
+  "ingredient-lard": { name: "Supplément · Lard fumé", price: 1.5, category: "supplements" },
+  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" }
+};
+const STOCK_CATALOG = { ...PRODUCT_CATALOG, ...STOCK_ONLY_CATALOG };
+
 const option = (groupId, id, label, price = 0, extra = {}) => ({ groupId, id, label, price, ...extra });
 const OPTIONS = [
   option("protein", "viande", "Viande"),
@@ -120,6 +132,11 @@ const orderInputError = (message) => Object.assign(new Error(message), { statusC
 
 // Stock is shared by a standalone product and the same product selected in a menu.
 const optionProductId = ({ groupId, id }) => {
+  if (groupId === "protein" && id === "galette") return "ingredient-potato-patty";
+  if (groupId === "extras") return {
+    "second-steak": "ingredient-second-steak", "galette-plus": "ingredient-potato-patty", cheddar: "ingredient-cheddar",
+    raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
+  }[id];
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;
@@ -129,7 +146,7 @@ const optionProductId = ({ groupId, id }) => {
 };
 
 const productStock = (id, overrides = {}) => {
-  const product = Object.hasOwn(PRODUCT_CATALOG, id) ? PRODUCT_CATALOG[id] : null;
+  const product = Object.hasOwn(STOCK_CATALOG, id) ? STOCK_CATALOG[id] : null;
   if (!product) return { available: false, enabled: false, reason: "Ce produit n’est plus à la carte." };
   const enabled = Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
   if (!enabled) return { available: false, enabled: false, reason: `${product.name} est momentanément indisponible.` };
@@ -141,9 +158,9 @@ const productStock = (id, overrides = {}) => {
 };
 
 const availabilityCatalog = (overrides = {}) => ({
-  products: Object.entries(PRODUCT_CATALOG).map(([id, product]) => ({
+  products: Object.entries(STOCK_CATALOG).map(([id, product]) => ({
     id, name: product.menu ? `Menu - ${product.name}` : product.name, price: product.price,
-    category: product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers",
+    category: product.category || (product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers"),
     ...productStock(id, overrides)
   })),
   options: Object.fromEntries(OPTIONS.map((entry) => {
@@ -157,7 +174,7 @@ const assertItemAvailable = (productId, selections, overrides = {}) => {
   if (!stock.available) throw orderInputError(stock.reason);
   for (const selection of selections || []) {
     const selectedProduct = optionProductId(selection);
-    if (selectedProduct && !productStock(selectedProduct, overrides).available) throw orderInputError(`${PRODUCT_CATALOG[selectedProduct].name} n’est plus disponible. Modifie les options de ton panier.`);
+    if (selectedProduct && !productStock(selectedProduct, overrides).available) throw orderInputError(`${STOCK_CATALOG[selectedProduct].name} n’est plus disponible. Modifie les options de ton panier.`);
   }
 };
 
@@ -211,4 +228,4 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
   return { items, subtotal: subtotalCents / 100 };
 };
 
-module.exports = { PRODUCT_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };
+module.exports = { PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };
