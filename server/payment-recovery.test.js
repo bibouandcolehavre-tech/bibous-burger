@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createAttempt, parseAttempt, paymentState, safeCheckoutUrl } = require('../payment-recovery');
+const { createAttempt, parseAttempt, paymentState, safeCheckoutUrl, openCheckoutUrl } = require('../payment-recovery');
 const { validateRequestId, orderFingerprint } = require('./order-attempt');
 
 test('journal de reprise : compte, format et durée strictement contrôlés', () => {
@@ -34,6 +34,17 @@ test('une expiration locale ne vaut pas refus bancaire et une annulation reste p
 test('reprise : seuls les liens HTTPS SumUp sont ouverts', () => {
   assert.equal(safeCheckoutUrl('https://checkout.sumup.com/pay/test'), true);
   for (const value of ['http://checkout.sumup.com/pay/test', 'https://sumup.com.evil.test/pay', 'javascript:alert(1)', 'https://user:pass@checkout.sumup.com/pay', null]) assert.equal(safeCheckoutUrl(value), false);
+});
+
+test('le paiement utilise la même page sur le web pour éviter le blocage des fenêtres', async () => {
+  const assigned = [];
+  const opened = [];
+  await openCheckoutUrl('https://checkout.sumup.com/pay/web', { location: { assign: value => assigned.push(value) } }, { openURL: async value => opened.push(value) });
+  assert.deepEqual(assigned, ['https://checkout.sumup.com/pay/web']);
+  assert.deepEqual(opened, []);
+  await openCheckoutUrl('https://checkout.sumup.com/pay/native', null, { openURL: async value => opened.push(value) });
+  assert.deepEqual(opened, ['https://checkout.sumup.com/pay/native']);
+  await assert.rejects(openCheckoutUrl('https://example.com/fake', { location: { assign() {} } }, { openURL() {} }), /lien sécurisé/);
 });
 
 test('empreinte de commande stable, sans confiance dans le prix transmis', () => {

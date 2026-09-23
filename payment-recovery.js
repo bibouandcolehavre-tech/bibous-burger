@@ -34,4 +34,13 @@ function safeCheckoutUrl(value) {
   } catch { return false; }
 }
 
-module.exports = { createAttempt, parseAttempt, paymentState, safeCheckoutUrl };
+async function openCheckoutUrl(value, windowObject, linking) {
+  if (!safeCheckoutUrl(value)) throw new Error('Le lien sécurisé SumUp est indisponible. Aucun nouveau paiement ne sera créé.');
+  if (typeof windowObject?.location?.assign === 'function') {
+    windowObject.location.assign(value);
+    return;
+  }
+  await linking.openURL(value);
+}
+
+module.exports = { createAttempt, parseAttempt, paymentState, safeCheckoutUrl, openCheckoutUrl };

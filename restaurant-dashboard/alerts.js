@@ -78,26 +78,27 @@
     const play = (kind = "orders") => {
       if (!state().ready) return false;
       try {
-        const frequencies = kind === "reservations" ? [523.25, 659.25] : kind === "rewards" ? [659.25, 783.99] : [659.25, 783.99, 1046.5];
+        const frequencies = kind === "reservations" ? [523.25, 659.25] : kind === "rewards" ? [659.25, 783.99] : [659.25, 783.99, 1046.5, 659.25, 783.99, 1046.5, 659.25, 783.99, 1046.5];
         const start = Math.max(context.currentTime + 0.03, nextAt);
         frequencies.forEach((frequency, index) => {
           const oscillator = context.createOscillator();
           const gain = context.createGain();
-          const at = start + index * 0.23;
-          oscillator.type = "sine";
+          const orderPause = kind === "orders" ? Math.floor(index / 3) * 0.48 : 0;
+          const at = start + index * 0.3 + orderPause;
+          oscillator.type = kind === "orders" ? "triangle" : "sine";
           oscillator.frequency.setValueAtTime(frequency, at);
           gain.gain.setValueAtTime(0, at);
-          gain.gain.linearRampToValueAtTime(0.18, at + 0.015);
-          gain.gain.exponentialRampToValueAtTime(0.001, at + 0.2);
+          gain.gain.linearRampToValueAtTime(kind === "orders" ? 0.45 : 0.24, at + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, at + (kind === "orders" ? 0.27 : 0.22));
           oscillator.connect(gain);
           gain.connect(context.destination);
           const entry = { oscillator, gain };
           nodes.add(entry);
           oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); nodes.delete(entry); };
           oscillator.start(at);
-          oscillator.stop(at + 0.22);
+          oscillator.stop(at + (kind === "orders" ? 0.29 : 0.24));
         });
-        nextAt = start + frequencies.length * 0.23 + 0.15;
+        nextAt = start + (kind === "orders" ? 3.7 : frequencies.length * 0.25 + 0.15);
         return true;
       } catch { failed = true; stop(); onChange(state()); return false; }
     };

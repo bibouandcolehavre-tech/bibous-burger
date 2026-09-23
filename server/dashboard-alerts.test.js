@@ -66,7 +66,7 @@ class FakeAudioContext {
     this.oscillators.push(node); return node;
   }
   createGain() {
-    const node = { gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() { node.cancelled = true; } }, connect() {}, disconnect() {} };
+    const node = { gain: { setValueAtTime() {}, linearRampToValueAtTime(value) { node.peak = value; }, exponentialRampToValueAtTime() {}, cancelScheduledValues() { node.cancelled = true; } }, connect() {}, disconnect() {} };
     this.gains.push(node); return node;
   }
 }
@@ -79,9 +79,11 @@ test('sound needs explicit activation, plays distinct tones and serializes simul
   assert.equal(await player.setEnabled(true), true);
   assert.equal(player.play('orders'), true);
   assert.equal(player.play('reservations'), true);
-  assert.equal(audio.oscillators.length, 5);
-  assert.deepEqual(audio.oscillators.map(node => node.hertz), [659.25, 783.99, 1046.5, 523.25, 659.25]);
-  assert.ok(audio.oscillators[3].startAt > audio.oscillators[2].stopAt);
+  assert.equal(audio.oscillators.length, 11);
+  assert.deepEqual(audio.oscillators.slice(0, 9).map(node => node.hertz), [659.25, 783.99, 1046.5, 659.25, 783.99, 1046.5, 659.25, 783.99, 1046.5]);
+  assert.ok(audio.oscillators[8].stopAt - audio.oscillators[0].startAt > 3);
+  assert.ok(audio.gains.slice(0, 9).every(node => node.peak === 0.45));
+  assert.ok(audio.oscillators[9].startAt > audio.oscillators[8].stopAt);
   await player.setEnabled(false);
   assert.ok(audio.oscillators.every(node => node.stopped));
   assert.ok(audio.gains.every(node => node.cancelled));
@@ -150,17 +152,17 @@ test('dashboard sounds once for a paid arrival; mute preserves visual alerts wit
   const order = { ...paid('new'), number: 1, createdAt: new Date().toISOString(), serviceDate: '2099-01-01', slot: '19:00', total: 16.90, items: [], customerName: 'Test' };
   h.context.fetch = async () => ({ ok: true, status: 200, json: async () => ({ orders: [order] }) });
   await h.run('loadOrders()'); h.flush();
-  assert.equal(h.audio.oscillators.length, activationNotes + 3);
+  assert.equal(h.audio.oscillators.length, activationNotes + 9);
   assert.match(h.element('#attention-orders').textContent, /1 commande/);
   assert.match(h.element('#arrival-message').textContent, /commande payée/);
   await h.run('loadOrders()'); h.flush();
-  assert.equal(h.audio.oscillators.length, activationNotes + 3);
+  assert.equal(h.audio.oscillators.length, activationNotes + 9);
   await h.element('#sound-button').handlers.click({ currentTarget: h.element('#sound-button') });
   h.context.fetch = async () => ({ ok: true, status: 200, json: async () => ({ reservations: [{ id: 'table', number: 1, status: 'pending', serviceDate: '2099-01-01', guests: 2 }] }) });
   await h.run('loadReservations()'); h.flush();
   assert.match(h.element('#arrival-message').textContent, /réservation/);
   assert.match(h.element('#attention-reservations').textContent, /1 réservation/);
-  assert.equal(h.audio.oscillators.length, activationNotes + 3);
+  assert.equal(h.audio.oscillators.length, activationNotes + 9);
   await h.element('#sound-button').handlers.click({ currentTarget: h.element('#sound-button') });
   const afterReactivation = h.audio.oscillators.length;
   await h.run('loadReservations()'); h.flush();

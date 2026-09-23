@@ -8,7 +8,7 @@ const { bestClientOffer } = require('./crm-client');
 import { syncPushDevice, detachPushDevice, observePush } from "./push-client";
 import { customerAlert as Alert } from "./customer-alert";
 import { readSession, saveSession, clearSession, readAttempt, saveAttempt, clearAttempt } from "./client-storage";
-const { createAttempt, parseAttempt, paymentState, safeCheckoutUrl } = require("./payment-recovery");
+const { createAttempt, parseAttempt, paymentState, openCheckoutUrl } = require("./payment-recovery");
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 
@@ -1000,7 +1000,8 @@ export default function App() {
   };
   const apiRequest = async (route, token, body) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+    // Render may need time to wake up before creating or checking a payment.
+    const timer = setTimeout(() => controller.abort(), 60000);
     try {
       const response = await fetch(`${API_BASE_URL}${route}`, {
         method: body === undefined ? "GET" : "POST",
@@ -1070,7 +1071,7 @@ export default function App() {
     if (!openCheckout) {
       showPaymentRecord(attempt, record);
       setPaymentMessage(record?.payment?.status === 'FAILED'
-        ? 'SumUp indique un échec de paiement. Tu peux reprendre la même page sécurisée sans créer une deuxième commande.'
+        ? 'Le paiement n’a pas abouti. Reprends la page SumUp pour réessayer ou utiliser une autre carte, sans créer une deuxième commande.'
         : record ? 'SumUp n’a pas encore confirmé de paiement. Reprends le même paiement ou vérifie de nouveau son statut.'
         : 'Ta tentative a été retrouvée. Clique sur « Reprendre » pour continuer avec la même référence.');
       return;
@@ -1095,9 +1096,10 @@ export default function App() {
     record = opened.payload.order || opened.payload.purchase;
     if (await finishPayment(attempt, record, token)) return;
     const checkoutUrl = opened.payload.checkoutUrl;
-    if (!safeCheckoutUrl(checkoutUrl)) throw new Error('Le lien sécurisé SumUp est indisponible. Aucun nouveau paiement ne sera créé.');
     setPaymentMessage('Finalise le paiement chez SumUp, puis reviens ici pour vérifier la confirmation.');
-    await Linking.openURL(checkoutUrl);
+    // A delayed window.open can be blocked by browsers after the network calls.
+    // Same-tab navigation keeps the hosted checkout reliable on web and 3DS flows.
+    await openCheckoutUrl(checkoutUrl, typeof window === 'undefined' ? null : window, Linking);
   };
   const runPayment = async (attempt, token = authToken, openCheckout = false) => {
     if (paymentBusyRef.current || !attempt || !token) return;
