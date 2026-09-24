@@ -27,6 +27,7 @@ const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardCla
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
 const { revenuePeriods } = require("./revenue-periods");
+const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -1028,6 +1029,16 @@ const contestPrivacyTimer = setInterval(maintainContestPrivacy, 60 * 60 * 1000);
 contestPrivacyTimer.unref();
 server.once('listening', maintainContestPrivacy);
 server.on('close', () => clearInterval(contestPrivacyTimer));
+const cleanupOwnerTestAccounts = async () => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase();
+    const removed = removeAuthorizedOwnerTestAccounts(database);
+    if (removed.length) { await writeDatabase(database); console.log(`${removed.length} compte(s) d’essai du propriétaire supprimé(s) et anonymisé(s).`); }
+  } catch { console.error('Suppression ponctuelle des comptes d’essai : échec.'); }
+  finally { release(); }
+};
+server.once('listening', cleanupOwnerTestAccounts);
 // Persistent eligibility/deduplication under the same lock as checkout. No network call.
 const tickCrm = async () => {
   const release = await acquireDatabase();
