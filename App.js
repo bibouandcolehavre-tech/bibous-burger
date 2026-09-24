@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Image, Linking, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { AppState, Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import NewsCarousel from "./NewsCarousel";
 import ContestScreen from "./ContestScreen";
 import NotificationSettings from "./NotificationSettings";
 import CustomerOffers from "./CustomerOffers";
 const { bestClientOffer } = require('./crm-client');
+const { observeBrowserFocus } = require('./browser-focus');
 import { syncPushDevice, detachPushDevice, observePush } from "./push-client";
 import { customerAlert as Alert } from "./customer-alert";
 import { readSession, saveSession, clearSession, readAttempt, saveAttempt, clearAttempt } from "./client-storage";
@@ -813,8 +814,8 @@ export default function App() {
     const timer = setInterval(refresh, 15000);
     const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void refresh(); });
     const onFocus = () => { void refresh(); };
-    if (typeof window !== "undefined") window.addEventListener("focus", onFocus);
-    return () => { stopped = true; clearInterval(timer); subscription.remove(); if (typeof window !== "undefined") window.removeEventListener("focus", onFocus); };
+    const stopBrowserFocus = observeBrowserFocus(Platform.OS, onFocus);
+    return () => { stopped = true; clearInterval(timer); subscription.remove(); stopBrowserFocus(); };
   }, []);
   const [screen, setScreen] = useState(initialScreenFromUrl);
   const [crmWelcomeDestination, setCrmWelcomeDestination] = useState('account');
@@ -1150,8 +1151,8 @@ export default function App() {
     if (!authToken || !['payment-pending', 'bibou-plus-pending'].includes(screen)) return;
     const refresh = () => { void runPayment(paymentAttempt.current); };
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
-    if (typeof window !== 'undefined') window.addEventListener('focus', refresh);
-    return () => { subscription.remove(); if (typeof window !== 'undefined') window.removeEventListener('focus', refresh); };
+    const stopBrowserFocus = observeBrowserFocus(Platform.OS, refresh);
+    return () => { subscription.remove(); stopBrowserFocus(); };
   }, [screen, authToken]);
   const logoutCustomer = async () => {
     try {
