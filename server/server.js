@@ -5,6 +5,8 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const { createDatabaseLock } = require("./database-lock");
 const { createReviewSandbox } = require('./review-sandbox');
+const { createRegistrationStore } = require('./customer-registration');
+const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../customer-identity');
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
@@ -64,6 +66,7 @@ const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
 const menuProductIds = new Set(["taurus", "montagnes-menu", "atlas-menu", "classique-menu", "duck-menu", "dynamite-menu", "gros-lard-menu", "hambagu-menu", "basilic-menu", "pork-menu"]);
 const burgerProductIds = new Set(["atlas", "classique", "duck", "dynamite", "hambagu", "basilic", "montagnes", "gros-lard", "pork"]);
 const smsAttemptLimiter = createSmsAttemptLimiter();
+const registrations = createRegistrationStore();
 const dashboardLoginLimiter = createAuthRateLimiter();
 const smsCodeLimiter = createAuthRateLimiter({ limit: 8, windowMs: 15 * 60000 });
 const dashboardSessions = new Map();
@@ -342,7 +345,7 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -604,7 +607,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/auth/sms/check") {
-      const { phone, code } = await readBody(request);
+      const { phone, code, registrationVersion } = await readBody(request);
       const normalizedPhone = normalizeFrenchPhone(phone);
       if (!normalizedPhone || !/^\d{4,10}$/.test(String(code || ""))) return send(response, 400, { error: "Le numéro ou le code est invalide." });
       if (!twilioConfigured()) return send(response, 503, { error: "La connexion par SMS n’est pas encore activée." });
@@ -618,6 +621,9 @@ const server = http.createServer(async (request, response) => {
       smsCodeLimiter.reset(normalizedPhone);
       let customer = database.customers.find((item) => normalizeFrenchPhone(item.phone) === normalizedPhone);
       const isNewCustomer = !customer;
+      // Android v4 is already in store review: retain its old response contract.
+      // Updated clients finish registration before any customer/reward is saved.
+      if (!customer && registrationVersion === 2) return send(response, 200, { registrationRequired: true, registrationToken: registrations.issue(normalizedPhone) });
       if (!customer) {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
         ensureReferralCode(customer, database);
@@ -629,6 +635,34 @@ const server = http.createServer(async (request, response) => {
       customer.phoneVerifiedAt = new Date().toISOString();
       customer.firstPhoneVerifiedAt ||= customer.phoneVerifiedAt;
       await writeDatabase(database);
+      return send(response, 200, { token: createSession(customer.id), customer, isNewCustomer });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/auth/sms/register') {
+      const input = await readBody(request);
+      if (!input || typeof input !== 'object' || Array.isArray(input)) return send(response, 400, { error: 'Informations d’inscription invalides.' });
+      const proof = registrations.read(input.registrationToken);
+      if (!proof) return send(response, 401, { error: 'L’inscription a expiré. Recommence la vérification par SMS.' });
+      const identity = validateIdentity(input);
+      if (identity.error) return send(response, 400, identity);
+      let customer = database.customers.find(item => proof.customerId ? item.id === proof.customerId : normalizeFrenchPhone(item.phone) === proof.phone);
+      if (proof.customerId && !customer) return send(response, 401, { error: 'Ce compte a été supprimé. Recommence la vérification par SMS.' });
+      const isNewCustomer = !customer;
+      const now = new Date().toISOString();
+      if (!customer) {
+        customer = { id: `customer-${database.nextCustomerId++}`, ...identity, phone: proof.phone, address: '', postalCode: '', city: 'Le Havre', points: 0, weeklyOrders: 0, createdAt: now };
+        ensureReferralCode(customer, database);
+        grantWelcomeReward(customer);
+        database.customers.push(customer);
+      }
+      // A retry/concurrent registration never renames an already completed account.
+      if (!hasCompleteIdentity(customer)) Object.assign(customer, identity);
+      customer.profileCompletedAt ||= now;
+      customer.verifiedPhone = proof.phone;
+      customer.phoneVerifiedAt = now;
+      customer.firstPhoneVerifiedAt ||= now;
+      await writeDatabase(database);
+      registrations.complete(input.registrationToken, customer.id);
       return send(response, 200, { token: createSession(customer.id), customer, isNewCustomer });
     }
 
@@ -833,23 +867,28 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/customers") {
-      const input = await readBody(request);
-      if (!input.name || !input.phone) return send(response, 400, { error: "Le nom et le téléphone sont requis." });
-      const customer = { id: `customer-${database.nextCustomerId++}`, name: input.name.trim(), phone: input.phone.trim(), address: input.address?.trim() || "", postalCode: input.postalCode?.trim() || "", city: input.city?.trim() || "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
-      ensureReferralCode(customer, database);
-      if (input.sponsorCode) applyReferralCode(database, customer, input.sponsorCode);
-      database.customers.push(customer);
-      await writeDatabase(database);
-      return send(response, 201, { customer });
+      return send(response, 403, { error: 'Vérifie ton numéro par SMS puis renseigne ton prénom et ton nom pour créer ton compte.' });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/customers/")) {
       const input = await readBody(request);
+      if (!input || typeof input !== 'object' || Array.isArray(input)) return send(response, 400, { error: 'Informations du profil invalides.' });
       const customer = authenticatedCustomer(request, database);
       const requestedId = url.pathname.split("/").pop();
       if (!customer || customer.id !== requestedId) return send(response, 401, { error: "Reconnecte-toi pour modifier tes coordonnées." });
       if (Object.hasOwn(input, 'phone') && normalizeFrenchPhone(input.phone) !== normalizeFrenchPhone(customer.phone)) return send(response, 400, { error: 'Pour utiliser un autre numéro, déconnecte-toi puis vérifie ce numéro par SMS.' });
-      ["name", "address", "postalCode", "city"].forEach((field) => {
+      const structured = Object.hasOwn(input, 'firstName') || Object.hasOwn(input, 'lastName');
+      if (structured) {
+        const identity = validateIdentity(input);
+        if (identity.error) return send(response, 400, identity);
+        Object.assign(customer, identity, { profileCompletedAt: customer.profileCompletedAt || new Date().toISOString() });
+      } else if (Object.hasOwn(input, 'name')) {
+        const name = normalizeName(input.name);
+        if (!name || name.length > 121) return send(response, 400, { error: 'Le nom ne peut pas être vide (121 caractères maximum).' });
+        if (hasCompleteIdentity(customer) && name !== customer.name) return send(response, 400, { error: 'Renseigne séparément ton prénom et ton nom pour les modifier.' });
+        customer.name = name; // Compatibility with the already submitted Android v4.
+      }
+      ["address", "postalCode", "city"].forEach((field) => {
         if (typeof input[field] === "string") customer[field] = input[field].trim();
       });
       if (input.sponsorCode) applyReferralCode(database, customer, input.sponsorCode);

@@ -1,0 +1,55 @@
+const test = require('node:test'), assert = require('node:assert/strict');
+const fs = require('node:fs/promises'), path = require('node:path'), os = require('node:os');
+const { spawn } = require('node:child_process'), { once } = require('node:events');
+
+test('Registration HTTP: no empty account, names enforced, SMS proof bound to phone, legacy compatibility', { timeout: 20000 }, async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-identity-test-')), file = path.join(dir, 'data.json');
+  const existing = { id: 'customer-1', phone: '+33600000001', name: '', points: 700, weeklyOrders: 2, welcomeReward: { status: 'used' } };
+  await fs.writeFile(file, JSON.stringify({ customers: [existing], orders: [{ id: 'preserved-order', customerId: existing.id, status: 'delivered' }], nextCustomerId: 2, nextOrderNumber: 1 }));
+  const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/sms-provider.cjs'), path.join(__dirname, 'server.js')], { cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: file, SESSION_SECRET: 'identity-test', TWILIO_ACCOUNT_SID: 'FAKE', TWILIO_AUTH_TOKEN: 'FAKE', TWILIO_VERIFY_SERVICE_SID: 'FAKE' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
+  let errors = ''; child.stderr.on('data', d => { errors += d; });
+  const base = await new Promise((resolve, reject) => { child.stdout.on('data', d => { const m = String(d).match(/http:\/\/localhost:\d+/); if (m) resolve(m[0] + '/api'); }); child.on('error', reject); child.on('exit', code => reject(Error(code + errors))); });
+  const req = (route, body, token, method = 'POST') => fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+  const db = async () => JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.equal((await req('/customers', { name: 'Fake', phone: '0600000008' })).status, 403);
+  for (const body of [null, [], 42]) assert.equal((await req('/auth/sms/register', body)).status, 400);
+  assert.equal((await req('/auth/sms/check', { phone: '0600000002', code: '000000', registrationVersion: 2 })).status, 401);
+  const proof = await (await req('/auth/sms/check', { phone: '0600000002', code: '123456', registrationVersion: 2 })).json();
+  assert.equal(proof.registrationRequired, true); assert.ok(proof.registrationToken); assert.equal(proof.token, undefined); assert.equal(proof.customer, undefined);
+  assert.equal((await db()).customers.length, 1, 'Abandoning registration must not create a CRM record');
+  assert.equal((await req('/auth/me', undefined, proof.registrationToken, 'GET')).status, 401);
+  for (const names of [{}, { firstName: 'Alice' }, { lastName: 'Dupont' }, { firstName: 'Alice', lastName: ' ' }, { firstName: '123', lastName: 'Dupont' }]) assert.equal((await req('/auth/sms/register', { ...names, registrationToken: proof.registrationToken })).status, 400);
+  assert.equal((await db()).customers.length, 1);
+  assert.equal((await req('/auth/sms/register', { firstName: 'Alice', lastName: 'Dupont', registrationToken: 'forged' })).status, 401);
+  const input = { registrationToken: proof.registrationToken, firstName: ' Alice ', lastName: 'Du Pont', phone: '+33600000001', id: 'customer-1', points: 9999 };
+  const registered = await (await req('/auth/sms/register', input)).json();
+  assert.equal(registered.customer.name, 'Alice Du Pont'); assert.equal(registered.customer.firstName, 'Alice'); assert.equal(registered.customer.lastName, 'Du Pont');
+  assert.equal(registered.customer.phone, '+33600000002'); assert.equal(registered.customer.verifiedPhone, '+33600000002'); assert.equal(registered.customer.points, 0);
+  assert.equal(registered.customer.welcomeReward.status, 'available'); assert.ok(registered.token); assert.equal(registered.isNewCustomer, true);
+  const retries = await Promise.all([req('/auth/sms/register', input), req('/auth/sms/register', { ...input, firstName: 'Renamed' })]);
+  for (const response of retries) { const repeated = await response.json(); assert.equal(repeated.customer.id, registered.customer.id); assert.equal(repeated.customer.firstName, 'Alice'); }
+  assert.equal((await db()).customers.length, 2);
+  const existingLogin = await (await req('/auth/sms/check', { phone: '0600000001', code: '123456', registrationVersion: 2 })).json();
+  assert.equal(existingLogin.customer.name, ''); assert.equal(existingLogin.isNewCustomer, false); assert.equal(existingLogin.customer.points, 700);
+  const token = existingLogin.token;
+  for (const body of [{ firstName: 'Alice' }, { firstName: ' ', lastName: 'Dupont' }, { name: ' ' }, { name: 42 }]) assert.equal((await req('/customers/customer-1', body, token, 'PATCH')).status, 400);
+  assert.equal((await req('/customers/customer-1', { firstName: 'Alice', lastName: 'Dupont' }, registered.token, 'PATCH')).status, 401);
+  assert.equal((await req('/customers/customer-1', { firstName: 'Alice', lastName: 'Dupont', phone: '0600000008' }, token, 'PATCH')).status, 400);
+  const completed = await (await req('/customers/customer-1', { firstName: 'Éloïse', lastName: 'D’Angelo', points: 99999 }, token, 'PATCH')).json();
+  assert.equal(completed.customer.name, 'Éloïse D’Angelo'); assert.equal(completed.customer.points, 700); assert.equal(completed.customer.weeklyOrders, 2); assert.equal(completed.customer.welcomeReward.status, 'used');
+  assert.equal((await db()).orders[0].id, 'preserved-order');
+  assert.equal((await req('/customers/customer-1', { name: ' ' }, token, 'PATCH')).status, 400);
+  assert.equal((await req('/customers/customer-1', { name: 'Éloïse D’Angelo', address: 'Adresse de test' }, token, 'PATCH')).status, 200);
+  assert.equal((await req('/customer/account', undefined, registered.token, 'DELETE')).status, 200);
+  assert.equal((await req('/auth/sms/register', input)).status, 401, 'A used proof cannot recreate a deleted account');
+  const legacy = await (await req('/auth/sms/check', { phone: '0600000003', code: '123456' })).json();
+  assert.ok(legacy.token); assert.equal(legacy.customer.phone, '+33600000003', 'Already submitted Android v4 must keep its sign-in contract');
+  assert.equal((await req('/customers/' + legacy.customer.id, { name: 'Legacy Client' }, legacy.token, 'PATCH')).status, 200);
+  // Another verified device completing a concurrently created phone cannot duplicate it.
+  const concurrentProof = await (await req('/auth/sms/check', { phone: '0600000004', code: '123456', registrationVersion: 2 })).json();
+  const concurrentLegacy = await (await req('/auth/sms/check', { phone: '0600000004', code: '123456' })).json();
+  const concurrent = await (await req('/auth/sms/register', { registrationToken: concurrentProof.registrationToken, firstName: 'Jean', lastName: 'Martin' })).json();
+  assert.equal(concurrent.customer.id, concurrentLegacy.customer.id); assert.equal(concurrent.isNewCustomer, false);
+  assert.equal((await db()).customers.filter(c => c.phone === '+33600000004').length, 1);
+});
