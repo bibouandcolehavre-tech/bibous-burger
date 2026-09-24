@@ -22,13 +22,29 @@ Le propriétaire demande de reprendre la publication Android et souhaite un envo
 - Source téléversée, pas de nouvelle clé ; données serveur, `.env` et secrets exclus par `.easignore`.
 - Catégorie enregistrée : Alimentation et boissons. Coordonnées de support enregistrées avec URL HTTPS de l'application.
 
-## Point de revue à résoudre
+## Accès de revue et classification
 
-Google précise que ses examinateurs doivent pouvoir accéder à toutes les sections, ne créeront pas de compte et n'utiliseront pas de compte personnel pour acheter. La connexion actuelle nécessite un SMS ; il n'existe pas d'accès dédié aux examinateurs dans le code.
+Google précise que ses examinateurs doivent pouvoir accéder à toutes les sections, ne créeront pas de compte et n'utiliseront pas de compte personnel pour acheter. La connexion client ordinaire nécessite un SMS.
 
-**Accord explicite reçu** : « Oui, prépare cet accès de test pour Google ». Accès implémenté et testé localement ; documentation dans `STORE_REVIEW_ACCESS.md`. Suite complète 222/222 et export web réussis. Accès limité aux données fictives, pas de SMS ni paiements, jetons de test refusés sur les routes réelles. Code privé hors dépôt ; aucun mot de passe de client utilisé. Il reste à déployer et à renseigner les instructions dans Play Console, puis à inclure l'interface dans un nouvel AAB.
+**Accord explicite reçu** : « Oui, prépare cet accès de test pour Google ». Accès implémenté, déployé et testé ; documentation dans `STORE_REVIEW_ACCESS.md`. Suite complète 222/222 et exports web/Android réussis. Accès limité aux données fictives, pas de SMS ni paiements, jetons de test refusés sur les routes réelles. Code privé hors dépôt ; aucun mot de passe de client utilisé.
 
-Classification IARC : le questionnaire entraîne acceptation de ses conditions. Confirmation demandée au propriétaire avant de le remplir ; ne pas accepter sans réponse.
+- Commit `746332a` poussé ; API publique et client web vérifiés sur cette version. Test API public : connexion isolée 200, compte fictif 200, accès au compte réel refusé 401, session de test supprimée 200.
+- Instructions en anglais et code fournis dans **Informations de connexion**, enregistrés. Accès limité = Oui. Utilisation optionnelle des identifiants sur appareils de partenaires désactivée.
+- Nouvelle compilation : https://expo.dev/accounts/bibou-and-co/projects/bibous-burger/builds/1c8c91d0-279f-4f13-af62-b20a9ddbdeb6 — production 1.0.0 / versionCode 3, commit `746332a`. Encore en file d'attente au dernier contrôle, aucun achat ni nouvelle signature.
+
+Classification IARC : accord explicite « Oui, accepte les conditions IARC » reçu. Questionnaire rempli et enregistré le 24 septembre : **PEGI 3** Europe, Everyone ESRB. Ce n'est pas la soumission de l'application.
+
+Public cible confirmé par le propriétaire : **adolescents dès 13 ans et adultes**. Formulaire enregistré : 13–15, 16–17, 18+.
+
+Sécurité des données : déclaration finale enregistrée, confirmation visible dans Play. Analyse détaillée dans `PLAY_DATA_SAFETY.md`. Tableau de bord : 10 tâches de configuration terminées sur 11 ; seule la fiche Play reste à compléter.
+
+## Logo approuvé et préparation de la fiche
+
+- Le propriétaire a revu puis autorisé le logo bleu le 24 septembre : « Tu peux mettre ce logo-là temporairement ».
+- Original retrouvé et conservé dans `assets/bibous-blue-original.png` (image `exec-87a57e16-981e-4d76-99f7-fc93bb6e571a.png`). Pas de régénération.
+- Formats natifs 1024 px et icône Play 512 px produits ; marge Android adaptative vérifiée avec masque circulaire, tout le nom reste lisible. Recette : `scripts/prepare-store-assets.cjs` avec sharp.
+- La compilation code 3 a été annulée **encore en file d'attente**, car elle utilisait l'ancienne icône orange. Une nouvelle compilation est nécessaire avec le logo approuvé.
+- Visuel Play 1024 × 500 dans `store-assets/google-play/feature-1024x500.png`, composé du logo approuvé et de texte décrivant les fonctions réelles.
 
 ## Restant
 
