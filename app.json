@@ -24,7 +24,7 @@
       }
     },
     "android": {
-      "package": "com.bibouandco.bibousburgers",
+      "package": "com.krokly.bibousburgers",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
