@@ -6,6 +6,7 @@ node_modules/
 dist/
 server/
 restaurant-dashboard/
+partner-console/
 backup-recovery/
 **/bibou-*.json.gz
 **/*.test.js

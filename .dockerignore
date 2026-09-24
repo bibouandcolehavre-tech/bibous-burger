@@ -2,6 +2,7 @@ node_modules
 .expo
 .env*
 restaurant-dashboard
+partner-console
 assets
 server/backups
 **/bibou-*.json.gz

@@ -2,6 +2,8 @@
 
 ## Avancement Android du 24 septembre
 
+- **Mise à jour de reprise** : build `0dca4bd5-19e1-4b37-8d7f-c07bb39caede` terminé, APK téléchargé puis installé avec succès sur `emulator-5554` le 24 septembre à 14:51 (mise à jour conservant les données). Le gestionnaire de paquets confirme les services Firebase, `com.krokly.bibousburgers`, version 1.0.0 / code 1, cible Android 36. Cela remplace l'ancienne compilation mentionnée dans les étapes historiques ci-dessous. La connexion existante n'a pas été effacée ; aucun nouveau SMS n'a été demandé. **L'association d'un token Expo et la réception réelle restent à tester**. Aucun envoi, consentement client ou drapeau push de production n'a été modifié pendant cette reprise.
+
 - Avec l'accord explicite du propriétaire, projet Firebase **Bibou's Burgers** créé dans son compte Google : `bibou-s-burgers`, numéro `79209945273`. Forfait **Spark** constaté dans la console ; Google Analytics désactivé pendant la création, aucune formule payante souscrite.
 - Application Android enregistrée : package existant `com.krokly.bibousburgers`, ID Firebase `1:79209945273:android:3aae5b87e06862c813e368`. API Firebase Cloud Messaging V1 affichée **Activé**. Cela ne signifie pas encore que les envois de l'application fonctionnent.
 - La console a signalé des erreurs lors du suivi des opérations longues. Le projet et l'application ont ensuite été retrouvés dans leurs réglages : **ne pas les recréer**.

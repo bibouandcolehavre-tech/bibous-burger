@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Console partenaires — Maquette</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/model.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Console partenaires, accueil"><span class="brand-mark">p<span>·</span></span><span>partenaires<span class="brand-sub">VOTRE FUTURE PLATEFORME</span></span></a>
+    <p class="nav-label">VOTRE ESPACE</p>
+    <nav aria-label="Navigation principale">
+      <button class="nav-item active" data-view="restaurants" aria-current="page"><span data-icon="store"></span>Établissements<span id="nav-count" class="nav-count">2</span></button>
+      <button class="nav-item" data-view="catalog"><span data-icon="grid"></span>Bibliothèque de modules</button>
+      <button class="nav-item" data-view="history"><span data-icon="clock"></span>Historique</button>
+    </nav>
+    <div class="sidebar-note"><span data-icon="shield"></span><strong>Chacun son espace.</strong><p>Une gestion centrale.<br>Des restaurants indépendants.</p></div>
+    <div class="sidebar-footer"><span class="avatar">AL</span><div><strong>Votre espace de gestion</strong><small>Administrateur · aperçu</small></div></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>Console de gestion <span class="slash">/</span> <span id="breadcrumb">Établissements</span></span><span class="prototype-pill"><i></i>Maquette interactive</span></header>
+    <div class="sandbox-notice"><span data-icon="shield"></span><p><strong>Un espace pour essayer.</strong> Restaurants fictifs, modifications enregistrées uniquement dans ce navigateur. Aucun effet sur Bibou’s.</p><span class="local-badge">LOCAL</span></div>
+    <section id="restaurants-view">
+      <div class="page-heading"><div><p class="eyebrow">PENSÉ POUR VOTRE RÉSEAU</p><h1>Chaque restaurant.<br><em>À sa façon.</em></h1><p class="intro">Le bon nom, les bons services, les bons modules.<br>Tout se pilote depuis le même endroit.</p></div><button class="button primary" id="add-restaurant"><span data-icon="plus"></span>Ajouter un établissement</button></div>
+      <div class="metrics"><div><span class="metric-icon" data-icon="store"></span><strong id="restaurant-count">2</strong><span>établissements fictifs</span></div><div><span class="metric-icon" data-icon="grid"></span><strong>9</strong><span>modules disponibles</span></div><div><span class="metric-icon" data-icon="link"></span><strong>0</strong><span>service réel connecté</span><span class="metric-tag">Maquette isolée</span></div></div>
+      <div class="workspace">
+        <section class="restaurant-list" aria-label="Choisir un établissement"><div class="section-head"><h2>Vos établissements</h2><span id="list-count">02</span></div><label class="search"><span data-icon="search"></span><input id="search" type="search" placeholder="Rechercher un restaurant" aria-label="Rechercher un restaurant"></label><div id="restaurant-cards"></div><div class="list-tip"><span data-icon="cursor"></span>Sélectionnez un établissement<br>pour composer son application.</div></section>
+        <section class="editor" aria-label="Configuration de l’établissement"><div id="editor-heading"></div><div class="tabs" role="tablist" aria-label="Configuration"><button role="tab" id="tab-modules" aria-controls="editor-panel" aria-selected="true" data-tab="modules">Modules</button><button role="tab" id="tab-identity" aria-controls="editor-panel" aria-selected="false" tabindex="-1" data-tab="identity">Identité</button><button role="tab" id="tab-preview" aria-controls="editor-panel" aria-selected="false" tabindex="-1" data-tab="preview">Aperçu client</button></div><div id="editor-panel" role="tabpanel" aria-labelledby="tab-modules"></div><div class="save-bar"><div><span id="draft-status">Aucune modification en attente</span><small>Les services réels restent déconnectés.</small></div><button class="button primary" id="review-changes" disabled>Vérifier les modifications<span data-icon="arrow"></span></button></div></section>
+      </div>
+    </section>
+    <section id="catalog-view" hidden><div class="page-heading compact"><div><p class="eyebrow">UNE APPLICATION À LA CARTE</p><h1>Les bons <em>modules.</em></h1><p class="intro">Un socle commun. Les services que chaque restaurant choisit.</p></div></div><div id="module-catalog" class="catalog-grid"></div><div class="explanation"><span data-icon="shield"></span><p><strong>Un bouton ne suffit pas à sécuriser un module.</strong> La version réelle devra vérifier les droits côté serveur. Une désactivation fermera les nouvelles demandes sans interrompre les commandes ou avantages déjà payés.</p></div></section>
+    <section id="history-view" hidden><div class="page-heading compact"><div><p class="eyebrow">TOUT RESTE LISIBLE</p><h1>Le fil des <em>changements.</em></h1><p class="intro">Les enregistrements de cette maquette, restaurant par restaurant.</p></div></div><div id="history-list"></div></section>
+    <footer class="page-footer"><span>Console partenaires · première exploration</span><span>Aucune mise en ligne depuis cet écran<span class="tiny-dot"></span></span></footer>
+  </main>
+  <dialog id="review-dialog" aria-labelledby="review-title"><form method="dialog"><button class="close" aria-label="Fermer le récapitulatif" value="cancel">×</button></form><p class="eyebrow">AVANT D’ENREGISTRER</p><h2 id="review-title">Vérifions ensemble.</h2><p id="review-subtitle"></p><div id="change-list"></div><div class="dialog-note">Simulation locale uniquement. Aucun restaurant ni client réel ne sera modifié.</div><p id="save-error" class="error" role="alert"></p><div class="dialog-actions"><button class="button secondary" id="cancel-review">Revenir aux modules</button><button class="button primary" id="confirm-save">Enregistrer dans la maquette</button></div></dialog>
+  <dialog id="add-dialog" aria-labelledby="add-title"><form id="add-form"><button class="close" type="button" id="close-add" aria-label="Fermer l’ajout d’établissement">×</button><p class="eyebrow">UN NOUVEL ESPACE</p><h2 id="add-title">Ajoutons un restaurant.</h2><p>Utilisez des informations fictives pour cet essai.</p><label>Nom du restaurant<input name="name" required maxlength="60" placeholder="Ex. La Table du Port"></label><div class="form-row"><label>Ville<input name="city" required maxlength="60" placeholder="Ex. Honfleur"></label><label>Type de cuisine<input name="kind" required maxlength="60" placeholder="Ex. Bistrot français"></label></div><p class="dialog-note">Cette action crée une fiche locale, pas un compte client, un hébergement ou un abonnement.</p><p id="add-error" class="error" role="alert"></p><button class="button primary full" type="submit">Créer la fiche d’essai<span data-icon="arrow"></span></button></form></dialog>
+  <dialog id="leave-dialog" aria-labelledby="leave-title"><p class="eyebrow">VOTRE BROUILLON EST CONSERVÉ</p><h2 id="leave-title">Changer de restaurant ?</h2><p>Vos réglages non enregistrés restent en mémoire pendant cette visite. Vous pourrez revenir les vérifier.</p><div class="dialog-actions"><button class="button secondary" id="stay">Rester ici</button><button class="button primary" id="switch-restaurant">Changer d’établissement</button></div></dialog>
+  <div class="toast" role="status" aria-live="polite" id="toast"></div>
+</body>
+</html>

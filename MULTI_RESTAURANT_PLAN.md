@@ -1,6 +1,16 @@
 # Gestionnaire multi-restaurants — proposition du 24 septembre 2026
 
-Statut : conception uniquement, aucune modification du service Bibou's en production.
+Statut : première maquette locale interactive réalisée, aucune connexion au service Bibou's en production.
+
+## Livraison locale du 24 septembre
+
+Le dossier `partner-console/` contient une console autonome : deux restaurants fictifs, recherche, ajout de fiches fictives, neuf modules avec dépendances, identité/couleur, aperçu client simulé, récapitulatif avant sauvegarde et historique local. Lancement : `node partner-console/server.cjs`, adresse `http://127.0.0.1:4176/`.
+
+Les sauvegardes restent dans ce navigateur. Contrôle de révision contre les brouillons périmés et verrou inter-onglets lorsque disponible ; un échec de stockage n'annonce pas une fausse sauvegarde. Ne saisir aucun client réel, secret ou donnée personnelle. Ce n'est pas encore une plateforme multi-tenant sécurisée.
+
+Neuf tests dédiés réussis (modèle, serveur local, sauvegarde, conflits et échappement des textes). Contrôles navigateur à 1280 px et 390 px sans débordement de page : dépendances, récapitulatif, historique, conservation d'un brouillon lors du changement de restaurant, aperçu et ajout de fiche. Les essais navigateur ont utilisé `?session=verification`, sans polluer les sauvegardes du propriétaire.
+
+La maquette n'est pas déployée sur Render et est exclue des sources EAS et de l'image serveur. Le tableau restaurant existant n'est pas remplacé. La prochaine étape réelle sera un environnement de test isolé et des accès nominatifs, après choix d'architecture et validation des éventuels coûts.
 
 ## Objectif
 
