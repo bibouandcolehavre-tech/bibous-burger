@@ -1,0 +1,73 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { RESTAURANT } = require('../restaurant-info');
+const { enrichIndex, restaurantPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
+const sample = '<!DOCTYPE html><html lang="en"><head><title>Bibou</title></head><body><noscript>You need JavaScript</noscript><div id="root"></div><script src="/app.js" defer></script></body></html>';
+const graphFrom = html => JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1]);
+
+test('Accueil SEO : français, canonical stable et contenu public sans JavaScript', () => {
+  const html = enrichIndex(sample);
+  assert.match(html, /<html lang="fr">/);
+  assert.equal((html.match(/<title>/g) || []).length, 1);
+  assert.match(html, /<title>Bibou&#39;s Burgers Le Havre/);
+  assert.match(html, /<meta name="description"/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/bibous-burger-app.onrender.com\/">/);
+  assert.match(html, /<div id="root"><main id="seo-home"/);
+  assert.match(html, /<h1>.*au Havre<\/h1>/);
+  assert.match(html, /153 quai Georges V/);
+  assert.match(html, /href="\/restaurant-le-havre.html"/);
+  assert.match(html, /<script src="\/app.js" defer><\/script>/);
+  assert.doesNotMatch(html, /You need JavaScript|noindex|userAgent|display:none/);
+  assert.throws(() => enrichIndex('<html></html>'), /Structure Expo/);
+  assert.throws(() => enrichIndex(html), /Structure Expo/);
+});
+test('Le restaurant possède une vraie page HTML publique et les données structurées correspondantes', () => {
+  const page = restaurantPage();
+  assert.match(page, /<html lang="fr">/);
+  assert.equal((page.match(/<h1>/g) || []).length, 1);
+  assert.match(page, /href="\/"/);
+  assert.match(page, /livraison|Livraison/);
+  assert.match(page, /3,99 €/);
+  assert.match(page, /4,99 €/);
+  assert.match(page, /5,99 €/);
+  assert.match(page, /1 à 4 personnes/);
+  assert.doesNotMatch(page, /_expo\/|sumupstore|onload=|onclick=/);
+  const graph = graphFrom(page)['@graph'];
+  assert.deepEqual(graph.find(item => item['@type'] === 'Restaurant'), restaurantSchema);
+  assert.equal(graph.find(item => item['@type'] === 'BreadcrumbList').itemListElement[1].item, RESTAURANT.origin + RESTAURANT.page);
+  assert.equal(restaurantSchema.openingHoursSpecification.length, 4);
+  assert.equal(restaurantSchema.address.postalCode, '76600');
+  assert.equal(restaurantSchema.sameAs.length, 3);
+  assert.equal(restaurantSchema.aggregateRating, undefined, 'Pas de note inventée ni de note Google présentée comme avis propres.');
+  assert.equal(restaurantSchema.telephone, undefined, 'Ne pas publier le numéro personnel du gérant.');
+  assert.deepEqual(graphFrom(enrichIndex(sample))['@graph'][0], restaurantSchema);
+});
+test('Sitemap : uniquement les deux URL publiques canoniques, sans clients ni paramètres de test', () => {
+  assert.match(robots, /^User-agent: \*\nAllow: \/\n/);
+  assert.match(robots, /Sitemap: https:\/\/bibous-burger-app.onrender.com\/sitemap.xml/);
+  assert.equal((sitemap.match(/<loc>/g) || []).length, 2);
+  for (const [, url] of sitemap.matchAll(/<loc>(.*?)<\/loc>/g)) assert.doesNotMatch(url, /\?|customer|admin|account|restaurant.onrender|localhost|sumup/);
+  const dashboard = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/index.html'), 'utf8');
+  assert.match(dashboard, /name="robots" content="noindex, nofollow"/);
+});
+test('Le générateur complète le vrai export sans modifier le JavaScript ou copier des secrets', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bibou-seo-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'index.html'), sample);
+  build(dir);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['index.html', 'restaurant-le-havre.html', 'robots.txt', 'seo', 'sitemap.xml']);
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'seo')).sort(), ['restaurant.css', 'taurus.jpg']);
+  assert.match(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), /\/app.js/);
+  assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
+  assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
+});
+test('Informations publiques intégrées dans l’accueil visible, mais pas de HTML natif Android/iOS', () => {
+  const web = fs.readFileSync(path.join(__dirname, '../RestaurantInfo.web.js'), 'utf8');
+  assert.match(web, /href=\{info.page\}/);
+  assert.match(web, /<h1/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../RestaurantInfo.native.js'), 'utf8'), /return null/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../App.js'), 'utf8'), /<RestaurantInfo \/>/);
+});
