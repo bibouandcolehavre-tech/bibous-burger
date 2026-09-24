@@ -19,4 +19,4 @@ L’accès de revue isolé reste inchangé et exempt de l’étape réelle, sans
 - 225 tests automatisés réussis, dont inscription incomplète, preuve invalide/expirée, non-duplication, numéro infalsifiable, suppression puis rejeu refusé, noms Unicode, patrimoine client conservé et compatibilité SMS ancienne version.
 - Export web réussi, Docker inclut la validation partagée.
 - Test visuel local à 390 × 844 : bouton désactivé avec un seul champ, création complète puis anniversaire facultatif ; ancien compte vide complété et 700 points conservés. SMS entièrement simulés, aucune écriture sur les clients réels.
-- Mise en ligne : en cours de vérification.
+- Mise en ligne confirmée : commit `13eab8e` poussé sur `main` ; API publique `/api/health` annonce ce commit et `customerIdentity: 2`. Le site public charge `AppEntry-4c35195234eb643e916a3ca6f30f6f99.js`, identique à l’export local testé. Aucune connexion client ni aucun SMS réel utilisé pour contrôler la production.
