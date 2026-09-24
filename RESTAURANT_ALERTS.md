@@ -16,4 +16,4 @@
 - 229 tests réussis. Nouveaux cas : première liste non vide, répétition sans timers JS, signal PCM sans saturation, volume/arrêt, pause/expiration/nouvelle arrivée, échec de sauvegarde, contexte suspendu et activation sans neutraliser la coupure volontaire.
 - Test navigateur sur tableau local isolé : activation à la connexion, commande #901 déjà présente, pause, arrivée de #902 relançant le son, acceptation de #901 conservant l’alerte de #902, dernière acceptation masquant l’alerte. Aucune erreur console.
 - Affichage mobile contrôlé ; aucun statut de commande réelle modifié. La capacité à entendre physiquement les haut-parleurs doit être confirmée par l’équipe avec « Tester le son ».
-- Déploiement : à confirmer.
+- Déploiement confirmé : commit `8a89d77` poussé sur `main`. Le HTML public charge les fichiers `order-alarm-2`. L’onglet restaurant existant était déconnecté : reconnexion demandée au propriétaire pour le test physique du son, sans lire ni utiliser de mot de passe. Ne pas prétendre que le volume système a été vérifié ni que les haut-parleurs ont été entendus.
