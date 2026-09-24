@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView as DeviceSafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
 import NewsCarousel from "./NewsCarousel";
 import ContestScreen from "./ContestScreen";
 import NotificationSettings from "./NotificationSettings";
@@ -792,6 +793,10 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
 }
 
 export default function App() {
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={styles.safeArea}><AppContent /></DeviceSafeAreaView></SafeAreaProvider>;
+}
+
+function AppContent() {
   const [catalog, setCatalog] = useState(null);
   const [stockMessage, setStockMessage] = useState("Vérification des disponibilités…");
   const [stockFeedback, setStockFeedback] = useState("");
