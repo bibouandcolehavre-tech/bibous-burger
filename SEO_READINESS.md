@@ -4,11 +4,12 @@
 
 L’accueil public servi par Render avant cette modification avait `lang="en"`, un titre limité au nom, aucun descriptif, aucune URL canonique, aucune donnée structurée et une racine HTML vide. `/robots.txt` répondait 404. Cela ne prouve pas l’absence d’indexation : Google peut rendre JavaScript, mais le contenu initial était insuffisant.
 
-## Correctifs locaux
+## Correctifs publiés et présentation
 
 - `npm run build:web` exécute désormais le générateur `scripts/build-web-seo.cjs` après l’export Expo.
 - Accueil en français, titre localisé Le Havre, description, canonical sans les paramètres de versions/tests, Open Graph et Twitter.
-- Informations publiques visibles dans le HTML initial puis dans le bas de l’accueil React : même contenu pour utilisateurs et robots, sans détection de Googlebot ni texte caché.
+- À la demande du propriétaire, le grand bloc ajouté en bas de l'accueil est remplacé par un lien discret **« Infos pratiques »** vers `/restaurant-le-havre.html`. Taille du texte 13 px, cible tactile de 44 px, navigation clavier conservée. La vue de chargement HTML est également allégée : elle ne réaffiche plus le long bloc d'adresse/horaires.
+- Les informations détaillées restent visibles sur la page publique liée, accessible aux utilisateurs et aux robots, sans détection de Googlebot ni texte caché.
 - Page `/restaurant-le-havre.html`, indépendante de JavaScript : services, tarifs de livraison, adresse, horaires, lien vers la commande et réseaux officiels. Elle ne remplace pas l’accueil ni le parcours de commande.
 - Données JSON-LD Restaurant/WebSite et fil d’Ariane sur la page d’informations. Aucun avis/note inventé, aucun téléphone personnel publié.
 - `robots.txt` et sitemap avec uniquement les deux URL publiques, sans informations privées.

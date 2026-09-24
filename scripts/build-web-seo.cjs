@@ -59,8 +59,8 @@ function restaurantPage() {
 }
 function enrichIndex(source) {
   if (!source.includes('<div id="root"></div>')) throw new Error('Structure Expo inattendue : ne pas publier une page sans contenu public.');
-  // Same HTML for everyone, visible until React mounts. No bot detection or hidden keywords.
-  const fallback = `<main id="seo-home" style="overflow:auto;width:100%;padding:28px;font:16px/1.6 system-ui,sans-serif;color:#231813;background:#f8f1e6"><h1>${escape(info.heading)}</h1><p>${escape(info.introduction)}</p><address>${escape(address)}</address><h2>Horaires des services</h2>${hoursHtml()}<p><a href="${info.page}">Le restaurant, la livraison et les horaires</a></p><p>La carte interactive se charge…</p><noscript><p>Activez JavaScript pour commander en ligne. Les informations du restaurant restent disponibles avec le lien ci-dessus.</p></noscript></main>`;
+  // Same lightweight loading view for everyone, with an ordinary link to the full public page.
+  const fallback = `<main id="seo-home" style="overflow:auto;width:100%;padding:24px;font:15px/1.6 system-ui,sans-serif;color:#231813;background:#f8f1e6"><h1 style="font-size:22px;margin:0 0 12px">${escape(info.name)}</h1><p>La carte interactive se charge…</p><nav aria-label="Informations du restaurant"><a href="${info.page}" style="display:inline-flex;align-items:center;min-height:44px;font-size:13px;color:inherit;text-underline-offset:3px">Infos pratiques</a></nav><noscript><p>Activez JavaScript pour commander en ligne. L’adresse, les horaires et les informations de livraison sont disponibles dans « Infos pratiques ».</p></noscript></main>`;
   return source.replace(/<html lang="[^"]*">/, '<html lang="fr">')
     .replace(/<title>[^<]*<\/title>/, head({ title: "Bibou's Burgers Le Havre — Livraison & Click & collect", url: info.origin + '/' }))
     .replace(/<noscript>[\s\S]*?<\/noscript>/, '')

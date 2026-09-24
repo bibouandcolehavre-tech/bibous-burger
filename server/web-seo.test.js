@@ -17,9 +17,10 @@ test('Accueil SEO : français, canonical stable et contenu public sans JavaScrip
   assert.match(html.split('</head>')[0], /<meta name="google-site-verification" content="LfixJmMoMMRd9_8dmXcTHi4VoK4ggCXinCB_r6kcjYU">/);
   assert.match(html, /<link rel="canonical" href="https:\/\/bibous-burger-app.onrender.com\/">/);
   assert.match(html, /<div id="root"><main id="seo-home"/);
-  assert.match(html, /<h1>.*au Havre<\/h1>/);
-  assert.match(html, /153 quai Georges V/);
-  assert.match(html, /href="\/restaurant-le-havre.html"/);
+  const body = html.split('<body>')[1];
+  assert.match(body, /<h1[^>]*>Bibou&#39;s Burgers<\/h1>/);
+  assert.match(body, /href="\/restaurant-le-havre.html"[^>]*>Infos pratiques<\/a>/);
+  assert.doesNotMatch(body, /<address|class="hours"|153 quai Georges V|<h2>/, 'Le chargement ne doit pas réafficher le grand bloc pratique.');
   assert.match(html, /<script src="\/app.js" defer><\/script>/);
   assert.doesNotMatch(html, /You need JavaScript|noindex|userAgent|display:none/);
   assert.throws(() => enrichIndex('<html></html>'), /Structure Expo/);
@@ -65,10 +66,16 @@ test('Le générateur complète le vrai export sans modifier le JavaScript ou co
   assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
   assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
 });
-test('Informations publiques intégrées dans l’accueil visible, mais pas de HTML natif Android/iOS', () => {
+test('Accueil discret : lien pratique accessible vers la page complète, sans grand bloc ni HTML natif', () => {
   const web = fs.readFileSync(path.join(__dirname, '../RestaurantInfo.web.js'), 'utf8');
   assert.match(web, /href=\{info.page\}/);
-  assert.match(web, /<h1/);
+  assert.match(web, />Infos pratiques<\/a>/);
+  assert.match(web, /<nav aria-label="Informations du restaurant"/);
+  assert.match(web, /minHeight: 44/, 'Cible tactile conservée malgré le texte discret.');
+  assert.doesNotMatch(web, /<h1|<address|<ul|info\.hours|info\.introduction|display:\s*'none'/);
+  const page = restaurantPage();
+  assert.match(page, /<address>153 quai Georges V, 76600 Le Havre, France<\/address>/);
+  for (const hour of RESTAURANT.hours) assert.ok(page.includes(escape(hour.text)));
   assert.match(fs.readFileSync(path.join(__dirname, '../RestaurantInfo.native.js'), 'utf8'), /return null/);
   assert.match(fs.readFileSync(path.join(__dirname, '../App.js'), 'utf8'), /<RestaurantInfo \/>/);
 });
