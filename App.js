@@ -5,6 +5,8 @@ import NewsCarousel from "./NewsCarousel";
 import ContestScreen from "./ContestScreen";
 import NotificationSettings from "./NotificationSettings";
 import CustomerOffers from "./CustomerOffers";
+import StoreReviewLogin from "./StoreReviewLogin";
+const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
 import RestaurantInfo from "./RestaurantInfo";
 const { bestClientOffer } = require('./crm-client');
 const { observeBrowserFocus } = require('./browser-focus');
@@ -35,6 +37,7 @@ const DELIVERY_FEE = DELIVERY_PRICING[0].price;
 const ORDER_STEPS = ["Confirmée", "En préparation", "Prête", "En livraison", "Livrée"];
 const PUBLIC_API_BASE_URL = "https://bibous-burger.onrender.com/api";
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (typeof window !== "undefined" && window.location?.hostname === "localhost" ? "http://localhost:3001/api" : PUBLIC_API_BASE_URL);
+const customerFetch = createCustomerFetch(API_BASE_URL, (...args) => fetch(...args));
 const progressForStatus = { confirmed: 0, preparing: 1, ready: 2, out_for_delivery: 3, delivered: 4 };
 const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.serviceDate ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${order.serviceDate}T12:00:00`)) : order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", status: order.status, progress: progressForStatus[order.status] ?? 0 });
 const reservationStatus = { pending: { label: "En attente", icon: "◷", message: "Le restaurant doit encore répondre.", color: "#A35B22", background: "#FFF0E0" }, confirmed: { label: "Confirmée", icon: "✓", message: "Ta table est confirmée.", color: "#397353", background: "#EAF5E4" }, cancelled: { label: "Refusée", icon: "×", message: "Cette demande n’a pas pu être acceptée.", color: "#A3472A", background: "#FAE6E2" } };
@@ -329,7 +332,7 @@ function AccountScreen({ onOpenOffers, onOpenNotifications, customer, loyalty, o
   const activeOrder = orders.find((order) => order.progress < ORDER_STEPS.length - 1);
   const customerName = customer.name || "Client Bibou";
   const bibouPlusActive = customerHasBibouPlus(customer);
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.accountHero}><View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{customerName.slice(0, 1).toUpperCase()}</Text></View><View><Text style={styles.accountGreeting}>Bonjour, {customerName.split(" ")[0]} !</Text><Text style={styles.accountContact}>{customer.phone || "Ajoute ton téléphone lors de ta première commande"}</Text></View></View>{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Ton cadeau de bienvenue est prêt</Text><Text style={styles.welcomeRewardText}>−10 % automatiquement sur ta première commande.</Text></View></View>}{activeOrder && <Pressable onPress={onOpenOrders} style={styles.currentOrderCard}><View><Text style={styles.currentOrderEyebrow}>COMMANDE EN COURS</Text><Text style={styles.currentOrderTitle}>{activeOrder.product}</Text><Text style={styles.currentOrderText}>{ORDER_STEPS[activeOrder.progress]} · {activeOrder.slot}</Text></View><Text style={styles.currentOrderArrow}>›</Text></Pressable>}<Text style={styles.sectionTitle}>Mon espace</Text><Pressable onPress={onOpenBibouPlus} style={[styles.accountAction, bibouPlusActive && styles.accountActionPlusActive]}><View style={[styles.accountActionIcon, styles.accountActionPlusIcon]}><Text>✦</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Bibou +</Text><Text style={styles.accountActionText}>{bibouPlusActive ? `Actif jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Livraison offerte, −5 % et points ×2"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOrders} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🧾</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes commandes</Text><Text style={styles.accountActionText}>{orders.length} commande{orders.length > 1 ? "s" : ""} dans ton historique</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenReservations} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🍽</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes réservations</Text><Text style={styles.accountActionText}>{reservations.length ? `${reservations.length} réservation${reservations.length > 1 ? "s" : ""} retrouvée${reservations.length > 1 ? "s" : ""}` : "Suis ici la confirmation de ta table"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenLoyalty} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>★</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Club Bibou</Text><Text style={styles.accountActionText}>{loyalty.points} points disponibles</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOffers} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🎁</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes offres</Text><Text style={styles.accountActionText}>Bons personnels et anniversaire facultatif</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenNotifications} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>◉</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes notifications</Text><Text style={styles.accountActionText}>Suivi des commandes et promotions : à toi de choisir</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenPrivacy} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🔒</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Confidentialité</Text><Text style={styles.accountActionText}>Tes données et tes choix</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable accessibilityRole="button" onPress={onLogout} style={styles.accountAction}><Text style={styles.accountActionTitle}>Me déconnecter</Text></Pressable><Pressable onPress={onDeleteAccount} style={styles.accountDeleteAction}><Text style={styles.accountDeleteText}>Supprimer mon compte</Text></Pressable><View style={styles.accountAddress}><Text style={styles.accountAddressTitle}>Adresse enregistrée</Text><Text style={styles.accountAddressText}>{customer.address ? `${customer.address}, ${customer.postalCode} ${customer.city}` : "Elle sera enregistrée lors de ta première livraison."}</Text></View><Text style={styles.accountFinePrint}>Ton espace est sécurisé par ta connexion SMS.</Text></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.accountHero}><View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{customerName.slice(0, 1).toUpperCase()}</Text></View><View><Text style={styles.accountGreeting}>Bonjour, {customerName.split(" ")[0]} !</Text><Text style={styles.accountContact}>{customer.phone || "Ajoute ton téléphone lors de ta première commande"}</Text></View></View>{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎉</Text><View><Text style={styles.welcomeRewardTitle}>Ton cadeau de bienvenue est prêt</Text><Text style={styles.welcomeRewardText}>−10 % automatiquement sur ta première commande.</Text></View></View>}{activeOrder && <Pressable onPress={onOpenOrders} style={styles.currentOrderCard}><View><Text style={styles.currentOrderEyebrow}>COMMANDE EN COURS</Text><Text style={styles.currentOrderTitle}>{activeOrder.product}</Text><Text style={styles.currentOrderText}>{ORDER_STEPS[activeOrder.progress]} · {activeOrder.slot}</Text></View><Text style={styles.currentOrderArrow}>›</Text></Pressable>}<Text style={styles.sectionTitle}>Mon espace</Text><Pressable onPress={onOpenBibouPlus} style={[styles.accountAction, bibouPlusActive && styles.accountActionPlusActive]}><View style={[styles.accountActionIcon, styles.accountActionPlusIcon]}><Text>✦</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Bibou +</Text><Text style={styles.accountActionText}>{bibouPlusActive ? `Actif jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Livraison offerte, −5 % et points ×2"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOrders} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🧾</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes commandes</Text><Text style={styles.accountActionText}>{orders.length} commande{orders.length > 1 ? "s" : ""} dans ton historique</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenReservations} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🍽</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes réservations</Text><Text style={styles.accountActionText}>{reservations.length ? `${reservations.length} réservation${reservations.length > 1 ? "s" : ""} retrouvée${reservations.length > 1 ? "s" : ""}` : "Suis ici la confirmation de ta table"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenLoyalty} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>★</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Club Bibou</Text><Text style={styles.accountActionText}>{loyalty.points} points disponibles</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOffers} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🎁</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes offres</Text><Text style={styles.accountActionText}>Bons personnels et anniversaire facultatif</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenNotifications} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>◉</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes notifications</Text><Text style={styles.accountActionText}>Suivi des commandes et promotions : à toi de choisir</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenPrivacy} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🔒</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Confidentialité</Text><Text style={styles.accountActionText}>Tes données et tes choix</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable accessibilityRole="button" onPress={onLogout} style={styles.accountAction}><Text style={styles.accountActionTitle}>Me déconnecter</Text></Pressable><Pressable onPress={onDeleteAccount} style={styles.accountDeleteAction}><Text style={styles.accountDeleteText}>Supprimer mon compte</Text></Pressable><View style={styles.accountAddress}><Text style={styles.accountAddressTitle}>Adresse enregistrée</Text><Text style={styles.accountAddressText}>{customer.address ? `${customer.address}, ${customer.postalCode} ${customer.city}` : "Elle sera enregistrée lors de ta première livraison."}</Text></View><Text style={styles.accountFinePrint}>{customer.reviewMode ? "Compte fictif isolé · accès de validation des boutiques" : "Ton espace est sécurisé par ta connexion SMS."}</Text></ScrollView></SafeAreaView>;
 }
 
 function BibouPlusScreen({ customer, authToken, loading, onBack, onLogin, onSubscribe }) {
@@ -355,6 +358,7 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
 }
 
 function SmsLoginScreen({ onBack, onAuthenticated }) {
+  const [reviewLogin, setReviewLogin] = useState(false);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState("phone");
@@ -369,7 +373,7 @@ function SmsLoginScreen({ onBack, onAuthenticated }) {
     setLoading(true);
     setFeedback("");
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/sms/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: normalizedPhone }) });
+      const response = await customerFetch(`${API_BASE_URL}/auth/sms/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: normalizedPhone }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’envoyer le code.");
       setPhone(normalizedPhone);
@@ -384,14 +388,15 @@ function SmsLoginScreen({ onBack, onAuthenticated }) {
   const checkCode = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/sms/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, code }) });
+      const response = await customerFetch(`${API_BASE_URL}/auth/sms/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, code }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Le code est invalide.");
       onAuthenticated(payload);
     } catch (error) { Alert.alert("Code invalide", error.message || "Réessaie avec un nouveau code."); }
     finally { setLoading(false); }
   };
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><View style={styles.loginIcon}><Text style={styles.loginIconText}>✉</Text></View><Text style={styles.title}>{step === "phone" ? "Bienvenue" : "Vérifie ton numéro"}</Text><Text style={styles.loginIntro}>{step === "phone" ? "Connecte-toi avec ton numéro de téléphone pour retrouver tes commandes et tes points fidélité." : `Un code a été envoyé au ${phone}.`}</Text><View style={styles.loginCard}>{step === "phone" ? <><Text style={styles.deliveryLabel}>NUMÉRO DE TÉLÉPHONE</Text><TextInput value={phone} onChangeText={(value) => { setPhone(value); setFeedback(""); }} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" /><Text style={feedback ? styles.loginError : styles.loginFinePrint}>{feedback || "Un code à usage unique te sera envoyé par SMS. Aucun mot de passe à retenir."}</Text><Pressable disabled={loading} onPress={sendCode} style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Envoi en cours…" : "Recevoir mon code"}</Text></Pressable></> : <><Text style={styles.deliveryLabel}>CODE REÇU PAR SMS</Text><TextInput value={code} onChangeText={setCode} placeholder="123456" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} />{feedback ? <Text style={styles.loginError}>{feedback}</Text> : null}<Pressable disabled={code.length < 4 || loading} onPress={checkCode} style={[styles.primaryButton, (code.length < 4 || loading) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Vérification…" : "Valider le code"}</Text></Pressable><Pressable onPress={() => { setCode(""); setFeedback(""); setStep("phone"); }} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon numéro</Text></Pressable></>}</View><Text style={styles.loginLegal}>En te connectant, tu acceptes de recevoir ce SMS de vérification nécessaire à la sécurisation de ton compte.</Text></ScrollView></SafeAreaView>;
+  if (reviewLogin) return <StoreReviewLogin api={API_BASE_URL} onBack={() => setReviewLogin(false)} onAuthenticated={onAuthenticated} />;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><View style={styles.loginIcon}><Text style={styles.loginIconText}>✉</Text></View><Text style={styles.title}>{step === "phone" ? "Bienvenue" : "Vérifie ton numéro"}</Text><Text style={styles.loginIntro}>{step === "phone" ? "Connecte-toi avec ton numéro de téléphone pour retrouver tes commandes et tes points fidélité." : `Un code a été envoyé au ${phone}.`}</Text><View style={styles.loginCard}>{step === "phone" ? <><Text style={styles.deliveryLabel}>NUMÉRO DE TÉLÉPHONE</Text><TextInput value={phone} onChangeText={(value) => { setPhone(value); setFeedback(""); }} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" /><Text style={feedback ? styles.loginError : styles.loginFinePrint}>{feedback || "Un code à usage unique te sera envoyé par SMS. Aucun mot de passe à retenir."}</Text><Pressable disabled={loading} onPress={sendCode} style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Envoi en cours…" : "Recevoir mon code"}</Text></Pressable></> : <><Text style={styles.deliveryLabel}>CODE REÇU PAR SMS</Text><TextInput value={code} onChangeText={setCode} placeholder="123456" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} />{feedback ? <Text style={styles.loginError}>{feedback}</Text> : null}<Pressable disabled={code.length < 4 || loading} onPress={checkCode} style={[styles.primaryButton, (code.length < 4 || loading) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Vérification…" : "Valider le code"}</Text></Pressable><Pressable onPress={() => { setCode(""); setFeedback(""); setStep("phone"); }} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon numéro</Text></Pressable></>}</View><Text style={styles.loginLegal}>En te connectant, tu acceptes de recevoir ce SMS de vérification nécessaire à la sécurisation de ton compte.</Text><Pressable accessibilityRole="button" onPress={() => setReviewLogin(true)} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Accès de vérification des boutiques</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
 function OrdersScreen({ orders, onBack, onRefresh }) {
@@ -538,7 +543,7 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
     setSubmitting(true);
     try {
       const headers = { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) };
-      const response = await fetch(`${API_BASE_URL}/reservations`, { method: "POST", headers, body: JSON.stringify({ name, phone, guests, serviceDate: day.date, slot, note }) });
+      const response = await customerFetch(`${API_BASE_URL}/reservations`, { method: "POST", headers, body: JSON.stringify({ name, phone, guests, serviceDate: day.date, slot, note }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Impossible d’envoyer la réservation.");
       setConfirmed(payload.reservation);
@@ -637,7 +642,7 @@ function CheckoutDetailsScreen({ cart, customer, authToken, onChange, onCommentC
     }
     setQuote({ status: "loading" });
     try {
-      const response = await fetch(`${API_BASE_URL}/delivery-quote`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify(customer) });
+      const response = await customerFetch(`${API_BASE_URL}/delivery-quote`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify(customer) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible de calculer la livraison.");
       setQuote({ status: "success", ...payload });
@@ -664,7 +669,7 @@ function PaymentScreen({ cart, customer, onBack, onPay }) {
     setPaying(true);
     try { await onPay(pricing.total); } finally { paymentInFlight.current = false; setPaying(false); }
   };
-  return <SafeAreaView style={styles.safeArea}><View style={styles.detailContent}><Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text><Text style={styles.deliveryIntro}>Tout est prêt pour le paiement sécurisé.</Text><View style={styles.paymentSummary}><Text style={styles.paymentProduct}>{cart.items.map((item) => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(" · ")}</Text><Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} /><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={isDelivery ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} />{pricing.bibouPlus && isDelivery && standardFee > 0 && <ReceiptLine label="Économie livraison Bibou +" value={`− ${money(standardFee)}`} />}<View style={styles.receiptDivider} /><ReceiptLine label="Total débité par SumUp" value={money(pricing.total)} strong /></View>{pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après le paiement.</Text></View>}<View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? "Livrer à" : "Retrait par"}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View><View style={styles.securePayment}><Text style={styles.securePaymentIcon}>🔒</Text><View><Text style={styles.securePaymentTitle}>Paiement sécurisé avec SumUp</Text><Text style={styles.securePaymentText}>Carte bancaire · le paiement sera ouvert par SumUp.</Text></View></View></View><View style={styles.stickyAction}><Pressable disabled={paying} style={[styles.primaryButton, paying && styles.primaryButtonDisabled]} onPress={submitPayment}><Text style={styles.primaryButtonText}>{paying ? "Ouverture de SumUp…" : `Payer avec SumUp · ${money(pricing.total)}`}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><View style={styles.detailContent}><Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text><Text style={styles.deliveryIntro}>Tout est prêt pour le paiement sécurisé.</Text><View style={styles.paymentSummary}><Text style={styles.paymentProduct}>{cart.items.map((item) => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(" · ")}</Text><Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} /><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={isDelivery ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} />{pricing.bibouPlus && isDelivery && standardFee > 0 && <ReceiptLine label="Économie livraison Bibou +" value={`− ${money(standardFee)}`} />}<View style={styles.receiptDivider} /><ReceiptLine label="Total débité par SumUp" value={money(pricing.total)} strong /></View>{pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après le paiement.</Text></View>}<View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? "Livrer à" : "Retrait par"}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View><View style={styles.securePayment}><Text style={styles.securePaymentIcon}>🔒</Text><View><Text style={styles.securePaymentTitle}>{customer.reviewMode ? "Paiement simulé pour la vérification" : "Paiement sécurisé avec SumUp"}</Text><Text style={styles.securePaymentText}>{customer.reviewMode ? "Aucune carte demandée. Le restaurant ne reçoit pas cette commande." : "Carte bancaire · le paiement sera ouvert par SumUp."}</Text></View></View></View><View style={styles.stickyAction}><Pressable disabled={paying} style={[styles.primaryButton, paying && styles.primaryButtonDisabled]} onPress={submitPayment}><Text style={styles.primaryButtonText}>{paying ? "Ouverture de SumUp…" : `Payer avec SumUp · ${money(pricing.total)}`}</Text></Pressable></View></SafeAreaView>;
 }
 
 function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onResume, onBack }) {
@@ -683,7 +688,7 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
 
 function SuccessScreen({ order, onHome, onReview, onTrack }) {
   const label = order?.method === "delivery" ? "Livraison" : "Retrait";
-  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>Paiement confirmé !</Text><Text style={styles.successText}>Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation.</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
 }
 
 function ReviewScreen({ onBack }) {
@@ -794,10 +799,11 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
 }
 
 export default function App() {
-  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={styles.safeArea}><AppContent /></DeviceSafeAreaView></SafeAreaProvider>;
+  const [reviewMode, setReviewMode] = useState(false);
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={styles.safeArea}><View style={{ flex: 1 }}>{reviewMode && <View style={{ backgroundColor: "#172b48", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}<AppContent onReviewModeChange={setReviewMode} /></View></DeviceSafeAreaView></SafeAreaProvider>;
 }
 
-function AppContent() {
+function AppContent({ onReviewModeChange }) {
   const [catalog, setCatalog] = useState(null);
   const [stockMessage, setStockMessage] = useState("Vérification des disponibilités…");
   const [stockFeedback, setStockFeedback] = useState("");
@@ -808,7 +814,7 @@ function AppContent() {
       if (loading) return;
       loading = true;
       try {
-        const response = await fetch(`${API_BASE_URL}/catalog`);
+        const response = await customerFetch(`${API_BASE_URL}/catalog`);
         const payload = await response.json();
         if (!response.ok || !Array.isArray(payload.products) || !payload.options) throw new Error("Catalogue indisponible");
         if (!stopped) { setCatalog(payload); setStockMessage(""); }
@@ -834,6 +840,7 @@ function AppContent() {
   const [rewardClaims, setRewardClaims] = useState([]);
   const [rewardLoading, setRewardLoading] = useState("");
   const [authToken, setAuthToken] = useState("");
+  useEffect(() => { onReviewModeChange(isReviewToken(authToken)); }, [authToken, onReviewModeChange]);
   const sessionTokenRef = useRef('');
   const sessionEpoch = useRef(0);
   const [pendingOrder, setPendingOrder] = useState(null);
@@ -852,7 +859,7 @@ function AppContent() {
   const loadCustomerOrders = async (token = authToken) => {
     if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/customer/orders`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await customerFetch(`${API_BASE_URL}/customer/orders`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les commandes.");
       if (sessionTokenRef.current !== token) return;
@@ -864,7 +871,7 @@ function AppContent() {
   const loadCustomerReservations = async ({ token = authToken, silent = false } = {}) => {
     if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/customer/reservations`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await customerFetch(`${API_BASE_URL}/customer/reservations`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les réservations.");
       if (sessionTokenRef.current !== token) return;
@@ -876,7 +883,7 @@ function AppContent() {
   const loadCustomerRewards = async ({ token = authToken, silent = false } = {}) => {
     if (!token) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/customer/rewards`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await customerFetch(`${API_BASE_URL}/customer/rewards`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les récompenses.");
       if (sessionTokenRef.current !== token) return;
@@ -890,7 +897,7 @@ function AppContent() {
     sessionTokenRef.current = token;
     setAuthToken(token);
     try { await saveSession(token); } catch { setStockFeedback("Connexion active, mais elle ne peut pas être mémorisée sur cet appareil."); }
-    setCustomer((current) => ({
+    setCustomer((current) => isReviewToken(token) ? { ...savedCustomer, distance: "", sponsorCode: "" } : ({
       ...savedCustomer,
       name: current.name || savedCustomer.name || "",
       phone: savedCustomer.phone || current.phone || "",
@@ -936,7 +943,7 @@ function AppContent() {
     return () => { stopped = true; };
   }, []);
   useEffect(() => {
-    if (!authToken) return;
+    if (!authToken || isReviewToken(authToken)) return;
     const sync = () => { if (sessionTokenRef.current === authToken) void syncPushDevice(API_BASE_URL, authToken).catch(() => {}); };
     sync();
     const stop = observePush(data => {
@@ -955,7 +962,7 @@ function AppContent() {
     let stopped = false;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12000);
-    fetch(`${API_BASE_URL}/customer/crm`, { headers: { Authorization: `Bearer ${authToken}` }, signal: controller.signal, cache: 'no-store' })
+    customerFetch(`${API_BASE_URL}/customer/crm`, { headers: { Authorization: `Bearer ${authToken}` }, signal: controller.signal, cache: 'no-store' })
       .then(async response => { if (!response.ok) throw Error('Offres non actualisées'); return response.json(); })
       .then(result => { if (!stopped && sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers })); })
       .catch(() => { if (!stopped && sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: [] })); })
@@ -993,7 +1000,7 @@ function AppContent() {
     if (API_BASE_URL) {
       try {
         const endpoint = `${API_BASE_URL}/customers/${customer.id}`;
-        const response = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify(customer) });
+        const response = await customerFetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify(customer) });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "Impossible d’enregistrer tes coordonnées.");
         savedCustomer = payload.customer;
@@ -1011,7 +1018,7 @@ function AppContent() {
     // Render may need time to wake up before creating or checking a payment.
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
-      const response = await fetch(`${API_BASE_URL}${route}`, {
+      const response = await customerFetch(`${API_BASE_URL}${route}`, {
         method: body === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -1162,7 +1169,7 @@ function AppContent() {
   }, [screen, authToken]);
   const logoutCustomer = async () => {
     try {
-      await detachPushDevice(API_BASE_URL, authToken);
+      if (!isReviewToken(authToken)) await detachPushDevice(API_BASE_URL, authToken);
       await clearSession();
       sessionEpoch.current += 1;
       sessionTokenRef.current = '';
@@ -1179,7 +1186,7 @@ function AppContent() {
     if (!authToken) return;
     setAccountDeletionLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/customer/account`, { method: "DELETE", headers: { Authorization: `Bearer ${authToken}` } });
+      const response = await customerFetch(`${API_BASE_URL}/customer/account`, { method: "DELETE", headers: { Authorization: `Bearer ${authToken}` } });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.deleted) throw new Error(payload.error || "La suppression n’a pas pu être terminée.");
       await clearSession();
@@ -1210,7 +1217,7 @@ function AppContent() {
     }
     setRewardLoading(reward.id);
     try {
-      const response = await fetch(`${API_BASE_URL}/customer/rewards/${encodeURIComponent(reward.id)}/claim`, { method: "POST", headers: { Authorization: `Bearer ${authToken}` } });
+      const response = await customerFetch(`${API_BASE_URL}/customer/rewards/${encodeURIComponent(reward.id)}/claim`, { method: "POST", headers: { Authorization: `Bearer ${authToken}` } });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "La récompense n’a pas pu être réclamée.");
       setRewardClaims(payload.claims || []);
@@ -1222,6 +1229,7 @@ function AppContent() {
     }
   };
   const referFriend = async () => {
+    if (isReviewToken(authToken)) { Alert.alert("Parrainage de test", "Le partage externe est désactivé dans cet espace isolé. Le parrainage client reste disponible hors mode de test."); return; }
     if (!customer.referralCode) {
       Alert.alert("Connexion nécessaire", "Ouvre « Mon compte » et connecte-toi pour obtenir ton code personnel de parrainage.");
       return;
@@ -1241,7 +1249,7 @@ function AppContent() {
       if (error?.name !== "AbortError") Alert.alert("Ton code de parrainage", `${customer.referralCode}\n\n${referralUrl}`);
     }
   };
-  if (screen === "contest") return <ContestScreen apiBaseUrl={API_BASE_URL} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
+  if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen("menu")} onAdd={addToCart} />;
   if (screen === "cart") return <CartScreen catalog={catalog} cart={cart} customer={customer} onBack={() => setScreen("menu")} onAddMore={() => setScreen("menu")} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onCheckout={() => setScreen("delivery")} />;
   if (screen === "delivery") return <DeliveryScreen cart={cart} customer={customer} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => { if (authToken) setScreen("details"); else { setLoginDestination("details"); setScreen("login"); } }} onOpenBibouPlus={() => { setBibouPlusReturnScreen("delivery"); setScreen("bibou-plus"); }} />;
@@ -1253,8 +1261,8 @@ function AppContent() {
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;
   if (screen === "bibou-plus-pending") return <PaymentPendingScreen kind="bibou-plus" record={pendingBibouPlus} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
-  if (screen === "notifications") return <NotificationSettings key={authToken} api={API_BASE_URL} authToken={authToken} onBack={() => setScreen("account")} />;
-  if (['offers','crm-welcome'].includes(screen)) return <CustomerOffers key={authToken} api={API_BASE_URL} authToken={authToken} onboarding={screen === 'crm-welcome'} onBack={() => setScreen(screen === 'crm-welcome' ? crmWelcomeDestination : 'account')} onUpdated={result => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers, crmPreferences: result.preferences })); }} />;
+  if (screen === "notifications") return <NotificationSettings key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onBack={() => setScreen("account")} />;
+  if (['offers','crm-welcome'].includes(screen)) return <CustomerOffers key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onboarding={screen === 'crm-welcome'} onBack={() => setScreen(screen === 'crm-welcome' ? crmWelcomeDestination : 'account')} onUpdated={result => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers, crmPreferences: result.preferences })); }} />;
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
   if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} onBack={() => setScreen("menu")} onCreated={(reservation) => setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)])} onOpenReservations={() => setScreen("reservations")} />;

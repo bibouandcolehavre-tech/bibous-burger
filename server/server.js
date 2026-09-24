@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 const { createDatabaseLock } = require("./database-lock");
+const { createReviewSandbox } = require('./review-sandbox');
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
@@ -66,6 +67,7 @@ const smsAttemptLimiter = createSmsAttemptLimiter();
 const dashboardLoginLimiter = createAuthRateLimiter();
 const smsCodeLimiter = createAuthRateLimiter({ limit: 8, windowMs: 15 * 60000 });
 const dashboardSessions = new Map();
+const reviewSandbox = createReviewSandbox({ enabled: process.env.STORE_REVIEW_ENABLED !== 'false' });
 const acquireDatabase = createDatabaseLock();
 let googleReviewsCache = { value: null, expiresAt: 0 };
 let orderCreationQueue = Promise.resolve();
@@ -330,6 +332,16 @@ const server = http.createServer(async (request, response) => {
   let releaseDatabase;
 
   try {
+    if (url.pathname.startsWith('/api/review/')) {
+      try {
+        const payload = await reviewSandbox.handle({ method: request.method, route: url.pathname.slice('/api/review'.length), token: String(request.headers.authorization || '').replace(/^Bearer /, ''), readBody: () => readBody(request) });
+        return send(response, 200, payload);
+      } catch (error) {
+        return send(response, [400, 401, 403, 404, 408, 409, 413, 429].includes(error.statusCode) ? error.statusCode : 400, { error: error.message || 'Action de test impossible.' });
+      }
+    }
+    // Reject sandbox credentials before ANY real route, including public ones.
+    if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {

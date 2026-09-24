@@ -53,7 +53,11 @@ Bibou's Burgers vend exclusivement des repas, leur livraison et des avantages li
 
 La consultation de la carte, des tarifs, des avis Google, de la fidélité et des informations légales est possible sans compte. Une connexion par code SMS est demandée avant une commande ou une réservation afin de sécuriser les coordonnées du client.
 
-Avant l'envoi en vérification, renseigner dans la rubrique « Informations pour l'équipe de vérification » un numéro et un code de démonstration temporaire, ou convenir d'un numéro joignable permettant à l'équipe de recevoir son code SMS.
+Accès isolé approuvé par le propriétaire le 24 septembre 2026 : depuis « Mon compte », choisir « Accès de vérification des boutiques » puis entrer le code privé fourni dans Play Console. Aucun numéro ni SMS requis. Cet accès ouvre une session fictive séparée des clients réels. Le code n'est pas dans le dépôt ni dans l'application ; seul son vérificateur est côté serveur.
+
+Le bandeau MODE DE TEST reste visible. Les comptes, points de départ, paiements, réservations et commandes y sont fictifs. Aucun appel à SumUp/Twilio, aucun encaissement, aucun push, aucune transmission au restaurant. Les créneaux du catalogue sont consultables ; le test ne réserve pas de capacité réelle. Les sessions expirent après 24 heures ou au redémarrage du serveur ; le même code permet d'en ouvrir une nouvelle. Ne jamais présenter cette simulation comme un paiement réel réussi. L'accès client ordinaire reste protégé par SMS et conserve les véritables parcours de paiement.
+
+Code à renseigner uniquement dans la rubrique privée « Informations de connexion » de Google Play ; ne pas l'ajouter à la description publique. Guide technique : `STORE_REVIEW_ACCESS.md`.
 
 Le paiement SumUp est conforme au principe des achats physiques : Apple demande une méthode autre que l'achat intégré pour les biens ou services physiques consommés hors de l'application, et Google Play exclut notamment la nourriture et la livraison de son système de facturation numérique.
 
@@ -69,6 +73,8 @@ Le paiement SumUp est conforme au principe des achats physiques : Apple demande 
 - identifiant interne du compte ;
 - commandes, réservations et statut de paiement ;
 - solde de fidélité, parrainage et statut Bibou +.
+- jour et mois d'anniversaire facultatifs, consentement aux offres personnalisées ;
+- identifiants techniques de notification/appareil et choix de notification, si activés.
 
 ### Finalités
 
@@ -83,6 +89,7 @@ Le paiement SumUp est conforme au principe des achats physiques : Apple demande 
 - Twilio : envoi du code de connexion SMS ;
 - SumUp : paiement par carte, sans transmission du numéro complet de carte à Bibou & Co ;
 - Google : calcul de la distance de livraison et affichage d'avis publics.
+- Expo, Google FCM et Apple : acheminement des notifications, sur consentement séparé.
 
 L'application n'intègre ni publicité ni suivi publicitaire et ne vend pas les données personnelles.
 

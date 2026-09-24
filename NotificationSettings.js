@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, SafeAreaView, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { pushRequest } from './push-api';
 import { openPushSettings, pushDeviceStatus, syncPushDevice } from './push-client';
+const { isReviewToken } = require('./review-client');
 
 export default function NotificationSettings({ api, authToken, onBack }) {
+  const reviewMode = isReviewToken(authToken);
   const [data, setData] = useState(null), [device, setDevice] = useState(null), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const alive = useRef(true), working = useRef(false);
   const refresh = async () => {
-    const [state, status] = await Promise.all([pushRequest(api, authToken), pushDeviceStatus()]);
+    const [state, status] = await Promise.all([pushRequest(api, authToken), reviewMode ? { supported: false, message: 'Mode de test : préférences simulées, aucun téléphone associé et aucun push envoyé.' } : pushDeviceStatus()]);
     if (alive.current) { setData(state); setDevice(status); }
   };
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function NotificationSettings({ api, authToken, onBack }) {
     const result = await pushRequest(api, authToken, '', 'PATCH', { [key]: value });
     if (alive.current) { setData(result); setMessage('Ton choix est enregistré.'); }
     // OS permission is requested only after an explicit opt-in, never at app startup.
-    await syncPushDevice(api, authToken, { ask: value });
+    if (!reviewMode) await syncPushDevice(api, authToken, { ask: value });
     await refresh();
   });
   return <SafeAreaView style={s.page}><ScrollView contentContainerStyle={s.content}>
