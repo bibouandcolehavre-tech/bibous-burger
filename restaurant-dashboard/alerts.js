@@ -36,15 +36,35 @@
     return { warning: false, text: `À jour à ${new Date(oldest).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · vérification toutes les 10 s` };
   };
 
-  const createSoundPlayer = ({ createContext, enabled = true, onChange = () => {} }) => {
+  // An audio-clock loop keeps ringing even when background tabs throttle JS timers.
+  const createAlarmSamples = (sampleRate, seconds = 8) => {
+    const samples = new Float32Array(Math.round(sampleRate * seconds));
+    [740, 988, 1244, 740, 988, 1244, 740, 988, 1244].forEach((frequency, index) => {
+      const start = index * 0.38 + Math.floor(index / 3) * 0.38;
+      for (let i = 0; i < sampleRate * 0.32; i++) {
+        const time = i / sampleRate, at = Math.round(start * sampleRate) + i;
+        if (at >= samples.length) break;
+        const envelope = Math.min(1, time / 0.015, (0.32 - time) / 0.065);
+        samples[at] = 0.65 * envelope * (Math.sin(2 * Math.PI * frequency * time) + 0.28 * Math.sin(4 * Math.PI * frequency * time));
+      }
+    });
+    return samples;
+  };
+
+  const createSoundPlayer = ({ createContext, enabled = true, volume = 1, onChange = () => {} }) => {
     let context = null;
     let wanted = enabled;
     let nextAt = 0;
     let generation = 0;
     let failed = false;
+    let level = Math.min(1, Math.max(0.1, Number(volume) || 1));
+    let alarmNode = null, testNode = null, alarmBuffer = null;
     const nodes = new Set();
-    const state = () => ({ enabled: wanted, supported: Boolean(createContext), ready: wanted && !failed && context?.state === "running" });
+    const state = () => ({ enabled: wanted, volume: level, supported: Boolean(createContext), ready: wanted && !failed && context?.state === "running", ringing: Boolean(alarmNode) });
+    const stopBuffer = entry => { if (!entry) return; try { entry.source.stop(); } catch {} entry.source.disconnect(); entry.gain.disconnect(); };
+    const stopAlarm = () => { const previous = alarmNode; alarmNode = null; stopBuffer(previous); };
     const stop = () => {
+      stopAlarm(); stopBuffer(testNode); testNode = null;
       for (const { oscillator, gain } of nodes) {
         gain.gain.cancelScheduledValues(0);
         gain.gain.setValueAtTime(0, context.currentTime);
@@ -62,6 +82,7 @@
       try {
         if (!context || context.state === "closed") {
           context = createContext();
+          alarmBuffer = null;
           context.onstatechange = () => { if (context.state !== "running") stop(); onChange(state()); };
         }
         if (context.state !== "running") {
@@ -88,7 +109,7 @@
           oscillator.type = kind === "orders" ? "triangle" : "sine";
           oscillator.frequency.setValueAtTime(frequency, at);
           gain.gain.setValueAtTime(0, at);
-          gain.gain.linearRampToValueAtTime(kind === "orders" ? 0.45 : 0.24, at + 0.02);
+          gain.gain.linearRampToValueAtTime((kind === "orders" ? 0.45 : 0.24) * level, at + 0.02);
           gain.gain.exponentialRampToValueAtTime(0.001, at + (kind === "orders" ? 0.27 : 0.22));
           oscillator.connect(gain);
           gain.connect(context.destination);
@@ -102,7 +123,51 @@
         return true;
       } catch { failed = true; stop(); onChange(state()); return false; }
     };
-    return { state, setEnabled, play, stop };
+    const startBuffer = loop => {
+      if (!state().ready) return false;
+      if (alarmNode) return true;
+      stopBuffer(testNode); testNode = null;
+      try {
+        if (!alarmBuffer) {
+          alarmBuffer = context.createBuffer(1, Math.round(context.sampleRate * 8), context.sampleRate);
+          alarmBuffer.getChannelData(0).set(createAlarmSamples(context.sampleRate));
+        }
+        const source = context.createBufferSource(), gain = context.createGain();
+        source.buffer = alarmBuffer; source.loop = loop;
+        gain.gain.setValueAtTime(level, context.currentTime);
+        source.connect(gain); gain.connect(context.destination);
+        const entry = { source, gain };
+        source.onended = () => { source.disconnect(); gain.disconnect(); if (testNode === entry) testNode = null; };
+        source.start();
+        if (loop) alarmNode = entry; else testNode = entry;
+        return true;
+      } catch { failed = true; stop(); onChange(state()); return false; }
+    };
+    const setVolume = value => { if (!Number.isFinite(Number(value))) return; level = Math.min(1, Math.max(0.1, Number(value))); for (const entry of [alarmNode, testNode]) entry?.gain.gain.setValueAtTime(level, context.currentTime); onChange(state()); };
+    return { state, setEnabled, play, stop, startAlarm: () => startBuffer(true), stopAlarm, test: () => startBuffer(false), setVolume };
   };
-  return { createArrivalTracker, connectionStatus, createSoundPlayer };
+
+  const createOrderAlarm = ({ player, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} }) => {
+    let pending = new Map(), quietUntil = 0, timer = null;
+    const state = () => ({ count: pending.size, numbers: [...pending.values()].map(item => item.number).filter(Number.isFinite), snoozed: quietUntil > now(), ringing: player.state().ringing, ready: player.state().ready });
+    const cancelTimer = () => { if (timer !== null) clearTimer(timer); timer = null; };
+    const refresh = () => {
+      if (pending.size && quietUntil <= now() && player.state().ready) player.startAlarm();
+      else player.stopAlarm();
+      onChange(state());
+    };
+    return {
+      state, refresh,
+      sync(items) {
+        const next = new Map(items.filter(item => item?.id && isActionable('orders', item)).map(item => [item.id, item]));
+        if (!next.size || [...next.keys()].some(id => !pending.has(id))) { quietUntil = 0; cancelTimer(); }
+        pending = next; refresh();
+      },
+      resolve(id) { pending.delete(id); if (!pending.size) { quietUntil = 0; cancelTimer(); } refresh(); },
+      snooze() { if (!pending.size) return; cancelTimer(); quietUntil = now() + 60000; timer = setTimer(() => { timer = null; quietUntil = 0; refresh(); }, 60000); refresh(); },
+      resume() { cancelTimer(); quietUntil = 0; refresh(); },
+      reset() { pending.clear(); quietUntil = 0; cancelTimer(); player.stopAlarm(); onChange(state()); }
+    };
+  };
+  return { createArrivalTracker, connectionStatus, createSoundPlayer, createOrderAlarm, createAlarmSamples };
 });

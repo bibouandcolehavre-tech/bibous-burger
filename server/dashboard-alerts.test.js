@@ -59,14 +59,16 @@ test('connection status distinguishes initialization, healthy, offline, failed a
 });
 
 class FakeAudioContext {
-  constructor() { this.state = 'suspended'; this.currentTime = 10; this.destination = {}; this.oscillators = []; this.gains = []; }
+  constructor() { this.state = 'suspended'; this.currentTime = 10; this.destination = {}; this.oscillators = []; this.gains = []; this.sampleRate = 8000; this.sources = []; }
+  createBuffer(channels, length) { const samples = new Float32Array(length); return { getChannelData: () => samples }; }
+  createBufferSource() { const source = { connect() {}, disconnect() {}, start() { this.started = true; }, stop() { this.stopped = true; this.onended?.(); } }; this.sources.push(source); return source; }
   async resume() { this.state = 'running'; this.onstatechange?.(); }
   createOscillator() {
     const node = { frequency: { setValueAtTime: value => { node.hertz = value; } }, connect() {}, disconnect() {}, start(at) { this.startAt = at; }, stop(at) { this.stopAt = at; if (at === undefined) this.stopped = true; } };
     this.oscillators.push(node); return node;
   }
   createGain() {
-    const node = { gain: { setValueAtTime() {}, linearRampToValueAtTime(value) { node.peak = value; }, exponentialRampToValueAtTime() {}, cancelScheduledValues() { node.cancelled = true; } }, connect() {}, disconnect() {} };
+    const node = { gain: { setValueAtTime(value) { node.value = value; }, linearRampToValueAtTime(value) { node.peak = value; }, exponentialRampToValueAtTime() {}, cancelScheduledValues() { node.cancelled = true; } }, connect() {}, disconnect() {} };
     this.gains.push(node); return node;
   }
 }
@@ -143,30 +145,104 @@ function dashboardHarness() {
   return { context, run, element, audio, flush: () => { for (const [id, timer] of [...timers]) if (timer.ms === 250) { timers.delete(id); timer.fn(); } } };
 }
 
-test('dashboard sounds once for a paid arrival; mute preserves visual alerts without replay', async () => {
+test('dashboard loops for paid orders, stops when muted, and resumes pending orders on activation', async () => {
   const h = dashboardHarness();
   await h.run('refreshFeeds()');
   assert.equal(h.element('#arrival-message').textContent, '');
   await h.element('#sound-button').handlers.click({ currentTarget: h.element('#sound-button') });
-  const activationNotes = h.audio.oscillators.length;
+  const activationNotes = h.audio.sources.length;
   const order = { ...paid('new'), number: 1, createdAt: new Date().toISOString(), serviceDate: '2099-01-01', slot: '19:00', total: 16.90, items: [], customerName: 'Test' };
   h.context.fetch = async () => ({ ok: true, status: 200, json: async () => ({ orders: [order] }) });
   await h.run('loadOrders()'); h.flush();
-  assert.equal(h.audio.oscillators.length, activationNotes + 9);
+  assert.equal(h.audio.sources.length, activationNotes + 1);
+  assert.equal(h.audio.sources.at(-1).loop, true);
+  assert.equal(h.element('#order-alarm').hidden, false);
   assert.match(h.element('#attention-orders').textContent, /1 commande/);
   assert.match(h.element('#arrival-message').textContent, /commande payée/);
   await h.run('loadOrders()'); h.flush();
-  assert.equal(h.audio.oscillators.length, activationNotes + 9);
+  assert.equal(h.audio.sources.length, activationNotes + 1);
   await h.element('#sound-button').handlers.click({ currentTarget: h.element('#sound-button') });
   h.context.fetch = async () => ({ ok: true, status: 200, json: async () => ({ reservations: [{ id: 'table', number: 1, status: 'pending', serviceDate: '2099-01-01', guests: 2 }] }) });
   await h.run('loadReservations()'); h.flush();
   assert.match(h.element('#arrival-message').textContent, /réservation/);
   assert.match(h.element('#attention-reservations').textContent, /1 réservation/);
-  assert.equal(h.audio.oscillators.length, activationNotes + 9);
+  assert.equal(h.audio.sources.length, activationNotes + 1);
+  assert.equal(h.audio.sources.at(-1).stopped, true);
   await h.element('#sound-button').handlers.click({ currentTarget: h.element('#sound-button') });
-  const afterReactivation = h.audio.oscillators.length;
+  const afterReactivation = h.audio.sources.length;
+  assert.equal(h.audio.sources.at(-1).loop, true);
   await h.run('loadReservations()'); h.flush();
-  assert.equal(h.audio.oscillators.length, afterReactivation);
+  assert.equal(h.audio.sources.length, afterReactivation);
+});
+
+test('loop is audible PCM without clipping, uses the audio clock, and obeys volume and stop', async () => {
+  const samples = alerts.createAlarmSamples(8000);
+  assert.equal(samples.length, 64000);
+  assert.ok(samples.some(value => Math.abs(value) > 0.6));
+  assert.ok(samples.every(value => Number.isFinite(value) && Math.abs(value) < 1));
+  assert.ok(samples.slice(40000).every(value => value === 0), 'A rest between chimes, not a continuous siren');
+  const audio = new FakeAudioContext(), player = alerts.createSoundPlayer({ createContext: () => audio });
+  assert.equal(player.startAlarm(), false);
+  await player.setEnabled(true);
+  assert.equal(player.startAlarm(), true);
+  assert.equal(audio.sources[0].loop, true);
+  player.startAlarm(); assert.equal(audio.sources.length, 1, 'Repeated polls never stack audio loops');
+  player.setVolume(.3); assert.equal(player.state().volume, .3); assert.equal(audio.gains[0].value, .3);
+  player.stopAlarm(); assert.equal(audio.sources[0].stopped, true); assert.equal(player.state().ringing, false);
+  player.test(); assert.equal(audio.sources[1].loop, false, 'Test is finite, not an actual order');
+  player.startAlarm(); assert.equal(audio.sources[1].stopped, true, 'Real order takes over from test');
+  await player.setEnabled(false); assert.equal(audio.sources[2].stopped, true);
+});
+
+test('pending paid orders include initial snapshot; snooze expires or is interrupted by a new order', async () => {
+  const audio = new FakeAudioContext(), player = alerts.createSoundPlayer({ createContext: () => audio });
+  let now = 0, callback = null;
+  const alarm = alerts.createOrderAlarm({ player, now: () => now, setTimer: fn => { callback = fn; return 1; }, clearTimer: () => { callback = null; } });
+  alarm.sync([paid('a'), { ...paid('b'), payment: { status: 'PENDING' } }, paid('c', 'preparing')]);
+  assert.equal(alarm.state().count, 1); assert.equal(alarm.state().ringing, false);
+  await player.setEnabled(true); alarm.refresh(); assert.equal(alarm.state().ringing, true);
+  alarm.snooze(); assert.equal(alarm.state().snoozed, true); assert.equal(alarm.state().ringing, false);
+  alarm.sync([paid('a')]); assert.equal(alarm.state().snoozed, true, 'An unchanged poll must not undo a pause');
+  now = 60000; callback(); assert.equal(alarm.state().ringing, true);
+  alarm.snooze(); alarm.sync([paid('a'), paid('new')]); assert.equal(alarm.state().snoozed, false); assert.equal(alarm.state().ringing, true);
+  alarm.resolve('a'); assert.equal(alarm.state().ringing, true);
+  alarm.resolve('new'); assert.equal(alarm.state().ringing, false); assert.equal(alarm.state().count, 0);
+  alarm.sync([paid('another')]); alarm.snooze(); alarm.reset(); assert.equal(callback, null); assert.equal(alarm.state().count, 0);
+});
+
+test('dashboard does not silence an order until acceptance is saved; errors and session expiry are safe', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  await h.element('#sound-button').handlers.click({ currentTarget: h.element('#sound-button') });
+  const order = { ...paid('awaiting'), number: 3, createdAt: new Date().toISOString(), serviceDate: '2099-01-01', total: 16.9, items: [] };
+  h.context.fetch = async () => ({ ok: true, status: 200, json: async () => ({ orders: [order] }) });
+  await h.run('loadOrders({notify:false})');
+  assert.equal(h.run('orderAlarm.state().ringing'), true, 'Existing order sounds even without a fresh-arrival toast');
+  let respond;
+  h.context.fetch = () => new Promise(resolve => { respond = resolve; });
+  const failed = h.run('changeOrder(3, "Acceptée")');
+  assert.equal(h.run('orderAlarm.state().ringing'), true, 'Optimistic status change must not stop sound');
+  respond({ ok: false, status: 503 }); await failed;
+  assert.equal(h.run('orderAlarm.state().ringing'), true);
+  const accepted = h.run('changeOrder(3, "Acceptée")');
+  respond({ ok: true, status: 200 }); await accepted;
+  assert.equal(h.run('orderAlarm.state().ringing'), false);
+  h.run('orderAlarm.sync([{id:"again",status:"confirmed",payment:{status:"PAID"}}])');
+  h.run('showLogin("Session expirée")');
+  assert.equal(h.run('orderAlarm.state().count'), 0); assert.equal(h.run('soundPlayer.state().ringing'), false);
+});
+
+test('suspended browser sound shows a visible warning and resumes pending alarm on staff gesture', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  assert.equal(h.element('#audio-warning').hidden, false);
+  h.run('orderAlarm.sync([{id:"pending",status:"confirmed",payment:{status:"PAID"}}])');
+  await h.element('#enable-alerts-button').handlers.click();
+  assert.equal(h.element('#audio-warning').hidden, true); assert.equal(h.run('orderAlarm.state().ringing'), true);
+  h.audio.state = 'suspended'; h.audio.onstatechange();
+  assert.equal(h.element('#audio-warning').hidden, false); assert.equal(h.run('soundPlayer.state().ringing'), false);
+  h.run('unlockServiceSound({})'); await Promise.resolve();
+  assert.equal(h.run('orderAlarm.state().ringing'), true);
+  await h.element('#sound-button').handlers.click(); h.run('unlockServiceSound({})');
+  assert.equal(h.run('soundPlayer.state().enabled'), false, 'Gesture must respect explicit mute');
 });
 
 test('dashboard displays separate day, week and month turnover returned by the server', async () => {

@@ -27,8 +27,11 @@ const feedHealth = Object.fromEntries(["orders", "reservations", "rewards"].map(
 const queuedArrivals = new Map();
 let arrivalTimer = null;
 const savedSoundPreference = () => { try { return localStorage.getItem("bibous-restaurant-sound") !== "off"; } catch { return true; } };
+const savedSoundVolume = () => { try { return Number(localStorage.getItem('bibous-restaurant-volume')) || 0.85; } catch { return 0.85; } };
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, enabled: savedSoundPreference(), onChange: updateSoundControls });
+let orderAlarm = null;
+const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, enabled: savedSoundPreference(), volume: savedSoundVolume(), onChange: () => { updateSoundControls(); orderAlarm?.refresh(); } });
+orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, setTimer: setTimeout, clearTimer: clearTimeout, onChange: updateOrderAlarm });
 let currentView = "orders";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 let marketingPanel = null;
@@ -46,7 +49,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -182,8 +185,20 @@ function updateSoundControls() {
   document.querySelector("#sound-button").disabled = !state.supported;
   document.querySelector("#sound-button").setAttribute("aria-pressed", String(state.ready));
   document.querySelector("#sound-button").classList.toggle("sound-ready", Boolean(state.ready));
-  document.querySelector("#test-sound-button").disabled = !state.ready;
-  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son activé · commandes, réservations et récompenses." : !state.enabled ? "Son coupé. Les alertes visuelles restent actives." : "Cliquez sur Activer le son pour autoriser les alertes dans cet onglet.");
+  document.querySelector("#test-sound-button").disabled = !state.supported;
+  document.querySelector('#audio-warning').hidden = Boolean(state.ready);
+  document.querySelector('#enable-alerts-button').disabled = !state.supported;
+  updateText('#audio-warning-text', !state.supported ? 'Son indisponible dans ce navigateur. Ouvrez le tableau dans Chrome ou Safari.' : !state.enabled ? 'Le son est coupé : vous risquez de manquer une commande.' : 'Le navigateur attend un clic pour autoriser la sonnerie. Activez-la avant le service.');
+  document.querySelector('#sound-volume').value = Math.round(state.volume * 100);
+  updateText('#sound-volume-value', `${Math.round(state.volume * 100)} %`);
+  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son autorisé · les commandes payées en attente sonnent toutes les 8 secondes jusqu’à votre réponse." : !state.enabled ? "Son coupé. Les alertes visuelles restent actives." : "Cliquez sur Activer le son pour autoriser les alertes dans cet onglet.");
+}
+
+function updateOrderAlarm(state) {
+  document.querySelector('#order-alarm').hidden = !state.count;
+  updateText('#order-alarm-title', `${state.count} commande${state.count > 1 ? 's' : ''} payée${state.count > 1 ? 's' : ''} à accepter`);
+  updateText('#order-alarm-detail', `${state.numbers.slice(0, 6).map(n => '#' + n).join(' · ')}${state.numbers.length > 6 ? '…' : ''} — ${state.snoozed ? 'Silence temporaire : reprise automatique sous une minute.' : state.ringing ? 'Sonnerie répétée jusqu’à acceptation ou annulation confirmée.' : 'Activez le son pour entendre la sonnerie.'}`);
+  updateText('#pause-order-alarm', state.snoozed ? 'Reprendre la sonnerie' : 'Silence 1 minute');
 }
 
 function updateConnectionStatus() {
@@ -202,7 +217,8 @@ function announceArrivals(kind, count) {
     const message = [...queuedArrivals].map(([type, amount]) => `${amount} ${labels[type][amount > 1 ? 1 : 0]}`).join(" · ");
     updateText("#arrival-message", `${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} — ${message}`);
     showToast(message);
-    for (const type of queuedArrivals.keys()) soundPlayer.play(type);
+    // Orders have a continuous alarm, including the first successful snapshot.
+    for (const type of queuedArrivals.keys()) if (type !== 'orders' && !soundPlayer.state().ringing) soundPlayer.play(type);
     queuedArrivals.clear();
   }, 250);
 }
@@ -249,6 +265,7 @@ function loadFeed(kind, { notify = true } = {}) {
       if (!Array.isArray(items)) throw new Error("Réponse invalide");
       const fresh = arrivalTracker.update(kind, items);
       if (kind === "orders") {
+        orderAlarm.sync(items);
         orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi);
         revenue = payload.revenue && ["today", "week", "month"].every((key) => Number.isFinite(Number(payload.revenue[key]))) ? payload.revenue : { today: 0, week: 0, month: 0 };
         renderOrders();
@@ -289,6 +306,8 @@ async function changeOrder(id, status) {
     if (!API_BASE_URL || !order.apiId) throw new Error("API indisponible");
     const response = await fetch(`${API_BASE_URL}/dashboard/orders/${order.apiId}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: statusForLabel[status] }) });
     if (!response.ok) throw new Error("Mise à jour impossible");
+    // Never silence on an optimistic click: wait for the server's confirmation.
+    orderAlarm.resolve(order.apiId);
     const messages = { Acceptée: `Commande #${id} acceptée.`, Refusée: `Commande #${id} annulée. Pensez à effectuer le remboursement dans SumUp.`, Prête: `Commande #${id} est prête.`, "En livraison": `Commande #${id} confiée au livreur.`, Terminée: `Commande #${id} terminée.` };
     showToast(messages[status]);
   } catch {
@@ -601,20 +620,33 @@ document.querySelectorAll(".reward-filter").forEach((button) => button.addEventL
   renderRewardClaims();
 }));
 
-document.querySelector("#sound-button").addEventListener("click", async (event) => {
-  const enable = !soundPlayer.state().ready;
-  event.currentTarget.disabled = true;
+async function setServiceSound(enable) {
   const ready = await soundPlayer.setEnabled(enable);
   try { localStorage.setItem("bibous-restaurant-sound", enable ? "on" : "off"); } catch { /* Private browsing may block storage. */ }
   updateSoundControls();
-  if (ready) soundPlayer.play("orders");
-  else if (enable) updateText("#sound-status", "Le son est bloqué par le navigateur. Cliquez à nouveau sur Activer le son ou vérifiez les autorisations du site.");
-});
-document.querySelector("#test-sound-button").addEventListener("click", () => {
-  const played = soundPlayer.play("orders");
+  if (ready && !soundPlayer.state().ringing) soundPlayer.test();
+  else if (enable && !ready) updateText("#sound-status", "Le son est bloqué par le navigateur. Cliquez à nouveau sur Activer le son ou vérifiez les autorisations du site.");
+}
+document.querySelector("#sound-button").addEventListener("click", () => setServiceSound(!soundPlayer.state().ready));
+document.querySelector('#enable-alerts-button').addEventListener('click', () => setServiceSound(true));
+document.querySelector("#test-sound-button").addEventListener("click", async () => {
+  const ready = await soundPlayer.setEnabled(true);
+  try { localStorage.setItem('bibous-restaurant-sound', 'on'); } catch {}
+  const played = ready && soundPlayer.test();
   updateSoundControls();
   updateText("#sound-status", played ? "Son de test lancé. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Le son n’est pas prêt. Cliquez sur Activer le son.");
 });
+document.querySelector('#sound-volume').addEventListener('input', event => { soundPlayer.setVolume(Number(event.target.value) / 100); try { localStorage.setItem('bibous-restaurant-volume', String(soundPlayer.state().volume)); } catch {} });
+document.querySelector('#pause-order-alarm').addEventListener('click', () => { if (orderAlarm.state().snoozed) orderAlarm.resume(); else orderAlarm.snooze(); });
+document.querySelector('#view-alarm-orders').addEventListener('click', () => document.querySelector('#attention-orders').click());
+// Re-arm the browser from a genuine staff gesture, never override explicit mute.
+function unlockServiceSound(event) {
+  if (!dashboardToken || !soundPlayer.state().enabled || soundPlayer.state().ready) return;
+  if (event.target?.closest?.('#sound-button, #test-sound-button, #enable-alerts-button, #pause-order-alarm, #sound-volume')) return;
+  void soundPlayer.setEnabled(true);
+}
+document.addEventListener('pointerdown', unlockServiceSound);
+document.addEventListener('keydown', unlockServiceSound);
 document.querySelectorAll(".attention-links button").forEach((button) => button.addEventListener("click", () => {
   const view = button.id.replace("attention-", "");
   if (view === "orders") {
@@ -645,6 +677,7 @@ document.querySelector("#refresh-orders").addEventListener("click", async () => 
   if (dashboardToken) showToast(results.every(Boolean) ? "Demandes actualisées." : "Actualisation incomplète. Vérifiez la connexion.");
 });
 document.querySelector("#dashboard-login").addEventListener("click", async () => {
+  if (soundPlayer.state().enabled) void soundPlayer.setEnabled(true);
   const button = document.querySelector("#dashboard-login");
   const password = document.querySelector("#dashboard-password").value;
   document.querySelector("#login-error").textContent = "";
@@ -684,6 +717,7 @@ const resumeUpdates = () => {
   if (!dashboardToken) return;
   updateConnectionStatus();
   updateSoundControls();
+  orderAlarm.refresh();
   void refreshFeeds();
   if (currentView === "menu") void loadMenu();
   if (currentView === "backups" && !document.hidden) void loadBackups();
