@@ -241,7 +241,7 @@ const quarterHourSlots = (ranges) => ranges.flatMap(range => {
 function Header({ onBack, right, onRight }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
-  return <View style={[styles.header, desktop && styles.headerDesktop]}>{onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <View style={styles.headerBrand}><View style={[styles.wordmarkBadge, desktop && styles.wordmarkBadgeDesktop]}><Image source={headerWordmark} style={[styles.wordmarkImage, desktop && styles.wordmarkImageDesktop]} resizeMode="contain" /></View>{desktop && <Text style={styles.wordmarkTagline}>Burgers faits maison · Le Havre</Text>}</View>}{onRight ? <Pressable accessibilityLabel="Ouvrir le panier" onPress={onRight} style={styles.headerCart}><Text style={styles.headerCartText}>{right || "🛍"}</Text></Pressable> : <Text style={styles.headerRight}>{right || ""}</Text>}</View>;
+  return <>{!onBack && <View accessibilityRole="text" accessibilityLabel="Cadeau de bienvenue : crée ton compte et profite de 10 % sur ta première commande" style={styles.welcomeSignupStrip}><Text style={styles.welcomeSignupStripIcon}>🎁</Text><View style={styles.welcomeSignupStripCopy}><Text style={styles.welcomeSignupStripTitle}>Crée ton compte : −10 %</Text><Text style={styles.welcomeSignupStripText}>sur ta première commande · remise automatique</Text></View></View>}<View style={[styles.header, desktop && styles.headerDesktop]}>{onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <View style={styles.headerBrand}><View style={[styles.wordmarkBadge, desktop && styles.wordmarkBadgeDesktop]}><Image source={headerWordmark} style={[styles.wordmarkImage, desktop && styles.wordmarkImageDesktop]} resizeMode="contain" /></View>{desktop && <Text style={styles.wordmarkTagline}>Burgers faits maison · Le Havre</Text>}</View>}{onRight ? <Pressable accessibilityLabel="Ouvrir le panier" onPress={onRight} style={styles.headerCart}><Text style={styles.headerCartText}>{right || "🛍"}</Text></Pressable> : <Text style={styles.headerRight}>{right || ""}</Text>}</View></>;
 }
 
 function PrestigeEmblem({ level, unlocked = true, large = false }) {
@@ -1377,6 +1377,11 @@ const styles = StyleSheet.create(applyAppPalette({
   bibouPlusShortcutPeriod: { color: "#F6C98D", fontSize: 10, fontWeight: "700", marginTop: 3 },
   bibouPlusShortcutArrow: { color: "#F0A65A", fontSize: 34, lineHeight: 34 },
   welcomeRewardBanner: { maxWidth: 640, marginTop: 12, borderRadius: 17, padding: 14, flexDirection: "row", alignItems: "center", backgroundColor: "#EAF5E4", borderWidth: 1, borderColor: "#C7E1BF" },
+  welcomeSignupStrip: { width: "100%", maxWidth: 1180, alignSelf: "center", marginBottom: 10, borderRadius: 16, paddingVertical: 11, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FFF0C9", borderWidth: 1, borderColor: "#E5B84C" },
+  welcomeSignupStripIcon: { fontSize: 23, marginRight: 10 },
+  welcomeSignupStripCopy: { flexShrink: 1 },
+  welcomeSignupStripTitle: { color: "#4A260B", fontSize: 15, fontWeight: "900" },
+  welcomeSignupStripText: { color: "#6C4526", fontSize: 11, lineHeight: 16, marginTop: 1 },
   welcomeRewardIcon: { fontSize: 25, marginRight: 11 },
   welcomeRewardTitle: { color: "#2C201B", fontSize: 13, fontWeight: "900" },
   welcomeRewardText: { color: "#526D57", fontSize: 11, lineHeight: 16, marginTop: 3, paddingRight: 28 },
