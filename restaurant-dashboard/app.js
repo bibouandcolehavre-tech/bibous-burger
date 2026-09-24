@@ -4,6 +4,7 @@ const statusForLabel = Object.fromEntries(Object.entries(statusLabel).map(([key,
 const reservationStatusLabel = { pending: "À confirmer", confirmed: "Confirmée", cancelled: "Refusée" };
 const rewardStatusLabel = { active: "À remettre", used: "Utilisée", cancelled: "Annulée" };
 let orders = [];
+let revenue = { today: 0, week: 0, month: 0 };
 let reservations = [];
 let rewardClaims = [];
 let menuProducts = [];
@@ -138,11 +139,12 @@ function refreshMetrics() {
   const current = active();
   const newOrders = current.filter((order) => order.status === "Nouvelle");
   const ready = current.filter((order) => order.status === "Prête");
-  const revenue = orders.filter((order) => order.status !== "Refusée").reduce((total, order) => total + order.total, 0);
   document.querySelector("#active-count").textContent = current.length;
   document.querySelector("#new-count").textContent = newOrders.length;
   document.querySelector("#ready-count").textContent = ready.length;
-  document.querySelector("#turnover").textContent = euro(revenue);
+  document.querySelector("#turnover-today").textContent = euro(revenue.today);
+  document.querySelector("#turnover-week").textContent = euro(revenue.week);
+  document.querySelector("#turnover-month").textContent = euro(revenue.month);
   document.querySelector("#new-order-count").textContent = newOrders.length;
   document.querySelector("#all-filter-count").textContent = current.length;
   document.querySelector("#new-filter-count").textContent = newOrders.length;
@@ -246,7 +248,11 @@ function loadFeed(kind, { notify = true } = {}) {
       const items = payload[kind === "rewards" ? "claims" : kind];
       if (!Array.isArray(items)) throw new Error("Réponse invalide");
       const fresh = arrivalTracker.update(kind, items);
-      if (kind === "orders") { orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi); renderOrders(); }
+      if (kind === "orders") {
+        orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi);
+        revenue = payload.revenue && ["today", "week", "month"].every((key) => Number.isFinite(Number(payload.revenue[key]))) ? payload.revenue : { today: 0, week: 0, month: 0 };
+        renderOrders();
+      }
       else if (kind === "reservations") { reservations = items.map(reservationFromApi); renderReservations(); }
       else { rewardClaims = items.map(rewardClaimFromApi); renderRewardClaims(); }
       feedHealth[kind] = { lastSuccess: Date.now(), error: false };

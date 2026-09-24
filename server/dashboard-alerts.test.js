@@ -169,6 +169,16 @@ test('dashboard sounds once for a paid arrival; mute preserves visual alerts wit
   assert.equal(h.audio.oscillators.length, afterReactivation);
 });
 
+test('dashboard displays separate day, week and month turnover returned by the server', async () => {
+  const h = dashboardHarness();
+  await h.run('refreshFeeds()');
+  h.context.fetch = async () => ({ ok: true, status: 200, json: async () => ({ orders: [], revenue: { today: 12.5, week: 48.9, month: 201 } }) });
+  await h.run('loadOrders()');
+  assert.equal(h.element('#turnover-today').textContent, '12,50 €');
+  assert.equal(h.element('#turnover-week').textContent, '48,90 €');
+  assert.equal(h.element('#turnover-month').textContent, '201,00 €');
+});
+
 test('dashboard deduplicates in-flight reads, reports failure and returns to login on 401', async () => {
   const h = dashboardHarness();
   await h.run('refreshFeeds()');

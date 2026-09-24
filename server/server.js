@@ -26,6 +26,7 @@ const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, re
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
+const { revenuePeriods } = require("./revenue-periods");
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -737,11 +738,13 @@ const server = http.createServer(async (request, response) => {
       if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
       const confirmedOrders = paidOrders(database);
       const activeOrders = confirmedOrders.filter((order) => !["delivered", "cancelled"].includes(order.status));
+      const revenue = revenuePeriods(confirmedOrders);
       return send(response, 200, {
         activeOrders: activeOrders.length,
         newOrders: activeOrders.filter((order) => order.status === "confirmed").length,
         readyOrders: activeOrders.filter((order) => order.status === "ready").length,
-        serviceRevenue: confirmedOrders.filter((order) => order.status !== "cancelled" && order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).reduce((sum, order) => sum + order.total, 0)
+        revenue,
+        serviceRevenue: revenue.today
       });
     }
 
@@ -766,7 +769,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/dashboard/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
-      return send(response, 200, { orders: paidOrders(database) });
+      const orders = paidOrders(database);
+      return send(response, 200, { orders, revenue: revenuePeriods(orders) });
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/reservations") {
