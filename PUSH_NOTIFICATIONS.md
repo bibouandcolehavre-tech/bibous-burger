@@ -1,4 +1,14 @@
-# Notifications clients — état au 19 septembre 2026
+# Notifications clients — état au 24 septembre 2026
+
+## Avancement Android du 24 septembre
+
+- Avec l'accord explicite du propriétaire, projet Firebase **Bibou's Burgers** créé dans son compte Google : `bibou-s-burgers`, numéro `79209945273`. Forfait **Spark** constaté dans la console ; Google Analytics désactivé pendant la création, aucune formule payante souscrite.
+- Application Android enregistrée : package existant `com.krokly.bibousburgers`, ID Firebase `1:79209945273:android:3aae5b87e06862c813e368`. API Firebase Cloud Messaging V1 affichée **Activé**. Cela ne signifie pas encore que les envois de l'application fonctionnent.
+- La console a signalé des erreurs lors du suivi des opérations longues. Le projet et l'application ont ensuite été retrouvés dans leurs réglages : **ne pas les recréer**.
+- Blocage actuel : le bouton **Télécharger google-services.json** ne fournit pas de fichier récupérable dans le navigateur intégré (aucun événement de téléchargement, aucun fichier dans les téléchargements vérifiés). Reprendre dans un navigateur standard depuis [les réglages Android](https://console.firebase.google.com/project/bibou-s-burgers/settings/general/android:com.krokly.bibousburgers), puis fournir ce fichier de configuration publique. `app.json` n'a pas été modifié pour référencer un fichier absent.
+- Aucun compte de service privé/clé FCM n'a été créé ou transmis à Expo. Après réception de la configuration publique, préparer un accès FCM minimal, faire confirmer la création de la clé et son transfert sécurisé à EAS. Ne jamais demander de coller une clé privée dans le chat, Git ou le binaire.
+- Le client natif autorise désormais les émulateurs Android équipés de Google Play ; les gardes de consentement, les canaux séparés et l'exclusion d'Expo Go restent présents. Les simulateurs iOS restent hors du parcours pris en charge par ce projet. **Ce changement n'est pas encore dans l'APK installé**, qui est toujours la compilation `fd9713e7-2959-466e-bf56-ea124cdbb9f9`.
+- Tests : **202/202** réussis avec fournisseurs simulés, dont quatre nouveaux cas Android/Expo Go ; export Android Hermes réussi. Aucun message push réel envoyé, aucune préférence client modifiée, aucun coupe-circuit de production activé. Prochaine compilation native après ajout des identifiants Firebase/Expo, puis test limité à l'appareil du propriétaire.
 
 ## Ce qui est implémenté
 
@@ -10,15 +20,15 @@
 - Consentement contrôlé avant l’envoi, opt-out immédiat pour les tâches encore en attente, nettoyage à la déconnexion/suppression du compte, preuve privée de l’installation pour la réassocier. Aucun token brut transmis au tableau restaurant.
 - Contrôle des tickets et reçus Expo, retrait des appareils invalides, délais et quotas. « Accepté par le fournisseur » ne signifie pas reçu ou lu sur le téléphone. Aucun suivi d’ouverture publicitaire.
 
-## Blocage concret restant
+## Situation initiale du 19 septembre (historique)
 
 Le projet Expo `bibous-burger` / organisation `bibou-and-co` est associé (ID `2c35adf5-23b6-474e-a790-c8cf39d4d70a`). Sa page Credentials a été consultée : **aucun identifiant Apple ou Android n’est encore associé**. Aucun fichier `google-services.json` n’est fourni. Le propriétaire a levé la pause sur les versions installables de test et utilise un **iPhone**, à traiter en priorité. Connexion Apple effectuée ; contrat gratuit de développeur accepté avec son autorisation explicite. Le compte propose encore de rejoindre l’Apple Developer Program : **adhésion payante non active**, donc accès de signature/push de cette distribution iPhone non disponible. Aucun achat n’est autorisé à ce stade. Historique des builds iOS Expo consulté : vide.
 
-La reprise des versions installables est autorisée ; il reste les accès nécessaires et l’enregistrement de l’appareil réel. Aucun achat, création de clé ou envoi réel n’a été effectué pendant la préparation. Les exports iOS/Android sont du code compilable, pas des applications signées installables. Expo Go et le site web ne valident pas les push de cette application. Les fichiers privés de signature sont exclus de Git, de l’archive source EAS et de l’image serveur ; utiliser les canaux de gestion des identifiants prévus par Expo.
+La reprise des versions installables était autorisée ; les accès nécessaires et l’enregistrement de l’appareil réel restaient à traiter. Aucun achat, création de clé ou envoi réel n’avait été effectué pendant cette préparation initiale. Au 24 septembre, un APK signé est installé sur le téléphone Android virtuel (voir `ANDROID_EMULATOR.md`), mais il ne contient pas encore Firebase. Expo Go et le site web ne valident pas les push de cette application. Les fichiers privés de signature sont exclus de Git, de l’archive source EAS et de l’image serveur ; utiliser les canaux de gestion des identifiants prévus par Expo.
 
 ## Activation, sans reprendre le développement du début
 
-1. **Android** : configurer l’application Firebase pour le package Google Play existant `com.krokly.bibousburgers`, récupérer sa configuration publique `google-services.json`, la référencer avec `expo.android.googleServicesFile`, puis associer à EAS les identifiants FCM v1 autorisés. La clé de compte de service privée doit rester hors de Git et hors du binaire. Sa création/son accès nécessitent l’autorisation appropriée.
+1. **Android** : reprendre l'application Firebase déjà enregistrée dans `bibou-s-burgers` pour le package Google Play existant `com.krokly.bibousburgers`, récupérer sa configuration publique `google-services.json`, la référencer avec `expo.android.googleServicesFile`, puis associer à EAS les identifiants FCM v1 autorisés. La clé de compte de service privée doit rester hors de Git et hors du binaire. Sa création/son accès nécessitent l’autorisation appropriée.
 2. **iOS** : disposer du compte Apple Developer adéquat, conserver `com.bibouandco.bibousburgers`, associer signature et clé APNs dans EAS. Connexion, 2FA, contrat ou inscription payante sont réalisés/validés par le propriétaire. Ne pas demander de copier les mots de passe dans la conversation.
 3. Générer une version native de test après validation des accès et du quota de compilation. La pause est levée, mais aucune nouvelle dépense ni publication boutique n’est autorisée. Le plugin `expo-notifications`, les canaux Android et le projectId sont déjà configurés.
 4. Utiliser d’abord un environnement privé et un seul téléphone dont le titulaire a accepté les essais. Définir `PUSH_ENABLED=true` et seulement la plateforme testée (`PUSH_ANDROID_ENABLED=true` ou `PUSH_IOS_ENABLED=true`). Facultatif : activer la sécurité renforcée Push Expo et définir `EXPO_ACCESS_TOKEN` côté serveur uniquement. Ne jamais exposer ce jeton avec une variable `EXPO_PUBLIC_*`.

@@ -31,6 +31,10 @@ https://expo.dev/accounts/bibou-and-co/projects/bibous-burger/builds/fd9713e7-29
 - Réservations sur la dernière compilation : affichage des heures fixes 12:00, 12:15, 12:30, etc., disponibilités du lendemain chargées, limite de quatre personnes vérifiée (bouton + désactivé à quatre). Aucune réservation envoyée.
 - Raccourci `Lancer Android Bibou.command` testé avec le téléphone déjà démarré ; le démarrage à froid du téléphone a été effectué séparément lors de l’installation.
 
-Les essais décrits ci-dessus ne créent aucun compte client, n’envoient aucun SMS, ne valident aucune réservation et ne déclenchent aucun paiement. Les écrans authentifiés et les notifications distantes restent à tester séparément. Le client push actuel rejette les simulateurs via `Device.isDevice` : la présence des services Google Play dans ce téléphone ne suffit donc pas à activer les notifications dans cette version.
+Les essais invités décrits ci-dessus n'ont créé aucun compte client, envoyé aucun SMS, validé aucune réservation ni déclenché de paiement.
+
+Le propriétaire a ensuite effectué lui-même sa connexion SMS et validé l'écran d'anniversaire facultatif. L'espace client et la disponibilité du cadeau de bienvenue −10 % ont été constatés ; la session a été conservée après fermeture complète puis redémarrage de l'application. Aucun code ni donnée d'anniversaire n'est recopié ici. Le calcul réel de remise au paiement n'a pas été retesté pendant cette vérification.
+
+Les notifications distantes restent à tester séparément. L'APK installé rejette encore les simulateurs via `Device.isDevice`. Le code source a été adapté pour permettre un émulateur Android avec Google Play et testé (202 tests réussis au total), mais la prochaine compilation attend la configuration Firebase/FCM décrite dans `PUSH_NOTIFICATIONS.md`. La simple présence des services Google Play ne suffit donc pas à activer les notifications dans l'APK actuellement installé.
 
 Les captures locales et le journal du crash initial sont conservés dans le dossier parent `tests-android-2026-09-24/`. Les fichiers opérationnels `server/data.json` et les modifications préexistantes de `RELEASE_READINESS.md` n’ont pas été inclus dans ces commits.

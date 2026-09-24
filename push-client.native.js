@@ -9,7 +9,10 @@ import { pushRequest } from './push-api';
 const KEY = 'bibousPushInstallationV1';
 let identityPromise, queue = Promise.resolve(), epoch = 0, handledResponse = null;
 const serial = task => { const next = queue.then(task, task); queue = next.catch(() => {}); return next; };
-const usable = () => Device.isDevice && Constants.executionEnvironment !== 'storeClient' && ['ios', 'android'].includes(Platform.OS);
+// Android emulators with Google Play services can receive FCM notifications.
+// Keep Expo Go and iOS simulators out of this app's supported test path.
+const usable = () => Constants.executionEnvironment !== 'storeClient'
+  && (Platform.OS === 'android' || (Platform.OS === 'ios' && Device.isDevice));
 const granted = p => p.granted || p.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
 async function tokenWithTimeout(projectId) {
   let timer;
@@ -28,7 +31,7 @@ const identity = () => identityPromise ||= (async () => {
 Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
 
 export async function pushDeviceStatus() {
-  if (!usable()) return { supported: false, granted: false, message: 'Les notifications nécessitent la version installable sur un vrai téléphone (pas Expo Go).' };
+  if (!usable()) return { supported: false, granted: false, message: 'Utilise la version installable sur un téléphone ou sur un émulateur Android avec Google Play (pas Expo Go).' };
   const permission = await Notifications.getPermissionsAsync();
   return { supported: true, platform: Platform.OS, granted: granted(permission), canAskAgain: permission.canAskAgain, message: granted(permission) ? 'Les notifications sont autorisées sur ce téléphone.' : 'Les notifications sont désactivées sur ce téléphone. Ton application reste utilisable.' };
 }

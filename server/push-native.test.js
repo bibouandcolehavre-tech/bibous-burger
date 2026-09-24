@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), crypto = require('node:crypto');
-function harness({ permission = true, usable = true, platform = 'ios', preference = true, delayed = null } = {}) {
+function harness({ permission = true, isDevice = true, executionEnvironment = 'standalone', platform = 'ios', preference = true, delayed = null } = {}) {
   let stored = null, lastResponse = null, onOpen, onToken, asks = 0, registrations = 0, detached = 0, generated = 0;
   const calls = [], state = { preferences: { service: preference, marketing: false } };
   const Notifications = {
@@ -10,7 +10,7 @@ function harness({ permission = true, usable = true, platform = 'ios', preferenc
     addNotificationResponseReceivedListener: fn => { onOpen = fn; return { remove: () => {} }; }, addPushTokenListener: fn => { onToken = fn; return { remove: () => {} }; },
     getLastNotificationResponseAsync: async () => lastResponse,
   };
-  const context = { Promise, setTimeout, clearTimeout, Error, JSON, module: { exports: {} }, Linking: { openSettings: async () => {} }, Platform: { OS: platform }, Notifications, Device: { isDevice: usable }, Constants: { executionEnvironment: 'standalone', expoConfig: { extra: { eas: { projectId: 'fake-project' } } } }, Crypto: { randomUUID: crypto.randomUUID }, SecureStore: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device', getItemAsync: async () => stored, setItemAsync: async (_, value) => { stored = value; } }, pushRequest: async (_, token, route = '', method = 'GET') => {
+  const context = { Promise, setTimeout, clearTimeout, Error, JSON, module: { exports: {} }, Linking: { openSettings: async () => {} }, Platform: { OS: platform }, Notifications, Device: { isDevice }, Constants: { executionEnvironment, expoConfig: { extra: { eas: { projectId: 'fake-project' } } } }, Crypto: { randomUUID: crypto.randomUUID }, SecureStore: { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device', getItemAsync: async () => stored, setItemAsync: async (_, value) => { stored = value; } }, pushRequest: async (_, token, route = '', method = 'GET') => {
     if (!route) { if (delayed) await delayed; return state; }
     if (method === 'POST') registrations++;
     if (method === 'DELETE') detached++;
@@ -50,7 +50,33 @@ test('natif : ouverture à froid et clic live ne naviguent qu’une fois', async
   assert.equal(opened.length, 1); assert.equal(opened[0].screen, 'orders'); assert.equal(refreshed, 1);
   stop(); h.open({ notification: { request: { identifier: 'other', content: { data: {} } } } }); assert.equal(opened.length, 1);
 });
-test('natif : simulateur non supporté, aucune inscription réseau', async () => {
-  const h = harness({ usable: false }); assert.equal((await h.pushDeviceStatus()).supported, false);
+test('natif : simulateur iOS exclu du parcours de test, aucune inscription réseau', async () => {
+  const h = harness({ isDevice: false }); assert.equal((await h.pushDeviceStatus()).supported, false);
   await h.syncPushDevice('api', 'token', { ask: true }); assert.equal(h.counts().registrations, 0); assert.equal(h.counts().asks, 0);
+});
+test('natif : émulateur Android accepté, canaux et consentement conservés', async () => {
+  const h = harness({ platform: 'android', isDevice: false });
+  assert.equal((await h.pushDeviceStatus()).supported, true);
+  await h.syncPushDevice('api', 'token');
+  assert.deepEqual(h.calls.slice(0, 2), ['commandes', 'promotions']);
+  assert.equal(h.counts().registrations, 1); assert.equal(h.counts().asks, 0);
+  assert.equal(h.state.preferences.marketing, false);
+});
+test('natif : émulateur Android sans consentement ne génère aucun jeton', async () => {
+  const h = harness({ platform: 'android', isDevice: false, preference: false });
+  await h.syncPushDevice('api', 'token', { ask: true });
+  assert.equal(h.counts().generated, 0); assert.equal(h.counts().asks, 0); assert.equal(h.counts().registrations, 0);
+});
+test('natif : refus système sur émulateur Android empêche toute association', async () => {
+  const h = harness({ platform: 'android', isDevice: false, permission: false });
+  await h.syncPushDevice('api', 'token', { ask: true });
+  assert.equal(h.counts().asks, 1); assert.equal(h.counts().generated, 0); assert.equal(h.counts().registrations, 0);
+});
+test('natif : Expo Go reste exclu sur téléphone et émulateur', async () => {
+  for (const platform of ['android', 'ios']) for (const isDevice of [true, false]) {
+    const h = harness({ platform, isDevice, executionEnvironment: 'storeClient' });
+    assert.equal((await h.pushDeviceStatus()).supported, false);
+    await h.syncPushDevice('api', 'token', { ask: true });
+    assert.equal(h.counts().asks, 0); assert.equal(h.counts().generated, 0); assert.equal(h.counts().registrations, 0);
+  }
 });
