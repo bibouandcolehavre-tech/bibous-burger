@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "79209945273",
+    "project_id": "bibou-s-burgers",
+    "storage_bucket": "bibou-s-burgers.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:79209945273:android:3aae5b87e06862c813e368",
+        "android_client_info": {
+          "package_name": "com.krokly.bibousburgers"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6DoIlWAVi9cEcfwf0KXv7fcLp7LEFbUY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
