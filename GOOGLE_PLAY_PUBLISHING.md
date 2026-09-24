@@ -44,13 +44,15 @@ Sécurité des données : déclaration finale enregistrée, confirmation visible
 - Original retrouvé et conservé dans `assets/bibous-blue-original.png` (image `exec-87a57e16-981e-4d76-99f7-fc93bb6e571a.png`). Pas de régénération.
 - Formats natifs 1024 px et icône Play 512 px produits ; marge Android adaptative vérifiée avec masque circulaire, tout le nom reste lisible. Recette : `scripts/prepare-store-assets.cjs` avec sharp.
 - La compilation code 3 a été annulée **encore en file d'attente**, car elle utilisait l'ancienne icône orange. Une nouvelle compilation est nécessaire avec le logo approuvé.
+- Compilation avec logo approuvé lancée : **1.0.0 / code 4**, commit `3239d38`, signature distante inchangée, https://expo.dev/accounts/bibou-and-co/projects/bibous-burger/builds/487dadf6-d8a6-48c1-acec-0054ee352b3c. Source téléversée ; encore en file d'attente au dernier contrôle. Aucun supplément payant souscrit.
 - Visuel Play 1024 × 500 dans `store-assets/google-play/feature-1024x500.png`, composé du logo approuvé et de texte décrivant les fonctions réelles.
+- Fiche française entièrement enregistrée : titre Bibou's Burgers, descriptions, logo, bannière, deux captures natives (accueil puis connexion). Statut confirmé : **Prête à être envoyée pour examen**. Icône et bannière signalées comme visuels générés/modifiés avec IA, conformément à la déclaration demandée ; captures non retouchées.
 
 ## Restant
 
-- Contrôler le statut final du compte et des coordonnées publiques.
-- Fiche Play (textes, catégorie, coordonnées, icône, visuel et captures réelles).
-- Classification, public cible et formulaire Sécurité des données selon le code et les partenaires réellement utilisés.
-- Accès de revue opérationnel, AAB téléchargé et vérifié, signature et dépôt Google Play.
+- France sélectionnée et sauvegardée comme seul pays de diffusion initial. La zone de livraison reste limitée à 5 km, inchangée.
+- Brouillon de production enregistré : « 1.0.0 (4) — Première version », notes françaises renseignées. La signature Google Play et la protection automatique étaient déjà activées, aucun changement effectué à ces réglages.
+- 222/222 tests relancés et réussis après intégration du logo ; export web réussi. Pas de changement de logique métier ni de données client.
+- **À faire :** attendre la compilation code 4, télécharger et vérifier l'AAB (package, version, signature), puis l'importer dans le brouillon de production existant.
 - Contrôles de release et éventuels consentements/contrats à présenter au propriétaire avant acceptation.
 - Envoyer pour examen uniquement après résolution de tous les éléments obligatoires. Rien n'a encore été publié ni envoyé pour examen.

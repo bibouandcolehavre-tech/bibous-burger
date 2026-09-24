@@ -95,10 +95,12 @@ L'application n'intègre ni publicité ni suivi publicitaire et ne vend pas les 
 
 ## Éléments graphiques à fournir aux boutiques
 
-- icône 1024 × 1024 : prête dans `assets/icon.png` ;
-- icône Android adaptative : prête dans `assets/adaptive-icon.png` ;
-- captures d'écran téléphone : accueil, produit, créneaux, fidélité, Bibou +, réservation et suivi ;
-- visuel promotionnel Google Play : à créer à partir de l'identité vermillon, crème et noire.
+- logo bleu approuvé à titre provisoire le 24 septembre 2026, original conservé dans `assets/bibous-blue-original.png` ;
+- icône 1024 × 1024 : `assets/icon.png` ;
+- icône Android adaptative : `assets/adaptive-icon.png`, marges du masque rond vérifiées ;
+- fiche Google Play : icône 512 px et bannière 1024 × 500 dans `store-assets/google-play/`, déclarées comme visuels créés/modifiés avec IA ;
+- deux captures Android réelles importées : accueil puis connexion, sans donnée client ;
+- textes, visuels et fiche française enregistrés dans Google Play, prêts à être envoyés pour examen. Pas encore publiés.
 
 ## Dernières actions qui nécessitent le propriétaire des comptes
 
