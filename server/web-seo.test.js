@@ -14,6 +14,7 @@ test('Accueil SEO : français, canonical stable et contenu public sans JavaScrip
   assert.equal((html.match(/<title>/g) || []).length, 1);
   assert.match(html, /<title>Bibou&#39;s Burgers Le Havre/);
   assert.match(html, /<meta name="description"/);
+  assert.match(html.split('</head>')[0], /<meta name="google-site-verification" content="LfixJmMoMMRd9_8dmXcTHi4VoK4ggCXinCB_r6kcjYU">/);
   assert.match(html, /<link rel="canonical" href="https:\/\/bibous-burger-app.onrender.com\/">/);
   assert.match(html, /<div id="root"><main id="seo-home"/);
   assert.match(html, /<h1>.*au Havre<\/h1>/);
