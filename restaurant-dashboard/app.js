@@ -26,12 +26,12 @@ const feedRequests = new Map();
 const feedHealth = Object.fromEntries(["orders", "reservations", "rewards"].map((kind) => [kind, { lastSuccess: 0, error: false }]));
 const queuedArrivals = new Map();
 let arrivalTimer = null;
-const savedSoundPreference = () => { try { return localStorage.getItem("bibous-restaurant-sound") !== "off"; } catch { return true; } };
+// Alerts are mandatory: the retired "sound=off" preference is deliberately ignored.
 const savedSoundVolume = () => { try { return Number(localStorage.getItem('bibous-restaurant-volume')) || 0.85; } catch { return 0.85; } };
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 let orderAlarm = null;
-const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, enabled: savedSoundPreference(), volume: savedSoundVolume(), onChange: () => { updateSoundControls(); orderAlarm?.refresh(); } });
-orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, setTimer: setTimeout, clearTimer: clearTimeout, onChange: updateOrderAlarm });
+const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, volume: savedSoundVolume(), onChange: () => { updateSoundControls(); orderAlarm?.refresh(); } });
+orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, onChange: updateOrderAlarm });
 let currentView = "orders";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 let marketingPanel = null;
@@ -181,24 +181,19 @@ function updateAttention(orderCount, reservationCount, rewardCount) {
 
 function updateSoundControls() {
   const state = soundPlayer.state();
-  updateText("#sound-button", !state.supported ? "Son non disponible" : state.ready ? "Couper le son" : state.enabled ? "Activer le son" : "Son coupé · Activer");
-  document.querySelector("#sound-button").disabled = !state.supported;
-  document.querySelector("#sound-button").setAttribute("aria-pressed", String(state.ready));
-  document.querySelector("#sound-button").classList.toggle("sound-ready", Boolean(state.ready));
   document.querySelector("#test-sound-button").disabled = !state.supported;
   document.querySelector('#audio-warning').hidden = Boolean(state.ready);
   document.querySelector('#enable-alerts-button').disabled = !state.supported;
-  updateText('#audio-warning-text', !state.supported ? 'Son indisponible dans ce navigateur. Ouvrez le tableau dans Chrome ou Safari.' : !state.enabled ? 'Le son est coupé : vous risquez de manquer une commande.' : 'Le navigateur attend un clic pour autoriser la sonnerie. Activez-la avant le service.');
+  updateText('#audio-warning-text', !state.supported ? 'Son indisponible dans ce navigateur. Ouvrez le tableau dans Chrome ou Safari.' : 'Le navigateur attend un clic pour autoriser la sonnerie. Activez-la avant le service.');
   document.querySelector('#sound-volume').value = Math.round(state.volume * 100);
   updateText('#sound-volume-value', `${Math.round(state.volume * 100)} %`);
-  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son autorisé · les commandes payées en attente sonnent toutes les 8 secondes jusqu’à votre réponse." : !state.enabled ? "Son coupé. Les alertes visuelles restent actives." : "Cliquez sur Activer le son pour autoriser les alertes dans cet onglet.");
+  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son autorisé · alerte toutes les 8 secondes jusqu’à acceptation ou annulation. Pas de coupure ni de pause dans le tableau." : "Cliquez sur Activer les alertes sonores pour autoriser le son dans cet onglet.");
 }
 
 function updateOrderAlarm(state) {
   document.querySelector('#order-alarm').hidden = !state.count;
   updateText('#order-alarm-title', `${state.count} commande${state.count > 1 ? 's' : ''} payée${state.count > 1 ? 's' : ''} à accepter`);
-  updateText('#order-alarm-detail', `${state.numbers.slice(0, 6).map(n => '#' + n).join(' · ')}${state.numbers.length > 6 ? '…' : ''} — ${state.snoozed ? 'Silence temporaire : reprise automatique sous une minute.' : state.ringing ? 'Sonnerie répétée jusqu’à acceptation ou annulation confirmée.' : 'Activez le son pour entendre la sonnerie.'}`);
-  updateText('#pause-order-alarm', state.snoozed ? 'Reprendre la sonnerie' : 'Silence 1 minute');
+  updateText('#order-alarm-detail', `${state.numbers.slice(0, 6).map(n => '#' + n).join(' · ')}${state.numbers.length > 6 ? '…' : ''} — ${state.ringing ? 'Sonnerie répétée jusqu’à acceptation ou annulation confirmée.' : 'Activez le son pour entendre la sonnerie.'}`);
 }
 
 function updateConnectionStatus() {
@@ -620,30 +615,26 @@ document.querySelectorAll(".reward-filter").forEach((button) => button.addEventL
   renderRewardClaims();
 }));
 
-async function setServiceSound(enable) {
-  const ready = await soundPlayer.setEnabled(enable);
-  try { localStorage.setItem("bibous-restaurant-sound", enable ? "on" : "off"); } catch { /* Private browsing may block storage. */ }
+async function activateServiceSound() {
+  const ready = await soundPlayer.activate();
   updateSoundControls();
   if (ready && !soundPlayer.state().ringing) soundPlayer.test();
-  else if (enable && !ready) updateText("#sound-status", "Le son est bloqué par le navigateur. Cliquez à nouveau sur Activer le son ou vérifiez les autorisations du site.");
+  else if (!ready) updateText("#sound-status", "Le son est bloqué par le navigateur. Cliquez à nouveau sur Activer les alertes sonores ou vérifiez les autorisations du site.");
 }
-document.querySelector("#sound-button").addEventListener("click", () => setServiceSound(!soundPlayer.state().ready));
-document.querySelector('#enable-alerts-button').addEventListener('click', () => setServiceSound(true));
+document.querySelector('#enable-alerts-button').addEventListener('click', activateServiceSound);
 document.querySelector("#test-sound-button").addEventListener("click", async () => {
-  const ready = await soundPlayer.setEnabled(true);
-  try { localStorage.setItem('bibous-restaurant-sound', 'on'); } catch {}
+  const ready = await soundPlayer.activate();
   const played = ready && soundPlayer.test();
   updateSoundControls();
-  updateText("#sound-status", played ? "Son de test lancé. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Le son n’est pas prêt. Cliquez sur Activer le son.");
+  updateText("#sound-status", played ? soundPlayer.state().ringing ? "La sonnerie de commande reste active. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Son de test lancé. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Le son n’est pas prêt. Cliquez sur Activer les alertes sonores.");
 });
 document.querySelector('#sound-volume').addEventListener('input', event => { soundPlayer.setVolume(Number(event.target.value) / 100); try { localStorage.setItem('bibous-restaurant-volume', String(soundPlayer.state().volume)); } catch {} });
-document.querySelector('#pause-order-alarm').addEventListener('click', () => { if (orderAlarm.state().snoozed) orderAlarm.resume(); else orderAlarm.snooze(); });
 document.querySelector('#view-alarm-orders').addEventListener('click', () => document.querySelector('#attention-orders').click());
-// Re-arm the browser from a genuine staff gesture, never override explicit mute.
+// The browser may require a genuine gesture after loading or suspending the page.
 function unlockServiceSound(event) {
-  if (!dashboardToken || !soundPlayer.state().enabled || soundPlayer.state().ready) return;
-  if (event.target?.closest?.('#sound-button, #test-sound-button, #enable-alerts-button, #pause-order-alarm, #sound-volume')) return;
-  void soundPlayer.setEnabled(true);
+  if (!dashboardToken || soundPlayer.state().ready) return;
+  if (event.target?.closest?.('#test-sound-button, #enable-alerts-button')) return;
+  void soundPlayer.activate();
 }
 document.addEventListener('pointerdown', unlockServiceSound);
 document.addEventListener('keydown', unlockServiceSound);
@@ -677,7 +668,7 @@ document.querySelector("#refresh-orders").addEventListener("click", async () => 
   if (dashboardToken) showToast(results.every(Boolean) ? "Demandes actualisées." : "Actualisation incomplète. Vérifiez la connexion.");
 });
 document.querySelector("#dashboard-login").addEventListener("click", async () => {
-  if (soundPlayer.state().enabled) void soundPlayer.setEnabled(true);
+  void soundPlayer.activate();
   const button = document.querySelector("#dashboard-login");
   const password = document.querySelector("#dashboard-password").value;
   document.querySelector("#login-error").textContent = "";

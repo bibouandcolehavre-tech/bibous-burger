@@ -51,16 +51,15 @@
     return samples;
   };
 
-  const createSoundPlayer = ({ createContext, enabled = true, volume = 1, onChange = () => {} }) => {
+  const createSoundPlayer = ({ createContext, volume = 1, onChange = () => {} }) => {
     let context = null;
-    let wanted = enabled;
     let nextAt = 0;
     let generation = 0;
     let failed = false;
     let level = Math.min(1, Math.max(0.1, Number(volume) || 1));
     let alarmNode = null, testNode = null, alarmBuffer = null;
     const nodes = new Set();
-    const state = () => ({ enabled: wanted, volume: level, supported: Boolean(createContext), ready: wanted && !failed && context?.state === "running", ringing: Boolean(alarmNode) });
+    const state = () => ({ volume: level, supported: Boolean(createContext), ready: !failed && context?.state === "running", ringing: Boolean(alarmNode) });
     const stopBuffer = entry => { if (!entry) return; try { entry.source.stop(); } catch {} entry.source.disconnect(); entry.gain.disconnect(); };
     const stopAlarm = () => { const previous = alarmNode; alarmNode = null; stopBuffer(previous); };
     const stop = () => {
@@ -73,10 +72,8 @@
       nodes.clear();
       nextAt = 0;
     };
-    const setEnabled = async (value) => {
+    const activate = async () => {
       const request = ++generation;
-      wanted = Boolean(value);
-      if (!wanted) { stop(); onChange(state()); return false; }
       if (!createContext) { onChange(state()); return false; }
       failed = false;
       try {
@@ -144,15 +141,14 @@
       } catch { failed = true; stop(); onChange(state()); return false; }
     };
     const setVolume = value => { if (!Number.isFinite(Number(value))) return; level = Math.min(1, Math.max(0.1, Number(value))); for (const entry of [alarmNode, testNode]) entry?.gain.gain.setValueAtTime(level, context.currentTime); onChange(state()); };
-    return { state, setEnabled, play, stop, startAlarm: () => startBuffer(true), stopAlarm, test: () => startBuffer(false), setVolume };
+    return { state, activate, play, stop, startAlarm: () => startBuffer(true), stopAlarm, test: () => startBuffer(false), setVolume };
   };
 
-  const createOrderAlarm = ({ player, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} }) => {
-    let pending = new Map(), quietUntil = 0, timer = null;
-    const state = () => ({ count: pending.size, numbers: [...pending.values()].map(item => item.number).filter(Number.isFinite), snoozed: quietUntil > now(), ringing: player.state().ringing, ready: player.state().ready });
-    const cancelTimer = () => { if (timer !== null) clearTimer(timer); timer = null; };
+  const createOrderAlarm = ({ player, onChange = () => {} }) => {
+    let pending = new Map();
+    const state = () => ({ count: pending.size, numbers: [...pending.values()].map(item => item.number).filter(Number.isFinite), ringing: player.state().ringing, ready: player.state().ready });
     const refresh = () => {
-      if (pending.size && quietUntil <= now() && player.state().ready) player.startAlarm();
+      if (pending.size && player.state().ready) player.startAlarm();
       else player.stopAlarm();
       onChange(state());
     };
@@ -160,13 +156,10 @@
       state, refresh,
       sync(items) {
         const next = new Map(items.filter(item => item?.id && isActionable('orders', item)).map(item => [item.id, item]));
-        if (!next.size || [...next.keys()].some(id => !pending.has(id))) { quietUntil = 0; cancelTimer(); }
         pending = next; refresh();
       },
-      resolve(id) { pending.delete(id); if (!pending.size) { quietUntil = 0; cancelTimer(); } refresh(); },
-      snooze() { if (!pending.size) return; cancelTimer(); quietUntil = now() + 60000; timer = setTimer(() => { timer = null; quietUntil = 0; refresh(); }, 60000); refresh(); },
-      resume() { cancelTimer(); quietUntil = 0; refresh(); },
-      reset() { pending.clear(); quietUntil = 0; cancelTimer(); player.stopAlarm(); onChange(state()); }
+      resolve(id) { pending.delete(id); refresh(); },
+      reset() { pending.clear(); player.stopAlarm(); onChange(state()); }
     };
   };
   return { createArrivalTracker, connectionStatus, createSoundPlayer, createOrderAlarm, createAlarmSamples };

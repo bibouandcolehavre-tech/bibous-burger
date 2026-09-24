@@ -17,8 +17,6 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .alert-controls strong { font-size:16px; }
 .alert-controls p { color:var(--muted); font-size:12px; margin:5px 0 0; line-height:1.5; }
 .alert-buttons { display:flex; flex-wrap:wrap; gap:8px; flex-shrink:0; }
-.service-alerts .sound-button { border:1px solid #d2c0b4; color:#fff; background:#29201d; border-radius:11px; padding:11px 14px; font-weight:800; font-size:12px; }
-.service-alerts .sound-ready { background:#e7f2df; color:#295337; border-color:#b4caaa; }
 .service-alerts button:disabled { opacity:.55; cursor:not-allowed; }
 .service-alerts button:focus-visible { outline:3px solid #e77a30; outline-offset:3px; }
 .attention-links { display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; }
@@ -34,7 +32,6 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .order-alarm strong { display:block; font-size:23px; line-height:1.25; }
 .order-alarm p { margin:8px 0 0; max-width:630px; font-size:14px; }
 .order-alarm button { padding:12px 15px; border-radius:10px; background:white; color:#8a2019; font-weight:850; }
-.order-alarm #pause-order-alarm { background:transparent; border:1px solid #ffcab9; color:white; }
 .order-alarm button:focus-visible, .audio-warning button:focus-visible { outline:3px solid #ffc864; outline-offset:3px; }
 .audio-warning { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:16px; margin-bottom:18px; border:2px solid #cf643c; border-radius:12px; background:#fff0de; color:#742b14; }
 .audio-warning p { margin:5px 0 0; font-size:13px; }

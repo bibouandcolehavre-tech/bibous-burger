@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bibou's Burgers — Espace restaurant</title>
     <meta name="robots" content="noindex, nofollow" />
-    <link rel="stylesheet" href="./styles.css?v=order-alarm-2" />
+    <link rel="stylesheet" href="./styles.css?v=order-alarm-3" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
   </head>
   <body>
@@ -62,16 +62,16 @@
 
         <section id="order-alarm" class="order-alarm" hidden aria-label="Commandes en attente">
           <div aria-live="polite" aria-atomic="true"><strong id="order-alarm-title"></strong><p id="order-alarm-detail"></p></div>
-          <div class="alert-buttons"><button type="button" id="view-alarm-orders">Voir les commandes</button><button type="button" id="pause-order-alarm">Silence 1 minute</button></div>
+          <div class="alert-buttons"><button type="button" id="view-alarm-orders">Voir les commandes</button></div>
         </section>
         <section class="service-alerts" aria-label="Alertes du restaurant">
           <div id="audio-warning" class="audio-warning"><div><strong>Attention : aucune sonnerie active</strong><p id="audio-warning-text">Autorisez le son avant le service.</p></div><button type="button" id="enable-alerts-button">Activer les alertes sonores</button></div>
-          <div class="alert-controls"><div><strong>Les alertes du service</strong><p id="sound-status">Activez le son pour entendre les nouvelles demandes.</p></div><div class="alert-buttons"><button type="button" class="sound-button" id="sound-button" aria-pressed="false">Activer le son</button><button type="button" class="secondary-button" id="test-sound-button" disabled>Tester le son</button></div></div>
+          <div class="alert-controls"><div><strong>Les alertes du service</strong><p id="sound-status">Activez le son pour entendre les nouvelles demandes.</p></div><div class="alert-buttons"><button type="button" class="secondary-button" id="test-sound-button" disabled>Tester le son</button></div></div>
           <label class="sound-volume" for="sound-volume">Volume de la sonnerie <input id="sound-volume" type="range" min="10" max="100" step="5" value="85" /><output id="sound-volume-value" for="sound-volume">85 %</output></label>
           <div class="attention-links"><button type="button" id="attention-orders">0 commande à accepter</button><button type="button" id="attention-reservations">0 réservation à confirmer</button><button type="button" id="attention-rewards">0 récompense à remettre</button></div>
           <p id="arrival-message" class="arrival-message" role="status" aria-live="polite" aria-atomic="true"></p>
           <p id="connection-status" class="connection-status" role="status">Connexion au restaurant…</p>
-          <small>Faites un test avant le service. Le volume du Mac, la sortie audio et le son de cet onglet doivent être activés. Gardez ce tableau ouvert et le Mac éveillé : une page fermée ou un ordinateur en veille ne peut pas sonner. Utilisez un seul onglet. Le bouton « Silence 1 minute » n’accepte pas la commande ; toute nouvelle commande relance l’alerte.</small>
+          <small>Les alertes restent actives sans bouton de coupure ni de pause. Faites un test avant le service. Le volume du Mac, la sortie audio et le son de cet onglet doivent être activés. Gardez ce tableau ouvert et le Mac éveillé : une page fermée ou un ordinateur en veille ne peut pas sonner. Utilisez un seul onglet.</small>
         </section>
 
         <nav class="mobile-view-switch" aria-label="Choisir la rubrique">
@@ -169,10 +169,10 @@
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
-    <script src="./alerts.js?v=order-alarm-2"></script>
+    <script src="./alerts.js?v=order-alarm-3"></script>
     <script src="./marketing.js?v=actualites-1"></script>
     <script src="./notifications.js?v=push-1"></script>
     <script src="./crm.js?v=crm-1"></script>
-    <script src="./app.js?v=order-alarm-2"></script>
+    <script src="./app.js?v=order-alarm-3"></script>
   </body>
 </html>
