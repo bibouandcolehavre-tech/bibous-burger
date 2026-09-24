@@ -5,7 +5,8 @@
 - Nom : **Bibou's Burgers**
 - Sous-titre App Store : **Burgers, livraison, fidélité**
 - Catégorie principale : **Cuisine et boissons**
-- Identifiant iOS et Android : `com.bibouandco.bibousburgers`
+- Identifiant iOS : `com.bibouandco.bibousburgers`
+- Identifiant Android : `com.krokly.bibousburgers` (identique à la fiche Google Play existante)
 - Version de départ : `1.0.0`
 - Public : clients du restaurant au Havre et dans un rayon de 5 km
 
