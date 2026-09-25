@@ -20,6 +20,7 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     delete order.customerPhone;
     delete order.deliveryAddress;
     order.comment = "";
+    if (order.uberDirect) delete order.uberDirect.payload;
     for (const amendment of [order.amendment, ...(order.amendmentHistory || [])]) {
       if (amendment?.proposal) amendment.proposal.reason = "Motif effacé après suppression du compte";
     }

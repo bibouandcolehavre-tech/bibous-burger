@@ -31,6 +31,7 @@ const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restore
 const { applySupportCredits } = require("./support-credits");
 const serviceSchedule = require("./service-schedule");
 const amendments = require("./order-amendments");
+const uber = require("./uber-direct");
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
@@ -49,6 +50,8 @@ if (fsSync.existsSync(envPath)) {
 
 const port = Number(process.env.PORT || 3001);
 const pushConfig = push.configFromEnv(process.env);
+const uberConfig = uber.configFromEnv(process.env);
+const uberClient = uber.createClient(uberConfig);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
 const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
@@ -138,22 +141,26 @@ const send = (response, status, payload) => {
 };
 
 const requestBodies = new WeakMap();
+const rawRequestBodies = new WeakMap();
 const readBody = (request) => {
   if (requestBodies.has(request)) return requestBodies.get(request);
   const result = new Promise((resolve, reject) => {
     let body = "";
+    const chunks = [];
     let failed = false;
     const fail = (error) => { failed = true; body = ""; clearTimeout(timeout); reject(error); };
     const timeout = setTimeout(() => fail(Object.assign(new Error("Requête trop lente."), { statusCode: 408 })), 10000);
     request.on("data", (chunk) => {
       if (failed) return;
+      chunks.push(Buffer.from(chunk));
       body += chunk;
       if (body.length > 1_000_000) fail(Object.assign(new Error("Requête trop volumineuse."), { statusCode: 413 }));
     });
     request.on("end", () => {
       clearTimeout(timeout);
       if (failed) return;
-      try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); }
+      const raw = Buffer.concat(chunks); rawRequestBodies.set(request, raw);
+      try { resolve(raw.length ? JSON.parse(raw.toString("utf8")) : {}); } catch { reject(new Error("Invalid JSON")); }
     });
     request.on("error", fail);
     request.on("aborted", () => fail(new Error("Request aborted")));
@@ -379,7 +386,7 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -535,6 +542,62 @@ const server = http.createServer(async (request, response) => {
       const date = input?.date || url.searchParams.get('date');
       if (input) { serviceSchedule.save(database, input); await writeDatabase(database); }
       return send(response, 200, serviceSchedule.dashboard(database, date));
+    }
+
+    // Uber network calls happen outside the shared order lock. A persisted dispatch reservation
+    // prevents duplicate couriers even when a response is lost or the server restarts.
+    const uberRoute = url.pathname.match(/^\/api\/dashboard\/orders\/([^/]+)\/uber\/(quote|dispatch|sync)$/);
+    if (url.pathname === '/api/dashboard/uber-status' && request.method === 'GET') {
+      if (!authenticatedDashboard(request)) return send(response,401,{error:'Accès restaurant requis.'});
+      return send(response,200,{configured:Boolean(uber.configured(uberConfig)),mode:uberConfig.mode});
+    }
+    if (uberRoute && request.method === 'POST') {
+      if (!authenticatedDashboard(request)) return send(response,401,{error:'Accès restaurant requis.'});
+      if (!uber.configured(uberConfig)) return send(response,503,{error:'Uber Direct n’est pas encore connecté. Les accès serveur et le suivi doivent être configurés.'});
+      const [,id,action] = uberRoute, input = await readBody(request);
+      const transact = async task => {const release=await acquireDatabase();try{const db=await readDatabase(),order=db.orders.find(o=>o.id===id);if(!order)throw Object.assign(new Error('Commande introuvable.'),{statusCode:404});const result=task(order,db);await writeDatabase(db);return result;}finally{release();}};
+      if (action === 'quote') {
+        const prepared = await transact(order => ({fingerprint:uber.fingerprint(order),payload:uber.quoteInput(order,input.minutes,uberConfig)}));
+        const quote = await uberClient.quote(prepared.payload);
+        const state = await transact(order => {uber.assertEligible(order);if(uber.fingerprint(order)!==prepared.fingerprint)throw Object.assign(new Error('La commande a changé. Recalculez le devis.'),{statusCode:409});return uber.saveQuote(order,quote,prepared.payload,input.minutes);});
+        return send(response,200,{uber:state,mode:uberConfig.mode});
+      }
+      if (action === 'dispatch') {
+        const payload = await transact(order => uber.reserve(order,input,uberConfig));
+        let data;
+        try { data = await uberClient.create(payload); }
+        catch(error) {
+          await transact(order => {if(order.uberDirect?.externalId===payload.external_id && order.uberDirect.phase==='sending')order.uberDirect.phase=error.uncertain?'uncertain':'failed';});
+          return send(response,502,{error:error.message});
+        }
+        try {
+          const state = await transact((order,db) => {const previous=order.status;uber.applyDelivery(order,data,uberConfig);push.queueServiceNotification(db,order,'order',previous,pushConfig);return order.uberDirect;});
+          return send(response,200,{uber:state});
+        } catch {
+          await transact(order=>{if(order.uberDirect?.phase==='sending')order.uberDirect.phase='uncertain';});
+          return send(response,502,{error:'Uber a répondu mais la livraison reste à vérifier. Ne demandez pas un second coursier ; consultez Uber Direct.'});
+        }
+      }
+      const deliveryId = await transact(order=>{const u=order.uberDirect;if(!u?.externalId)throw Object.assign(new Error('Aucune demande Uber à actualiser.'),{statusCode:409});const value=u.deliveryId || input.deliveryId;if(typeof value!=='string' || !/^del_[A-Za-z0-9_-]{5,100}$/.test(value))throw Object.assign(new Error('Indiquez l’identifiant del_ de la livraison retrouvée dans Uber Direct.'),{statusCode:400});return value;});
+      const data = await uberClient.get(deliveryId);
+      const state = await transact((order,db)=>{const previous=order.status;uber.applyDelivery(order,data,uberConfig);push.queueServiceNotification(db,order,'order',previous,pushConfig);return order.uberDirect;});
+      return send(response,200,{uber:state});
+    }
+    if (url.pathname === '/api/uber-direct/webhook' && request.method === 'POST') {
+      const event = await readBody(request);
+      if (!uber.verifyWebhook(rawRequestBodies.get(request),request.headers['x-uber-signature'],uberConfig.signingKey)) return send(response,401,{error:'Signature invalide.'});
+      if (event.customer_id !== uberConfig.customerId || event.live_mode !== (uberConfig.mode==='live')) return send(response,400,{error:'Compte ou environnement incorrect.'});
+      if (event.kind !== 'event.delivery_status') return send(response,200,{received:true});
+      const release = await acquireDatabase();
+      try {
+        const db = await readDatabase(),order = db.orders.find(o=>o.uberDirect?.externalId && (o.uberDirect.deliveryId===event.delivery_id || o.uberDirect.externalId===event.data?.external_id));
+        if(!order)return send(response,200,{received:true});
+        const previous=order.status;
+        uber.applyDelivery(order,event.data,uberConfig,event.created);
+        push.queueServiceNotification(db,order,'order',previous,pushConfig);
+        await writeDatabase(db);
+      }finally{release();}
+      return send(response,200,{received:true});
     }
 
     // Do not hold the database lock while waiting for a request body.
@@ -840,7 +903,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
-      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id) });
+      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id).map(({uberDirect,...order})=>({...order,uberDelivery:uber.publicDelivery({...order,uberDirect})})) });
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/reservations") {
@@ -1133,6 +1196,23 @@ const server = http.createServer(async (request, response) => {
     releaseDatabase?.();
   }
 });
+
+let syncingUber = false;
+const syncUberDeliveries = async () => {
+ if(syncingUber || !uber.configured(uberConfig))return;
+ syncingUber=true;
+ try {
+  const release=await acquireDatabase();let ids;
+  try{const db=await readDatabase();ids=db.orders.filter(o=>o.uberDirect?.deliveryId && !['delivered','returned','canceled'].includes(o.uberDirect.status)).map(o=>({id:o.id,deliveryId:o.uberDirect.deliveryId}));}finally{release();}
+  for(const entry of ids.slice(0,50)){
+   try{
+    const data=await uberClient.get(entry.deliveryId),unlock=await acquireDatabase();
+    try{const db=await readDatabase(),order=db.orders.find(o=>o.id===entry.id);if(order){const previous=order.status;uber.applyDelivery(order,data,uberConfig);push.queueServiceNotification(db,order,'order',previous,pushConfig);await writeDatabase(db);}}finally{unlock();}
+   }catch{/* A missed provider update never changes an order or dispatches another courier. */}
+  }
+ }finally{syncingUber=false;}
+};
+const uberTimer=setInterval(()=>void syncUberDeliveries(),60000);uberTimer.unref();server.on('close',()=>clearInterval(uberTimer));
 
 const amendmentTimer = setInterval(async () => {
   const release = await acquireDatabase();

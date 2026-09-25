@@ -11,7 +11,7 @@ function editable(order, input, now) {
   if (!order.customerId) fail('Le compte client ne permet plus une revalidation.');
   if (revision(order) >= 10) fail('Dix propositions ont déjà été envoyées. Contactez le client.');
   if (input.revision !== revision(order)) fail('La commande a changé. Actualisez avant de continuer.');
-  const instant = serviceSlotInstant(order.serviceDate, order.slot, order.method);
+  const instant = serviceSlotInstant(order.serviceDate, order.slot?.slice(0,5), order.method);
   if (!instant || instant.getTime() <= now) fail('Le créneau est passé. Contactez le client.');
 }
 function preview(order, input, stock = {}, now = Date.now()) {
@@ -29,7 +29,7 @@ function propose(order, input, stock = {}, now = Date.now()) {
   if (input.previewFingerprint !== fingerprint) fail('Le panier ou les prix ont changé. Vérifiez à nouveau l’aperçu.');
   order.amendmentHistory ||= [];
   if (order.amendment) order.amendmentHistory.push({ ...order.amendment, status: 'superseded', resolvedAt: new Date(now).toISOString() });
-  order.amendment = { revision: revision(order) + 1, status: 'pending', original: snapshot(order), proposal, fingerprint, createdAt: new Date(now).toISOString(), expiresAt: new Date(Math.min(now + 30 * 60000, serviceSlotInstant(order.serviceDate, order.slot, order.method).getTime())).toISOString() };
+  order.amendment = { revision: revision(order) + 1, status: 'pending', original: snapshot(order), proposal, fingerprint, createdAt: new Date(now).toISOString(), expiresAt: new Date(Math.min(now + 30 * 60000, serviceSlotInstant(order.serviceDate, order.slot?.slice(0,5), order.method).getTime())).toISOString() };
   order.status = 'awaiting_customer';
   order.updatedAt = new Date(now).toISOString();
   return order.amendment;

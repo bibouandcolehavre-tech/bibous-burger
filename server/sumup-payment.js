@@ -28,6 +28,8 @@ const applyVerifiedCheckout = (record, checkout, merchantCode, value = new Date(
   return payment;
 };
 const assertOrderTransition = (order, status) => {
+  const u = order.uberDirect;
+  if (u && ["sending", "uncertain", "created"].includes(u.phase) && !["canceled", "returned", "delivered"].includes(u.status) && ["cancelled", "confirmed", "out_for_delivery", "delivered"].includes(status)) throw Object.assign(new Error("Livraison confiée à Uber : actualisez son suivi. Pour annuler, annulez d’abord la course dans Uber Direct."), {statusCode:409});
   if (order.status === "awaiting_customer" && status !== "cancelled") throw Object.assign(new Error("Le client doit revalider le panier avant toute préparation."), { statusCode: 409 });
   if (order.status === "cancelled" && status !== "cancelled") throw Object.assign(new Error("Une commande annulée ne peut pas être réactivée."), { statusCode: 409 });
 };

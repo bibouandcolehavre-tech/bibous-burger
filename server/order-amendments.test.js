@@ -47,3 +47,8 @@ test('revised proposal rejects old response and notifications are distinct for e
  assert.throws(()=>amendments.decide(o,{revision:1,decision:'accept'},{},now));
  assert.equal(o.amendmentHistory[0].status,'superseded');
 });
+
+test('delivery intervals can be amended and deadline uses their start time',()=>{
+ const o=order();o.method='delivery';o.slot='19:00 – 19:30';
+ propose(o);assert.equal(o.amendment.status,'pending');
+});

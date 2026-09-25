@@ -55,3 +55,7 @@ Bibou & Co — Bibou's Burgers
 153 quai Georges V
 
 76600 Le Havre, France
+
+## Livraison avec Uber Direct
+
+Lorsque le restaurant confie une livraison à Uber Direct, les adresses de retrait et de livraison sont transmises pour obtenir le devis. Après confirmation du restaurant, le nom, le numéro de téléphone et les articles nécessaires à la livraison sont également transmis à Uber. Le statut et le lien de suivi sont associés à la commande. Les commentaires libres du client ne sont pas transmis automatiquement. La tarification du coursier est gérée par le restaurant ; cette intégration ne modifie pas le montant déjà payé par le client.

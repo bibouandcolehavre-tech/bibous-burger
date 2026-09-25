@@ -50,7 +50,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -68,6 +68,8 @@ function rewardClaimFromApi(claim) {
 }
 
 function actionMarkup(order) {
+  const u = order.raw?.uberDirect;
+  if (u && ["sending", "uncertain", "created"].includes(u.phase) && !["canceled", "returned"].includes(u.status) && ["Prête", "En livraison"].includes(order.status)) return `<p>Le suivi de remise est synchronisé avec Uber Direct.</p>`;
   if (order.status === "Accord client attendu") return `<div class="actions"><button data-edit-order="${order.id}">Réviser la proposition</button><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler la commande</button></div>`;
   if (order.status === "Nouvelle") return `<div class="actions">${order.amendment?.status !== "accepted" ? `<button data-edit-order="${order.id}">Modifier le panier</button>` : ""}<button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
   if (order.status === "Acceptée") return `<div class="actions"><button class="advance" data-action="Prête" data-id="${order.id}">Marquer prête</button></div>`;
@@ -141,10 +143,14 @@ function renderOrders() {
     const address = order.deliveryAddress;
     const contact = `<div class="order-contact"><div>Téléphone : ${escapeHtml(order.phone || "Non enregistré sur cette commande")}</div>${order.type === "Livraison" ? `<div><strong>Adresse de livraison</strong>${address?.address ? `<div>${escapeHtml(address.address)}</div><div>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(" "))}</div>` : `<div>Adresse non enregistrée sur cette commande</div>`}</div>` : ""}</div>`;
     const comment = order.comment ? `<div class="order-comment"><strong>Commentaire client</strong><p>${escapeHtml(order.comment)}</p></div>` : "";
-    const body = `${contact}${comment}<div class="order-items">${lines}</div>${orderPricingMarkup(order)}${amendmentMarkup(order)}<div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}</div>${actionMarkup(order)}</div>`;
+    const body = `${contact}${comment}<div class="order-items">${lines}</div>${orderPricingMarkup(order)}${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}</div>${actionMarkup(order)}</div>`;
     if (completedView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status Terminée">Terminée</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
+  document.querySelectorAll('[data-uber-order]').forEach(button => button.onclick = () => {
+    const order = orders.find(o => o.id === Number(button.dataset.uberOrder)), token = dashboardToken;
+    if (order) window.BibouUber.open(order.raw, {api:API_BASE_URL,headers:dashboardHeaders({'Content-Type':'application/json'}),current:()=>dashboardToken===token,refresh:()=>loadOrders()});
+  });
   document.querySelectorAll('[data-edit-order]').forEach(button => button.onclick = () => {
     const order = orders.find(o => o.id === Number(button.dataset.editOrder)), token = dashboardToken;
     if (order) BibouAmendments.open(order.raw, { api: API_BASE_URL, headers: dashboardHeaders({'Content-Type':'application/json'}), current: () => dashboardToken === token, refresh: () => loadOrders() });
