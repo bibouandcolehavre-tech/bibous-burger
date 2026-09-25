@@ -2,6 +2,11 @@ const SLOT_CAPACITY = 2;
 const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
 
+// One-off closure requested by the restaurant; dates use the Paris service day.
+const serviceClosureReason = (dateKey, slot) => dateKey === "2026-09-25" && String(slot).slice(0, 5) >= "19:00"
+  ? "Le restaurant est exceptionnellement fermé ce vendredi 25 septembre au soir. Choisis un autre jour."
+  : null;
+
 const WEEKDAY_SLOTS = {
   0: ["19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00"],
   1: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"],
@@ -73,6 +78,8 @@ const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery
   const dateError = validateServiceDate(dateKey, now);
   if (dateError) return dateError;
   if (!slotsForDate(dateKey, method).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
+  const closureReason = serviceClosureReason(dateKey, slot);
+  if (closureReason) return closureReason;
   if (dateKey === parisDateKey(now)) {
     const clockParts = Object.fromEntries(new Intl.DateTimeFormat("fr-FR", {
       timeZone: TIME_ZONE,
@@ -103,12 +110,13 @@ const availabilityForDate = (database, dateKey, now = new Date(), method = "deli
   slotsForDate(dateKey, method).map((slot) => {
     const status = method === "delivery" ? remainingDeliveryPlaces(database, dateKey, slot, now) : { full: false };
     const unavailableReason = validateServiceSlot(dateKey, slot, now, method);
-    return [slot, { ...status, unavailable: Boolean(unavailableReason), unavailableReason,
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot)), unavailable: Boolean(unavailableReason), unavailableReason,
       ...(method === "pickup" ? { pickupAdvanceEligible: qualifiesForAdvancePickup({ method, serviceDate: dateKey, slot, createdAt: now.toISOString() }) } : {}) }];
   })
 );
 
 module.exports = {
+  serviceClosureReason,
   PENDING_RESERVATION_MS,
   SLOT_CAPACITY,
   availabilityForDate,

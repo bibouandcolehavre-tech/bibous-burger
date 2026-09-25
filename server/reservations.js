@@ -1,4 +1,4 @@
-const { slotsForDate, validateServiceSlot } = require("./availability");
+const { slotsForDate, validateServiceSlot, serviceClosureReason } = require("./availability");
 
 const RESERVATION_STATUSES = ["pending", "confirmed", "cancelled"];
 const RESERVATION_SLOT_CAPACITY = 2;
@@ -36,7 +36,7 @@ const reservationAvailabilityForDate = (database, dateKey, now = new Date()) => 
   slotsForDate(dateKey, "reservation").map((slot) => {
     const status = remainingReservationPlaces(database, dateKey, slot);
     const unavailableReason = validateServiceSlot(dateKey, slot, now, "reservation");
-    return [slot, { ...status, unavailable: Boolean(unavailableReason), unavailableReason }];
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot)), unavailable: Boolean(unavailableReason), unavailableReason }];
   })
 );
 
