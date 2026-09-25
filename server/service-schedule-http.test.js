@@ -1,0 +1,33 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
+const {spawn}=require('node:child_process'),{once}=require('node:events');
+const {createCustomerSession}=require('./customer-session'),{parisDateKey}=require('./availability');
+test('schedule HTTP: private changes, extra pickup/table bookings, closed checkout, conflicts and persisted settings',{timeout:25000},async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bibou-schedule-test-')),file=path.join(dir,'data.json');
+ await fs.writeFile(file,JSON.stringify({customers:[{id:'c1',name:'Client fictif',phone:'+33600000001',points:0}],orders:[],reservations:[],nextOrderNumber:1,nextCustomerId:2}));
+ const child=spawn(process.execPath,[path.join(__dirname,'server.js')],{cwd:dir,env:{PATH:process.env.PATH,PORT:'0',NODE_ENV:'test',DATA_FILE_PATH:file,SESSION_SECRET:'test-schedule',RESTAURANT_DASHBOARD_PASSWORD:'test-schedule-only'},stdio:['ignore','pipe','pipe']});
+ t.after(async()=>{child.kill();if(child.exitCode===null)await once(child,'exit');await fs.rm(dir,{recursive:true,force:true});});
+ let output='',errors='';child.stderr.on('data',d=>errors+=d);
+ const base=await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{output+=d;const m=output.match(/http:\/\/localhost:\d+/);if(m)resolve(m[0]+'/api');});child.on('error',reject);child.on('exit',c=>reject(Error(c+errors)));});
+ const request=async(route,token='',method='GET',body)=>{const r=await fetch(base+route,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};};
+ const date=parisDateKey(new Date(Date.now()+86400000)),route='/dashboard/service-schedule?date='+date,customer=createCustomerSession('c1','test-schedule');
+ for(const token of ['',customer]){assert.equal((await request(route,token)).status,401);assert.equal((await request('/dashboard/service-schedule',token,'PATCH',{date})).status,401);}
+ const admin=(await request('/dashboard/auth/login','','POST',{password:'test-schedule-only'})).data.token;
+ const state=(await request(route,admin)).data;
+ const input={date,revision:state.revision,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))};
+ input.services.pickup['22:45']=true;input.services.reservation['22:45']=true;input.services.delivery['22:30 – 23:00']=true;
+ assert.equal((await request('/dashboard/service-schedule',admin,'PATCH',input)).status,200);
+ assert.equal((await request('/dashboard/service-schedule',admin,'PATCH',input)).status,409);
+ assert.equal((await request('/availability?date='+date+'&method=pickup')).data.slots['22:45'].unavailable,false);
+ assert.equal((await request('/reservation-availability?date='+date)).data.slots['22:45'].unavailable,false);
+ assert.equal((await request('/availability?date='+date)).data.slots['22:30 – 23:00'].unavailable,false);
+ const order=(await request('/orders',customer,'POST',{customerId:'c1',method:'pickup',serviceDate:date,slot:'22:45',items:[{productId:'drink-coca',quantity:1,selections:[]}]}));
+ assert.equal(order.status,201,JSON.stringify(order.data));
+ assert.equal((await request('/reservations',customer,'POST',{name:'Fictif',phone:'+33600000001',guests:2,serviceDate:date,slot:'22:45'})).status,201);
+ input.revision=1;input.services.pickup['22:45']=false;input.services.reservation['22:45']=false;
+ assert.equal((await request('/dashboard/service-schedule',admin,'PATCH',input)).status,409);
+ input.acknowledgeExisting=true;assert.equal((await request('/dashboard/service-schedule',admin,'PATCH',input)).status,200);
+ const checkout=await request('/payments/sumup-checkout',customer,'POST',{orderId:order.data.order.id});assert.equal(checkout.status,409);assert.equal(checkout.data.code,'SERVICE_CLOSED');
+ assert.equal((await request('/orders',customer,'POST',{customerId:'c1',method:'pickup',serviceDate:date,slot:'22:45',items:[{productId:'drink-coca',quantity:1,selections:[]}]})).status,400);
+ assert.equal((await request('/reservations',customer,'POST',{name:'Fictif',phone:'+33600000001',guests:2,serviceDate:date,slot:'22:45'})).status,400);
+ const persisted=JSON.parse(await fs.readFile(file,'utf8'));assert.equal(persisted.serviceSchedule.dates[date].revision,2);assert.equal(persisted.reservations[0].status,'pending');
+});

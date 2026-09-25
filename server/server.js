@@ -24,11 +24,12 @@ const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { createAuthRateLimiter } = require("./auth-rate-limit");
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
-const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason } = require("./availability");
+const { PENDING_RESERVATION_MS, SLOT_CAPACITY, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, slotsForDate } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
+const serviceSchedule = require("./service-schedule");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 
@@ -345,7 +346,7 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -490,6 +491,17 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname === "/api/dashboard/customers") return send(response, 200, listDashboardCustomers(database, { query: url.searchParams.get("q") || "", filter: url.searchParams.get("filter"), offset: url.searchParams.get("offset"), limit: url.searchParams.get("limit") || 25 }));
       const detail = dashboardCustomerDetail(database, decodeURIComponent(url.pathname.slice("/api/dashboard/customers/".length)));
       return detail ? send(response, 200, detail) : send(response, 404, { error: "Ce compte n’existe plus ou est introuvable." });
+    }
+
+    if (url.pathname === '/api/dashboard/service-schedule') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      if (!["GET", "PATCH"].includes(request.method)) return send(response, 405, { error: 'Action non disponible.' });
+      const input = request.method === "PATCH" ? await readBody(request) : null;
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      const date = input?.date || url.searchParams.get('date');
+      if (input) { serviceSchedule.save(database, input); await writeDatabase(database); }
+      return send(response, 200, serviceSchedule.dashboard(database, date));
     }
 
     // Do not hold the database lock while waiting for a request body.
@@ -911,7 +923,7 @@ const server = http.createServer(async (request, response) => {
         return send(response, 200, { order: previous, reused: true });
       }
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
-      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method);
+      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
       const subtotal = pricedCart.subtotal;
@@ -948,7 +960,7 @@ const server = http.createServer(async (request, response) => {
         createdOrder.requestId = requestId;
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
-        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method);
+        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
         createdOrder.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(createdOrder);
         latestDatabase.orders.unshift(createdOrder);
@@ -969,7 +981,7 @@ const server = http.createServer(async (request, response) => {
       if (order.status === "cancelled") return send(response, 409, { code: "ORDER_CANCELLED", error: "Cette commande est annulée. Aucun nouveau paiement ne sera ouvert." });
       if (order.payment?.status === "PAID") return send(response, 200, { order, payment: order.payment, customer });
       if (order.status !== "awaiting_payment") return send(response, 409, { error: "Cette commande n’est plus en attente de paiement." });
-      const closureReason = serviceClosureReason(order.serviceDate, order.slot);
+      const closureReason = serviceClosureReason(order.serviceDate, order.slot, order.method, database) || (!slotsForDate(order.serviceDate, order.method, database).includes(order.slot) ? "Ce créneau n’est plus proposé. Choisis un autre horaire." : null);
       if (closureReason) return send(response, 409, { code: "SERVICE_CLOSED", error: closureReason });
       assertStoredOrderAvailable(order.items, await productStockStore.read());
       const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);

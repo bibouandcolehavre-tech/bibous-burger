@@ -33,10 +33,10 @@ const remainingReservationPlaces = (database, dateKey, slot) => {
 };
 
 const reservationAvailabilityForDate = (database, dateKey, now = new Date()) => Object.fromEntries(
-  slotsForDate(dateKey, "reservation").map((slot) => {
+  slotsForDate(dateKey, "reservation", database).map((slot) => {
     const status = remainingReservationPlaces(database, dateKey, slot);
-    const unavailableReason = validateServiceSlot(dateKey, slot, now, "reservation");
-    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot)), unavailable: Boolean(unavailableReason), unavailableReason }];
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, "reservation", database);
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, "reservation", database)), unavailable: Boolean(unavailableReason), unavailableReason }];
   })
 );
 
@@ -56,7 +56,7 @@ const createReservation = (database, input, now = new Date()) => {
   if (customerName.length < 2) throw new Error("Indique ton nom pour réserver.");
   if (!phone) throw new Error("Indique un numéro de téléphone français valide.");
   if (!Number.isInteger(guests) || guests < 1 || guests > 4) throw new Error("Choisis entre 1 et 4 personnes.");
-  const slotError = validateServiceSlot(input.serviceDate, input.slot, now, "reservation");
+  const slotError = validateServiceSlot(input.serviceDate, input.slot, now, "reservation", database);
   if (slotError) throw new Error(slotError.replace("livraison", "réservation"));
   if (remainingReservationPlaces(database, input.serviceDate, input.slot).full) throw new Error("Ce créneau de réservation est complet.");
 

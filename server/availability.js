@@ -3,9 +3,12 @@ const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
 
 // One-off closure requested by the restaurant; dates use the Paris service day.
-const serviceClosureReason = (dateKey, slot) => dateKey === "2026-09-25" && String(slot).slice(0, 5) >= "19:00"
-  ? "Le restaurant est exceptionnellement fermé ce vendredi 25 septembre au soir. Choisis un autre jour."
-  : null;
+const serviceClosureReason = (dateKey, slot, method = "delivery", database = {}) => {
+  const override = database.serviceSchedule?.dates?.[dateKey]?.services?.[method]?.[slot];
+  if (typeof override === "boolean") return override ? null : "Ce créneau est exceptionnellement fermé. Choisis un autre horaire.";
+  return dateKey === "2026-09-25" && String(slot).slice(0, 5) >= "19:00"
+    ? "Le restaurant est exceptionnellement fermé ce vendredi 25 septembre au soir. Choisis un autre jour." : null;
+};
 
 const WEEKDAY_SLOTS = {
   0: ["19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00"],
@@ -33,7 +36,7 @@ const dateFromKey = (dateKey) => {
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dateKey ? null : parsed;
 };
 
-const slotsForDate = (dateKey, method = "delivery") => {
+const regularSlotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
   const ranges = date ? WEEKDAY_SLOTS[date.getUTCDay()] || [] : [];
   if (method === "delivery") return ranges;
@@ -45,10 +48,23 @@ const slotsForDate = (dateKey, method = "delivery") => {
   });
 };
 
+const candidateSlots = (method) => Array.from({ length: method === "delivery" ? 48 : 96 }, (_, i) => {
+  const minutes = i * (method === "delivery" ? 30 : 15);
+  const clock = n => `${String(Math.floor(n / 60) % 24).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+  return method === "delivery" ? `${clock(minutes)} – ${clock(minutes + 30)}` : clock(minutes);
+});
+const slotsForDate = (dateKey, method = "delivery", database = {}) => {
+  const regular = regularSlotsForDate(dateKey, method);
+  if (!dateFromKey(dateKey) || !["delivery", "pickup", "reservation"].includes(method)) return [];
+  const candidates = new Set(candidateSlots(method));
+  const extra = Object.keys(database.serviceSchedule?.dates?.[dateKey]?.services?.[method] || {}).filter(slot => candidates.has(slot));
+  return [...new Set([...regular, ...extra])].sort();
+};
+
 // Paris wall clock converted without relying on the server's local time zone.
 // Service hours never overlap the ambiguous/nonexistent DST hours at night.
 const serviceSlotInstant = (dateKey, slot) => {
-  if (!slotsForDate(dateKey, "pickup").includes(slot)) return null;
+  if (!dateFromKey(dateKey) || !candidateSlots("pickup").includes(slot)) return null;
   const wallTime = Date.parse(`${dateKey}T${slot}:00Z`);
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit",
@@ -74,11 +90,11 @@ const validateServiceDate = (dateKey, now = new Date()) => {
   return null;
 };
 
-const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery") => {
+const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery", database = {}) => {
   const dateError = validateServiceDate(dateKey, now);
   if (dateError) return dateError;
-  if (!slotsForDate(dateKey, method).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
-  const closureReason = serviceClosureReason(dateKey, slot);
+  if (!slotsForDate(dateKey, method, database).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
+  const closureReason = serviceClosureReason(dateKey, slot, method, database);
   if (closureReason) return closureReason;
   if (dateKey === parisDateKey(now)) {
     const clockParts = Object.fromEntries(new Intl.DateTimeFormat("fr-FR", {
@@ -107,16 +123,18 @@ const remainingDeliveryPlaces = (database, dateKey, slot, now = new Date()) => {
 };
 
 const availabilityForDate = (database, dateKey, now = new Date(), method = "delivery") => Object.fromEntries(
-  slotsForDate(dateKey, method).map((slot) => {
+  slotsForDate(dateKey, method, database).map((slot) => {
     const status = method === "delivery" ? remainingDeliveryPlaces(database, dateKey, slot, now) : { full: false };
-    const unavailableReason = validateServiceSlot(dateKey, slot, now, method);
-    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot)), unavailable: Boolean(unavailableReason), unavailableReason,
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, method, database);
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, method, database)), unavailable: Boolean(unavailableReason), unavailableReason,
       ...(method === "pickup" ? { pickupAdvanceEligible: qualifiesForAdvancePickup({ method, serviceDate: dateKey, slot, createdAt: now.toISOString() }) } : {}) }];
   })
 );
 
 module.exports = {
   serviceClosureReason,
+  regularSlotsForDate,
+  candidateSlots,
   PENDING_RESERVATION_MS,
   SLOT_CAPACITY,
   availabilityForDate,

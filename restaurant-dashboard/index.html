@@ -7,6 +7,7 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="stylesheet" href="./styles.css?v=order-alarm-3" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
+    <link rel="stylesheet" href="./service-schedule.css?v=1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -27,7 +28,7 @@
         <div class="brand">Bibou's<br /><span>Burgers</span></div>
         <div class="restaurant-card">
           <span class="open-dot"></span>
-          <div><strong>Restaurant ouvert</strong><small>Lun.–ven. · 12–14 h & 19–22 h</small><small>Sam. 19–22 h · dim. 19–21 h</small><small>Livraison interne · rayon de 5 km</small></div>
+          <div><strong>Horaires habituels</strong><small>Lun.–ven. · 12–14 h & 19–22 h</small><small>Sam. 19–22 h · dim. 19–21 h</small><small>Livraison interne · rayon de 5 km</small></div>
         </div>
         <nav>
           <button class="nav-item active" data-view="orders"><span>▦</span> Commandes <b id="new-order-count">1</b></button>
@@ -39,6 +40,7 @@
           <button class="nav-item" data-view="marketing"><span>✦</span> Actualités & concours</button>
           <button class="nav-item" data-view="notifications"><span>◉</span> Notifications clients</button>
           <button class="nav-item" data-view="backups"><span>▤</span> Sauvegardes</button>
+          <button class="nav-item" data-view="schedule"><span>◷</span> Ouvertures et fermetures</button>
           <button class="nav-item" data-view="settings"><span>⚙</span> Paramètres</button>
         </nav>
         <div class="sidebar-bottom">
@@ -82,6 +84,7 @@
           <button class="nav-item mobile-view-button" data-view="backups"><span>▤</span> Sauvegardes</button>
           <button class="nav-item mobile-view-button" data-view="customers"><span>★</span> Clients</button>
           <button class="nav-item mobile-view-button" data-view="crm"><span>↗</span> CRM & statistiques</button>
+          <button class="nav-item mobile-view-button" data-view="schedule"><span>◷</span> Créneaux</button>
           <button class="nav-item mobile-view-button" data-view="settings"><span>⚙</span> Paramètres</button>
           <button class="nav-item mobile-view-button" data-view="marketing"><span>✦</span> Actualités</button>
           <button class="nav-item mobile-view-button" data-view="notifications"><span>◉</span> Notifications</button>
@@ -90,6 +93,7 @@
         <section id="marketing-view" hidden></section>
         <section id="notifications-view" hidden></section>
         <section id="crm-view" hidden></section>
+        <section id="schedule-view" hidden></section>
         <section id="settings-view" hidden></section>
         <section id="orders-metrics" class="metrics orders-metrics" aria-label="Résumé des commandes et chiffre d’affaires">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
@@ -173,6 +177,7 @@
     <script src="./marketing.js?v=actualites-1"></script>
     <script src="./notifications.js?v=push-1"></script>
     <script src="./crm.js?v=crm-1"></script>
-    <script src="./app.js?v=order-alarm-3"></script>
+    <script src="./service-schedule.js?v=1"></script>
+    <script src="./app.js?v=schedule-1"></script>
   </body>
 </html>
