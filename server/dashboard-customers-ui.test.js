@@ -131,3 +131,15 @@ test("commandes : les commandes terminées ont un onglet et un détail ouvrable"
   assert.match(html, /23,71 €/);
   assert.equal(html.includes("data-action"), false);
 });
+
+test('panier en attente : préparation absente et remboursement dû visible même après annulation', async () => {
+  const h = await harness();
+  h.context.fixtureOrder = {id:'amendment-test',number:91,customerName:'Fictif',createdAt:new Date().toISOString(),status:'awaiting_customer',method:'pickup',total:3.6,items:[],amendment:{revision:1,status:'pending',expiresAt:new Date(Date.now()+600000).toISOString(),proposal:{reason:'<script>Indisponible</script>',items:[],total:1.8,refundAmount:1.8}}};
+  h.run('orders = [orderFromApi(fixtureOrder)]; renderOrders()');
+  let html = h.element('#orders-list').innerHTML;
+  assert.match(html,/Préparation bloquée/);assert.match(html,/Réviser la proposition/);assert.match(html,/&lt;script&gt;/);
+  assert.equal(html.includes('data-action="Acceptée"'),false);
+  h.context.fixtureOrder.status='cancelled';h.context.fixtureOrder.amendment.status='refused';h.context.fixtureOrder.refund={amount:3.6,status:'due'};
+  h.run('orders = [orderFromApi(fixtureOrder)]; renderOrders()');html=h.element('#orders-list').innerHTML;
+  assert.match(html,/À rembourser dans SumUp/);assert.match(html,/Enregistrer un remboursement déjà effectué/);
+});

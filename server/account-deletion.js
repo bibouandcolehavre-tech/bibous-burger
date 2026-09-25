@@ -20,6 +20,9 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     delete order.customerPhone;
     delete order.deliveryAddress;
     order.comment = "";
+    for (const amendment of [order.amendment, ...(order.amendmentHistory || [])]) {
+      if (amendment?.proposal) amendment.proposal.reason = "Motif effacé après suppression du compte";
+    }
     order.accountDeletedAt = deletedAt;
     delete order.referralSponsorCustomerId;
     ordersAnonymized += 1;

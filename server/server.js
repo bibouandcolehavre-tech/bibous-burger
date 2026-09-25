@@ -30,6 +30,8 @@ const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardCla
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
 const serviceSchedule = require("./service-schedule");
+const amendments = require("./order-amendments");
+const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 
@@ -279,6 +281,37 @@ const revokeLoyaltyForCancelledOrder = (order, database) => {
   return loyaltyChanged || welcomeRewardChanged || referralChanged;
 };
 const reconcileCancelledLoyalty = (database) => database.orders.reduce((changed, order) => revokeLoyaltyForCancelledOrder(order, database) || changed, false);
+const expireAmendments = (database) => {
+  let changed = false;
+  for (const order of database.orders) {
+    if (order.status === 'awaiting_customer' && order.amendment?.status === 'pending' && Date.parse(order.amendment.expiresAt) <= Date.now()) {
+      amendments.cancel(order, 'expired');
+      revokeLoyaltyForCancelledOrder(order, database);
+      push.queueAmendmentNotification(database, order, pushConfig);
+      changed = true;
+    }
+  }
+  return changed;
+};
+// Preserve weekly order counts and multipliers while reducing points for removed products.
+const adjustAmendedLoyalty = (order, database) => {
+  const base = loyaltyPointsForItems(order.items), previous = order.loyaltyBasePoints || 0;
+  const customer = database.customers.find(c => c.id === order.customerId);
+  if (customer && order.loyaltyGrantedAt && !order.loyaltyRevokedAt) {
+    const weighted = base * (order.loyaltyBibouPlusMultiplier || 1) * (order.loyaltyPickupMultiplier || 1);
+    const delta = weighted - (order.loyaltyWeightedBasePoints ?? previous);
+    const historicalCount = database.orders.filter(o => o.customerId === order.customerId && o.loyaltyWeekStart === order.loyaltyWeekStart && o.loyaltyGrantedAt && !o.loyaltyRevokedAt).length;
+    const multiplier = Math.min((order.loyaltyWeekStart === customer.loyaltyWeekStart ? customer.weeklyOrders : historicalCount) || 1, 3);
+    customer.points = Math.max(0, (customer.points || 0) + delta * multiplier);
+    if (order.loyaltyWeekStart === customer.loyaltyWeekStart) {
+      customer.weeklyWeightedBasePoints = Math.max(0, (customer.weeklyWeightedBasePoints || 0) + delta);
+      customer.weeklyProgramPoints = customer.weeklyWeightedBasePoints * multiplier;
+    }
+    order.loyaltyWeightedBasePoints = weighted;
+    order.loyaltyPointsAdded = Math.max(0, (order.loyaltyPointsAdded || 0) + delta * multiplier);
+  }
+  order.loyaltyBasePoints = base;
+};
 const resetExpiredLoyaltyWeeks = (database) => database.customers.reduce((changed, customer) => ensureCurrentLoyaltyWeek(customer) || changed, false);
 const finalizePaidBibouPlusPurchase = (purchase, database) => {
   if (purchase?.payment?.status !== "PAID") return null;
@@ -346,7 +379,7 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -508,13 +541,14 @@ const server = http.createServer(async (request, response) => {
     if (["POST", "PATCH", "DELETE"].includes(request.method)) await readBody(request);
     releaseDatabase = await acquireDatabase();
     const database = await readDatabase();
+    const amendmentsExpired = expireAmendments(database);
     const loyaltyWeekChanged = resetExpiredLoyaltyWeeks(database);
     const referralCodesChanged = ensureAllReferralCodes(database);
     const bibouPlusStoreChanged = ensureBibouPlusStore(database);
     const rewardStoreChanged = ensureRewardStore(database);
     const contestPurged = purgeExpiredContestEntries(database);
     const supportCreditsChanged = applySupportCredits(database);
-    if (loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged) await writeDatabase(database);
+    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged) await writeDatabase(database);
 
     if (url.pathname === '/api/customer/push' || url.pathname.startsWith('/api/customer/push/')) {
       const customer = authenticatedCustomer(request, database);
@@ -771,6 +805,38 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { kind: order ? "order" : "bibou-plus", record: order || purchase });
     }
 
+    if (request.method === 'GET' && url.pathname === '/api/dashboard/amendment-catalog') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      return send(response, 200, amendmentCatalog(await productStockStore.read()));
+    }
+    const amendmentRoute = url.pathname.match(/^\/api\/(dashboard|customer)\/orders\/([^/]+)\/(amendment|amendment-preview|refund)$/);
+    if (amendmentRoute && request.method === 'POST') {
+      const [, scope, id, action] = amendmentRoute;
+      const customer = scope === 'customer' ? authenticatedCustomer(request, database) : null;
+      if (scope === 'dashboard' ? !authenticatedDashboard(request) : !customer) return send(response, 401, { error: 'Connexion requise.' });
+      const order = database.orders.find(o => o.id === id && (scope === 'dashboard' || o.customerId === customer.id));
+      if (!order) return send(response, 404, { error: 'Commande introuvable.' });
+      const input = await readBody(request);
+      if (scope === 'dashboard') {
+        if (action === 'amendment-preview') return send(response, 200, amendments.preview(order, input, await productStockStore.read()));
+        if (action === 'refund') amendments.recordRefund(order, input);
+        else {
+          amendments.propose(order, input, await productStockStore.read());
+          order.amendment.notification = push.queueAmendmentNotification(database, order, pushConfig);
+        }
+      } else {
+        if (action !== 'amendment') return send(response, 404, { error: 'Action indisponible.' });
+        const changed = amendments.decide(order, input, await productStockStore.read());
+        if (changed) {
+          if (order.amendment.status === 'accepted') adjustAmendedLoyalty(order, database);
+          revokeLoyaltyForCancelledOrder(order, database);
+          push.queueAmendmentNotification(database, order, pushConfig);
+        }
+      }
+      await writeDatabase(database);
+      return send(response, 200, { order });
+    }
+
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
@@ -863,6 +929,7 @@ const server = http.createServer(async (request, response) => {
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       assertOrderTransition(order, input.status);
       const previousStatus = order.status;
+      if (input.status === "cancelled" && order.status !== "cancelled" && order.amendment) amendments.cancel(order, "cancelled");
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
       revokeLoyaltyForCancelledOrder(order, database);
@@ -1048,6 +1115,7 @@ const server = http.createServer(async (request, response) => {
       if (!allowedStatuses.includes(input.status)) return send(response, 400, { error: "Statut invalide" });
       assertOrderTransition(order, input.status);
       const previousStatus = order.status;
+      if (input.status === "cancelled" && order.status !== "cancelled" && order.amendment) amendments.cancel(order, "cancelled");
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
       revokeLoyaltyForCancelledOrder(order, database);
@@ -1065,6 +1133,15 @@ const server = http.createServer(async (request, response) => {
     releaseDatabase?.();
   }
 });
+
+const amendmentTimer = setInterval(async () => {
+  const release = await acquireDatabase();
+  try { const database = await readDatabase(); if (expireAmendments(database)) await writeDatabase(database); }
+  catch { console.error('Expiration des propositions : nouvelle tentative dans 30 secondes.'); }
+  finally { release(); }
+}, 30000);
+amendmentTimer.unref();
+server.on('close', () => clearInterval(amendmentTimer));
 
 const stopBackups = backupStore.start({ onError: (message) => console.error(`Sauvegarde : ${message}`), onSuccess: (createdAt) => console.log(`Sauvegarde automatique vérifiée : ${createdAt}`) });
 server.on("close", stopBackups);

@@ -1,5 +1,5 @@
 const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:3001/api" : "https://bibous-burger.onrender.com/api";
-const statusLabel = { confirmed: "Nouvelle", preparing: "Acceptée", ready: "Prête", out_for_delivery: "En livraison", delivered: "Terminée", cancelled: "Refusée" };
+const statusLabel = { awaiting_customer: "Accord client attendu", confirmed: "Nouvelle", preparing: "Acceptée", ready: "Prête", out_for_delivery: "En livraison", delivered: "Terminée", cancelled: "Refusée" };
 const statusForLabel = Object.fromEntries(Object.entries(statusLabel).map(([key, value]) => [value, key]));
 const reservationStatusLabel = { pending: "À confirmer", confirmed: "Confirmée", cancelled: "Refusée" };
 const rewardStatusLabel = { active: "À remettre", used: "Utilisée", cancelled: "Annulée" };
@@ -47,16 +47,16 @@ const todayDateKey = () => {
 };
 const todayHeading = () => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long" }).format(new Date()).toUpperCase();
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
-const active = () => orders.filter((order) => !["Terminée", "Refusée"].includes(order.status));
+const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
   const minutes = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
-  return { id: order.number, apiId: order.id, customer: order.customerName, phone: order.customerPhone || "", deliveryAddress: order.deliveryAddress, comment: order.comment || "", age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, subtotal: order.subtotal, discount: order.discount, discountLabel: order.discountLabel, discountRate: order.discountRate, welcomeRewardApplied: order.welcomeRewardApplied, bibouPlusApplied: order.bibouPlusApplied, standardDeliveryFee: order.standardDeliveryFee, deliveryFee: order.deliveryFee, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
+  return { raw: order, amendment: order.amendment, refund: order.refund, paidTotal: order.paidTotal, id: order.number, apiId: order.id, customer: order.customerName, phone: order.customerPhone || "", deliveryAddress: order.deliveryAddress, comment: order.comment || "", age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, subtotal: order.subtotal, discount: order.discount, discountLabel: order.discountLabel, discountRate: order.discountRate, welcomeRewardApplied: order.welcomeRewardApplied, bibouPlusApplied: order.bibouPlusApplied, standardDeliveryFee: order.standardDeliveryFee, deliveryFee: order.deliveryFee, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
 }
 
 function reservationFromApi(reservation) {
@@ -68,7 +68,8 @@ function rewardClaimFromApi(claim) {
 }
 
 function actionMarkup(order) {
-  if (order.status === "Nouvelle") return `<div class="actions"><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
+  if (order.status === "Accord client attendu") return `<div class="actions"><button data-edit-order="${order.id}">Réviser la proposition</button><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler la commande</button></div>`;
+  if (order.status === "Nouvelle") return `<div class="actions">${order.amendment?.status !== "accepted" ? `<button data-edit-order="${order.id}">Modifier le panier</button>` : ""}<button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
   if (order.status === "Acceptée") return `<div class="actions"><button class="advance" data-action="Prête" data-id="${order.id}">Marquer prête</button></div>`;
   if (order.status === "Prête") return `<div class="actions"><button class="advance ready" data-action="En livraison" data-id="${order.id}">${order.type === "Livraison" ? "Confier au livreur" : "Remettre au client"}</button></div>`;
   if (order.status === "En livraison") return `<div class="actions"><button class="advance delivery" data-action="Terminée" data-id="${order.id}">Terminer la commande</button></div>`;
@@ -112,8 +113,16 @@ function orderPricingMarkup(order) {
     if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>Économie livraison Bibou +</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
     rows.push(`<div><span>Livraison facturée</span><strong>${deliveryFee ? euro(deliveryFee) : "Offerte"}</strong></div>`);
   } else rows.push(`<div><span>Retrait</span><strong>Gratuit</strong></div>`);
-  rows.push(`<div class="order-pricing-total"><span>Total débité par SumUp</span><strong>${euro(order.total)}</strong></div>`);
+  rows.push(`<div class="order-pricing-total"><span>Total débité par SumUp</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
+  if (order.paidTotal !== undefined) rows.push(`<div><span>Total après modification</span><strong>${euro(order.total)}</strong></div>`);
   return `<div class="order-pricing">${rows.join("")}</div>`;
+}
+
+function amendmentMarkup(order) {
+  const a = order.amendment, r = order.refund;
+  if (!a) return "";
+  const names = {pending:"Accord du client attendu",accepted:"Panier revalidé par le client",refused:"Proposition refusée : commande annulée",expired:"Sans réponse : commande annulée",cancelled:"Proposition annulée"};
+  return `<div class="amendment-notice"><strong>${names[a.status] || "Panier modifié"}</strong><p>${escapeHtml(a.proposal.reason)}</p>${a.status === 'pending' ? `<p>Réponse avant ${new Date(a.expiresAt).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})}. Préparation bloquée.</p><p>${a.proposal.items.map(i=>`${i.quantity} × ${escapeHtml(i.name)} (${i.options.map(o=>escapeHtml(o.label)).join(', ')})`).join('<br>')}</p><p>Total proposé : ${euro(a.proposal.total)} · Remboursement si accord : ${euro(a.proposal.refundAmount)}</p><p>${a.notification?.devices ? 'Notification mobile mise en file d’envoi.' : 'Pas de notification mobile disponible : prévenez le client par téléphone.'}</p>` : ''}${r ? `<p><strong>${r.status === 'due' ? 'À rembourser dans SumUp' : 'Remboursement déclaré effectué par le restaurant'} : ${euro(r.amount)}</strong></p>${r.status === 'due' ? `<button data-refund-order="${order.id}">Enregistrer un remboursement déjà effectué</button>` : ''}` : ''}</div>`;
 }
 
 function customerOrderHistoryMarkup(order, historyStatuses) {
@@ -132,10 +141,25 @@ function renderOrders() {
     const address = order.deliveryAddress;
     const contact = `<div class="order-contact"><div>Téléphone : ${escapeHtml(order.phone || "Non enregistré sur cette commande")}</div>${order.type === "Livraison" ? `<div><strong>Adresse de livraison</strong>${address?.address ? `<div>${escapeHtml(address.address)}</div><div>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(" "))}</div>` : `<div>Adresse non enregistrée sur cette commande</div>`}</div>` : ""}</div>`;
     const comment = order.comment ? `<div class="order-comment"><strong>Commentaire client</strong><p>${escapeHtml(order.comment)}</p></div>` : "";
-    const body = `${contact}${comment}<div class="order-items">${lines}</div>${orderPricingMarkup(order)}<div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}</div>${actionMarkup(order)}</div>`;
+    const body = `${contact}${comment}<div class="order-items">${lines}</div>${orderPricingMarkup(order)}${amendmentMarkup(order)}<div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}</div>${actionMarkup(order)}</div>`;
     if (completedView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status Terminée">Terminée</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
+  document.querySelectorAll('[data-edit-order]').forEach(button => button.onclick = () => {
+    const order = orders.find(o => o.id === Number(button.dataset.editOrder)), token = dashboardToken;
+    if (order) BibouAmendments.open(order.raw, { api: API_BASE_URL, headers: dashboardHeaders({'Content-Type':'application/json'}), current: () => dashboardToken === token, refresh: () => loadOrders() });
+  });
+  document.querySelectorAll('[data-refund-order]').forEach(button => button.onclick = async () => {
+    const order = orders.find(o => o.id === Number(button.dataset.refundOrder));
+    const reference = window.prompt(`Après avoir effectué le remboursement de ${euro(order.refund.amount)} dans SumUp, indiquez sa référence. Ce bouton ne déclenche aucun remboursement.`);
+    if (!reference?.trim()) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`${API_BASE_URL}/dashboard/orders/${order.apiId}/refund`, {method:'POST',headers:dashboardHeaders({'Content-Type':'application/json'}),body:JSON.stringify({amount:order.refund.amount,reference})});
+      const data = await response.json(); if (!response.ok) throw Error(data.error);
+      await loadOrders(); showToast('Remboursement déclaré effectué.');
+    } catch (e) { showToast(e.message || 'Enregistrement impossible.'); button.disabled=false; }
+  });
   document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
 }
 

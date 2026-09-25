@@ -5,7 +5,7 @@ const cents = value => typeof value === "number" && Number.isFinite(value) ? Mat
 // payment status supplied by a browser or the incoming webhook.
 const applyVerifiedCheckout = (record, checkout, merchantCode, value = new Date()) => {
   const payment = record.payment;
-  const amount = record.total ?? record.amount;
+  const amount = record.paidTotal ?? record.total ?? record.amount;
   if (!payment || !checkout?.id || (payment.checkoutId && checkout.id !== payment.checkoutId)
     || checkout.checkout_reference !== payment.checkoutReference
     || cents(checkout.amount) === null || cents(checkout.amount) !== cents(amount)
@@ -28,6 +28,7 @@ const applyVerifiedCheckout = (record, checkout, merchantCode, value = new Date(
   return payment;
 };
 const assertOrderTransition = (order, status) => {
+  if (order.status === "awaiting_customer" && status !== "cancelled") throw Object.assign(new Error("Le client doit revalider le panier avant toute préparation."), { statusCode: 409 });
   if (order.status === "cancelled" && status !== "cancelled") throw Object.assign(new Error("Une commande annulée ne peut pas être réactivée."), { statusCode: 409 });
 };
 module.exports = { applyVerifiedCheckout, assertOrderTransition, paymentError };

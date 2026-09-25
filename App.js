@@ -1,3 +1,4 @@
+import OrderAmendments from "./OrderAmendments";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView as DeviceSafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
@@ -41,7 +42,7 @@ const PUBLIC_API_BASE_URL = "https://bibous-burger.onrender.com/api";
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (typeof window !== "undefined" && window.location?.hostname === "localhost" ? "http://localhost:3001/api" : PUBLIC_API_BASE_URL);
 const customerFetch = createCustomerFetch(API_BASE_URL, (...args) => fetch(...args));
 const progressForStatus = { confirmed: 0, preparing: 1, ready: 2, out_for_delivery: 3, delivered: 4 };
-const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.serviceDate ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${order.serviceDate}T12:00:00`)) : order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", status: order.status, progress: progressForStatus[order.status] ?? 0 });
+const orderFromApi = (order) => ({ id: `#${order.number}`, apiId: order.id, amendment: order.amendment, refund: order.refund, paidTotal: order.paidTotal, product: order.items.map((item) => item.name).join(", "), total: order.total, method: order.method, slot: order.slot, date: order.serviceDate ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${order.serviceDate}T12:00:00`)) : order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10) ? "Aujourd’hui" : "Commande précédente", status: order.status, progress: progressForStatus[order.status] ?? 0 });
 const reservationStatus = { pending: { label: "En attente", icon: "◷", message: "Le restaurant doit encore répondre.", color: "#A35B22", background: "#FFF0E0" }, confirmed: { label: "Confirmée", icon: "✓", message: "Ta table est confirmée.", color: "#397353", background: "#EAF5E4" }, cancelled: { label: "Refusée", icon: "×", message: "Cette demande n’a pas pu être acceptée.", color: "#A3472A", background: "#FAE6E2" } };
 const reservationFromApi = (reservation) => ({ ...reservation, dateLabel: new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${reservation.serviceDate}T12:00:00`)) });
 const BIBOU_PLUS_PRICE = 9.99;
@@ -405,11 +406,11 @@ function SmsLoginScreen({ onBack, onAuthenticated }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><View style={styles.loginIcon}><Text style={styles.loginIconText}>✉</Text></View><Text style={styles.title}>{step === "phone" ? "Bienvenue" : "Vérifie ton numéro"}</Text><Text style={styles.loginIntro}>{step === "phone" ? "Connecte-toi avec ton numéro de téléphone pour retrouver tes commandes et tes points fidélité." : `Un code a été envoyé au ${phone}.`}</Text><View style={styles.loginCard}>{step === "phone" ? <><Text style={styles.deliveryLabel}>NUMÉRO DE TÉLÉPHONE</Text><TextInput value={phone} onChangeText={(value) => { setPhone(value); setFeedback(""); }} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" /><Text style={feedback ? styles.loginError : styles.loginFinePrint}>{feedback || "Un code à usage unique te sera envoyé par SMS. Aucun mot de passe à retenir."}</Text><Pressable disabled={loading} onPress={sendCode} style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Envoi en cours…" : "Recevoir mon code"}</Text></Pressable></> : <><Text style={styles.deliveryLabel}>CODE REÇU PAR SMS</Text><TextInput value={code} onChangeText={setCode} placeholder="123456" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} />{feedback ? <Text style={styles.loginError}>{feedback}</Text> : null}<Pressable disabled={code.length < 4 || loading} onPress={checkCode} style={[styles.primaryButton, (code.length < 4 || loading) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Vérification…" : "Valider le code"}</Text></Pressable><Pressable onPress={() => { setCode(""); setFeedback(""); setStep("phone"); }} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon numéro</Text></Pressable></>}</View><Text style={styles.loginLegal}>En te connectant, tu acceptes de recevoir ce SMS de vérification nécessaire à la sécurisation de ton compte.</Text><Pressable accessibilityRole="button" onPress={() => setReviewLogin(true)} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Accès de vérification des boutiques</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
-function OrdersScreen({ orders, onBack, onRefresh }) {
+function OrdersScreen({ orders, onBack, onRefresh, onDecide, busy }) {
   const activeOrder = orders.find((order) => !["delivered", "cancelled"].includes(order.status));
-  const activeMessage = activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? "Ta commande est prête : le livreur arrive." : "Ton livreur est en route.";
-  const labelForOrder = (order) => order.status === "cancelled" ? "Annulée" : ORDER_STEPS[order.progress];
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text>{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View><View style={styles.trackingSteps}>{ORDER_STEPS.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View><Text style={styles.trackingMessage}>{activeMessage}</Text></View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
+  const activeMessage = activeOrder?.status === "awaiting_customer" ? "Le restaurant attend ton accord sur le nouveau panier." : activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? "Ta commande est prête : le livreur arrive." : "Ton livreur est en route.";
+  const labelForOrder = (order) => order.status === "cancelled" ? "Annulée" : order.status === "awaiting_customer" ? "Ton accord est attendu" : ORDER_STEPS[order.progress];
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy}/>{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{ORDER_STEPS.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text></View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
 }
 
 function ReservationsScreen({ reservations, onBack, onRefresh }) {
@@ -862,18 +863,60 @@ function AppContent({ onReviewModeChange }) {
   const [loginDestination, setLoginDestination] = useState("account");
   const [preferredMethod, setPreferredMethod] = useState("delivery");
   const cartCount = useMemo(() => cart?.items?.length || 0, [cart]);
-  const loadCustomerOrders = async (token = authToken) => {
+  const seenAmendments = useRef(new Set());
+  const orderLoadSequence = useRef(0);
+  const [amendmentBusy, setAmendmentBusy] = useState(false);
+  const amendmentInFlight = useRef(false);
+  const loadCustomerOrders = async (token = authToken, silent = false) => {
     if (!token) return;
+    const sequence = ++orderLoadSequence.current;
     try {
       const response = await customerFetch(`${API_BASE_URL}/customer/orders`, { headers: { Authorization: `Bearer ${token}` } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible d’actualiser les commandes.");
       if (sessionTokenRef.current !== token) return;
+      if (sequence !== orderLoadSequence.current) return;
       setOrders(payload.orders.map(orderFromApi));
+      const pending = payload.orders.filter(o => o.status === 'awaiting_customer' && o.amendment?.status === 'pending');
+      for (const order of pending) {
+        const key = token + ':' + order.id + ':' + order.amendment.revision;
+        if (!seenAmendments.current.has(key)) {
+          seenAmendments.current.add(key);
+          setScreen('orders');
+          Alert.alert('Commande modifiée : ton accord est nécessaire', 'Le restaurant propose un nouveau panier. Vérifie les changements dans Mes commandes pour accepter ou refuser.');
+        }
+      }
     } catch (error) {
-      Alert.alert("Actualisation indisponible", error.message || "Réessaie dans un instant.");
+      if (!silent) Alert.alert("Actualisation indisponible", error.message || "Réessaie dans un instant.");
     }
   };
+  const decideAmendment = async (order, decision) => {
+    if (amendmentInFlight.current) return;
+    amendmentInFlight.current = true; setAmendmentBusy(true);
+    const token = authToken;
+    try {
+      const result = await apiRequest(`/customer/orders/${encodeURIComponent(order.apiId)}/amendment`, token, { revision: order.amendment.revision, decision });
+      if (sessionTokenRef.current !== token) return;
+      if (!result.ok) throw Error(result.payload.error || 'La réponse n’a pas pu être enregistrée.');
+      ++orderLoadSequence.current;
+      setOrders(current => current.map(o => o.apiId === order.apiId ? orderFromApi(result.payload.order) : o));
+      Alert.alert(decision === 'accept' ? 'Panier revalidé' : 'Commande annulée', decision === 'accept' ? 'Le restaurant peut maintenant accepter ta commande.' : 'Le restaurant doit traiter ton remboursement.');
+    } catch (error) { if (sessionTokenRef.current === token) { Alert.alert('Revalidation indisponible', error.message); await loadCustomerOrders(token, true); } }
+    finally { amendmentInFlight.current = false; setAmendmentBusy(false); }
+  };
+  useEffect(() => {
+    if (!authToken) return;
+    let inFlight = false, stopped = false;
+    const refresh = async () => {
+      if (stopped || inFlight || sessionTokenRef.current !== authToken) return;
+      inFlight = true;
+      try { await loadCustomerOrders(authToken, true); } finally { inFlight = false; }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 10000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') void refresh(); });
+    return () => { stopped = true; clearInterval(timer); subscription.remove(); };
+  }, [authToken]);
   const loadCustomerReservations = async ({ token = authToken, silent = false } = {}) => {
     if (!token) return;
     try {
@@ -1276,7 +1319,7 @@ function AppContent({ onReviewModeChange }) {
   if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} onBack={() => setScreen("menu")} onCreated={(reservation) => setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)])} onOpenReservations={() => setScreen("reservations")} />;
   if (screen === "login") return <SmsLoginScreen onBack={() => setScreen(loginDestination === "account" ? "menu" : loginDestination)} onAuthenticated={authenticate} />;
   if (screen === "account") return authToken ? <AccountScreen onOpenOffers={() => setScreen("offers")} onOpenNotifications={() => setScreen("notifications")} onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
-  if (screen === "orders") return <OrdersScreen orders={orders} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
+  if (screen === "orders") return <OrdersScreen orders={orders} onDecide={decideAmendment} busy={amendmentBusy} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
   if (screen === "reservations") return <ReservationsScreen reservations={reservations} onBack={() => setScreen("account")} onRefresh={(silent = false) => void loadCustomerReservations({ silent })} />;
   return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen onOpenContest={() => setScreen("contest")} pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} catalog={catalog} stockMessage={stockFeedback || stockMessage} cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={setPreferredMethod} onOpenReservation={() => { if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
 }

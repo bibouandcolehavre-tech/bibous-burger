@@ -233,4 +233,10 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
   return { items, subtotal: subtotalCents / 100 };
 };
 
-module.exports = { PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };
+const amendmentCatalog = (overrides = {}) => ({
+  ...availabilityCatalog(overrides),
+  definitions: Object.fromEntries(Object.entries(PRODUCT_CATALOG).map(([id,p]) => [id, { ...p, groups: [...(p.kind === "simple" ? SIMPLE_GROUPS : p.kind === "duo" ? DUO_GROUPS : p.menu ? MENU_GROUPS : BURGER_GROUPS)] }])),
+  choices: OPTIONS, rules: GROUP_RULES
+});
+
+module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };

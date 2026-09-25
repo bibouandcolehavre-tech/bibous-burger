@@ -100,6 +100,24 @@ function queueServiceNotification(db, record, type, previousStatus, config, now 
   enqueue(db, customer, devices, { kind: 'service', eventKey: `${type}:${record.id}:${record.status}`, title: copy[0], body: copy[1], screen: type === 'order' ? 'orders' : 'reservations', entityId: record.id }, now);
 }
 
+function queueAmendmentNotification(db, order, config, now = Date.now()) {
+  const a = order.amendment, customer = db.customers.find(c => c.id === order.customerId);
+  if (!a || !customer) return { channel: 'in_app', devices: 0 };
+  const devices = prefs(customer).service ? customerDevices(db, customer, now).filter(d => live(config, d.platform)) : [];
+  const copies = {
+    pending: ['Commande modifiée : ton accord est requis', 'Un article est indisponible. Consulte le nouveau panier dans Mes commandes pour accepter ou refuser.'],
+    accepted: ['Nouveau panier validé', 'Ton accord a été enregistré. Le restaurant peut maintenant accepter ta commande.'],
+    refused: ['Commande annulée', 'Ton refus a été enregistré. Le restaurant doit traiter le remboursement.'],
+    expired: ['Proposition expirée', 'Sans réponse à temps, la commande a été annulée. Le restaurant doit traiter le remboursement.'],
+    cancelled: ['Commande annulée', 'Le restaurant a annulé la commande. Consulte le suivi du remboursement.']
+  };
+  const copy = copies[a.status];
+  if (!copy) return { channel: 'in_app', devices: 0 };
+  store(db).jobs.filter(j => j.entityId === order.id && j.kind === 'service' && j.status === 'queued').forEach(j => { j.status = 'cancelled'; });
+  enqueue(db, customer, devices, { kind: 'service', eventKey: `amendment:${order.id}:${a.revision}:${a.status}`, title: copy[0], body: copy[1], screen: 'orders', entityId: order.id }, now);
+  return { channel: devices.length ? 'in_app_push' : 'in_app', devices: devices.length };
+}
+
 function prepareCampaign(db, input, config, now = Date.now()) {
   if (!input || !UUID.test(input.requestId || '') || typeof input.title !== 'string' || typeof input.body !== 'string' || !DESTINATIONS.includes(input.screen) || !['all', 'plus'].includes(input.audience)) fail('Notification incomplète.');
   const title = input.title.trim(), body = input.body.trim();
@@ -247,4 +265,4 @@ function createPushWorker({ config, transact, fetchImpl = fetch, clock = Date.no
   return { tick };
 }
 
-module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueCrmNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };
+module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueAmendmentNotification, queueCrmNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };
