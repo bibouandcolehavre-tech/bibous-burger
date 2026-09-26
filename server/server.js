@@ -395,8 +395,16 @@ const server = http.createServer(async (request, response) => {
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
     if (url.pathname === '/api/keyyo/call') {
       if (request.method !== 'GET') return send(response, 405, { error: 'Méthode non autorisée.' });
-      try { return send(response, 200, await keyyoSms.receive(url.searchParams)); }
-      catch (error) { return send(response, error.statusCode || 503, { error: error.statusCode ? error.message : 'Service SMS indisponible.' }); }
+      try {
+        const result = await keyyoSms.receive(url.searchParams);
+        console.log('Keyyo notification :', result.status);
+        return send(response, 200, result);
+      } catch (error) {
+        // No URL, secret, phone, reference or raw provider error in diagnostics.
+        if (error.statusCode !== 401) console.log('Keyyo notification refusée :', error.statusCode || 503,
+          ['Notification ambiguë.', 'Notification expirée.', 'Identifiant d’appel invalide.', 'Automatisation inactive.'].includes(error.message) ? error.message : 'Indisponible');
+        return send(response, error.statusCode || 503, { error: error.statusCode ? error.message : 'Service SMS indisponible.' });
+      }
     }
     if (url.pathname.startsWith('/s/')) {
       const token = url.pathname.slice(3);
