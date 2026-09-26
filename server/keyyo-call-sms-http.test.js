@@ -1,0 +1,27 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
+const {spawn}=require('node:child_process'),{once}=require('node:events');
+test('Keyyo HTTP: protected hook, read-only opt-out page, confirmed unsubscribe, no customer mutation',{timeout:20000},async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bibou-keyyo-http-')),file=path.join(dir,'data.json'),mock=path.join(dir,'mock.cjs');
+ const initial=JSON.stringify({customers:[],orders:[],reservations:[],nextCustomerId:1,nextOrderNumber:1});await fs.writeFile(file,initial);
+ await fs.writeFile(mock,"global.fetch=async()=>new Response('OK');");
+ const child=spawn(process.execPath,['--require',mock,path.join(__dirname,'server.js')],{cwd:dir,env:{PATH:process.env.PATH,PORT:'0',NODE_ENV:'test',DATA_FILE_PATH:file,SESSION_SECRET:'test-session',RESTAURANT_DASHBOARD_PASSWORD:'test-only',KEYYO_CALL_SMS_ENABLED:'true',KEYYO_LINE:'0212345678',KEYYO_WEBHOOK_SECRET:'w'.repeat(43),KEYYO_SMS_PRIVACY_KEY:'p'.repeat(43),KEYYO_SIP_PASSWORD:'fake'},stdio:['ignore','pipe','pipe']});
+ t.after(async()=>{child.kill();if(child.exitCode===null)await once(child,'exit');await fs.rm(dir,{recursive:true,force:true});});
+ let output='',errors='';child.stderr.on('data',d=>errors+=d);
+ const base=await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{output+=d;const m=output.match(/http:\/\/localhost:\d+/);if(m)resolve(m[0]);});child.on('error',reject);child.on('exit',c=>reject(Error(c+errors)));});
+ assert.equal((await fetch(base+'/api/dashboard/keyyo-sms')).status,401);
+ assert.equal((await fetch(base+'/api/keyyo/call')).status,401);
+ assert.equal((await fetch(base+'/api/keyyo/call',{method:'POST'})).status,405);
+ const params=new URLSearchParams({key:'w'.repeat(43),account:'33212345678',callee:'33212345678',caller:'0600000000',type:'SETUP',callref:'test-http-0001',ts:String(Date.now()),session:''});
+ const route=base+'/api/keyyo/call?'+params;
+ assert.equal((await fetch(route,{headers:{Authorization:'Bearer review.fake'}})).status,401);
+ assert.equal((await (await fetch(route)).json()).status,'queued');
+ assert.equal((await (await fetch(route)).json()).status,'duplicate');
+ const ledger=JSON.parse(await fs.readFile(path.join(dir,'keyyo-call-sms.json'),'utf8')),token=ledger.calls[0].token;
+ const page=await fetch(base+'/s/'+token);assert.equal(page.status,200);assert.match(page.headers.get('content-security-policy'),/form-action 'self'/);assert.match(await page.text(),/method="post"/);
+ assert.equal(JSON.parse(await fs.readFile(path.join(dir,'keyyo-call-sms.json'),'utf8')).optOuts.length,0);
+ const stop=await fetch(base+'/s/'+token,{method:'POST'});assert.equal(stop.status,200);assert.match(await stop.text(),/ne recevrez plus/);
+ assert.equal((await fetch(base+'/s/'+'x'.repeat(22),{method:'POST'})).status,404);
+ params.set('callref','test-http-0002');assert.equal((await (await fetch(base+'/api/keyyo/call?'+params)).json()).status,'opted_out');
+ assert.equal(await fs.readFile(file,'utf8'),initial);
+ assert.ok(!output.includes('33600000000') && !errors.includes('33600000000'));
+});

@@ -6,6 +6,8 @@ node_modules/
 dist/
 server/product-stock.json
 server/product-stock.json.*.tmp
+server/keyyo-call-sms.json
+server/keyyo-call-sms.json.*.tmp
 server/data.json.*.tmp
 server/backups/
 **/bibou-*.json.gz

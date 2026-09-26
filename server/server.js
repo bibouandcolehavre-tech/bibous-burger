@@ -33,6 +33,7 @@ const { applySupportCredits } = require("./support-credits");
 const serviceSchedule = require("./service-schedule");
 const amendments = require("./order-amendments");
 const uber = require("./uber-direct");
+const keyyo = require('./keyyo-call-sms');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
@@ -54,6 +55,8 @@ const pushConfig = push.configFromEnv(process.env);
 const uberConfig = uber.configFromEnv(process.env);
 const uberClient = uber.createClient(uberConfig);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
+const keyyoConfig = keyyo.configFromEnv(process.env);
+const keyyoSms = keyyo.createCallSms({ config: keyyoConfig, file: path.join(path.dirname(databasePath), 'keyyo-call-sms.json') });
 const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
 const sumupApiKey = process.env.SUMUP_API_KEY;
@@ -132,7 +135,7 @@ const backupStore = createBackupStore({
       // Read existing data only: a missing file must not silently restore seed data.
       const database = JSON.parse(await fs.readFile(databasePath, "utf8"));
       const stock = await productStockStore.read();
-      return { database, stock };
+      return { database, stock, keyyoCallSms: await keyyoSms.backupState() };
     } finally { release(); }
   }
 });
@@ -390,6 +393,26 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
+    if (url.pathname === '/api/keyyo/call') {
+      if (request.method !== 'GET') return send(response, 405, { error: 'Méthode non autorisée.' });
+      try { return send(response, 200, await keyyoSms.receive(url.searchParams)); }
+      catch (error) { return send(response, error.statusCode || 503, { error: error.statusCode ? error.message : 'Service SMS indisponible.' }); }
+    }
+    if (url.pathname.startsWith('/s/')) {
+      const token = url.pathname.slice(3);
+      if (!/^[\w-]{22}$/.test(token)) return send(response, 404, { error: 'Lien invalide.' });
+      if (!['GET', 'POST'].includes(request.method)) return send(response, 405, { error: 'Méthode non autorisée.' });
+      if (request.method === 'POST') {
+        try { await keyyoSms.optOut(token); }
+        catch (error) { return send(response, error.statusCode || 503, { error: 'Lien invalide, expiré ou temporairement indisponible.' }); }
+      }
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" });
+      return response.end(`<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>SMS — Bibou’s Burgers</title><body style="font-family:system-ui;max-width:36rem;margin:4rem auto;padding:1.5rem"><h1>Bibou’s Burgers</h1>${request.method === 'POST' ? '<p>Votre demande est enregistrée. Vous ne recevrez plus nos SMS automatiques après vos appels.</p><p>Cela ne change ni vos commandes ni vos codes de connexion.</p>' : '<p>Ne plus recevoir le lien de commande par SMS après vos appels au restaurant ?</p><form method="post"><button style="padding:1rem;font-size:1rem">Confirmer l’arrêt de ces SMS</button></form><p>Aucun compte ni numéro à saisir. Les codes de connexion ne sont pas concernés.</p>'}</body></html>`);
+    }
+    if (url.pathname === '/api/dashboard/keyyo-sms' && request.method === 'GET') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      return send(response, 200, await keyyoSms.status());
+    }
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
@@ -1291,4 +1314,10 @@ const crmTimer = setInterval(tickCrm, 15*60000);
 crmTimer.unref();
 server.once('listening', tickCrm);
 server.on('close', () => clearInterval(crmTimer));
+// Single instance + persistent disk, like the order database. At most one SMS per 1.1s.
+if (keyyo.configured(keyyoConfig)) {
+  const keyyoWorker = setInterval(() => keyyoSms.tick().catch(() => console.error('Keyyo SMS: traitement indisponible.')), 1100);
+  keyyoWorker.unref();
+  server.once('close', () => clearInterval(keyyoWorker));
+}
 server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`));
