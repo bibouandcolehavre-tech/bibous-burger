@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { createAuthRateLimiter } = require('./auth-rate-limit');
 const { validateAndPriceOrderItems } = require('./catalog');
 const { validateRequestId, orderFingerprint } = require('./order-attempt');
+const { promotionForCode, applyPromotion } = require('./promo-codes');
 const { validateServiceSlot, qualifiesForAdvancePickup } = require('./availability');
 const { createReservation } = require('./reservations');
 const { claimReward } = require('./rewards');
@@ -51,7 +52,12 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
       const { customer, db } = session;
       const date = new Date(now());
       if (route === '/auth/me' && method === 'GET') return { customer: snapshot(customer), reviewMode: true };
-      if (route === '/health' && method === 'GET') return { ok: true, reviewMode: true, capabilities: { paymentRecovery: 1 } };
+      if (route === '/health' && method === 'GET') return { ok: true, reviewMode: true, capabilities: { paymentRecovery: 1, promoCodes: 1 } };
+      if (route === '/promotions/validate' && method === 'POST') {
+        const promotion = promotionForCode((await readBody())?.code);
+        if (!promotion) throw fail('Saisis un code promo.');
+        return { promotion };
+      }
       if (route === '/customer/account' && method === 'DELETE') { sessions.delete(token); return { deleted: true }; }
       if (route === '/customer/orders' && method === 'GET') return { orders: snapshot(db.orders) };
       if (route === '/customer/reservations' && method === 'GET') return { reservations: snapshot(db.reservations) };
@@ -114,11 +120,13 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         if (slotError) throw fail(slotError);
         const priced = validateAndPriceOrderItems(input.items);
         const active = bibouPlusStatus(customer, date).active;
-        const welcome = customer.welcomeReward?.status === 'available';
-        const pricing = bibouPlusOrderPricing({ subtotal: priced.subtotal, deliveryFee: input.method === 'delivery' ? 3.99 : 0, active, discountRate: welcome ? .1 : active ? .05 : 0 });
+        const promotion = promotionForCode(input.promoCode);
+        const welcome = !promotion && customer.welcomeReward?.status === 'available';
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: priced.subtotal, deliveryFee: input.method === 'delivery' ? 3.99 : 0, active, discountRate: welcome ? .1 : active ? .05 : 0 }), promotion);
         const number = db.orders.length + 1;
         const order = { ...pricing, id: `review-order-${number}`, number: `TEST-${number}`, customerId: customer.id, customerName: customer.name, items: priced.items, requestId, requestFingerprint: fingerprint, method: input.method, serviceDate: input.serviceDate, slot: input.slot, comment: boundedText(input.comment, 500), createdAt: date.toISOString(), status: 'awaiting_payment', reviewMode: true, bibouPlusApplied: active, welcomeRewardApplied: welcome, loyaltyBasePoints: priced.items.reduce((sum, item) => sum + ((item.productId.endsWith('-menu') || item.productId === 'taurus') ? 15 : ['atlas','classique','duck','dynamite','hambagu','basilic','montagnes','gros-lard','pork'].includes(item.productId) ? 10 : 0) * item.quantity, 0) };
         order.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(order);
+        if (promotion) { order.promotion = promotion; order.discountLabel = `Code promo ${promotion.code}`; }
         db.orders.unshift(order);
         return { order: snapshot(order) };
       }
@@ -128,7 +136,7 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         if (!order) throw fail('Commande de test introuvable.', 404);
         order.payment = { status: 'PAID', provider: 'isolated-review-simulation' };
         order.status = 'confirmed';
-        grantLoyaltyForOrder(customer, order, date, { bibouPlus: order.bibouPlusApplied });
+        if (!order.promotion) grantLoyaltyForOrder(customer, order, date, { bibouPlus: order.bibouPlusApplied });
         consumeWelcomeReward(customer, order, date);
         return { order: snapshot(order), reviewMode: true };
       }

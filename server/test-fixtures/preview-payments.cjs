@@ -23,7 +23,7 @@ if (process.env.NODE_ENV !== 'test') throw new Error('NODE_ENV=test required');
     const payment = { checkoutId: 'preview-checkout', checkoutReference: 'preview-reference', merchantCode: 'TEST', status: 'PENDING', checkoutUrl: 'https://checkout.sumup.com/pay/preview-only', validUntil: new Date(Date.now() + 900000).toISOString() };
     const order = { id: 'order-1', number: 1, customerId, customerName: 'Camille Démonstration', requestId, requestFingerprint: orderFingerprint(input), items: [{ productId: 'classique', name: 'Classique', quantity: 1, unitPrice: 10, total: 10, selections: input.items[0].selections }], subtotal: 10, discount: 0, total: 10, method: 'pickup', serviceDate: input.serviceDate, slot: input.slot, status: scenario === 'cancelled' ? 'cancelled' : 'awaiting_payment', createdAt: new Date().toISOString(), payment };
     const status = scenario === 'paid' || scenario === 'cancelled' ? 'PAID' : scenario === 'expired' ? 'EXPIRED' : 'PENDING';
-    await fs.writeFile(databaseFile, JSON.stringify({ nextOrderNumber: 2, customers: [{ id: customerId, name: 'Camille Démonstration', phone: '+33600000000', points: 0, weeklyOrders: 0, welcomeReward: { status: 'used' } }], orders: scenario === 'uncreated' ? [] : [order] }));
+    await fs.writeFile(databaseFile, JSON.stringify({ nextOrderNumber: 2, customers: [{ id: customerId, firstName: 'Camille', lastName: 'Démonstration', name: 'Camille Démonstration', phone: '+33600000000', points: 0, weeklyOrders: 0, welcomeReward: { status: 'used' } }], orders: ['uncreated', 'shopping'].includes(scenario) ? [] : [order] }));
     await fs.writeFile(providerFile, JSON.stringify({ fail: scenario === 'offline', checkouts: { 'preview-checkout': { id: 'preview-checkout', checkout_reference: 'preview-reference', amount: 10, currency: 'EUR', merchant_code: 'TEST', status, hosted_checkout_url: payment.checkoutUrl } } }));
   };
   await seed('pending');
@@ -44,9 +44,9 @@ if (process.env.NODE_ENV !== 'test') throw new Error('NODE_ENV=test required');
       const url = new URL(request.url, 'http://localhost');
       if (url.pathname === '/fixtures') {
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
-        return response.end(`<!doctype html><html lang="fr"><meta charset="utf-8"><title>Test de reprise fictif</title><h1>Tests sans paiement ni SMS réels</h1>${['pending','paid','cancelled','expired','offline','uncreated'].map(value => `<button data-scenario="${value}">${value}</button>`).join(' ')}<script>document.querySelectorAll('button').forEach(button => button.onclick=async()=>{await fetch('/scenario/'+button.dataset.scenario,{method:'POST'});localStorage.setItem('bibousCustomerSession',${JSON.stringify(token)});localStorage.setItem('bibousPaymentAttempt',${JSON.stringify(JSON.stringify(attempt))});location.href='/';});</script></html>`);
+        return response.end(`<!doctype html><html lang="fr"><meta charset="utf-8"><title>Test de reprise fictif</title><h1>Tests sans paiement ni SMS réels</h1>${['pending','paid','cancelled','expired','offline','uncreated','shopping'].map(value => `<button data-scenario="${value}">${value}</button>`).join(' ')}<script>document.querySelectorAll('button').forEach(button => button.onclick=async()=>{await fetch('/scenario/'+button.dataset.scenario,{method:'POST'});localStorage.setItem('bibousCustomerSession',${JSON.stringify(token)});if(button.dataset.scenario==='shopping')localStorage.removeItem('bibousPaymentAttempt');else localStorage.setItem('bibousPaymentAttempt',${JSON.stringify(JSON.stringify(attempt))});location.href='/';});</script></html>`);
       }
-      if (request.method === 'POST' && /^\/scenario\/(pending|paid|cancelled|expired|offline|uncreated)$/.test(url.pathname)) {
+      if (request.method === 'POST' && /^\/scenario\/(pending|paid|cancelled|expired|offline|uncreated|shopping)$/.test(url.pathname)) {
         await seed(url.pathname.split('/').pop()); response.writeHead(204); return response.end();
       }
       if (url.pathname.startsWith('/api/')) {

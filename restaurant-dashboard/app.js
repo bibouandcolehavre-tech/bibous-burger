@@ -102,6 +102,7 @@ function orderItemMarkup(item) {
 }
 
 function orderPricingMarkup(order) {
+  const promotion = order.raw?.promotion || order.promotion;
   const itemSubtotal = (order.items || []).reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
   const subtotal = Number.isFinite(Number(order.subtotal)) ? Number(order.subtotal) : itemSubtotal;
   const discount = Math.max(0, Number(order.discount) || 0);
@@ -112,10 +113,10 @@ function orderPricingMarkup(order) {
   const rows = [`<div><span>Sous-total des articles</span><strong>${euro(subtotal)}</strong></div>`];
   if (discount > 0) rows.push(`<div class="order-pricing-saving"><span>${escapeHtml(discountLabel)}${rate}</span><strong>− ${euro(discount)}</strong></div>`);
   if (order.type === "Livraison" || order.method === "delivery") {
-    if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>Économie livraison Bibou +</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
+    if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>${promotion ? 'Livraison offerte par code promo' : 'Économie livraison Bibou +'}</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
     rows.push(`<div><span>Livraison facturée</span><strong>${deliveryFee ? euro(deliveryFee) : "Offerte"}</strong></div>`);
   } else rows.push(`<div><span>Retrait</span><strong>Gratuit</strong></div>`);
-  rows.push(`<div class="order-pricing-total"><span>Total débité par SumUp</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
+  rows.push(`<div class="order-pricing-total"><span>${promotion ? 'Commande offerte · aucun débit bancaire' : 'Total débité par SumUp'}</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
   if (order.paidTotal !== undefined) rows.push(`<div><span>Total après modification</span><strong>${euro(order.total)}</strong></div>`);
   return `<div class="order-pricing">${rows.join("")}</div>`;
 }

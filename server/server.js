@@ -8,6 +8,7 @@ const { createReviewSandbox } = require('./review-sandbox');
 const { createRegistrationStore } = require('./customer-registration');
 const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../customer-identity');
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
+const { promotionForCode, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
@@ -273,6 +274,9 @@ const finalizePaidOrder = (order, database) => {
 
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
+  // A gifted order is fulfilled normally, but is not a paid purchase for loyalty
+  // or referral rewards. It must not multiply points on earlier paid orders.
+  if (order.payment.provider === 'promotion') return { customer, pointsAdded: 0, referralPointsAdded: 0 };
   const { pointsAdded } = grantLoyaltyForOrder(customer, order, new Date(now), { bibouPlus: Boolean(order.bibouPlusApplied) });
   consumeWelcomeReward(customer, order, new Date(now));
   const referral = grantReferralReward(order, database, new Date(now));
@@ -386,7 +390,7 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -1038,6 +1042,14 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { customer });
     }
 
+    if (request.method === 'POST' && url.pathname === '/api/promotions/validate') {
+      if (!authenticatedCustomer(request, database)) return send(response, 401, { error: 'Connecte-toi pour utiliser un code promo.' });
+      const input = await readBody(request);
+      const promotion = promotionForCode(input?.code);
+      if (!promotion) return send(response, 400, { error: 'Saisis un code promo.' });
+      return send(response, 200, { promotion });
+    }
+
     if (request.method === "POST" && url.pathname === "/api/orders") {
       const input = await readBody(request);
       const comment = input.comment === undefined ? "" : typeof input.comment === "string" ? input.comment.trim() : null;
@@ -1052,6 +1064,7 @@ const server = http.createServer(async (request, response) => {
         if (previous.requestFingerprint !== fingerprint) return send(response, 409, { code: "ATTEMPT_CONFLICT", error: "Cette tentative correspond déjà à une autre commande. Vérifie son paiement avant de continuer." });
         return send(response, 200, { order: previous, reused: true });
       }
+      const promotion = promotionForCode(input.promoCode);
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
@@ -1080,20 +1093,22 @@ const server = http.createServer(async (request, response) => {
         const sessionCustomer = authenticatedCustomer(request, latestDatabase);
         const benefitsAllowed = sessionCustomer?.id === latestCustomer.id;
         const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
-        const welcomeRewardApplied = benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
+        const welcomeRewardApplied = !promotion && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
-        const crmOffer = benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
+        const crmOffer = !promotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
         const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;
-        const pricing = bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate });
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), promotion);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         createdOrder.requestId = requestId;
+        if (promotion) { createdOrder.promotion = promotion; createdOrder.discountLabel = `Code promo ${promotion.code}`; }
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
         const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
         createdOrder.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(createdOrder);
         latestDatabase.orders.unshift(createdOrder);
+        if (settlePromotionalOrder(createdOrder)) finalizePaidOrder(createdOrder, latestDatabase);
         await writeDatabase(latestDatabase);
         return createdOrder;
       });

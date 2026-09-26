@@ -101,6 +101,7 @@ function dashboardCustomerDetail(database, id, now = new Date()) {
       items: (order.items || []).map((item) => ({ productId: item.productId, name: item.name, quantity: finite(item.quantity) || 1, price: finite(item.price), options: (item.options || []).map((option) => ({ groupId: option.groupId, label: option.label, price: finite(option.price) })) })),
       subtotal: finite(order.subtotal), discount: finite(order.discount), discountLabel: order.discountLabel || "", discountRate: finite(order.discountRate),
       welcomeRewardApplied: order.welcomeRewardApplied === true, bibouPlusApplied: order.bibouPlusApplied === true,
+      ...(order.promotion ? { promotion: { code: order.promotion.code, discountPercent: order.promotion.discountPercent, freeDelivery: order.promotion.freeDelivery === true } } : {}),
       standardDeliveryFee: finite(order.standardDeliveryFee), deliveryFee: finite(order.deliveryFee), total: finite(order.total), ...(order.paidTotal === undefined ? {} : { paidTotal: finite(order.paidTotal) }),
       pointsAdded: finite(order.loyaltyPointsAdded)
     })),

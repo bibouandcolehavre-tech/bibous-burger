@@ -41,7 +41,7 @@ const applyReferralCode = (database, customer, value, now = new Date()) => {
   if (customer.referredByCustomerId && customer.referredByCustomerId !== sponsor.id) throw referralError("Un autre parrain est déjà associé à ce compte.");
   if (customer.referredByCustomerId === sponsor.id) return { changed: false, sponsor };
 
-  const alreadyOrdered = (database.orders || []).some((order) => order.customerId === customer.id && order.payment?.status === "PAID");
+  const alreadyOrdered = (database.orders || []).some((order) => order.customerId === customer.id && order.payment?.status === "PAID" && order.payment.provider !== 'promotion');
   if (alreadyOrdered) throw referralError("Le code de parrainage doit être ajouté avant la première commande payée.");
 
   customer.referredByCustomerId = sponsor.id;
@@ -50,14 +50,14 @@ const applyReferralCode = (database, customer, value, now = new Date()) => {
 };
 
 const paidActiveOrdersFor = (database, customerId) => (database.orders || [])
-  .filter((order) => order.customerId === customerId && order.payment?.status === "PAID" && order.status !== "cancelled")
+  .filter((order) => order.customerId === customerId && order.payment?.status === "PAID" && order.payment.provider !== 'promotion' && order.status !== "cancelled")
   .sort((left, right) => {
     const dateDifference = new Date(left.payment?.paidAt || left.createdAt || 0) - new Date(right.payment?.paidAt || right.createdAt || 0);
     return dateDifference || (Number(left.number) || 0) - (Number(right.number) || 0);
   });
 
 const grantReferralReward = (order, database, now = new Date()) => {
-  if (order.payment?.status !== "PAID" || order.status === "cancelled" || order.referralRewardGrantedAt) return { changed: false, pointsAdded: 0, sponsor: null };
+  if (order.payment?.status !== "PAID" || order.payment.provider === 'promotion' || order.status === "cancelled" || order.referralRewardGrantedAt) return { changed: false, pointsAdded: 0, sponsor: null };
 
   const referredCustomer = (database.customers || []).find((customer) => customer.id === order.customerId);
   if (!referredCustomer?.referredByCustomerId || referredCustomer.referralRewardGrantedAt) return { changed: false, pointsAdded: 0, sponsor: null };

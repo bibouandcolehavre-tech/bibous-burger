@@ -1,4 +1,6 @@
 import OrderAmendments from "./OrderAmendments";
+import PromoCodeField from './PromoCodeField';
+const { previewPromotion, differentPendingPromo } = require('./promo-client');
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView as DeviceSafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
@@ -664,19 +666,45 @@ function CheckoutDetailsScreen({ cart, customer, authToken, onChange, onCommentC
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Tes coordonnées</Text><Text style={styles.detailsIntro}>Elles permettent au restaurant de préparer et de suivre ta commande.</Text><Text style={styles.deliveryLabel}>CONTACT</Text><TextInput value={customer.name} editable={!hasCompleteIdentity(customer)} onChangeText={(value) => update("name", value)} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" />{hasCompleteIdentity(customer) && <Pressable accessibilityRole="button" onPress={onEditIdentity} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon prénom / nom</Text></Pressable>}<TextInput value={customer.phone} onChangeText={(value) => update("phone", value)} placeholder="Téléphone" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" /><Text style={styles.deliveryLabel}>PARRAINAGE · FACULTATIF</Text>{customer.referredByCustomerId ? <View style={styles.referralApplied}><Text style={styles.referralAppliedText}>✓ Ton parrain est déjà enregistré</Text></View> : <TextInput value={customer.sponsorCode || ""} onChangeText={(value) => update("sponsorCode", value.toUpperCase())} placeholder="Exemple : BIBOU-A1B2C3" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="characters" autoCorrect={false} />}<Text style={styles.referralFieldHint}>Le parrain gagne 100 points après ta première commande réellement payée.</Text>{isDelivery ? <><Text style={styles.deliveryLabel}>ADRESSE DE LIVRAISON</Text><TextInput value={customer.address} onChangeText={(value) => update("address", value)} placeholder="Numéro et nom de rue" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><View style={styles.fieldRow}><TextInput value={customer.postalCode} onChangeText={(value) => update("postalCode", value)} placeholder="Code postal" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldHalf]} keyboardType="number-pad" maxLength={5} /><TextInput value={customer.city} onChangeText={(value) => update("city", value)} placeholder="Ville" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldCity]} autoCapitalize="words" /></View><View style={[styles.distanceCard, quote?.status === "error" && styles.distanceCardError]}><Text style={styles.distanceTitle}>Vérification de la zone</Text><Text style={styles.distanceText}>Ton adresse sert à calculer l’itinéraire et à vérifier le rayon de 5 km.</Text><Pressable onPress={calculateQuote} disabled={quote?.status === "loading"} style={[styles.quoteButton, quote?.status === "loading" && styles.quoteButtonDisabled]}><Text style={styles.quoteButtonText}>{quote?.status === "loading" ? "Calcul en cours…" : "Calculer mon tarif"}</Text></Pressable>{quote?.status === "success" && quote.withinZone && <Text style={styles.distanceSuccess}>✓ À {quote.distanceKm.toFixed(2).replace(".", ",")} km · {pricing.bibouPlus ? `Livraison offerte au lieu de ${money(quote.deliveryFee)}` : `Livraison ${money(quote.deliveryFee)}`}</Text>}{quote?.status === "success" && !quote.withinZone && <Text style={styles.distanceError}>Cette adresse est hors de la zone de livraison de 5 km.</Text>}{quote?.status === "error" && <Text style={styles.distanceError}>{quote.error}</Text>}</View></> : <View style={styles.pickupCard}><Text style={styles.pickupTitle}>Retrait au restaurant</Text><Text style={styles.pickupText}>{RESTAURANT_ADDRESS}</Text><Text style={styles.pickupText}>Aucun frais de livraison.</Text></View>}{restaurantComment}<Text style={styles.detailsFinePrint}>{isDelivery ? "La livraison peut être confiée à Uber Direct. Les coordonnées et les articles nécessaires lui seront transmis pour assurer la livraison. " : ""}Les remises et avantages sont vérifiés une dernière fois par le serveur avant le paiement.</Text></ScrollView><View style={styles.stickyAction}>{!complete && <Text style={styles.requiredHint}>{isDelivery && !quoteReady ? "Calcule ton tarif de livraison pour continuer." : "Complète les informations pour continuer."}</Text>}<Pressable disabled={!complete} style={[styles.primaryButton, !complete && styles.primaryButtonDisabled]} onPress={() => onContinue(standardDeliveryFee)}><Text style={styles.primaryButtonText}>Vérifier et payer · {!hasExactFee ? "dès " : ""}{money(pricing.total)}</Text></Pressable></View></SafeAreaView>;
 }
 
-function PaymentScreen({ cart, customer, onBack, onPay }) {
+function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
   const isDelivery = cart.delivery.method === "delivery";
   const standardFee = cart.delivery.fee ?? deliveryCost(cart.delivery.method);
-  const pricing = customerOrderPricing(cart.total, standardFee, customer, isDelivery);
+  const [promotion, setPromotion] = useState(null);
+  const [promoPending, setPromoPending] = useState(false);
+  const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, customer, isDelivery), cart.total, promotion);
   const [paying, setPaying] = useState(false);
   const paymentInFlight = useRef(false);
   const submitPayment = async () => {
-    if (paymentInFlight.current) return;
+    if (paymentInFlight.current || promoPending) return;
     paymentInFlight.current = true;
     setPaying(true);
-    try { await onPay(pricing.total); } finally { paymentInFlight.current = false; setPaying(false); }
+    try { await onPay(promotion?.code || ''); } finally { paymentInFlight.current = false; setPaying(false); }
   };
-  return <SafeAreaView style={styles.safeArea}><View style={styles.detailContent}><Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text><Text style={styles.deliveryIntro}>Tout est prêt pour le paiement sécurisé.</Text><View style={styles.paymentSummary}><Text style={styles.paymentProduct}>{cart.items.map((item) => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(" · ")}</Text><Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} /><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={isDelivery ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} />{pricing.bibouPlus && isDelivery && standardFee > 0 && <ReceiptLine label="Économie livraison Bibou +" value={`− ${money(standardFee)}`} />}<View style={styles.receiptDivider} /><ReceiptLine label="Total débité par SumUp" value={money(pricing.total)} strong /></View>{pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après le paiement.</Text></View>}<View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? "Livrer à" : "Retrait par"}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View><View style={styles.securePayment}><Text style={styles.securePaymentIcon}>🔒</Text><View><Text style={styles.securePaymentTitle}>{customer.reviewMode ? "Paiement simulé pour la vérification" : "Paiement sécurisé avec SumUp"}</Text><Text style={styles.securePaymentText}>{customer.reviewMode ? "Aucune carte demandée. Le restaurant ne reçoit pas cette commande." : "Carte bancaire · le paiement sera ouvert par SumUp."}</Text></View></View></View><View style={styles.stickyAction}><Pressable disabled={paying} style={[styles.primaryButton, paying && styles.primaryButtonDisabled]} onPress={submitPayment}><Text style={styles.primaryButtonText}>{paying ? "Ouverture de SumUp…" : `Payer avec SumUp · ${money(pricing.total)}`}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}>
+    <ScrollView contentContainerStyle={styles.detailsContent} keyboardShouldPersistTaps="handled">
+      <Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text>
+      <Text style={styles.deliveryIntro}>{promotion ? 'Ta commande est offerte. Vérifie les détails avant de la confirmer.' : 'Tout est prêt pour le paiement sécurisé.'}</Text>
+      <PromoCodeField promotion={promotion} onChange={setPromotion} onPendingChange={setPromoPending} onValidate={onValidatePromo} disabled={paying} />
+      <View style={styles.paymentSummary}>
+        <Text style={styles.paymentProduct}>{cart.items.map(item => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(' · ')}</Text>
+        <Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}</Text><View style={styles.receiptDivider} />
+        <ReceiptLine label="Sous-total" value={money(cart.total)} />
+        {pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}
+        <ReceiptLine label={isDelivery ? 'Livraison' : 'Retrait'} value={pricing.deliveryFee ? money(pricing.deliveryFee) : 'Offert'} />
+        {(promotion || pricing.bibouPlus) && isDelivery && standardFee > 0 && <ReceiptLine label={promotion ? 'Livraison offerte avec le code' : 'Économie livraison Bibou +'} value={`− ${money(standardFee)}`} />}
+        <View style={styles.receiptDivider} /><ReceiptLine label={promotion ? 'Total à payer' : 'Total débité par SumUp'} value={money(pricing.total)} strong />
+      </View>
+      {promotion ? <Text style={styles.detailsFinePrint}>Cette commande offerte ne consomme pas tes autres remises et ne génère pas de points de fidélité ni de bonus parrainage.</Text> : pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après validation.</Text></View>}
+      <View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? 'Livrer à' : 'Retrait par'}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View>
+      <View style={styles.securePayment}><Text style={styles.securePaymentIcon}>{promotion ? '🎁' : '🔒'}</Text><View style={{ flex: 1 }}><Text style={styles.securePaymentTitle}>{customer.reviewMode ? 'Commande de vérification' : promotion ? 'Commande offerte' : 'Paiement sécurisé avec SumUp'}</Text><Text style={styles.securePaymentText}>{customer.reviewMode ? 'Aucune carte demandée. Le restaurant ne reçoit pas cette commande.' : promotion ? 'Aucune carte demandée et aucun débit. Ta commande sera envoyée au restaurant après confirmation.' : 'Carte bancaire · le paiement sera ouvert par SumUp.'}</Text></View></View>
+    </ScrollView>
+    <View style={styles.stickyAction}>
+      {promoPending && <Text style={styles.requiredHint}>Applique ton code promo ou efface-le pour continuer.</Text>}
+      <Pressable accessibilityRole="button" disabled={paying || promoPending} style={[styles.primaryButton, (paying || promoPending) && styles.primaryButtonDisabled]} onPress={submitPayment}>
+        <Text style={styles.primaryButtonText}>{paying ? promotion ? 'Validation de la commande…' : 'Ouverture de SumUp…' : promotion ? 'Confirmer ma commande offerte · 0,00 €' : `Payer avec SumUp · ${money(pricing.total)}`}</Text>
+      </Pressable>
+    </View>
+  </SafeAreaView>;
 }
 
 function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onResume, onBack }) {
@@ -695,7 +723,7 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
 
 function SuccessScreen({ order, onHome, onReview, onTrack }) {
   const label = order?.method === "delivery" ? "Livraison" : "Retrait";
-  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
 }
 
 function ReviewScreen({ onBack }) {
@@ -1120,6 +1148,7 @@ function AppContent({ onReviewModeChange }) {
     showPaymentRecord(attempt, null);
     const health = await apiRequest('/health', token);
     if (!health.ok || health.payload.capabilities?.paymentRecovery !== 1) throw new Error('Le service de paiement est en cours de mise à jour. Ta tentative est conservée. Réessaie dans un instant.');
+    if (attempt.input?.promoCode && health.payload.capabilities?.promoCodes !== 1) throw new Error('Les codes promo sont en cours de mise en service. Aucun paiement n’a été lancé. Réessaie dans un instant.');
     const found = await apiRequest(`/customer/payment-attempts/${encodeURIComponent(attempt.requestId)}`, token);
     if (!found.ok && found.status !== 404) throw new Error(found.payload.error || 'Impossible de retrouver le paiement.');
     let record = found.payload.record || null;
@@ -1187,6 +1216,12 @@ function AppContent({ onReviewModeChange }) {
     paymentStartRef.current = true;
     try {
       const existing = parseAttempt(await readAttempt(), customer.id);
+      if (differentPendingPromo(existing, kind, input)) {
+        paymentAttempt.current = existing;
+        await runPayment(existing, authToken, false);
+        setPaymentMessage('Une tentative précédente existe avec une autre remise. Aucun nouveau paiement n’a été ouvert et le code n’a pas été ajouté à cette ancienne commande. Vérifie son statut avant de recommencer.');
+        return;
+      }
       const attempt = existing || createAttempt(customer.id, kind, input);
       // Persist before any server mutation. Storage failure must never start a payment.
       await saveAttempt(attempt);
@@ -1197,9 +1232,17 @@ function AppContent({ onReviewModeChange }) {
       setScreen('menu');
     } finally { paymentStartRef.current = false; }
   };
-  const pay = async () => {
+  const validatePromo = async code => {
+    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code });
+    if (!ok) throw new Error(payload.error || 'Impossible de vérifier ce code. Réessaie.');
+    previewPromotion({}, cart.total, payload.promotion);
+    if (!payload.promotion) throw new Error('Code promo non confirmé.');
+    return payload.promotion;
+  };
+  const pay = async (promoCode = '') => {
     if (!authToken || !customer.id || !cart?.items?.length) { setScreen('login'); return; }
     const input = { customerId: customer.id, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, comment: cart.comment?.trim() || "" };
+    if (promoCode) input.promoCode = promoCode;
     await beginPayment('order', input);
   };
   const startBibouPlus = async () => {
@@ -1305,7 +1348,7 @@ function AppContent({ onReviewModeChange }) {
   if (screen === "delivery") return <DeliveryScreen cart={cart} customer={customer} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => { if (authToken) setScreen("details"); else { setLoginDestination("details"); setScreen("login"); } }} onOpenBibouPlus={() => { setBibouPlusReturnScreen("delivery"); setScreen("bibou-plus"); }} />;
   if (screen === "identity" && authToken && !isReviewToken(authToken)) return <CustomerIdentityScreen api={API_BASE_URL} authToken={authToken} customer={customer} editing onExit={() => setScreen("details")} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) { setCustomer(current => ({ ...current, ...saved })); setScreen("details"); } }} />;
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} authToken={authToken} onChange={setCustomer} onCommentChange={(comment) => setCart((current) => ({ ...current, comment }))} onBack={() => setScreen("delivery")} onContinue={continueWithCustomer} onEditIdentity={() => setScreen("identity")} />;
-  if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} />;
+  if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} onValidatePromo={validatePromo} />;
   if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
   if (screen === "success") return <SuccessScreen order={pendingOrder} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;

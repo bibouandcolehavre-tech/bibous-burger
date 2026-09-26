@@ -143,3 +143,20 @@ test('panier en attente : préparation absente et remboursement dû visible mêm
   h.run('orders = [orderFromApi(fixtureOrder)]; renderOrders()');html=h.element('#orders-list').innerHTML;
   assert.match(html,/À rembourser dans SumUp/);assert.match(html,/Enregistrer un remboursement déjà effectué/);
 });
+
+test('commande offerte : code visible en service et dans la fiche client, aucun faux débit SumUp', async () => {
+  const h = await harness();
+  const gift = { id: 'gift-test', number: 92, customerId: 'safe', customerName: 'Test', createdAt: new Date().toISOString(), status: 'confirmed', method: 'delivery', subtotal: 20, discount: 20, discountRate: 1, discountLabel: 'Code promo CHORUS', standardDeliveryFee: 5.99, deliveryFee: 0, total: 0, items: [], payment: { status: 'PAID', provider: 'promotion', amount: 0 }, promotion: { code: 'CHORUS', discountPercent: 100, freeDelivery: true } };
+  h.context.fixtureOrder = gift;
+  h.run('orders = [orderFromApi(fixtureOrder)]; renderOrders()');
+  const serviceHtml = h.element('#orders-list').innerHTML;
+  h.context.fetch = async () => result(dashboardCustomerDetail({ ...db, orders: [gift] }, 'safe'));
+  await h.run('loadCustomerDetail("safe")');
+  for (const html of [serviceHtml, h.element('#customer-detail').innerHTML]) {
+    assert.match(html, /Code promo CHORUS/);
+    assert.match(html, /Commande offerte · aucun débit bancaire/);
+    assert.match(html, /Livraison offerte par code promo/);
+    assert.equal(html.includes('Total débité par SumUp'), false);
+    assert.equal(html.includes('Économie livraison Bibou +'), false);
+  }
+});

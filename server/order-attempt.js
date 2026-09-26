@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto');
+const { normalizePromoCode } = require('./promo-codes');
 
 function validateRequestId(value) {
   if (value === undefined) return null; // Older published clients remain supported.
@@ -18,6 +19,8 @@ function orderFingerprint(input) {
     })) : input.items,
   };
   if (typeof input.comment === 'string' && input.comment.trim()) canonical.comment = input.comment.trim();
+  const promoCode = normalizePromoCode(input.promoCode);
+  if (promoCode) canonical.promoCode = promoCode;
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
