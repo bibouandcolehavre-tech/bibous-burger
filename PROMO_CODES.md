@@ -28,7 +28,14 @@ Ajouter un champ au paiement pour le code `CHORUS`, offrant 100 % de la commande
 
 Validation locale terminée. Une première tentative de commit/push avait été arrêtée par le contrôle de sécurité, dans l’attente d’une confirmation de la portée financière. Après explication explicite des conditions (100 % produits et livraison, réutilisable, sans plafond ni expiration), le propriétaire a confirmé le 26 septembre : « OK, tu peux mettre en ligne le code Chorus. » Cette confirmation autorise maintenant le déploiement web/API/restaurant de ces conditions exactes, sans création de vraie commande de test.
 
-Déploiement en cours ; vérifications publiques à consigner après mise en ligne.
+Déploiement confirmé le 26 septembre 2026, commit `667ba148536f152ddfd6bb0c0206b50d86fba563` poussé sur `origin/main`.
+
+Vérifications publiques, sans compte ni commande de test réels :
+
+- API `https://bibous-burger.onrender.com/api/health` : HTTP 200, version exacte du commit et capacité `promoCodes:1`. Le premier contrôle avait vu un HTTP 502 transitoire durant le redémarrage ; le contrôle suivant confirme le retour du service.
+- Application `https://bibous-burger-app.onrender.com/` : HTTP 200, bundle `AppEntry-d698f4266b3689cc0221bbaae7bb61f9.js`, champ promo et confirmation gratuite présents. SHA-256 du bundle public identique à l’export local testé : `31ffa2c3202aaebdfff98bf2c2ec9f412ae073b9fe0aa1b179faf4be1d88c48c`.
+- Restaurant `https://bibous-burgers-restaurant.onrender.com/` : HTTP 200, script `./app.js?v=promo-1`, libellé « Commande offerte · aucun débit bancaire » présent et contenu exactement identique au fichier local testé.
+- 259 tests ont de nouveau réussi juste avant le commit, ainsi que l’export web.
 
 Aucun nouveau binaire Android/iOS ni changement du dossier Google Play n’est lancé dans cette intervention. Les binaires déjà installés n’acquièrent pas ce nouveau champ sans une mise à jour dédiée.
 
