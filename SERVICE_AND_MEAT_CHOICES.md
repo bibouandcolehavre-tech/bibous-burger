@@ -21,6 +21,13 @@
 
 - Suite complète : 281 tests réussis ; export web réussi. Contrôles HTTP isolés : prix falsifiés et code CHORUS ne réduisent pas le délai ; choix halal conservé dans la commande.
 - Contrôle visuel Chrome en largeur 390 px : avertissement porc, ordre protéine → viande → crudités, choix conservé dans le panier.
-- Mise en ligne web/API/tableau restaurant à confirmer après le push. Aucune nouvelle compilation native ni soumission Google/Apple lancée dans cette tâche.
+- Mise en ligne web/API/tableau restaurant confirmée le 27 septembre : commit `de5a09a`, API health sur cette version, bundle web public identique à l’export local (`AppEntry-fdbd2de732a5686e2a1c863d0414a358.js`), ticket restaurant avec groupe « Choix de viande ». Disponibilités publiques contrôlées pour les trois services et délais 20/45 min aux extrêmes. Mode halal contrôlé dans l’interface publique ; aucun achat ni réservation réelle créé.
+- Aucune nouvelle compilation native ni soumission Google/Apple lancée dans cette tâche.
 - IMPORTANT : une ancienne version installée ne possède pas le nouveau choix requis. Préparer une nouvelle compilation avant de distribuer la version native ; la version Android code 4 conservée dans le dossier Google est antérieure à ces changements. Ne pas annoncer que ce binaire est à jour.
 - Fichiers préexistants `server/data.json`, `RELEASE_READINESS.md`, `KEYYO_CALL_SMS.md` et `UBER_DIRECT.md` laissés hors du commit de cette fonctionnalité.
+
+## Notification au propriétaire
+
+- À sa demande explicite, un SMS ponctuel a été envoyé via Keyyo le 27 septembre au mobile du propriétaire finissant par 94 16, après vérification de la mise en ligne. Réponse du fournisseur confirmée : `SMS_ACCEPTED_BY_KEYYO`. Cela confirme l’acceptation de l’envoi, pas la réception sur le téléphone.
+- Le message annonce uniquement la mise à jour **web**, avec créneaux de 20 min, préparation 20/30/45 min et choix halal, et le lien de l’application web.
+- Garde anti-doublon conservée sur le disque serveur : `/var/data/update-notification-de5a09a-owner.json`, statut `accepted`. **Ne pas renvoyer ce SMS.** Aucun secret copié dans le dépôt ; aucun SMS à un client réel. Ce message ponctuel ne valide pas les notifications automatiques après appels Keyyo, toujours en attente de diagnostic fournisseur.
