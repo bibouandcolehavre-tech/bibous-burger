@@ -29,7 +29,7 @@
 ### Correction de présentation demandée après le SMS
 
 - Suppression du bandeau « Ta préférence de viande », de son état global et des mentions dans les cartes de produits. Choix individuel conservé dans « Compose ton menu/burger » après viande/végétarien ; avertissement porc uniquement sous ce choix lorsque halal est sélectionné.
-- Export web réussi et 282 tests réussis, dont un contrôle de non-régression sur l’absence de préférence globale. Publication de cette correction à vérifier après push. Aucun second SMS envoyé.
+- Export web réussi et 282 tests réussis, dont un contrôle de non-régression sur l’absence de préférence globale. Correction `d5f37de` publiée et vérifiée : serveur sain sur ce commit, bundle public `AppEntry-410a81f94e87ef2cf885eae9a33289b0.js`. Accueil public contrôlé sans bandeau ni mention halal ; composition contrôlée avec viande → halal/non halal → crudités et avertissement porc conditionnel. Aucun second SMS envoyé.
 
 ## Notification au propriétaire
 
