@@ -58,7 +58,7 @@ function queueOrder(database, order, config, now = Date.now()) {
   return true;
 }
 
-function createWorker({ config, transact, sendSms = keyyo.createSender(config.sender), now = Date.now }) {
+function createWorker({ config, transact, sendSms = keyyo.createSender(config.sender, fetch, { retryDelays: [30000, 60000] }), now = Date.now }) {
   const clock = now;
   let running = false;
   async function tick() {
@@ -88,11 +88,27 @@ function createWorker({ config, transact, sendSms = keyyo.createSender(config.se
         return selected;
       });
       if (!job) return;
-      let status = 'uncertain';
-      try { await sendSms(job.recipient, job.message); status = 'accepted'; } catch { /* Never log provider errors/phone/credentials. */ }
+      let status = 'uncertain', diagnostic = {};
+      try {
+        const result = await sendSms(job.recipient, job.message, { canSend: () => transact(database => {
+          const current = database.orders.find(o => o.id === job.orderId);
+          return Boolean(current && current.payment?.status === 'PAID' && current.status !== 'cancelled' && clock() - job.createdAt <= MAX_AGE);
+        }) });
+        status = 'accepted';
+        if (Number.isSafeInteger(result?.attempts) && result.attempts >= 1 && result.attempts <= 3) diagnostic.attempts = result.attempts;
+      } catch (error) {
+        // Only allowlisted codes/numbers, never raw provider text/URL/credentials.
+        if (['temporary_refusal','network_error','unconfirmed_response','authentication_error','cancelled'].includes(error?.keyyoReason)) {
+          diagnostic.reason = error.keyyoReason;
+          if (Number.isInteger(error.providerStatus) && error.providerStatus >= 100 && error.providerStatus <= 599) diagnostic.providerStatus = error.providerStatus;
+          if (Number.isSafeInteger(error.attempts) && error.attempts >= 1 && error.attempts <= 3) diagnostic.attempts = error.attempts;
+          if (error.keyyoReason === 'temporary_refusal') status = 'rejected';
+          if (error.keyyoReason === 'cancelled') status = 'cancelled';
+        }
+      }
       await transact(database => {
         const saved = store(database).jobs.find(j => j.id === job.id);
-        if (saved) { saved.status = status; saved.finishedAt = clock(); }
+        if (saved) { saved.status = status; saved.finishedAt = clock(); Object.assign(saved, diagnostic); }
       });
     } finally { running = false; }
   }

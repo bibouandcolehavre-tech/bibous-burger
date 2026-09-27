@@ -62,21 +62,63 @@ function digestAuthorization(challenge, { account, sipPassword }, uri, cnonce = 
     ...(values.opaque ? [`opaque=${quoted(values.opaque)}`] : []),
     ...(values.qop ? ['qop=auth', `nc=${nc}`, `cnonce=${quoted(cnonce)}`] : algorithm.endsWith('-SESS') ? [`cnonce=${quoted(cnonce)}`] : [])].join(', ');
 }
-function createSender(config, fetchImpl = fetch) {
-  return async (recipient, message) => {
+// One coordinator per process, shared by call and order SMS. Keyyo limits the
+// API by sending line, not recipient. Space HTTP requests, including Digest.
+function createSmsScheduler({ now = Date.now, wait = ms => new Promise(r => setTimeout(r, ms)), intervalMs = 1500 } = {}) {
+  const accounts = new Map();
+  return {
+    run(account, operation) {
+      let state = accounts.get(account);
+      if (!state) { state = { tail: Promise.resolve(), nextAt: 0 }; accounts.set(account, state); }
+      const result = state.tail.then(() => operation(async (request, delayMs = 0) => {
+        const target = Math.max(state.nextAt, now() + delayMs);
+        let remaining;
+        while ((remaining = target - now()) > 0) await wait(remaining);
+        try { return await request(); }
+        finally { state.nextAt = now() + intervalMs; }
+      }));
+      state.tail = result.catch(() => {});
+      return result;
+    },
+  };
+}
+const smsScheduler = createSmsScheduler();
+function senderError(reason, providerStatus, attempts) {
+  return Object.assign(new Error('Keyyo n’a pas confirmé le SMS.'), { statusCode: 502, keyyoReason: reason, providerStatus, attempts });
+}
+function createSender(config, fetchImpl = fetch, { scheduler = smsScheduler, retryDelays = [] } = {}) {
+  // Retries are opt-in for staff order alerts ONLY. No retry after OK, a timeout,
+  // lost response, generic 500 or ambiguous text. Keyyo documents this exact
+  // 500 / Comeback later response as rejection before sending the SMS.
+  if (!Array.isArray(retryDelays) || retryDelays.length > 2 || retryDelays.some(n => !Number.isSafeInteger(n) || n < 30000 || n > 60000)) throw Error('Politique SMS invalide.');
+  return async (recipient, message, { canSend = async () => true } = {}) => {
     if (!configured(config) || !/^33[67]\d{8}$/.test(recipient)) fail('Envoi Keyyo non configuré.', 503);
     const url = new URL('https://ssl.keyyo.com/sendsms.html');
     url.search = new URLSearchParams({ ACCOUNT: config.account, CALLEE: recipient, MSG: message });
-    const request = headers => fetchImpl(url.href, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(12000) });
-    let response = await request({});
-    if (response.status === 401) {
-      const authorization = digestAuthorization(response.headers.get('www-authenticate'), config, url.pathname + url.search);
-      await response.body?.cancel();
-      response = await request({ Authorization: authorization });
-    }
-    // OK acknowledges acceptance by Keyyo, not handset delivery. Never retry an ambiguous send.
-    if (!response.ok || (await response.text()).trim() !== 'OK') fail('Keyyo n’a pas confirmé le SMS.', 502);
-    return { accepted: true };
+    return scheduler.run(config.account, async schedule => {
+      for (let attempt = 0; ; attempt++) {
+        const request = (headers, delay = 0) => schedule(async () => {
+          if (!await canSend()) throw senderError('cancelled', null, attempt + 1);
+          try { return await fetchImpl(url.href, { method: 'GET', headers, redirect: 'error', signal: AbortSignal.timeout(12000) }); }
+          catch { throw senderError('network_error', null, attempt + 1); }
+        }, delay);
+        let response = await request({}, attempt ? retryDelays[attempt - 1] : 0);
+        if (response.status === 401) {
+          let authorization;
+          try { authorization = digestAuthorization(response.headers.get('www-authenticate'), config, url.pathname + url.search); }
+          catch { await response.body?.cancel(); throw senderError('authentication_error', 401, attempt + 1); }
+          await response.body?.cancel();
+          response = await request({ Authorization: authorization });
+        }
+        let body;
+        try { body = (await response.text()).trim(); }
+        catch { throw senderError('network_error', response.status, attempt + 1); }
+        if (response.ok && body === 'OK') return { accepted: true, attempts: attempt + 1 };
+        const refused = response.status === 500 && /^come\s*back\s+later\.{0,3}$/i.test(body);
+        if (refused && attempt < retryDelays.length) continue;
+        throw senderError(refused ? 'temporary_refusal' : 'unconfirmed_response', response.status, attempt + 1);
+      }
+    });
   };
 }
 function createCallSms({ config, file, sendSms = createSender(config), now = Date.now }) {
@@ -189,4 +231,4 @@ function createCallSms({ config, file, sendSms = createSender(config), now = Dat
   }
   return { receive, tick, optOut, status, backupState };
 }
-module.exports = { configFromEnv, configured, phone, smsText, digestAuthorization, createSender, createCallSms };
+module.exports = { configFromEnv, configured, phone, smsText, digestAuthorization, createSender, createCallSms, createSmsScheduler };

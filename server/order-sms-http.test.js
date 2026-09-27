@@ -3,7 +3,7 @@ const {spawn}=require('node:child_process'),{once}=require('node:events');
 const {createCustomerSession}=require('./customer-session');
 const {parisDateKey}=require('./availability');
 
-test('Staff SMS HTTP: payment verification and gifted orders alert both staff, not unpaid/review/history/subscriptions',{timeout:20000},async t=>{
+test('Staff SMS HTTP: payment verification and gifted orders alert both staff, not unpaid/review/history/subscriptions',{timeout:25000},async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bibou-order-sms-http-'));
   const dbFile=path.join(dir,'data.json'),providerFile=path.join(dir,'provider.json'),smsFile=path.join(dir,'sms.jsonl');
   const customer={id:'customer-test',name:'Client fictif',firstName:'Client',lastName:'Fictif',phone:'+33699999999',address:'Adresse fictive',postalCode:'76600',city:'Le Havre',points:0};
@@ -42,7 +42,7 @@ test('Staff SMS HTTP: payment verification and gifted orders alert both staff, n
   const state=JSON.parse(await fs.readFile(providerFile,'utf8'));state.checkouts[subscription.data.purchase.payment.checkoutId].status='PAID';await fs.writeFile(providerFile,JSON.stringify(state));
   await request('/payments/sumup-return',{id:subscription.data.purchase.payment.checkoutId,event_type:'CHECKOUT_STATUS_CHANGED'},'');
   assert.equal((await db()).restaurantOrderSms.jobs.length,4);
-  for(let i=0;i<45;i++) {if((await request('/dashboard/order-sms',null,admin)).data.counts.accepted===4)break;await new Promise(r=>setTimeout(r,200));}
+  for(let i=0;i<60;i++) {if((await request('/dashboard/order-sms',null,admin)).data.counts.accepted===4)break;await new Promise(r=>setTimeout(r,200));}
   assert.equal((await request('/dashboard/order-sms',null,admin)).data.counts.accepted,4);
   const sent=(await fs.readFile(smsFile,'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(sent.length,4);assert.equal(sent.filter(s=>s.recipient==='33600000000').length,2);assert.equal(sent.filter(s=>s.recipient==='33700000000').length,2);
