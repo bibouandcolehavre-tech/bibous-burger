@@ -5,6 +5,10 @@ const path = require('node:path');
 if (process.env.NODE_ENV !== 'test' || !process.env.FAKE_SUMUP_FILE) throw new Error('Test fixture only');
 global.fetch = async (url, options = {}) => {
   const parsed = new URL(url);
+  if (parsed.hostname === 'ssl.keyyo.com' && process.env.FAKE_ORDER_SMS_FILE) {
+    await fs.appendFile(process.env.FAKE_ORDER_SMS_FILE, JSON.stringify({recipient:parsed.searchParams.get('CALLEE'),message:parsed.searchParams.get('MSG')})+'\n');
+    return new Response('OK');
+  }
   if (parsed.hostname === 'routes.googleapis.com') return Response.json({ routes: [{ distanceMeters: 1500 }] });
   if (parsed.hostname !== 'api.sumup.com') throw new Error('External network forbidden in payment tests');
   const file = process.env.FAKE_SUMUP_FILE;

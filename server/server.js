@@ -34,6 +34,7 @@ const serviceSchedule = require("./service-schedule");
 const amendments = require("./order-amendments");
 const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
+const orderSms = require('./order-sms');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
@@ -56,6 +57,7 @@ const uberConfig = uber.configFromEnv(process.env);
 const uberClient = uber.createClient(uberConfig);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
 const keyyoConfig = keyyo.configFromEnv(process.env);
+const orderSmsConfig = orderSms.configFromEnv(process.env);
 const keyyoSms = keyyo.createCallSms({ config: keyyoConfig, file: path.join(path.dirname(databasePath), 'keyyo-call-sms.json') });
 const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
@@ -135,7 +137,7 @@ const backupStore = createBackupStore({
       // Read existing data only: a missing file must not silently restore seed data.
       const database = JSON.parse(await fs.readFile(databasePath, "utf8"));
       const stock = await productStockStore.read();
-      return { database, stock, keyyoCallSms: await keyyoSms.backupState() };
+      return { database: orderSms.backupDatabase(database), stock, keyyoCallSms: await keyyoSms.backupState() };
     } finally { release(); }
   }
 });
@@ -273,6 +275,11 @@ const finalizePaidOrder = (order, database) => {
     order.status = "confirmed";
     order.updatedAt = now;
     push.queueServiceNotification(database, order, 'order', 'awaiting_payment', pushConfig);
+    try { orderSms.queueOrder(database, order, orderSmsConfig); }
+    catch {
+      order.restaurantSmsQueueError = 'unavailable';
+      console.error('Alertes commandes SMS : mise en attente impossible.');
+    }
   }
 
   const customer = database.customers.find((item) => item.id === order.customerId);
@@ -420,6 +427,12 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/dashboard/keyyo-sms' && request.method === 'GET') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
       return send(response, 200, await keyyoSms.status());
+    }
+    if (url.pathname === '/api/dashboard/order-sms' && request.method === 'GET') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const release = await acquireDatabase();
+      try { return send(response, 200, orderSms.status(await readDatabase(), orderSmsConfig)); }
+      finally { release(); }
     }
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
 
@@ -1288,6 +1301,25 @@ const pushTimer = setInterval(tickPush, pushConfig.enabled ? 15000 : 60 * 60000)
 pushTimer.unref();
 server.once('listening', tickPush);
 server.on('close', () => clearInterval(pushTimer));
+// Staff SMS is persisted with payment confirmation. The provider is contacted
+// outside the order lock, so a slow SMS can never hold up a customer's checkout.
+const orderSmsWorker = orderSms.createWorker({ config: orderSmsConfig, transact: async task => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase();
+    const before = JSON.stringify(database.restaurantOrderSms);
+    const result = task(database);
+    if (JSON.stringify(database.restaurantOrderSms) !== before) await writeDatabase(database);
+    return result;
+  } finally { release(); }
+} });
+if (orderSms.configured(orderSmsConfig)) {
+  const tickOrderSms = () => orderSmsWorker.tick().catch(() => console.error('Alertes commandes SMS : traitement indisponible.'));
+  const orderSmsTimer = setInterval(tickOrderSms, 1500);
+  orderSmsTimer.unref();
+  server.once('listening', tickOrderSms);
+  server.on('close', () => clearInterval(orderSmsTimer));
+}
 const maintainContestPrivacy = async () => {
   const release = await acquireDatabase();
   try { const database = await readDatabase(); if (purgeExpiredContestEntries(database)) await writeDatabase(database); }
