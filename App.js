@@ -10,8 +10,6 @@ import NotificationSettings from "./NotificationSettings";
 import CustomerOffers from "./CustomerOffers";
 import StoreReviewLogin from "./StoreReviewLogin";
 import CustomerIdentityScreen from './CustomerIdentityScreen';
-const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
-const { containsPork, porkOption } = require('./dietary-policy');
 const { hasCompleteIdentity } = require('./customer-identity');
 const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
 import RestaurantInfo from "./RestaurantInfo";
@@ -206,9 +204,8 @@ const MENU_DRINK_OPTIONS = [
 const DRINKS = { id: "drink", title: "BOISSONS", max: 1, options: MENU_DRINK_OPTIONS };
 const DUO_DRINK_ONE = { id: "duo-drink-one", title: "PREMIÈRE BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
 const DUO_DRINK_TWO = { id: "duo-drink-two", title: "DEUXIÈME BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
-const MEAT_TYPE = { id: "meat-type", title: "CHOIX DE VIANDE", required: true, min: 1, max: 1, options: [{ id: "halal", label: "Viande halal", price: 0 }, { id: "non-halal", label: "Viande non halal", price: 0 }] };
-const MENU_OPTION_GROUPS = [PROTEIN, MEAT_TYPE, SALAD, SAUCES, DRINKS, SUPPLEMENTS, MENU_SIDES];
-const BURGER_OPTION_GROUPS = [PROTEIN, MEAT_TYPE, SALAD, SAUCES, SUPPLEMENTS, SIDES, DESSERTS];
+const MENU_OPTION_GROUPS = [PROTEIN, SALAD, SAUCES, DRINKS, SUPPLEMENTS, MENU_SIDES];
+const BURGER_OPTION_GROUPS = [PROTEIN, SALAD, SAUCES, SUPPLEMENTS, SIDES, DESSERTS];
 const SNACK_PRODUCTS = [
   { id: "frites-maison", name: "Frites maison", price: 3.9, kind: "simple", emoji: "🍟", image: { uri: "https://images.sumup.com/img_5TCPD9QKS8903BEZRHHP009TDC/image.png" }, description: "Pommes de terre fraîches, épluchées et préparées maison." },
   { id: "frites-cheddar-bacon", name: "Frites cheddar bacon", price: 6.9, kind: "simple", emoji: "🍟", image: { uri: "https://images.sumup.com/img_24R58J2CVM80V8D65XB3DQXXC5/image.png" }, description: "Frites maison généreuses, cheddar fondant et bacon." },
@@ -229,11 +226,14 @@ const DRINK_PRODUCTS = [
 const RESTAURANT_ADDRESS = "153 quai Georges V, 76600 Le Havre";
 const DELIVERY_ZONE = "Rayon de 5 km autour de Bibou's Burgers";
 const DELIVERY_SCHEDULE = [
-  { id: "monday", label: "Lun.", name: "Lundi" }, { id: "tuesday", label: "Mar.", name: "Mardi" },
-  { id: "wednesday", label: "Mer.", name: "Mercredi" }, { id: "thursday", label: "Jeu.", name: "Jeudi" },
-  { id: "friday", label: "Ven.", name: "Vendredi" }, { id: "saturday", label: "Sam.", name: "Samedi" },
-  { id: "sunday", label: "Dim.", name: "Dimanche" },
-].map((day, index) => ({ ...day, slots: regularSlotsForWeekday((index + 1) % 7) }));
+  { id: "monday", label: "Lun.", name: "Lundi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
+  { id: "tuesday", label: "Mar.", name: "Mardi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
+  { id: "wednesday", label: "Mer.", name: "Mercredi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
+  { id: "thursday", label: "Jeu.", name: "Jeudi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
+  { id: "friday", label: "Ven.", name: "Vendredi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
+  { id: "saturday", label: "Sam.", name: "Samedi", slots: ["19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
+  { id: "sunday", label: "Dim.", name: "Dimanche", slots: ["19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00"] },
+];
 const localDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const scheduleIdForDate = (date) => ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][date.getDay()];
 const UPCOMING_DELIVERY_DAYS = Array.from({ length: 7 }, (_, index) => {
@@ -245,6 +245,10 @@ const UPCOMING_DELIVERY_DAYS = Array.from({ length: 7 }, (_, index) => {
   return { ...schedule, date: localDateKey(date), label: `${schedule.label} ${shortDate}`, dayLabel: `${schedule.name} ${shortDate}` };
 });
 const DEFAULT_DELIVERY_DAY = UPCOMING_DELIVERY_DAYS[0];
+const quarterHourSlots = (ranges) => ranges.flatMap(range => {
+  const start = range.slice(0, 5);
+  return [start, start.slice(0, 3) + String(Number(start.slice(3)) + 15).padStart(2, "0")];
+});
 function Header({ onBack, right, onRight }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
@@ -431,19 +435,15 @@ function ReservationsScreen({ reservations, onBack, onRefresh }) {
 
 function ProductScreen({ product, catalog, onBack, onAdd }) {
   const fixedSauce = fixedSauceForProduct(product);
+  const optionGroups = availableOptionGroups(product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS), catalog).filter((group) => group.id !== "sauces" || !fixedSauce);
   const [choices, setChoices] = useState({});
-  const halalChosen = choices["meat-type"]?.includes("halal");
-  const porkConflict = halalChosen && containsPork(product);
-  const optionGroups = availableOptionGroups(product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS), catalog)
-    .filter(group => (group.id !== "sauces" || !fixedSauce) && (group.id !== "meat-type" || choices.protein?.includes("viande")))
-    .map(group => ({ ...group, options: halalChosen ? group.options.filter(option => !porkOption({ ...option, groupId: group.id })) : group.options }));
   const selectedOptions = useMemo(() => {
     const choicesMade = optionGroups.flatMap((group) => group.options.filter((option) => choices[group.id]?.includes(option.id)).map((option) => ({ ...option, groupId: group.id })));
     return fixedSauce ? [...choicesMade, { groupId: "sauces", id: fixedSauce.id, label: `Sauce imposée · ${fixedSauce.label}`, price: 0 }] : choicesMade;
   }, [choices, optionGroups, fixedSauce]);
   const total = product.price + selectedOptions.reduce((sum, option) => sum + option.price, 0);
   const stockProblem = cartStockProblem([{ product, selections: selectedOptions }], catalog);
-  const hasRequiredChoices = !stockProblem && !porkConflict && optionGroups.filter((group) => group.required).every((group) => (choices[group.id] || []).length >= group.min);
+  const hasRequiredChoices = !stockProblem && optionGroups.filter((group) => group.required).every((group) => (choices[group.id] || []).length >= group.min);
   const toggleChoice = (group, option) => {
     const current = choices[group.id] || [];
     const isSelected = current.includes(option.id);
@@ -452,14 +452,9 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
     else if (option.soldOut) return;
     else if (option.exclusive) next = [option.id];
     else { const withoutExclusive = current.filter((id) => !group.options.find((item) => item.id === id)?.exclusive); next = group.max === 1 ? [option.id] : [...withoutExclusive, option.id]; if (group.max && next.length > group.max) return; }
-    const updated = { ...choices, [group.id]: next };
-    if (group.id === "protein" && next.includes("galette")) delete updated["meat-type"];
-    if (group.id === "meat-type") {
-      if (next.includes("halal")) for (const key of ["extras", "sides"]) updated[key] = (updated[key] || []).filter(id => !porkOption({ groupId: key, id }));
-    }
-    setChoices(updated);
+    setChoices({ ...choices, [group.id]: next });
   };
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Image source={product.image} style={styles.detailImage} /><View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View><Text style={styles.detailDescription}>{product.detail}</Text>{product.isMenu && <Text style={styles.includedText}>Frites maison incluses dans le menu</Text>}<Text style={styles.sectionTitle}>{product.kind === "duo" ? "Choisis les deux boissons" : product.isMenu ? "Compose ton menu" : "Compose ton burger"}</Text>{fixedSauce && <View style={styles.fixedSauceNotice}><Text style={styles.fixedSauceEyebrow}>SAUCE IMPOSÉE</Text><Text style={styles.fixedSauceName}>{fixedSauce.label}</Text><Text style={styles.fixedSauceText}>Cette sauce fait partie de la recette et ne peut pas être remplacée.</Text></View>}{optionGroups.map((group) => <View key={group.id}><OptionGroup group={group} selectedIds={choices[group.id] || []} onToggleChoice={(option) => toggleChoice(group, option)} />{group.id === "meat-type" && porkConflict && <View accessibilityRole="alert" style={styles.porkNotice}><Text style={styles.dietaryNoticeTitle}>CONTIENT DU PORC</Text><Text style={styles.dietaryNoticeText}>Cette recette n’existe pas en version halal. Choisis un autre burger ou sélectionne « Viande non halal » si tu souhaites cette recette.</Text></View>}</View>)}</ScrollView><View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>{porkConflict ? "Contient du porc : cette recette n’est pas disponible en version halal." : "Choisis les options marquées « requis » pour continuer."}</Text>}<Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map((option) => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Image source={product.image} style={styles.detailImage} /><View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View><Text style={styles.detailDescription}>{product.detail}</Text>{product.isMenu && <Text style={styles.includedText}>Frites maison incluses dans le menu</Text>}<Text style={styles.sectionTitle}>{product.kind === "duo" ? "Choisis les deux boissons" : product.isMenu ? "Compose ton menu" : "Compose ton burger"}</Text>{fixedSauce && <View style={styles.fixedSauceNotice}><Text style={styles.fixedSauceEyebrow}>SAUCE IMPOSÉE</Text><Text style={styles.fixedSauceName}>{fixedSauce.label}</Text><Text style={styles.fixedSauceText}>Cette sauce fait partie de la recette et ne peut pas être remplacée.</Text></View>}{optionGroups.map((group) => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} onToggleChoice={(option) => toggleChoice(group, option)} />)}</ScrollView><View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>Choisis les options marquées « requis » pour continuer.</Text>}<Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map((option) => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable></View></SafeAreaView>;
 }
 
 function OptionVisual({ groupId, option }) {
@@ -470,7 +465,7 @@ function OptionVisual({ groupId, option }) {
 
 function OptionGroup({ group, selectedIds, onToggleChoice }) {
   const selectionText = group.max ? `${selectedIds.length} sur ${group.max} sélectionné${selectedIds.length > 1 ? "s" : ""}` : `${selectedIds.length} sélectionné${selectedIds.length > 1 ? "s" : ""}`;
-  const helper = group.id === "meat-type" ? "Choisis le type de viande pour ce burger" : group.id === "protein" ? "Choisis viande ou version végétarienne" : group.id === "salad" ? "Sélectionne les crudités que tu souhaites" : group.id === "sauces" ? "Choisis une seule sauce" : group.id === "drink" || group.id.startsWith("duo-drink") ? "Choisis une boisson" : group.max === 1 ? "Sélectionne jusqu’à 1 choix" : "Facultatif";
+  const helper = group.id === "protein" ? "Choisis viande ou version végétarienne" : group.id === "salad" ? "Sélectionne les crudités que tu souhaites" : group.id === "sauces" ? "Choisis une seule sauce" : group.id === "drink" || group.id.startsWith("duo-drink") ? "Choisis une boisson" : group.max === 1 ? "Sélectionne jusqu’à 1 choix" : "Facultatif";
   return <View style={styles.optionGroup}><View style={styles.optionGroupHeader}><View style={styles.optionGroupTitleWrap}><Text style={styles.optionGroupTitle}>{group.title}{group.required ? "  (requis)" : ""}</Text><Text style={styles.optionGroupHelper}>{selectionText} · {helper}</Text></View></View><View style={styles.optionGrid}>{group.options.map((option) => <OptionRow key={option.id} groupId={group.id} option={option} selected={selectedIds.includes(option.id)} onPress={() => onToggleChoice(option)} />)}</View></View>;
 }
 
@@ -487,8 +482,7 @@ function CartScreen({ cart, customer, catalog, onBack, onCheckout, onAddMore, on
   const hasExactFee = cart?.delivery.fee !== undefined || pricing.bibouPlus;
   const productIds = new Set(cart?.items?.map((item) => item.product.id) || []);
   const stockProblem = cartStockProblem(cart?.items, catalog);
-  const halalInCart = cart?.items?.some(item => item.selections?.some(option => option.groupId === 'meat-type' && option.id === 'halal'));
-  const suggestions = [...SNACK_PRODUCTS.filter((product) => product.kind === "simple"), ...DRINK_PRODUCTS].map((product) => applyProductStock(product, catalog)).filter((product) => !product.soldOut && !productIds.has(product.id) && !(halalInCart && product.id === 'frites-cheddar-bacon')).slice(0, 3);
+  const suggestions = [...SNACK_PRODUCTS.filter((product) => product.kind === "simple"), ...DRINK_PRODUCTS].map((product) => applyProductStock(product, catalog)).filter((product) => !product.soldOut && !productIds.has(product.id)).slice(0, 3);
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
       <Header onBack={onBack} />
@@ -572,12 +566,12 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
 
   const slotsReady = !loadingSlots && !slotError && slotsDate === day.date;
   const complete = name.trim().length > 1 && phone.trim().length >= 10 && Boolean(slot) && slotsReady && Boolean(availability[slot]) && !availability[slot].unavailable && !availability[slot].full;
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 20 minutes. Merci d’arriver à l’heure réservée. Aucun paiement n’est demandé.</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par créneau de 20 minutes. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : day.slots).map((item) => {
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 15 minutes. Merci d’arriver à l’heure réservée. Aucun paiement n’est demandé.</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par demi-heure, partagées entre les deux heures d’arrivée proposées. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : quarterHourSlots(day.slots)).map((item) => {
     const slotInfo = availability[item];
     const unavailable = Boolean(slotInfo?.unavailable);
     const full = Boolean(slotInfo?.full);
     const disabled = !slotsReady || !slotInfo || unavailable || full;
-    const status = !slotsReady ? "À vérifier" : slotInfo?.closed ? "Fermé" : slotInfo?.tooSoon ? "Préparation" : unavailable ? "Passé" : full ? "Complet" : slotInfo ? `${slotInfo.remaining} réservation${slotInfo.remaining > 1 ? "s" : ""} possible${slotInfo.remaining > 1 ? "s" : ""}` : "Indisponible";
+    const status = !slotsReady ? "À vérifier" : slotInfo?.closed ? "Fermé" : unavailable ? "Passé" : full ? "Complet" : slotInfo ? `${slotInfo.remaining} réservation${slotInfo.remaining > 1 ? "s" : ""} possible${slotInfo.remaining > 1 ? "s" : ""}` : "Indisponible";
     const selected = slot === item;
     return <Pressable key={item} disabled={disabled} onPress={() => setSlot(item)} style={[styles.slot, selected && styles.slotSelected, disabled && styles.slotDisabled]}><View style={styles.slotRow}><Text style={[styles.slotText, selected && styles.slotTextSelected, (unavailable || full) && styles.slotTextFull]}>{item}</Text><View style={styles.slotStatus}><Text style={[styles.slotAvailability, selected && styles.slotAvailabilitySelected, (unavailable || full) && styles.slotAvailabilityFull]}>{selected ? "Sélectionné" : status}</Text><View style={[styles.slotCheck, selected && styles.slotCheckSelected]}>{selected && <Text style={styles.slotCheckmark}>✓</Text>}</View></View></View></Pressable>;
   })}</View><Text style={styles.deliveryLabel}>TES COORDONNÉES</Text><TextInput value={name} onChangeText={setName} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoComplete="name" /><TextInput value={phone} onChangeText={setPhone} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" /><Text style={styles.deliveryLabel}>UNE PRÉCISION ? (FACULTATIF)</Text><TextInput value={note} onChangeText={setNote} placeholder="Chaise bébé, accessibilité, anniversaire…" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} /><View style={styles.reservationInfo}><Text style={styles.reservationInfoTitle}>Demande sans paiement</Text><Text style={styles.reservationInfoText}>La table est bloquée uniquement lorsque le restaurant accepte la demande.</Text></View><Pressable disabled={!complete || submitting} onPress={submit} style={[styles.primaryButton, styles.reservationSubmit, (!complete || submitting) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{submitting ? "Envoi en cours…" : "Envoyer ma demande"}</Text></Pressable></ScrollView></SafeAreaView>;
@@ -589,29 +583,26 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   const [availabilityStatus, setAvailabilityStatus] = useState("loading");
   const [availabilityKey, setAvailabilityKey] = useState(null);
   const [slotRetry, setSlotRetry] = useState(0);
-  const minimumPreparation = preparationMinutes(cart.total);
-  const requestKey = `${delivery.method}:${delivery.date}:${cart.total}`;
   const pricing = customerOrderPricing(cart.total, deliveryCost(delivery.method), customer, delivery.method === "delivery");
   const selectedDay = UPCOMING_DELIVERY_DAYS.find((day) => day.date === delivery.date) || DEFAULT_DELIVERY_DAY;
   useEffect(() => {
     let active = true;
     setAvailabilityStatus("loading");
-    fetch(`${API_BASE_URL}/availability?date=${encodeURIComponent(selectedDay.date)}&method=${delivery.method}&subtotal=${encodeURIComponent(cart.total)}`)
+    fetch(`${API_BASE_URL}/availability?date=${encodeURIComponent(selectedDay.date)}&method=${delivery.method}`)
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "Disponibilités indisponibles");
         if (!active) return;
         setAvailability(payload.slots || {});
-        setAvailabilityKey(requestKey);
+        setAvailabilityKey(delivery.method + selectedDay.date);
         setAvailabilityStatus("ready");
-        if (delivery.slot && (!payload.slots?.[delivery.slot] || payload.slots[delivery.slot].full || payload.slots[delivery.slot].unavailable)) onChange({ ...delivery, slot: null });
+        if (delivery.slot && (payload.slots?.[delivery.slot]?.full || payload.slots?.[delivery.slot]?.unavailable)) onChange({ ...delivery, slot: null });
       })
       .catch(() => { if (active) setAvailabilityStatus("error"); });
     return () => { active = false; };
-  }, [requestKey, selectedDay.date, slotRetry, delivery.slot]);
-  useEffect(() => { const timer = setInterval(() => setSlotRetry(value => value + 1), 30000); return () => clearInterval(timer); }, []);
-  const slotsReady = availabilityStatus === "ready" && availabilityKey === requestKey;
-  const offeredSlots = slotsReady ? Object.keys(availability).sort() : selectedDay.slots;
+  }, [delivery.method, selectedDay.date, slotRetry]);
+  const slotsReady = availabilityStatus === "ready" && availabilityKey === delivery.method + selectedDay.date;
+  const offeredSlots = slotsReady ? Object.keys(availability).sort() : delivery.method === "pickup" ? quarterHourSlots(selectedDay.slots) : selectedDay.slots;
   const selectedSlot = slotsReady && availability[delivery.slot];
   const canContinue = Boolean(selectedSlot && !selectedSlot.full && !selectedSlot.unavailable);
 
@@ -619,7 +610,7 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
     <Header onBack={onBack} />
     <Text style={styles.title}>{delivery.method === "pickup" ? "À quelle heure viens-tu retirer ?" : "Quand veux-tu être livré ?"}</Text>
-    <Text style={styles.deliveryIntro}>Horaires toutes les 20 minutes. Préparation minimum pour ton panier : {minimumPreparation} minutes, avant remise et hors frais de livraison.</Text><Text style={styles.deliveryFeeHint}>Moins de 25 € : 20 min · De 25 à 60 € : 30 min · Au-delà de 60 € : 45 min. Seuls les horaires laissant ce délai sont disponibles.</Text>
+    <Text style={styles.deliveryIntro}>Choisis le mode, le jour et l’horaire qui t’arrangent.</Text>
     <Text style={styles.deliveryLabel}>MODE</Text>
     <View style={styles.methodRow}><ChoiceChip label="🛵 Livraison" selected={delivery.method === "delivery"} onPress={() => onChange({ ...delivery, method: "delivery", fee: undefined, slot: null })} /><ChoiceChip label="🏠 Retrait" selected={delivery.method === "pickup"} onPress={() => onChange({ ...delivery, method: "pickup", fee: 0, slot: null })} /></View>
     <View style={styles.addressNotice}><Text style={styles.addressNoticeTitle}>{delivery.method === "delivery" ? "Zone de livraison" : "Retrait au restaurant"}</Text><Text style={styles.addressNoticeText}>{delivery.method === "delivery" ? DELIVERY_ZONE : RESTAURANT_ADDRESS}</Text>{delivery.method === "delivery" && <><View style={styles.deliveryPrices}>{DELIVERY_PRICING.map((tier) => <View key={tier.label} style={styles.deliveryPriceRow}><Text style={styles.deliveryPriceDistance}>{tier.label}</Text><Text style={styles.deliveryPriceValue}>{money(tier.price)}</Text></View>)}</View><Text style={styles.deliveryFeeHint}>Le tarif sera choisi automatiquement selon l’adresse. Deux livraisons maximum par créneau.</Text></>}</View>
@@ -1418,9 +1409,6 @@ const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleS
 }));
 
 const styles = StyleSheet.create(applyAppPalette({
-  porkNotice: { backgroundColor: "#FFE9E4", borderColor: "#B1281D", borderWidth: 2, padding: 16, borderRadius: 12, marginTop: 12 },
-  dietaryNoticeTitle: { color: "#251B16", fontSize: 18, fontWeight: "900", marginBottom: 6 },
-  dietaryNoticeText: { color: "#251B16", fontSize: 14, lineHeight: 21 },
   paymentRecoveryText: { color: '#25120B' },
   paymentRecoveryPrimary: { backgroundColor: '#191919', width: '100%' },
   paymentRecoverySecondary: { borderColor: '#25120B', backgroundColor: '#FFEBDC', width: '100%' },

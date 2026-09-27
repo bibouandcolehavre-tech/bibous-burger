@@ -25,7 +25,7 @@ test('CRM HTTP: restaurant permissions, consent, private offers, persisted setti
   const preferences=await request('/customer/crm',c2,'PATCH',{birthday:'02-29',personalizedOffers:false});assert.equal(preferences.status,200);assert.equal((await preferences.json()).preferences.birthday,'02-29');
   const order={customerId:'c1',requestId:'crm-order-attempt-0001',method:'pickup',serviceDate:parisDateKey(new Date(now+86400000)),slot:'19:00',items:[{productId:'fries',quantity:1,selections:[]}]};
   // Known burger avoids any dependency on display-side prices.
-  order.items=[{productId:'classique',quantity:1,selections:[{groupId:'protein',id:'viande'}, { groupId: "meat-type", id: "non-halal" },{groupId:'salad',id:'roquette'},{groupId:'sauces',id:'mayo'}]}];
+  order.items=[{productId:'classique',quantity:1,selections:[{groupId:'protein',id:'viande'},{groupId:'salad',id:'roquette'},{groupId:'sauces',id:'mayo'}]}];
   const firstResponse=await request('/orders',c1,'POST',{...order,discountRate:.99,total:.01,crmOfferId:'forged'});assert.equal(firstResponse.status,201,JSON.stringify(await firstResponse.clone().json()));const first=(await firstResponse.json()).order;assert.equal(first.crmOfferId,'coupon-private');assert.equal(first.discountRate,.2);assert.equal(first.total,Math.round(first.subtotal*.8*100)/100);assert.equal(first.welcomeRewardApplied,false);
   const duplicate=(await(await request('/orders',c1,'POST',order)).json()).order;assert.equal(duplicate.id,first.id);
   const next=(await(await request('/orders',c1,'POST',{...order,requestId:'crm-order-attempt-0002'})).json()).order;assert.equal(next.crmOfferId,undefined);assert.equal(next.discountRate,0);

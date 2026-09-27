@@ -1,4 +1,7 @@
-const { SLOT_MINUTES, preparationMinutes, clock, clockMinutes, regularSlotsForWeekday } = require('../service-policy');
+const { clock, clockMinutes } = require('../service-policy');
+// Temporary Android v4 contract: delivery ranges of 30 minutes; fixed pickup
+// and table appointments every 15 minutes. The 20-minute feature is archived.
+const slotMinutesForMethod = method => method === 'delivery' ? 30 : 15;
 const SLOT_CAPACITY = 2;
 const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
@@ -29,14 +32,24 @@ const dateFromKey = (dateKey) => {
 
 const regularSlotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
-  return date && ["delivery", "pickup", "reservation"].includes(method) ? regularSlotsForWeekday(date.getUTCDay()) : [];
+  if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
+  const weekday = date.getUTCDay();
+  const windows = weekday === 0 ? [[19, 21]] : weekday === 6 ? [[19, 22]] : [[12, 14], [19, 22]];
+  const step = slotMinutesForMethod(method);
+  return windows.flatMap(([start, end]) => Array.from({ length: (end - start) * 60 / step }, (_, i) => {
+    const minutes = start * 60 + i * step;
+    return method === 'delivery' ? `${clock(minutes)} – ${clock(minutes + step)}` : clock(minutes);
+  }));
 };
 
-const candidateSlots = () => Array.from({ length: 1440 / SLOT_MINUTES }, (_, i) => clock(i * SLOT_MINUTES));
+const candidateSlots = method => Array.from({ length: 1440 / slotMinutesForMethod(method) }, (_, i) => {
+  const minutes = i * slotMinutesForMethod(method);
+  return method === 'delivery' ? `${clock(minutes)} – ${clock((minutes + 30) % 1440)}` : clock(minutes);
+});
 
-// Old table appointments shared a half-hour capacity window. Keep their original
-// footprint; new appointments use explicit 20-minute windows. Never move bookings.
-const slotWindow = (slot, duration = SLOT_MINUTES, legacyTable = false) => {
+// Table appointments share a half-hour capacity window. Preserve the explicit
+// footprint of bookings made during the 20-minute rollout. Never move bookings.
+const slotWindow = (slot, duration = 15, legacyTable = false) => {
   const parts = String(slot || '').split(' – ');
   let start = clockMinutes(parts[0]);
   if (start === null) return null;
@@ -52,23 +65,23 @@ const slotWindow = (slot, duration = SLOT_MINUTES, legacyTable = false) => {
 };
 const windowsOverlap = (a, b) => Boolean(a && b && a[0] < b[1] && b[0] < a[1]);
 const bookingWindow = (booking, method = booking.method) => slotWindow(booking.slot,
-  booking.slotDurationMinutes || (method === 'pickup' ? 15 : SLOT_MINUTES),
-  method === 'reservation' && booking.slotDurationMinutes !== SLOT_MINUTES);
+  booking.slotDurationMinutes || slotMinutesForMethod(method),
+  method === 'reservation' && booking.slotDurationMinutes !== 20);
 
-// Project legacy exceptions onto the new grid, conservatively: no newly offered
+// Project saved exceptions onto the active grid, conservatively: no newly offered
 // slot may span a minute that was explicitly closed. Conversion is read-only.
-const scheduleOverride = (database, dateKey, slot, method) => {
+const scheduleOverride = (database, dateKey, slot, method, window = slotWindow(slot, slotMinutesForMethod(method))) => {
   const saved = database.serviceSchedule?.dates?.[dateKey];
   const entries = Object.entries(saved?.services?.[method] || {});
-  const window = slotWindow(slot);
   if (!window || !entries.length) return undefined;
-  const duration = saved.slotMinutes === SLOT_MINUTES ? SLOT_MINUTES : method === 'delivery' ? 30 : 15;
+  const duration = saved.slotMinutes === 20 ? 20 : slotMinutesForMethod(method);
   const affected = entries.map(([key, open]) => ({ window: slotWindow(key, duration), open }))
     .filter(entry => typeof entry.open === 'boolean' && windowsOverlap(window, entry.window));
   if (!affected.length) return undefined;
-  const standard = regularSlotsForDate(dateKey, method).map(value => slotWindow(value));
+  const standard = regularSlotsForDate(dateKey, method).map(value => slotWindow(value, slotMinutesForMethod(method)));
   for (let minute = window[0]; minute < window[1]; minute++) {
-    const override = affected.find(entry => minute >= entry.window[0] && minute < entry.window[1]);
+    const covering = affected.filter(entry => minute >= entry.window[0] && minute < entry.window[1]);
+    const override = covering.find(entry => !entry.open) || covering[0];
     const defaultOpen = standard.some(([a, b]) => minute >= a && minute < b) && !(dateKey === '2026-09-25' && minute >= 19 * 60);
     if (!(override ? override.open : defaultOpen)) return false;
   }
@@ -110,14 +123,7 @@ const validateServiceDate = (dateKey, now = new Date()) => {
   return null;
 };
 
-const preparationError = (dateKey, slot, now, method, subtotal) => {
-  if (method === 'reservation' || subtotal === undefined) return null;
-  const minimum = preparationMinutes(subtotal);
-  const arrival = serviceSlotInstant(dateKey, slot);
-  return arrival && arrival.getTime() < now.getTime() + minimum * 60000
-    ? `Prévois au moins ${minimum} minutes de préparation pour ce panier. Choisis un horaire plus tard.` : null;
-};
-const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery", database = {}, subtotal) => {
+const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery", database = {}) => {
   const dateError = validateServiceDate(dateKey, now);
   if (dateError) return dateError;
   if (!slotsForDate(dateKey, method, database).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
@@ -133,21 +139,21 @@ const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery
     const [startHour, startMinute] = slot.slice(0, 5).split(":").map(Number);
     if (startHour * 60 + startMinute <= clockParts.hour * 60 + clockParts.minute) return "Ce créneau est déjà passé.";
   }
-  return preparationError(dateKey, slot, now, method, subtotal);
+  return null;
 };
 
-// Existing unpaid orders may still have an old :15/:30 appointment or range.
+// Existing unpaid orders may still have a :20/:40 appointment or an old range.
 // Keep their checkout valid unless the service has since been explicitly closed.
 const storedServiceSlotOpen = (order, database) => {
-  const saved = database.serviceSchedule?.dates?.[order.serviceDate];
-  const exact = saved?.services?.[order.method]?.[order.slot];
-  if (saved?.slotMinutes !== SLOT_MINUTES && typeof exact === 'boolean') return exact;
-  const start = String(order.slot || '').slice(0, 5);
-  const window = slotWindow(start, 1);
+  const window = bookingWindow(order);
   if (!window) return false;
-  const override = scheduleOverride(database, order.serviceDate, start, order.method);
+  const override = scheduleOverride(database, order.serviceDate, order.slot, order.method, window);
   if (override !== undefined) return override;
-  return regularSlotsForDate(order.serviceDate, order.method).some(slot => windowsOverlap(window, slotWindow(slot))) && !serviceClosureReason(order.serviceDate, order.slot, order.method, database);
+  const standard = regularSlotsForDate(order.serviceDate, order.method).map(slot => slotWindow(slot, slotMinutesForMethod(order.method)));
+  for (let minute = window[0]; minute < window[1]; minute++) {
+    if (!standard.some(([start, end]) => minute >= start && minute < end)) return false;
+  }
+  return !(order.serviceDate === '2026-09-25' && window[0] >= 19 * 60);
 };
 
 const holdsDeliverySlot = (order, dateKey, slot, now = new Date()) => {
@@ -163,18 +169,17 @@ const remainingDeliveryPlaces = (database, dateKey, slot, now = new Date()) => {
   return { capacity: SLOT_CAPACITY, reserved, remaining: Math.max(0, SLOT_CAPACITY - reserved), full: reserved >= SLOT_CAPACITY };
 };
 
-const availabilityForDate = (database, dateKey, now = new Date(), method = "delivery", subtotal) => Object.fromEntries(
+const availabilityForDate = (database, dateKey, now = new Date(), method = "delivery") => Object.fromEntries(
   slotsForDate(dateKey, method, database).map((slot) => {
     const status = method === "delivery" ? remainingDeliveryPlaces(database, dateKey, slot, now) : { full: false };
-    const unavailableReason = validateServiceSlot(dateKey, slot, now, method, database, subtotal);
-    const tooSoon = !validateServiceSlot(dateKey, slot, now, method, database) && Boolean(preparationError(dateKey, slot, now, method, subtotal));
-    return [slot, { ...status, tooSoon, closed: Boolean(serviceClosureReason(dateKey, slot, method, database)), unavailable: Boolean(unavailableReason), unavailableReason,
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, method, database);
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, method, database)), unavailable: Boolean(unavailableReason), unavailableReason,
       ...(method === "pickup" ? { pickupAdvanceEligible: qualifiesForAdvancePickup({ method, serviceDate: dateKey, slot, createdAt: now.toISOString() }) } : {}) }];
   })
 );
 
 module.exports = {
-  SLOT_MINUTES, preparationMinutes, scheduleOverride, slotWindow, bookingWindow, windowsOverlap, storedServiceSlotOpen,
+  slotMinutesForMethod, scheduleOverride, slotWindow, bookingWindow, windowsOverlap, storedServiceSlotOpen,
   serviceClosureReason,
   regularSlotsForDate,
   candidateSlots,

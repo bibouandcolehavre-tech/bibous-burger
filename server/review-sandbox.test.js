@@ -15,7 +15,7 @@ const instant = Date.parse('2026-09-28T08:00:00Z');
 const make = options => createReviewSandbox({ accessHash: hash, now: () => instant, ...options });
 const request = (sandbox, route, token = '', body, method = body === undefined ? 'GET' : 'POST') => sandbox.handle({ route, token, method, readBody: async () => body });
 const login = sandbox => request(sandbox, '/session', '', { accessCode: code });
-const orderInput = customerId => ({ customerId, requestId: 'test-order-attempt-0001', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: "meat-type", id: "non-halal" }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }], method: 'pickup', serviceDate: '2026-09-29', slot: '12:00' });
+const orderInput = customerId => ({ customerId, requestId: 'test-order-attempt-0001', items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }], method: 'pickup', serviceDate: '2026-09-29', slot: '12:00' });
 
 test('review: private login, separate session stores, expiry and hard limits', async () => {
   const sandbox = make({ maxSessions: 2 });

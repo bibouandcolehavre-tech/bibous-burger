@@ -1,4 +1,4 @@
-const { slotsForDate, validateServiceSlot, serviceClosureReason, SLOT_MINUTES, bookingWindow, slotWindow, windowsOverlap } = require("./availability");
+const { slotsForDate, validateServiceSlot, serviceClosureReason, bookingWindow, windowsOverlap } = require("./availability");
 
 const RESERVATION_STATUSES = ["pending", "confirmed", "cancelled"];
 const RESERVATION_SLOT_CAPACITY = 2;
@@ -18,7 +18,7 @@ const ensureReservationStore = (database) => {
   return database;
 };
 
-const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && windowsOverlap(bookingWindow(reservation, 'reservation'), slotWindow(slot)) && reservation.status !== "cancelled";
+const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && windowsOverlap(bookingWindow(reservation, 'reservation'), bookingWindow({ slot }, 'reservation')) && reservation.status !== "cancelled";
 
 const remainingReservationPlaces = (database, dateKey, slot) => {
   ensureReservationStore(database);
@@ -64,7 +64,6 @@ const createReservation = (database, input, now = new Date()) => {
     guests,
     serviceDate: input.serviceDate,
     slot: input.slot,
-    slotDurationMinutes: SLOT_MINUTES,
     note,
     status: "pending",
     createdAt: now.toISOString(),

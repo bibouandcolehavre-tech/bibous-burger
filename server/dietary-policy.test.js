@@ -8,7 +8,8 @@ test('choix explicite gratuit, non falsifiable et enregistré dans le ticket',()
     assert.equal(cart.subtotal,9.9);
     assert.equal(cart.items[0].options.find(o=>o.groupId==='meat-type').label,choice==='halal'?'Viande halal':'Viande non halal');
   }
-  assert.throws(()=>validateAndPriceOrderItems([item('classique',null)]),/Choisis viande/);
+  const legacy = validateAndPriceOrderItems([item('classique',null)]);
+  assert.equal(legacy.items[0].options.some(o=>o.groupId==='meat-type'),false);
   assert.throws(()=>validateAndPriceOrderItems([item('classique','inconnu')]),/invalide/);
   assert.throws(()=>validateAndPriceOrderItems([item('classique','halal','viande',[{groupId:'meat-type',id:'non-halal'}])]),/maximum/);
 });
@@ -33,16 +34,13 @@ test('ticket restaurant : choix de viande mis en évidence avant les crudités',
   assert.match(markup,/<strong>Viande halal<\/strong>/);
   assert.ok(markup.indexOf('Choix de viande')<markup.indexOf('Crudités'));
 });
-test('interface : choix halal uniquement dans la composition, sans préférence globale',()=>{
+test('interface temporaire compatible Android v4, sans nouveau choix viande',()=>{
   const fs=require('node:fs'),path=require('node:path');
   const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
   assert.doesNotMatch(source,/MeatPreference|meatPreference|TA PRÉFÉRENCE DE VIANDE/);
   const cards=source.slice(source.indexOf('function ProductCard'),source.indexOf('function AccessoryCard'));
   assert.doesNotMatch(cards,/halal|CONTIENT DU PORC/);
-  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
-  assert.match(source,/BURGER_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
-  const detail=source.slice(source.indexOf('function ProductScreen'),source.indexOf('function OptionGroup'));
-  assert.match(detail,/const \[choices, setChoices\] = useState\(\{\}\)/);
-  assert.match(detail,/group\.id === "meat-type" && porkConflict/);
-  assert.match(detail,/const porkConflict = halalChosen && containsPork\(product\)/);
+  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, SALAD/);
+  assert.match(source,/BURGER_OPTION_GROUPS = \[PROTEIN, SALAD/);
+  assert.doesNotMatch(source,/MEAT_TYPE|regularSlotsForWeekday|preparationMinutes/);
 });

@@ -44,23 +44,23 @@ test("retrouve le prochain numéro et met à jour le statut", () => {
   assert.equal(updated.status, "confirmed");
 });
 
-test("limite chaque tranche de 20 minutes à deux réservations", () => {
+test("limite chaque tranche de 30 minutes à deux réservations", () => {
   const database = { reservations: [], nextReservationNumber: 1 };
   const now = new Date("2026-09-17T09:00:00.000Z");
   const input = { name: "Client test", phone: "06 12 34 56 78", guests: 2, serviceDate: "2026-09-18", slot: "19:00" };
   createReservation(database, input, now);
-  createReservation(database, { ...input, slot: "19:00", name: "Deuxième client" }, now);
+  createReservation(database, { ...input, slot: "19:15", name: "Deuxième client" }, now);
 
   const availability = reservationAvailabilityForDate(database, input.serviceDate, now);
   assert.equal(availability[input.slot].remaining, 0);
   assert.equal(availability[input.slot].full, true);
-  assert.equal(availability["19:20"].full, false);
-  assert.equal(availability["19:40"].remaining, 2);
+  assert.equal(availability["19:15"].full, true);
+  assert.equal(availability["19:30"].remaining, 2);
   assert.throws(() => createReservation(database, { ...input, name: "Troisième client" }, now), /complet/);
 
   updateReservationStatus(database, "reservation-1", "cancelled", now);
   assert.equal(reservationAvailabilityForDate(database, input.serviceDate, now)[input.slot].remaining, 1);
-  assert.equal(reservationAvailabilityForDate(database, input.serviceDate, now)["19:20"].remaining, 2);
+  assert.equal(reservationAvailabilityForDate(database, input.serviceDate, now)["19:15"].remaining, 1);
 });
 
 test("les anciennes réservations par intervalle continuent à bloquer la demi-heure", () => {
@@ -68,8 +68,8 @@ test("les anciennes réservations par intervalle continuent à bloquer la demi-h
   const now = new Date("2026-09-17T09:00:00Z");
   const slots = reservationAvailabilityForDate(database, "2026-09-18", now);
   assert.equal(slots["19:00"].remaining, 1);
-  assert.equal(slots["19:20"].remaining, 1);
-  assert.equal(slots["19:40"].remaining, 2);
+  assert.equal(slots["19:15"].remaining, 1);
+  assert.equal(slots["19:30"].remaining, 2);
   assert.equal(slots["19:00 – 19:30"], undefined);
 });
 
@@ -78,7 +78,7 @@ test("les nouvelles tables refusent les intervalles et les heures passées", () 
   const now = new Date("2026-09-18T10:00:00Z");
   assert.throws(() => createReservation({}, input, now), /pas disponible/);
   assert.throws(() => createReservation({}, { ...input, slot: "12:00" }, now), /déjà passé/);
-  assert.equal(createReservation({}, { ...input, slot: "12:20" }, now).slot, "12:20");
+  assert.equal(createReservation({}, { ...input, slot: "12:15" }, now).slot, "12:15");
 });
 
 test("retrouve uniquement les réservations du client connecté", () => {
@@ -98,7 +98,7 @@ test("réactiver une réservation annulée ne dépasse pas la capacité partagé
   const old = createReservation(db, input, now);
   updateReservationStatus(db, old.id, "cancelled", now);
   createReservation(db, input, now);
-  createReservation(db, { ...input, slot: "19:00" }, now);
+  createReservation(db, { ...input, slot: "19:15" }, now);
   assert.throws(() => updateReservationStatus(db, old.id, "confirmed", now), /complète/);
   assert.equal(old.status, "cancelled");
 });

@@ -213,7 +213,8 @@ const validatedSelections = (product, selections, productId) => {
   if (allowedGroups.has('meat-type')) {
     const vegetarian = byGroup.protein[0]?.id === 'galette';
     const meatType = byGroup['meat-type'][0]?.id;
-    if (!vegetarian && !meatType) throw orderInputError('Choisis viande halal ou non halal sur la fiche du burger avant de commander.');
+    // Android v4 has no meat-type selector. An absent choice stays absent: never
+    // infer halal/non-halal. Still validate explicit choices from cached clients.
     if (vegetarian && meatType) throw orderInputError('Retire le choix de viande pour la version végétarienne.');
     if (meatType === 'halal' && (containsPork(productId) || resolved.some(porkOption))) throw orderInputError('Cette recette ou un supplément contient du porc et ne peut pas être commandé en version halal.');
   }

@@ -5,8 +5,7 @@ const { validateAndPriceOrderItems } = require("./catalog");
 const requiredSelections = [
   { groupId: "protein", id: "viande" },
   { groupId: "salad", id: "roquette" },
-  { groupId: "sauces", id: "mayo" },
-  { groupId: "meat-type", id: "non-halal" }
+  { groupId: "sauces", id: "mayo" }
 ];
 
 test("prices a menu and supplements from the server catalog", () => {
@@ -33,7 +32,7 @@ test("records the imposed sauce and rejects a replacement sauce", () => {
   };
   for (const [burgerId, [sauceId, label]] of Object.entries(recipes)) {
     for (const productId of [burgerId, `${burgerId}-menu`]) {
-      const fixedSelections = [...requiredSelections.slice(0, 2), { groupId: "sauces", id: sauceId }, requiredSelections[3]];
+      const fixedSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: sauceId }];
       const result = validateAndPriceOrderItems([{ productId, quantity: 1, selections: fixedSelections }], { "atlas-menu": true });
       assert.equal(result.items[0].options[2].label, label);
       assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: requiredSelections }], { "atlas-menu": true }), /sauce de ce burger est imposée/);
@@ -42,7 +41,7 @@ test("records the imposed sauce and rejects a replacement sauce", () => {
 });
 
 test("rejects unavailable products and incompatible exclusive choices", () => {
-  const atlasSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: "fixed-atlas" }, requiredSelections[3]];
+  const atlasSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: "fixed-atlas" }];
   assert.throws(() => validateAndPriceOrderItems([{ productId: "atlas-menu", quantity: 1, selections: atlasSelections }]), /indisponible/);
   assert.throws(() => validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: [requiredSelections[0], { groupId: "salad", id: "roquette" }, { groupId: "salad", id: "sans-crudites" }, requiredSelections[2]] }]), /incompatibles/);
 });

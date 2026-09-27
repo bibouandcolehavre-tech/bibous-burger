@@ -117,7 +117,7 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         if (db.orders.length >= 50) throw fail('Limite de commandes de test atteinte.', 429);
         if (!['delivery', 'pickup'].includes(input.method)) throw fail('Mode de commande invalide.');
         const priced = validateAndPriceOrderItems(input.items);
-        const slotError = validateServiceSlot(input.serviceDate, input.slot, date, input.method, {}, priced.subtotal);
+        const slotError = validateServiceSlot(input.serviceDate, input.slot, date, input.method);
         if (slotError) throw fail(slotError);
         const active = bibouPlusStatus(customer, date).active;
         const promotion = promotionForCode(input.promoCode);

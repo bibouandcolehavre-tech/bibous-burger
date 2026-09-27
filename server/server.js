@@ -25,7 +25,7 @@ const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { createAuthRateLimiter } = require("./auth-rate-limit");
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
-const { PENDING_RESERVATION_MS, SLOT_CAPACITY, SLOT_MINUTES, preparationMinutes, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
+const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
@@ -421,7 +421,7 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
       return send(response, 200, await keyyoSms.status());
     }
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, twentyMinuteAppointments: 1, basketPreparation: 1, meatPreference: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
 
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
@@ -697,11 +697,8 @@ const server = http.createServer(async (request, response) => {
       if (!["delivery", "pickup"].includes(method)) return send(response, 400, { error: "Mode de commande invalide." });
       const validationError = validateServiceDate(serviceDate);
       if (validationError) return send(response, 400, { error: validationError });
-      const rawSubtotal = url.searchParams.get('subtotal');
-      const subtotal = rawSubtotal === null ? 0 : Number(rawSubtotal);
-      if (rawSubtotal === '' || !Number.isFinite(subtotal) || subtotal < 0 || subtotal > 100000) return send(response, 400, { error: 'Montant du panier invalide.' });
-      const slots = availabilityForDate(database, serviceDate, new Date(), method, subtotal);
-      return send(response, 200, { serviceDate, method, slotMinutes: SLOT_MINUTES, preparationMinutes: preparationMinutes(subtotal), capacity: method === "delivery" ? SLOT_CAPACITY : null, slots });
+      const slots = availabilityForDate(database, serviceDate, new Date(), method);
+      return send(response, 200, { serviceDate, method, capacity: method === "delivery" ? SLOT_CAPACITY : null, slots });
     }
 
     if (request.method === "GET" && url.pathname === "/api/reservation-availability") {
@@ -709,7 +706,7 @@ const server = http.createServer(async (request, response) => {
       const validationError = validateServiceDate(serviceDate);
       if (validationError) return send(response, 400, { error: validationError.replace("livraison", "réservation") });
       const slots = reservationAvailabilityForDate(database, serviceDate);
-      return send(response, 200, { serviceDate, capacity: RESERVATION_SLOT_CAPACITY, capacityWindowMinutes: SLOT_MINUTES, slots });
+      return send(response, 200, { serviceDate, capacity: RESERVATION_SLOT_CAPACITY, capacityWindowMinutes: 30, slots });
     }
 
     if (request.method === "POST" && url.pathname === "/api/reservations") {
@@ -1102,7 +1099,7 @@ const server = http.createServer(async (request, response) => {
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
       const subtotal = pricedCart.subtotal;
-      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database, subtotal);
+      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
       let distanceKm = 0;
       let deliveryFee = 0;
@@ -1134,13 +1131,12 @@ const server = http.createServer(async (request, response) => {
         const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), promotion);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
-        createdOrder.slotDurationMinutes = SLOT_MINUTES;
-        createdOrder.preparationMinutes = preparationMinutes(subtotal);
+        createdOrder.slotDurationMinutes = slotMinutesForMethod(input.method);
         createdOrder.requestId = requestId;
         if (promotion) { createdOrder.promotion = promotion; createdOrder.discountLabel = `Code promo ${promotion.code}`; }
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
-        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal);
+        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
         createdOrder.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(createdOrder);
         latestDatabase.orders.unshift(createdOrder);

@@ -1,5 +1,7 @@
 # Horaires et choix de viande — 27 septembre 2026
 
+> **Décision ultérieure du 27 septembre : retour temporaire compatible Android v4 autorisé.** Les fonctionnalités décrites ci-dessous sont sauvegardées mais retirées de l'interface active. Voir `ANDROID_V4_COMPATIBILITY_ROLLBACK.md` pour le comportement actuel et les vérifications ; ne pas réactiver avant mise à jour native compatible.
+
 ## Demandes validées par le propriétaire
 
 - Retrait, livraison et tables : heures fixes toutes les 20 minutes (:00, :20, :40).

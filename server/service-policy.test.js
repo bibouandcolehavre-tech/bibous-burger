@@ -1,69 +1,71 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { preparationMinutes, regularSlotsForWeekday } = require('../service-policy');
-const { availabilityForDate, validateServiceSlot, remainingDeliveryPlaces, storedServiceSlotOpen } = require('./availability');
-const { reservationAvailabilityForDate } = require('./reservations');
+const { preparationMinutes } = require('../service-policy');
+const { availabilityForDate, validateServiceSlot, remainingDeliveryPlaces, storedServiceSlotOpen, slotsForDate } = require('./availability');
+const { reservationAvailabilityForDate, createReservation, updateReservationStatus } = require('./reservations');
 const schedule = require('./service-schedule');
-const date='2026-09-28', now=new Date('2026-09-28T17:10:00Z'); // 19:10 Paris
+const date='2026-09-28', now=new Date('2026-09-28T08:00:00Z');
 
-test('préparation : frontières exactes 25/60 euros et montants invalides',()=>{
-  for(const [amount, minutes] of [[0,20],[24.99,20],[25,30],[60,30],[60.01,45],[100,45]]) assert.equal(preparationMinutes(amount),minutes);
-  for(const amount of [-1,NaN,Infinity]) assert.throws(()=>preparationMinutes(amount),/invalide/);
-  assert.deepEqual(regularSlotsForWeekday(0),['19:00','19:20','19:40','20:00','20:20','20:40']);
-});
-test('retrait et livraison : prochain horaire selon panier, arrondi à la grille, pas pour les tables',()=>{
-  for(const method of ['pickup','delivery']) {
-    for(const [amount,first] of [[24.99,'19:40'],[25,'19:40'],[60,'19:40'],[60.01,'20:00']]) {
-      const slots=availabilityForDate({},date,now,method,amount);
-      assert.equal(Object.keys(slots).find(s=>!slots[s].unavailable&&!slots[s].full),first);
-      assert.equal(slots['19:20'].tooSoon,true);
-      assert.equal(slots['19:00'].tooSoon,false);
-      assert.equal(slots['19:00'].unavailable,true);
-      assert.match(validateServiceSlot(date,'19:20',now,method,{},amount),/préparation/);
-    }
-    assert.equal(validateServiceSlot(date,'19:40',new Date('2026-09-28T17:20:00Z'),method,{},24.99),null);
-    assert.match(validateServiceSlot(date,'19:40',new Date('2026-09-28T17:20:00.001Z'),method,{},24.99),/20 minutes/);
+test('règle future sauvegardée mais désactivée dans les disponibilités et commandes',()=>{
+  for(const [amount,minutes] of [[24.99,20],[25,30],[60,30],[60.01,45]]) assert.equal(preparationMinutes(amount),minutes);
+  const time=new Date('2026-09-28T16:55:00Z');
+  for(const [method,slot] of [['pickup','19:00'],['delivery','19:00 – 19:30']]) {
+    assert.equal(validateServiceSlot(date,slot,time,method,{},100),null);
+    assert.deepEqual(availabilityForDate({},date,time,method),availabilityForDate({},date,time,method,100));
   }
-  assert.equal(validateServiceSlot(date,'19:20',now,'reservation',{},100),null);
-  assert.equal(validateServiceSlot('2026-09-29','12:00',now,'pickup',{},100),null);
 });
-test('ancienne livraison : capacité réservée sur les deux nouvelles plages chevauchées, sans déplacer la commande',()=>{
-  const order={serviceDate:date,method:'delivery',slot:'19:30 – 20:00',status:'confirmed',payment:{status:'PAID'}};
-  const db={orders:[order,{...order}]}, before=JSON.stringify(db);
-  assert.equal(remainingDeliveryPlaces(db,date,'19:20',now).full,true);
-  assert.equal(remainingDeliveryPlaces(db,date,'19:40',now).full,true);
-  assert.equal(remainingDeliveryPlaces(db,date,'20:00',now).remaining,2);
+test('grille identique pour tous les clients : livraison 30 min, retrait et tables 15 min',()=>{
+  assert.equal(slotsForDate(date,'delivery').length,10);
+  for(const method of ['pickup','reservation']) {
+    assert.equal(slotsForDate(date,method).length,20);
+    for(const slot of ['19:00','19:15','19:30','19:45']) assert.equal(validateServiceSlot(date,slot,now,method),null);
+    assert.match(validateServiceSlot(date,'19:20',now,method),/pas disponible/);
+  }
+});
+test('livraisons de vingt minutes existantes conservées et comptées sur les deux plages chevauchées',()=>{
+  const order={serviceDate:date,method:'delivery',slot:'19:20',slotDurationMinutes:20,status:'confirmed',payment:{status:'PAID'}};
+  const db={orders:[order,{...order}]},before=JSON.stringify(db);
+  for(const slot of ['19:00 – 19:30','19:30 – 20:00']) assert.equal(remainingDeliveryPlaces(db,date,slot,now).full,true);
+  assert.equal(remainingDeliveryPlaces(db,date,'20:00 – 20:30',now).remaining,2);
   assert.equal(storedServiceSlotOpen(order,db),true);
   assert.equal(JSON.stringify(db),before);
 });
-test('anciennes tables : capacité conservée entre deux grilles ; nouvelles plages indépendantes',()=>{
-  const db={reservations:[{slot:'19:15',serviceDate:date,status:'confirmed'},{slot:'19:20',slotDurationMinutes:20,serviceDate:date,status:'pending'}]};
-  const slots=reservationAvailabilityForDate(db,date,new Date('2026-09-28T16:00:00Z'));
-  assert.equal(slots['19:00'].remaining,1);assert.equal(slots['19:20'].full,true);assert.equal(slots['19:40'].remaining,2);
+test('tables de vingt minutes existantes comptées sans déplacement ; deux places par demi-heure',()=>{
+  const db={reservations:[{id:'twenty',slot:'19:20',slotDurationMinutes:20,serviceDate:date,status:'confirmed'},{id:'legacy',slot:'19:15',serviceDate:date,status:'pending'}]};
+  const before=JSON.stringify(db.reservations);
+  const slots=reservationAvailabilityForDate(db,date,now);
+  assert.equal(slots['19:00'].full,true); assert.equal(slots['19:15'].full,true);
+  assert.equal(slots['19:30'].remaining,1); assert.equal(slots['19:45'].remaining,1);
+  assert.equal(slots['20:00'].remaining,2); assert.equal(JSON.stringify(db.reservations),before);
+  assert.throws(()=>createReservation(db,{customerName:'Client fictif',phone:'0600000000',guests:2,serviceDate:date,slot:'19:15'},now),/complet/);
+  db.reservations.push({id:'cancelled',slot:'19:00',serviceDate:date,status:'cancelled'});
+  assert.throws(()=>updateReservationStatus(db,'cancelled','confirmed',now),/complète/);
 });
-test('fermetures et ouvertures exceptionnelles anciennes conservées et changement explicite enregistré en vingt minutes',()=>{
-  const db={serviceSchedule:{dates:{[date]:{revision:3,services:{delivery:{'19:30 – 20:00':false},pickup:{'19:15':false,'22:00':true,'22:15':true},reservation:{'19:30':false,'19:45':false}}}}}};
-  const before=JSON.stringify(db), time=new Date('2026-09-28T08:00:00Z');
-  const slots=availabilityForDate(db,date,time,'delivery');
-  assert.equal(slots['19:20'].closed,true);assert.equal(slots['19:40'].closed,true);assert.equal(slots['20:00'].closed,false);
-  assert.equal(availabilityForDate(db,date,time,'pickup')['22:00'].unavailable,false);
-  assert.equal(availabilityForDate(db,date,time,'pickup')['22:20'].closed,true);
-  const state=schedule.dashboard(db,date,time);
+test('exceptions vingt minutes projetées en lecture seule, fermetures conservées',()=>{
+  const db={serviceSchedule:{dates:{[date]:{revision:3,slotMinutes:20,services:{delivery:{'19:20':false},pickup:{'19:20':false,'22:00':true,'22:20':true},reservation:{'19:20':false}}}}}};
+  const before=JSON.stringify(db);
+  const slots=availabilityForDate(db,date,now,'delivery');
+  assert.equal(slots['19:00 – 19:30'].closed,true); assert.equal(slots['19:30 – 20:00'].closed,true);
+  assert.equal(slots['20:00 – 20:30'].closed,false);
+  const pickup=availabilityForDate(db,date,now,'pickup');
+  assert.equal(pickup['19:15'].closed,true); assert.equal(pickup['19:30'].closed,true);
+  assert.equal(pickup['22:15'].unavailable,false); assert.equal(pickup['22:30'].closed,true);
+  const state=schedule.dashboard(db,date,now);
   assert.equal(JSON.stringify(db),before);
-  const input={date,revision:3,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))};
-  schedule.save(db,input,time);
-  assert.equal(db.serviceSchedule.dates[date].slotMinutes,20);
-  for(const method of ['delivery','pickup','reservation']) assert.deepEqual(schedule.dashboard(db,date,time).services[method],state.services[method]);
-  assert.equal(storedServiceSlotOpen({method:'delivery',serviceDate:date,slot:'19:30 – 20:00'},db),false);
+  schedule.save(db,{date,revision:3,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))},now);
+  assert.equal(db.serviceSchedule.dates[date].slotMinutes,undefined);
+  for(const method of ['delivery','pickup','reservation']) assert.deepEqual(schedule.dashboard(db,date,now).services[method],state.services[method]);
 });
-test('fermer une plage qui chevauche une ancienne table demande confirmation sans annuler la table',()=>{
-  const db={reservations:[{id:'legacy',serviceDate:date,slot:'19:15',status:'confirmed'}]};
-  const time=new Date('2026-09-28T08:00:00Z'),state=schedule.dashboard(db,date,time);
+test('fermer une plage chevauchant une table existante demande confirmation',()=>{
+  const db={reservations:[{id:'twenty',serviceDate:date,slot:'19:20',slotDurationMinutes:20,status:'confirmed'}]};
+  const state=schedule.dashboard(db,date,now);
   const input={date,revision:0,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))};
-  input.services.reservation['19:20']=false;
-  assert.throws(()=>schedule.save(db,input,time),/prise en charge/);
-  assert.equal(db.reservations[0].slot,'19:15');
+  input.services.reservation['19:30']=false;
+  assert.throws(()=>schedule.save(db,input,now),/prise en charge/);
+  assert.equal(db.reservations[0].slot,'19:20');
 });
-test('le paiement d’un ancien retrait exceptionnel à :45 reste possible',()=>{
-  const db={serviceSchedule:{dates:{[date]:{services:{pickup:{'22:45':true}}}}}};
-  assert.equal(storedServiceSlotOpen({method:'pickup',serviceDate:date,slot:'22:45'},db),true);
+test('anciens paiements conservés mais fermetures chevauchantes respectées',()=>{
+  const order={method:'pickup',serviceDate:date,slot:'19:20',slotDurationMinutes:20};
+  assert.equal(storedServiceSlotOpen(order,{}),true);
+  assert.equal(storedServiceSlotOpen(order,{serviceSchedule:{dates:{[date]:{services:{pickup:{'19:30':false}}}}}}),false);
+  assert.equal(storedServiceSlotOpen({method:'pickup',serviceDate:date,slot:'22:45'},{serviceSchedule:{dates:{[date]:{services:{pickup:{'22:45':true}}}}}}),true);
 });

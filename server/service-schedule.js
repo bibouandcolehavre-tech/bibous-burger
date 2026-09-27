@@ -1,4 +1,4 @@
-const { candidateSlots, regularSlotsForDate, serviceClosureReason, validateServiceDate, parisDateKey, scheduleOverride, SLOT_MINUTES, bookingWindow, slotWindow, windowsOverlap } = require('./availability');
+const { candidateSlots, regularSlotsForDate, serviceClosureReason, validateServiceDate, parisDateKey, scheduleOverride, bookingWindow, slotWindow, windowsOverlap } = require('./availability');
 const METHODS = ['pickup', 'delivery', 'reservation'];
 const failure = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 function assertDate(date, now) {
@@ -17,7 +17,7 @@ function dashboard(database, date, now = new Date()) {
         : (database.orders || []).filter(o => o.serviceDate === date && o.method === method && o.status !== 'cancelled' && (o.payment?.status === 'PAID' || o.status === 'awaiting_payment') && windowsOverlap(bookingWindow(o), slotWindow(slot))).length
     }))];
   }));
-  return { date, revision: saved?.revision || 0, slotMinutes: SLOT_MINUTES, services, timeZone: 'Europe/Paris', today: parisDateKey(now),
+  return { date, revision: saved?.revision || 0, services, timeZone: 'Europe/Paris', today: parisDateKey(now),
     updatedAt: saved?.updatedAt || null };
 }
 function save(database, input, now = new Date()) {
@@ -41,10 +41,10 @@ function save(database, input, now = new Date()) {
   }
   database.serviceSchedule ||= { dates: {} };
   database.serviceSchedule.dates ||= {};
-  database.serviceSchedule.dates[input.date] = { revision: current.revision + 1, slotMinutes: SLOT_MINUTES, services, updatedAt: now.toISOString() };
+  database.serviceSchedule.dates[input.date] = { revision: current.revision + 1, services, updatedAt: now.toISOString() };
   // Each day's changes remain available for an audit without customer details.
   database.serviceSchedule.history ||= [];
-  database.serviceSchedule.history.push({ date: input.date, revision: current.revision + 1, slotMinutes: SLOT_MINUTES, services, at: now.toISOString() });
+  database.serviceSchedule.history.push({ date: input.date, revision: current.revision + 1, services, at: now.toISOString() });
   database.serviceSchedule.history = database.serviceSchedule.history.slice(-200);
 }
 module.exports = { dashboard, save, METHODS };

@@ -7,12 +7,12 @@ const { createProductStockStore } = require("./product-stock");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { applyProductStock, availableOptionGroups, cartStockProblem } = require("../stock-client");
 
-const selections = [{ groupId: "protein", id: "viande" }, { groupId: "salad", id: "roquette" }, { groupId: "sauces", id: "mayo" }, { groupId: "meat-type", id: "non-halal" }];
+const selections = [{ groupId: "protein", id: "viande" }, { groupId: "salad", id: "roquette" }, { groupId: "sauces", id: "mayo" }];
 const item = (productId, options = selections) => ({ productId, quantity: 1, selections: options });
 
 test("le restaurant peut rouvrir une rupture initiale sans changer le prix", () => {
   assert.equal(availabilityCatalog().products.find((p) => p.id === "atlas-menu").available, false);
-  const atlasSelections = [selections[0], selections[1], { groupId: "sauces", id: "fixed-atlas" }, selections[3]];
+  const atlasSelections = [selections[0], selections[1], { groupId: "sauces", id: "fixed-atlas" }];
   assert.equal(validateAndPriceOrderItems([item("atlas-menu", atlasSelections)], { "atlas-menu": true }).subtotal, 18.9);
   assert.throws(() => validateAndPriceOrderItems([item("classique")], { classique: false }), /indisponible/);
   assert.throws(() => validateAndPriceOrderItems([item("__proto__")]), /n’existe plus/);
