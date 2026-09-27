@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { serviceSlotInstant, parisDateKey } = require('./availability');
+const { serviceSlotInstant, parisDateKey, bookingWindow } = require('./availability');
 const fail = (message, statusCode=409) => { throw Object.assign(new Error(message),{statusCode}); };
 const configFromEnv = env => ({enabled:env.UBER_DIRECT_ENABLED==='true',mode:env.UBER_DIRECT_MODE || 'test',customerId:env.UBER_DIRECT_CUSTOMER_ID || '',clientId:env.UBER_DIRECT_CLIENT_ID || '',clientSecret:env.UBER_DIRECT_CLIENT_SECRET || '',signingKey:env.UBER_DIRECT_WEBHOOK_SECRET || '',pickupPhone:env.UBER_DIRECT_PICKUP_PHONE || '+33278088498'});
 const configured = c => c.enabled && ['test','live'].includes(c.mode) && c.customerId && c.clientId && c.clientSecret && c.signingKey;
@@ -31,7 +31,8 @@ function reserve(order,input,config,now=Date.now()) {
  if(u.payload.pickup_ready_dt && Date.parse(u.payload.pickup_ready_dt)<now)fail('L’heure de préparation est passée. Recalculez le devis.');
  const slot=serviceSlotInstant(order.serviceDate,order.slot?.slice(0,5),'delivery').getTime();
  const eta=Date.parse(u.quote.dropoffEta);
- if((!Number.isFinite(eta) || eta<slot || eta>slot+30*60000) && input.acknowledgeTiming!==true)fail('L’estimation diffère du créneau client ou est indisponible. Prévenez le client puis confirmez cet écart.');
+ const window=bookingWindow(order);
+ if((!Number.isFinite(eta) || eta<slot || eta>slot+(window[1]-window[0])*60000) && input.acknowledgeTiming!==true)fail('L’estimation diffère du créneau client ou est indisponible. Prévenez le client puis confirmez cet écart.');
  const attemptId=crypto.randomUUID(),externalId=`bibou-${order.id}-${attemptId}`;
  Object.assign(u,{phase:'sending',attemptId,externalId,requestedAt:new Date(now).toISOString(),mode:config.mode});
  return {...u.payload,quote_id:u.quote.id,pickup_name:"Bibou’s Burgers",pickup_phone_number:config.pickupPhone,dropoff_name:order.customerName,dropoff_phone_number:phone(order.customerPhone),manifest_items:order.items.map(i=>({name:i.name,quantity:i.quantity,size:'small',price:Math.round(i.price*100)})),manifest_reference:`Commande ${order.number}`,manifest_total_value:Math.round(order.subtotal*100),external_id:externalId,undeliverable_action:'return'};

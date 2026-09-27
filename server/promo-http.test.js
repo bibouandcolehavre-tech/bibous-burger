@@ -25,7 +25,7 @@ test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et 
     return { status: response.status, data: await response.json() };
   };
   const admin = (await request('/dashboard/auth/login', { password: 'test-only' })).data.token;
-  const body = { customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items: [{ productId: 'classique', quantity: 2, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }], promoCode: ' chorus ', requestId: 'attempt-free-promo-000001' };
+  const body = { customerId: customer.id, method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items: [{ productId: 'classique', quantity: 2, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: "meat-type", id: "non-halal" }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }], promoCode: ' chorus ', requestId: 'attempt-free-promo-000001' };
   const db = async () => JSON.parse(await fs.readFile(file, 'utf8'));
   const calls = async () => { try { return await fs.readFile(path.join(dir, 'calls.jsonl'), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return ''; throw e; } };
 
@@ -56,7 +56,7 @@ test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et 
   assert.equal((await request('/payments/sumup-checkout', { orderId: order.id })).status, 409);
   assert.equal(await calls(), '', 'No SumUp call, even on replay or cancellation');
 
-  const delivery = { ...body, method: 'delivery', slot: '19:00 – 19:30', requestId: 'attempt-free-delivery-001' };
+  const delivery = { ...body, method: 'delivery', slot: '19:00', requestId: 'attempt-free-delivery-001' };
   const shipped = await request('/orders', delivery);
   assert.equal(shipped.status, 201, JSON.stringify(shipped.data));
   assert.equal(shipped.data.order.standardDeliveryFee, 3.99); assert.equal(shipped.data.order.deliveryFee, 0); assert.equal(shipped.data.order.total, 0);

@@ -80,7 +80,7 @@ function actionMarkup(order) {
 
 function orderItemMarkup(item) {
   const categories = [
-    ["protein", "Protéine"], ["salad", "Crudités"], ["sauces", "Sauces"],
+    ["protein", "Protéine"], ["meat-type", "Choix de viande"], ["salad", "Crudités"], ["sauces", "Sauces"],
     ["extras", "Suppléments"], ["sides", "Accompagnements"], ["drink", "Boisson"],
     ["duo-drink-one", "Boisson 1"], ["duo-drink-two", "Boisson 2"], ["desserts", "Desserts"],
     ["other", "Autres choix"]
@@ -94,7 +94,7 @@ function orderItemMarkup(item) {
   const isBurgerMenu = item.productId === "taurus" || item.productId?.endsWith("-menu");
   const name = isBurgerMenu && !/^menu\b/i.test(item.name) ? `Menu · ${item.name}` : item.name;
   const composition = categories.filter(([id]) => grouped.has(id)).map(([id, title]) =>
-    `<div class="order-option-group"><div class="order-option-title">${title}</div><ul class="order-options">${grouped.get(id).map(option => `<li><span>${escapeHtml(option.label)}</span>${Number(option.price) > 0 ? `<strong>+ ${euro(option.price)}</strong>` : ""}</li>`).join("")}</ul></div>`
+    `<div class="order-option-group"><div class="order-option-title">${title}</div><ul class="order-options">${grouped.get(id).map(option => `<li>${id === 'meat-type' ? `<strong>${escapeHtml(option.label)}</strong>` : `<span>${escapeHtml(option.label)}</span>`}${Number(option.price) > 0 ? `<strong>+ ${euro(option.price)}</strong>` : ""}</li>`).join("")}</ul></div>`
   ).join("");
   const quantity = Math.max(1, Number(item.quantity) || 1);
   const unitPrice = Number(item.price) || 0;

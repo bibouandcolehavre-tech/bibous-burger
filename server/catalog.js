@@ -1,3 +1,4 @@
+const { containsPork, porkOption } = require('../dietary-policy');
 const PRODUCT_CATALOG = {
   taurus: { name: "Le Taurus", price: 16.9, menu: true },
   "montagnes-menu": { name: "À travers les montagnes", price: 16.9, menu: true },
@@ -52,6 +53,8 @@ const option = (groupId, id, label, price = 0, extra = {}) => ({ groupId, id, la
 const OPTIONS = [
   option("protein", "viande", "Viande"),
   option("protein", "galette", "Galette de pomme de terre (végétarien)"),
+  option("meat-type", "halal", "Viande halal"),
+  option("meat-type", "non-halal", "Viande non halal"),
   option("salad", "roquette", "Roquette"),
   option("salad", "tomate", "Tomate"),
   option("salad", "oignons", "Oignons caramélisés"),
@@ -116,6 +119,7 @@ const OPTIONS = [
 const OPTION_CATALOG = new Map(OPTIONS.map((entry) => [`${entry.groupId}:${entry.id}`, entry]));
 const GROUP_RULES = {
   protein: { min: 1, max: 1 },
+  'meat-type': { max: 1 },
   salad: { min: 1, max: 4 },
   sauces: { min: 1, max: 1 },
   drink: { max: 1 },
@@ -125,8 +129,8 @@ const GROUP_RULES = {
   sides: {},
   desserts: {}
 };
-const MENU_GROUPS = new Set(["protein", "salad", "sauces", "drink", "extras", "sides"]);
-const BURGER_GROUPS = new Set(["protein", "salad", "sauces", "extras", "sides", "desserts"]);
+const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides"]);
+const BURGER_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "extras", "sides", "desserts"]);
 const DUO_GROUPS = new Set(["duo-drink-one", "duo-drink-two"]);
 const SIMPLE_GROUPS = new Set();
 
@@ -186,7 +190,7 @@ const assertStoredOrderAvailable = (items, overrides = {}) => {
   for (const item of items) assertItemAvailable(item.productId, item.options, overrides);
 };
 
-const validatedSelections = (product, selections) => {
+const validatedSelections = (product, selections, productId) => {
   if (!Array.isArray(selections)) throw orderInputError("Actualise l’application avant de commander.");
   const allowedGroups = product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
   const seen = new Set();
@@ -206,6 +210,13 @@ const validatedSelections = (product, selections) => {
     if (count > 1 && byGroup[groupId].some((entry) => entry.exclusive)) throw orderInputError("Deux choix incompatibles ont été sélectionnés.");
   }
   if (product.fixedSauce && (byGroup.sauces.length !== 1 || byGroup.sauces[0].id !== product.fixedSauce)) throw orderInputError("La sauce de ce burger est imposée. Actualise l’application avant de commander.");
+  if (allowedGroups.has('meat-type')) {
+    const vegetarian = byGroup.protein[0]?.id === 'galette';
+    const meatType = byGroup['meat-type'][0]?.id;
+    if (!vegetarian && !meatType) throw orderInputError('Choisis viande halal ou non halal sur la fiche du burger avant de commander.');
+    if (vegetarian && meatType) throw orderInputError('Retire le choix de viande pour la version végétarienne.');
+    if (meatType === 'halal' && (containsPork(productId) || resolved.some(porkOption))) throw orderInputError('Cette recette ou un supplément contient du porc et ne peut pas être commandé en version halal.');
+  }
   return resolved;
 };
 
@@ -218,7 +229,7 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
     if (!product) throw orderInputError("Un produit du panier n’existe plus.");
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw orderInputError("La quantité demandée est invalide.");
-    const selections = validatedSelections(product, input.selections);
+    const selections = validatedSelections(product, input.selections, productId);
     assertItemAvailable(productId, selections, overrides);
     const unitPriceCents = cents(product.price) + selections.reduce((sum, entry) => sum + cents(entry.price), 0);
     subtotalCents += unitPriceCents * quantity;

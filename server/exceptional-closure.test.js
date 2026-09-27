@@ -22,7 +22,7 @@ test('September 25 evening is closed for delivery, pickup and tables, while lunc
 test('closure expires by date and leaves Saturday, Sunday and following Friday open', () => {
   for (const date of ['2026-09-26', '2026-09-27', '2026-10-02']) {
     for (const method of ['delivery', 'pickup', 'reservation']) {
-      const slot = method === 'delivery' ? '19:00 – 19:30' : '19:00';
+      const slot = method === 'delivery' ? '19:00' : '19:00';
       assert.equal(serviceClosureReason(date, slot), null);
       assert.equal(validateServiceSlot(date, slot, now, method), null);
     }
@@ -33,7 +33,7 @@ test('a direct table reservation for the closed evening is rejected without reco
   const database = { reservations: [] };
   assert.throws(() => createReservation(database, {
     customerName: 'Test', phone: '0612345678', guests: 2,
-    serviceDate: '2026-09-25', slot: '19:15'
+    serviceDate: '2026-09-25', slot: '19:20'
   }, now), /exceptionnellement fermé/);
   assert.equal(database.reservations.length, 0);
 });

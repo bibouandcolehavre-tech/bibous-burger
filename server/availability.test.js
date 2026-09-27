@@ -11,7 +11,7 @@ const {
 } = require("./availability");
 
 const dateKey = "2026-09-18";
-const slot = "19:00 – 19:30";
+const slot = "19:00";
 const now = new Date("2026-09-17T12:00:00Z");
 const order = (overrides = {}) => ({
   id: Math.random().toString(),
@@ -31,7 +31,7 @@ test("propose les horaires correspondant au jour choisi", () => {
 });
 
 test("refuse un horaire déjà passé le jour même", () => {
-  assert.match(validateServiceSlot("2026-09-17", "12:00 – 12:30", new Date("2026-09-17T14:30:00Z")), /déjà passé/);
+  assert.match(validateServiceSlot("2026-09-17", "12:00", new Date("2026-09-17T14:30:00Z")), /déjà passé/);
 });
 
 test("bloque le troisième créneau de livraison", () => {
@@ -56,23 +56,23 @@ test("les retraits ne consomment aucune place de livraison", () => {
   assert.equal(remainingDeliveryPlaces(database, dateKey, slot, now).remaining, 2);
 });
 
-test("retrait et tables : heures fixes au quart d’heure, livraison inchangée", () => {
-  for (const method of ["pickup", "reservation"]) {
+test("retrait, livraison et tables : trois heures fixes par heure", () => {
+  for (const method of ["pickup", "reservation", "delivery"]) {
     const slots = slotsForDate(dateKey, method);
-    assert.deepEqual(slots.slice(0, 4), ["12:00", "12:15", "12:30", "12:45"]);
-    assert.equal(slots.length, 20);
-    assert.equal(slots.at(-1), "21:45");
+    assert.deepEqual(slots.slice(0, 4), ["12:00", "12:20", "12:40", "13:00"]);
+    assert.equal(slots.length, 15);
+    assert.equal(slots.at(-1), "21:40");
     assert.equal(slots.includes("14:00"), false);
     assert.equal(slots.includes("22:00"), false);
-    assert.equal(validateServiceSlot(dateKey, "12:15", now, method), null);
+    assert.equal(validateServiceSlot(dateKey, "12:20", now, method), null);
     assert.match(validateServiceSlot(dateKey, "12:00 – 12:30", now, method), /pas disponible/);
     assert.match(validateServiceSlot(dateKey, "12:10", now, method), /pas disponible/);
     assert.equal(slotsForDate("2026-09-19", method)[0], "19:00");
-    assert.equal(slotsForDate("2026-09-20", method).at(-1), "20:45");
+    assert.equal(slotsForDate("2026-09-20", method).at(-1), "20:40");
   }
-  assert.equal(slotsForDate(dateKey).length, 10);
+  assert.equal(slotsForDate(dateKey).length, 15);
   assert.equal(validateServiceSlot(dateKey, slot, now), null);
-  assert.match(validateServiceSlot(dateKey, "19:00", now), /pas disponible/);
+  assert.match(validateServiceSlot(dateKey, "19:15", now), /pas disponible/);
 });
 
 test("bonus retrait : limite exacte de 30 minutes, heure de Paris été/hiver", () => {
@@ -91,7 +91,7 @@ test("bonus retrait : limite exacte de 30 minutes, heure de Paris été/hiver", 
 test("disponibilité retrait : passé désactivé et bonus informatif côté serveur", () => {
   const slots = availabilityForDate({}, dateKey, new Date("2026-09-18T09:45:00Z"), "pickup");
   assert.equal(slots["12:00"].pickupAdvanceEligible, false);
-  assert.equal(slots["12:15"].pickupAdvanceEligible, true);
-  assert.equal(slots["12:15"].unavailable, false);
-  assert.equal(availabilityForDate({}, dateKey, new Date("2026-09-18T10:15:00Z"), "pickup")["12:15"].unavailable, true);
+  assert.equal(slots["12:20"].pickupAdvanceEligible, true);
+  assert.equal(slots["12:20"].unavailable, false);
+  assert.equal(availabilityForDate({}, dateKey, new Date("2026-09-18T10:20:00Z"), "pickup")["12:20"].unavailable, true);
 });

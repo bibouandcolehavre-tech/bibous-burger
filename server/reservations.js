@@ -1,4 +1,4 @@
-const { slotsForDate, validateServiceSlot, serviceClosureReason } = require("./availability");
+const { slotsForDate, validateServiceSlot, serviceClosureReason, SLOT_MINUTES, bookingWindow, slotWindow, windowsOverlap } = require("./availability");
 
 const RESERVATION_STATUSES = ["pending", "confirmed", "cancelled"];
 const RESERVATION_SLOT_CAPACITY = 2;
@@ -18,13 +18,7 @@ const ensureReservationStore = (database) => {
   return database;
 };
 
-// Two tables per half hour, shared between :00/:15 or :30/:45.
-// Legacy interval reservations still consume capacity; no stored bookings are moved.
-const reservationBucket = (slot) => {
-  const match = /^(\d{2}):(\d{2})(?:$| – )/.exec(String(slot || ""));
-  return match ? `${match[1]}:${Number(match[2]) < 30 ? "00" : "30"}` : null;
-};
-const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && Boolean(reservationBucket(slot)) && reservationBucket(reservation.slot) === reservationBucket(slot) && reservation.status !== "cancelled";
+const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && windowsOverlap(bookingWindow(reservation, 'reservation'), slotWindow(slot)) && reservation.status !== "cancelled";
 
 const remainingReservationPlaces = (database, dateKey, slot) => {
   ensureReservationStore(database);
@@ -70,6 +64,7 @@ const createReservation = (database, input, now = new Date()) => {
     guests,
     serviceDate: input.serviceDate,
     slot: input.slot,
+    slotDurationMinutes: SLOT_MINUTES,
     note,
     status: "pending",
     createdAt: now.toISOString(),
@@ -84,8 +79,10 @@ const updateReservationStatus = (database, id, status, now = new Date()) => {
   if (!RESERVATION_STATUSES.includes(status)) throw new Error("Statut de réservation invalide.");
   const reservation = database.reservations.find((item) => item.id === id);
   if (!reservation) return null;
-  if (reservation.status === "cancelled" && status !== "cancelled" && remainingReservationPlaces(database, reservation.serviceDate, reservation.slot).full) {
-    throw new Error("Cette demi-heure est complète. Impossible de réactiver la réservation.");
+  const footprint = bookingWindow(reservation, 'reservation');
+  const overlapping = database.reservations.filter(other => other.id !== id && other.status !== 'cancelled' && other.serviceDate === reservation.serviceDate && windowsOverlap(bookingWindow(other, 'reservation'), footprint)).length;
+  if (reservation.status === "cancelled" && status !== "cancelled" && overlapping >= RESERVATION_SLOT_CAPACITY) {
+    throw new Error("Cette plage horaire est complète. Impossible de réactiver la réservation.");
   }
   reservation.status = status;
   reservation.updatedAt = now.toISOString();
