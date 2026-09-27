@@ -33,3 +33,16 @@ test('ticket restaurant : choix de viande mis en évidence avant les crudités',
   assert.match(markup,/<strong>Viande halal<\/strong>/);
   assert.ok(markup.indexOf('Choix de viande')<markup.indexOf('Crudités'));
 });
+test('interface : choix halal uniquement dans la composition, sans préférence globale',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
+  assert.doesNotMatch(source,/MeatPreference|meatPreference|TA PRÉFÉRENCE DE VIANDE/);
+  const cards=source.slice(source.indexOf('function ProductCard'),source.indexOf('function AccessoryCard'));
+  assert.doesNotMatch(cards,/halal|CONTIENT DU PORC/);
+  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
+  assert.match(source,/BURGER_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
+  const detail=source.slice(source.indexOf('function ProductScreen'),source.indexOf('function OptionGroup'));
+  assert.match(detail,/const \[choices, setChoices\] = useState\(\{\}\)/);
+  assert.match(detail,/group\.id === "meat-type" && porkConflict/);
+  assert.match(detail,/const porkConflict = halalChosen && containsPork\(product\)/);
+});
