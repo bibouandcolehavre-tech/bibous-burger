@@ -7,14 +7,15 @@
     <meta name="robots" content="noindex, nofollow" />
     <link rel="stylesheet" href="./styles.css?v=amendments-1" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
-    <link rel="stylesheet" href="./service-schedule.css?v=1" />
+    <link rel="stylesheet" href="./service-schedule.css?v=workspace-1" />
+    <link rel="stylesheet" href="./workspace.css?v=workspace-1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
       <div class="login-panel">
         <div class="login-brand">Bibou's<br /><span>Burgers</span></div>
         <p class="eyebrow">ESPACE RESTAURANT</p>
-        <h1>Bon retour, Hélène</h1>
+        <h1>Bonjour, l’équipe !</h1>
         <p>Connectez-vous pour voir et gérer les commandes en direct.</p>
         <label for="dashboard-password">Mot de passe</label>
         <input id="dashboard-password" type="password" autocomplete="current-password" placeholder="Votre mot de passe" />
@@ -26,27 +27,20 @@
     <div id="dashboard-app" class="app-shell" hidden>
       <aside class="sidebar">
         <div class="brand">Bibou's<br /><span>Burgers</span></div>
-        <div class="restaurant-card">
-          <span class="open-dot"></span>
-          <div><strong>Horaires habituels</strong><small>Lun.–ven. · 12–14 h & 19–22 h</small><small>Sam. 19–22 h · dim. 19–21 h</small><small>Livraison interne · rayon de 5 km</small></div>
-        </div>
-        <nav>
-          <button class="nav-item active" data-view="orders"><span>▦</span> Commandes <b id="new-order-count">1</b></button>
+        <nav aria-label="Navigation du restaurant">
+          <button class="nav-item active" data-view="home"><span>⌂</span> Accueil</button>
+          <button class="nav-item" data-view="orders"><span>▤</span> Commandes <b id="new-order-count">0</b></button>
           <button class="nav-item" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count">0</b></button>
-          <button class="nav-item" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count">0</b></button>
-          <button class="nav-item" data-view="menu"><span>☰</span> Carte & disponibilité</button>
-          <button class="nav-item" data-view="customers"><span>★</span> Fidélité clients</button>
-          <button class="nav-item" data-view="crm"><span>↗</span> CRM & statistiques</button>
-          <button class="nav-item" data-view="marketing"><span>✦</span> Actualités & concours</button>
-          <button class="nav-item" data-view="notifications"><span>◉</span> Notifications clients</button>
-          <button class="nav-item" data-view="backups"><span>▤</span> Sauvegardes</button>
-          <button class="nav-item" data-view="schedule"><span>◷</span> Ouvertures et fermetures</button>
-          <button class="nav-item" data-view="settings"><span>⚙</span> Paramètres</button>
+          <button class="nav-item" data-view="schedule"><span>◷</span> Créneaux</button>
+          <button class="nav-item" data-view="menu"><span>☰</span> Carte & produits</button>
+          <button class="nav-item" data-view="customers"><span>♡</span> Clients & fidélité <b id="new-reward-count">0</b></button>
+          <button class="nav-item" data-view="marketing"><span>✦</span> Marketing</button>
+          <button class="nav-item" data-view="settings"><span>⚙</span> Réglages</button>
         </nav>
         <div class="sidebar-bottom">
-          <p>Connecté en tant que</p>
-          <strong>Hélène · Bibou's Burgers</strong>
-          <button class="help-button">? Aide</button>
+          <p>ESPACE RESTAURANT</p>
+          <strong>Toutes vos fonctions.<br>Mieux organisées.</strong>
+          <button class="nav-item" data-view="backups">Sauvegardes & sécurité →</button>
         </div>
       </aside>
 
@@ -54,41 +48,58 @@
         <header class="topbar">
           <div>
             <p id="service-date-heading" class="eyebrow"></p>
-            <h1 id="dashboard-title">Commandes en direct</h1>
+            <h1 id="dashboard-title">Bonjour, l’équipe !</h1>
+            <p id="view-description" class="view-description">Tout ce qui compte pour votre service, au même endroit.</p>
           </div>
           <div class="topbar-actions">
             <button id="refresh-orders" class="secondary-button">↻ Actualiser</button>
-            <button class="profile-button">HB</button>
           </div>
         </header>
 
         <section id="order-alarm" class="order-alarm" hidden aria-label="Commandes en attente">
-          <div aria-live="polite" aria-atomic="true"><strong id="order-alarm-title"></strong><p id="order-alarm-detail"></p></div>
-          <div class="alert-buttons"><button type="button" id="view-alarm-orders">Voir les commandes</button></div>
+          <div class="alarm-bell" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M2 8a10 10 0 0 1 2-5M22 8a10 10 0 0 0-2-5"/></svg></div>
+          <div class="alarm-copy" aria-live="polite" aria-atomic="true"><small>N’ATTEND PLUS QUE VOUS</small><strong id="order-alarm-title"></strong><p id="order-alarm-detail"></p></div>
+          <div class="alert-buttons"><button type="button" id="view-alarm-orders">Ouvrir la commande →</button></div>
         </section>
         <section class="service-alerts" aria-label="Alertes du restaurant">
           <div id="audio-warning" class="audio-warning"><div><strong>Attention : aucune sonnerie active</strong><p id="audio-warning-text">Autorisez le son avant le service.</p></div><button type="button" id="enable-alerts-button">Activer les alertes sonores</button></div>
-          <div class="alert-controls"><div><strong>Les alertes du service</strong><p id="sound-status">Activez le son pour entendre les nouvelles demandes.</p></div><div class="alert-buttons"><button type="button" class="secondary-button" id="test-sound-button" disabled>Tester le son</button></div></div>
+          <p id="connection-status" class="connection-status" role="status">Connexion au restaurant…</p>
+          <details class="sound-settings"><summary>Sonnerie du restaurant · tester et régler le volume</summary>
+          <div class="alert-controls"><div><strong>Une sonnerie, jusqu’à votre réponse</strong><p id="sound-status">Activez le son pour entendre les nouvelles demandes.</p></div><div class="alert-buttons"><button type="button" class="secondary-button" id="test-sound-button" disabled>Tester le son</button></div></div>
           <label class="sound-volume" for="sound-volume">Volume de la sonnerie <input id="sound-volume" type="range" min="10" max="100" step="5" value="85" /><output id="sound-volume-value" for="sound-volume">85 %</output></label>
+          <small>Les alertes restent actives sans bouton de coupure ni de pause. Faites un test avant le service. Le volume du Mac, la sortie audio et le son de cet onglet doivent être activés. Gardez ce tableau ouvert et le Mac éveillé : une page fermée ou un ordinateur en veille ne peut pas sonner. Utilisez un seul onglet.</small>
+          </details>
           <div class="attention-links"><button type="button" id="attention-orders">0 commande à accepter</button><button type="button" id="attention-reservations">0 réservation à confirmer</button><button type="button" id="attention-rewards">0 récompense à remettre</button></div>
           <p id="arrival-message" class="arrival-message" role="status" aria-live="polite" aria-atomic="true"></p>
-          <p id="connection-status" class="connection-status" role="status">Connexion au restaurant…</p>
-          <small>Les alertes restent actives sans bouton de coupure ni de pause. Faites un test avant le service. Le volume du Mac, la sortie audio et le son de cet onglet doivent être activés. Gardez ce tableau ouvert et le Mac éveillé : une page fermée ou un ordinateur en veille ne peut pas sonner. Utilisez un seul onglet.</small>
         </section>
 
         <nav class="mobile-view-switch" aria-label="Choisir la rubrique">
-          <button class="nav-item mobile-view-button active" data-view="orders"><span>▦</span> Commandes</button>
+          <button class="nav-item mobile-view-button active" data-view="home">⌂ Accueil</button>
+          <button class="nav-item mobile-view-button" data-view="orders"><span>▤</span> Commandes</button>
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
-          <button class="nav-item mobile-view-button" data-view="rewards"><span>★</span> Récompenses <b id="new-reward-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
-          <button class="nav-item mobile-view-button" data-view="backups"><span>▤</span> Sauvegardes</button>
-          <button class="nav-item mobile-view-button" data-view="customers"><span>★</span> Clients</button>
-          <button class="nav-item mobile-view-button" data-view="crm"><span>↗</span> CRM & statistiques</button>
+          <button class="nav-item mobile-view-button" data-view="customers"><span>♡</span> Clients <b id="new-reward-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="schedule"><span>◷</span> Créneaux</button>
           <button class="nav-item mobile-view-button" data-view="settings"><span>⚙</span> Paramètres</button>
-          <button class="nav-item mobile-view-button" data-view="marketing"><span>✦</span> Actualités</button>
-          <button class="nav-item mobile-view-button" data-view="notifications"><span>◉</span> Notifications</button>
+          <button class="nav-item mobile-view-button" data-view="marketing"><span>✦</span> Marketing</button>
         </nav>
+
+        <nav class="workspace-subnav" id="clients-subnav" aria-label="Clients et fidélité" hidden><button class="nav-item" data-view="customers">Fiches clients</button><button class="nav-item" data-view="rewards">Récompenses à remettre</button></nav>
+        <nav class="workspace-subnav" id="marketing-subnav" aria-label="Marketing" hidden><button class="nav-item" data-view="marketing">Actualités & concours</button><button class="nav-item" data-view="crm">Offres & statistiques CRM</button><button class="nav-item" data-view="notifications">Écrire aux clients</button></nav>
+        <nav class="workspace-subnav" id="settings-subnav" aria-label="Réglages" hidden><button class="nav-item" data-view="settings">Paramètres & connexions</button><button class="nav-item" data-view="backups">Sauvegardes</button></nav>
+        <section id="home-view" class="home-view" aria-label="Vue d’ensemble">
+          <div class="home-hero"><div><p class="eyebrow">LE SERVICE, EN UN COUP D’ŒIL</p><h2 id="home-priority-title">On prépare votre tableau…</h2><p id="home-priority-detail">Les informations se mettent à jour automatiquement.</p></div><button class="primary-button" id="home-priority">Voir les commandes →</button></div>
+          <div class="home-metrics"><article><span>Commandes en cours</span><strong id="home-active">—</strong><small>À préparer ou à remettre</small></article><article><span>Tables aujourd’hui</span><strong id="home-tables">—</strong><small>En attente et confirmées</small></article><article class="home-revenue"><label for="home-period">Chiffre d’affaires <select id="home-period"><option value="today">Aujourd’hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select></label><strong id="home-revenue">—</strong><small>Commandes de l’application</small></article></div>
+          <div class="home-columns"><section class="workspace-panel"><div class="workspace-heading"><h2>En cuisine & en route</h2><button class="text-button" data-jump="orders">Tout voir →</button></div><div id="home-orders"></div></section><section class="workspace-panel"><div class="workspace-heading"><h2>Les prochaines tables</h2><button class="text-button" data-jump="reservations">Tout voir →</button></div><div id="home-reservations"></div></section></div>
+          <h2 class="shortcuts-title">De quoi avez-vous besoin ?</h2><div class="home-shortcuts">
+            <button data-jump="schedule"><span>◷</span><strong>Gérer mes créneaux<small>Ouvrir ou fermer une heure</small></strong><b>→</b></button>
+            <button data-jump="menu"><span>☰</span><strong>Un produit épuisé ?<small>Mettre à jour la carte</small></strong><b>→</b></button>
+            <button data-jump="customers"><span>♡</span><strong>Retrouver un client<small>Points, avantages, historique</small></strong><b>→</b></button>
+            <button data-jump="rewards"><span>★</span><strong>Remettre une récompense<small>Vérifier le code du client</small></strong><b>→</b></button>
+            <button data-jump="notifications"><span>✉</span><strong>Écrire à mes clients<small>Préparer une notification</small></strong><b>→</b></button>
+            <button data-jump="crm"><span>↗</span><strong>Développer la fidélité<small>Offres et résultats</small></strong><b>→</b></button>
+          </div>
+        </section>
 
         <section id="marketing-view" hidden></section>
         <section id="notifications-view" hidden></section>
@@ -114,7 +125,7 @@
               <button class="filter" data-filter="Terminée">Terminées <span id="completed-filter-count">0</span></button>
             </div>
           </div>
-          <div id="orders-list" class="orders-list"></div>
+          <div class="orders-workspace"><aside id="order-queue" class="order-queue" aria-label="Choisir une commande"></aside><div id="orders-list" class="orders-list"></div></div>
         </section>
 
         <section id="reservations-view" class="reservations-section" hidden>
@@ -173,13 +184,13 @@
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
-    <script src="./alerts.js?v=order-alarm-3"></script>
+    <script src="./alerts.js?v=workspace-1"></script>
     <script src="./marketing.js?v=actualites-1"></script>
     <script src="./notifications.js?v=push-1"></script>
     <script src="./crm.js?v=crm-1"></script>
-    <script src="./service-schedule.js?v=1"></script>
+    <script src="./planner.js?v=workspace-1"></script>
     <script src="./order-amendments.js?v=1"></script>
     <script src="./uber-direct.js?v=1"></script>
-    <script src="./app.js?v=promo-1"></script>
+    <script src="./app.js?v=workspace-1"></script>
   </body>
 </html>

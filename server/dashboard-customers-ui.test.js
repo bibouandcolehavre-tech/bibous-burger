@@ -14,7 +14,7 @@ async function harness() {
     return elements.get(selector);
   };
   const context = vm.createContext({
-    BibouAlerts: alerts, console, AbortController,
+    BibouAlerts: alerts, console, AbortController, AbortSignal,
     document: { title: "", querySelector: element, querySelectorAll: () => [], addEventListener() {} }, navigator: { onLine: true },
     window: { location: { hostname: "localhost" }, setInterval() {}, setTimeout() {}, addEventListener() {} },
     sessionStorage: { getItem: () => "test-only", setItem() {}, removeItem() {} }, localStorage: { getItem: () => null, setItem() {} },

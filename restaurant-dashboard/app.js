@@ -1,4 +1,4 @@
-const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:3001/api" : "https://bibous-burger.onrender.com/api";
+const API_BASE_URL = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname) ? "http://localhost:3001/api" : "https://bibous-burger.onrender.com/api";
 const statusLabel = { awaiting_customer: "Accord client attendu", confirmed: "Nouvelle", preparing: "Acceptée", ready: "Prête", out_for_delivery: "En livraison", delivered: "Terminée", cancelled: "Refusée" };
 const statusForLabel = Object.fromEntries(Object.entries(statusLabel).map(([key, value]) => [value, key]));
 const reservationStatusLabel = { pending: "À confirmer", confirmed: "Confirmée", cancelled: "Refusée" };
@@ -19,6 +19,8 @@ let customerDetailRequest = 0;
 let customerSearchTimer = null;
 let customerLastUpdate = 0;
 let filter = "all";
+let selectedOrderId = null;
+const pendingOrderChanges = new Set();
 let reservationFilter = "upcoming";
 let rewardFilter = "active";
 const arrivalTracker = BibouAlerts.createArrivalTracker();
@@ -32,7 +34,7 @@ const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 let orderAlarm = null;
 const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, volume: savedSoundVolume(), onChange: () => { updateSoundControls(); orderAlarm?.refresh(); } });
 orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, onChange: updateOrderAlarm });
-let currentView = "orders";
+let currentView = "home";
 let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
 let marketingPanel = null;
 let notificationsPanel = null;
@@ -73,7 +75,7 @@ function actionMarkup(order) {
   if (order.status === "Accord client attendu") return `<div class="actions"><button data-edit-order="${order.id}">Réviser la proposition</button><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler la commande</button></div>`;
   if (order.status === "Nouvelle") return `<div class="actions">${order.amendment?.status !== "accepted" ? `<button data-edit-order="${order.id}">Modifier le panier</button>` : ""}<button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
   if (order.status === "Acceptée") return `<div class="actions"><button class="advance" data-action="Prête" data-id="${order.id}">Marquer prête</button></div>`;
-  if (order.status === "Prête") return `<div class="actions"><button class="advance ready" data-action="En livraison" data-id="${order.id}">${order.type === "Livraison" ? "Confier au livreur" : "Remettre au client"}</button></div>`;
+  if (order.status === "Prête") return `<div class="actions"><button class="advance ready" data-action="${order.type === "Livraison" ? "En livraison" : "Terminée"}" data-id="${order.id}">${order.type === "Livraison" ? "Confier au livreur" : "Remettre au client"}</button></div>`;
   if (order.status === "En livraison") return `<div class="actions"><button class="advance delivery" data-action="Terminée" data-id="${order.id}">Terminer la commande</button></div>`;
   return "";
 }
@@ -139,12 +141,20 @@ function customerOrderHistoryMarkup(order, historyStatuses) {
 function renderOrders() {
   const completedView = filter === "Terminée";
   const visible = completedView ? orders.filter((order) => order.status === "Terminée") : active().filter((order) => filter === "all" || order.status === filter);
-  document.querySelector("#orders-list").innerHTML = visible.length ? visible.map((order) => {
+  if (!visible.some(order => order.apiId === selectedOrderId)) selectedOrderId = visible[0]?.apiId || null;
+  document.querySelector('#order-queue').hidden = completedView || !visible.length;
+  document.querySelector('#order-queue').innerHTML = completedView ? '' : visible.map(order => `<button class="queue-order ${order.apiId === selectedOrderId ? 'selected' : ''}" data-select-order="${escapeHtml(order.apiId)}" aria-pressed="${order.apiId === selectedOrderId}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><b>${euro(order.total)}</b></span><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></button>`).join('');
+  document.querySelectorAll('[data-select-order]').forEach(button => button.onclick = () => { selectedOrderId = button.dataset.selectOrder; renderOrders(); });
+  const shown = completedView ? visible : visible.filter(order => order.apiId === selectedOrderId);
+  document.querySelector("#orders-list").innerHTML = shown.length ? shown.map((order) => {
     const lines = order.items.map(orderItemMarkup).join("");
     const address = order.deliveryAddress;
     const contact = `<div class="order-contact"><div>Téléphone : ${escapeHtml(order.phone || "Non enregistré sur cette commande")}</div>${order.type === "Livraison" ? `<div><strong>Adresse de livraison</strong>${address?.address ? `<div>${escapeHtml(address.address)}</div><div>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(" "))}</div>` : `<div>Adresse non enregistrée sur cette commande</div>`}</div>` : ""}</div>`;
     const comment = order.comment ? `<div class="order-comment"><strong>Commentaire client</strong><p>${escapeHtml(order.comment)}</p></div>` : "";
-    const body = `${contact}${comment}<div class="order-items">${lines}</div>${orderPricingMarkup(order)}${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">🕒 ${escapeHtml(order.slot)}</div>${actionMarkup(order)}</div>`;
+    const stages = ['Nouvelle', 'Acceptée', 'Prête', ...(order.type === 'Livraison' ? ['En livraison'] : []), 'Terminée'];
+    const step = stages.indexOf(order.status);
+    const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>`;
     if (completedView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status Terminée">Terminée</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
@@ -167,7 +177,8 @@ function renderOrders() {
       await loadOrders(); showToast('Remboursement déclaré effectué.');
     } catch (e) { showToast(e.message || 'Enregistrement impossible.'); button.disabled=false; }
   });
-  document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
+  document.querySelectorAll("#orders-list [data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
+  document.querySelectorAll('#orders-list [data-action], #orders-list [data-edit-order], #orders-list [data-refund-order], #orders-list [data-uber-order]').forEach(button => { button.disabled = pendingOrderChanges.has(Number(button.dataset.id || button.dataset.editOrder || button.dataset.refundOrder || button.dataset.uberOrder)); });
 }
 
 function refreshMetrics() {
@@ -193,6 +204,30 @@ function refreshMetrics() {
   document.querySelector("#new-reward-count-mobile").textContent = activeRewards;
   document.querySelector("#active-reward-count").textContent = activeRewards;
   updateAttention(newOrders.length, pendingReservations, activeRewards);
+  renderHome();
+}
+
+function renderHome() {
+  const pending = orders.filter(order => order.status === 'Nouvelle');
+  const pendingTables = reservations.filter(table => table.status === 'pending');
+  const loaded = Boolean(feedHealth.orders.lastSuccess && feedHealth.reservations.lastSuccess);
+  updateText('#home-priority-title', !loaded ? 'Connexion à votre restaurant…' : pending.length ? `${pending.length} commande${pending.length > 1 ? 's' : ''} vous attend${pending.length > 1 ? 'ent' : ''} !` : pendingTables.length ? `${pendingTables.length} table${pendingTables.length > 1 ? 's' : ''} à confirmer` : 'Tout est à jour pour le service.');
+  updateText('#home-priority-detail', !loaded ? 'Les données arrivent. Le statut de connexion est affiché juste au-dessus.' : pending.length ? 'Les clients ont validé leur commande. À vous de lancer la préparation.' : pendingTables.length ? 'Un petit coup d’œil aux réservations avant d’accueillir vos clients.' : 'Les nouvelles demandes apparaîtront ici automatiquement.');
+  updateText('#home-priority', pending.length ? 'Accepter les commandes →' : pendingTables.length ? 'Voir les réservations →' : 'Voir les commandes →');
+  updateText('#home-active', feedHealth.orders.lastSuccess ? String(active().length) : '—');
+  updateText('#home-tables', feedHealth.reservations.lastSuccess ? String(reservations.filter(table => table.serviceDate === todayDateKey() && table.status !== 'cancelled').length) : '—');
+  const period = document.querySelector('#home-period').value || 'today';
+  updateText('#home-revenue', feedHealth.orders.lastSuccess ? euro(revenue[period]) : '—');
+  document.querySelector('#home-orders').innerHTML = active().slice(0, 4).map(order => `<button class="home-row" data-home-order="${escapeHtml(order.apiId)}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>${escapeHtml(order.status)}</small></span></button>`).join('') || `<p class="workspace-empty">${feedHealth.orders.lastSuccess ? 'Aucune commande en cours. Prêts pour la prochaine !' : 'Chargement des commandes…'}</p>`;
+  document.querySelector('#home-reservations').innerHTML = reservations.filter(table => table.serviceDate >= todayDateKey() && table.status !== 'cancelled').sort((a,b) => `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`)).slice(0,4).map(table => `<button class="home-row" data-home-table><span><strong>${escapeHtml(table.customer)}</strong><small>${escapeHtml(table.date)} · ${escapeHtml(table.slot)}</small></span><span><strong>${Number(table.guests)} pers.</strong><small>${reservationStatusLabel[table.status]}</small></span></button>`).join('') || `<p class="workspace-empty">${feedHealth.reservations.lastSuccess ? 'Aucune table à venir pour le moment.' : 'Chargement des réservations…'}</p>`;
+  document.querySelectorAll('[data-home-order]').forEach(button => button.onclick = () => { selectedOrderId = button.dataset.homeOrder; setOrderFilter('all'); showView('orders'); });
+  document.querySelectorAll('[data-home-table]').forEach(button => button.onclick = () => showView('reservations'));
+}
+
+function setOrderFilter(value) {
+  filter = value;
+  document.querySelectorAll('.filter').forEach(item => item.classList.toggle('active', item.dataset.filter === value));
+  renderOrders();
 }
 
 function updateText(selector, value) {
@@ -219,13 +254,15 @@ function updateSoundControls() {
   updateText('#audio-warning-text', !state.supported ? 'Son indisponible dans ce navigateur. Ouvrez le tableau dans Chrome ou Safari.' : 'Le navigateur attend un clic pour autoriser la sonnerie. Activez-la avant le service.');
   document.querySelector('#sound-volume').value = Math.round(state.volume * 100);
   updateText('#sound-volume-value', `${Math.round(state.volume * 100)} %`);
-  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son autorisé · alerte toutes les 8 secondes jusqu’à acceptation ou annulation. Pas de coupure ni de pause dans le tableau." : "Cliquez sur Activer les alertes sonores pour autoriser le son dans cet onglet.");
+  updateText("#sound-status", !state.supported ? "Ce navigateur ne permet pas le son. Les alertes visuelles restent actives." : state.ready ? "Son autorisé · sonnerie répétée toutes les 4,3 secondes jusqu’à acceptation ou annulation. Pas de coupure ni de pause dans le tableau." : "Cliquez sur Activer les alertes sonores pour autoriser le son dans cet onglet.");
 }
 
 function updateOrderAlarm(state) {
   document.querySelector('#order-alarm').hidden = !state.count;
-  updateText('#order-alarm-title', `${state.count} commande${state.count > 1 ? 's' : ''} payée${state.count > 1 ? 's' : ''} à accepter`);
-  updateText('#order-alarm-detail', `${state.numbers.slice(0, 6).map(n => '#' + n).join(' · ')}${state.numbers.length > 6 ? '…' : ''} — ${state.ringing ? 'Sonnerie répétée jusqu’à acceptation ou annulation confirmée.' : 'Activez le son pour entendre la sonnerie.'}`);
+  updateText('#order-alarm-title', state.count > 1 ? `${state.count} nouvelles commandes !` : 'Nouvelle commande !');
+  const first = orders.find(order => state.numbers.includes(order.id));
+  const detail = first ? `${first.type} · ${first.slot} · ${euro(first.total)}` : 'Commandes validées à accepter';
+  updateText('#order-alarm-detail', `${state.numbers.slice(0, 6).map(n => '#' + n).join(' · ')}${state.numbers.length > 6 ? '…' : ''} — ${detail}. ${state.ringing ? 'La sonnerie reste active jusqu’à votre réponse.' : 'Activez le son pour entendre la sonnerie.'}`);
 }
 
 function updateConnectionStatus() {
@@ -292,8 +329,8 @@ function loadFeed(kind, { notify = true } = {}) {
       if (!Array.isArray(items)) throw new Error("Réponse invalide");
       const fresh = arrivalTracker.update(kind, items);
       if (kind === "orders") {
-        orderAlarm.sync(items);
         orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi);
+        orderAlarm.sync(items);
         revenue = payload.revenue && ["today", "week", "month"].every((key) => Number.isFinite(Number(payload.revenue[key]))) ? payload.revenue : { today: 0, week: 0, month: 0 };
         renderOrders();
       }
@@ -323,26 +360,29 @@ const refreshFeeds = (options) => Promise.all([loadOrders(options), loadReservat
 
 async function changeOrder(id, status) {
   const order = orders.find((item) => item.id === id);
-  if (!order) return;
+  if (!order || pendingOrderChanges.has(id)) return;
   if (status === "Refusée" && !window.confirm(`La commande #${id} a déjà été réglée. Confirmez son annulation uniquement après avoir organisé le remboursement dans SumUp.`)) return;
-  const previousStatus = order.status;
-  order.status = status;
-  refreshMetrics();
+  const token = dashboardToken;
+  pendingOrderChanges.add(id);
   renderOrders();
   try {
     if (!API_BASE_URL || !order.apiId) throw new Error("API indisponible");
-    const response = await fetch(`${API_BASE_URL}/dashboard/orders/${order.apiId}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: statusForLabel[status] }) });
+    const response = await fetch(`${API_BASE_URL}/dashboard/orders/${order.apiId}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status: statusForLabel[status] }), signal: AbortSignal.timeout(15000) });
+    if (token !== dashboardToken) return;
+    if (response.status === 401) return showLogin('Session expirée. Reconnectez-vous pour vérifier la commande.');
     if (!response.ok) throw new Error("Mise à jour impossible");
     // Never silence on an optimistic click: wait for the server's confirmation.
     orderAlarm.resolve(order.apiId);
+    const current = orders.find(item => item.apiId === order.apiId);
+    if (current) { current.status = status; current.raw = {...current.raw, status:statusForLabel[status]}; }
+    if (filter !== 'all' && !['Terminée','Refusée'].includes(status)) filter = 'all';
+    setOrderFilter(filter);
+    refreshMetrics();
     const messages = { Acceptée: `Commande #${id} acceptée.`, Refusée: `Commande #${id} annulée. Pensez à effectuer le remboursement dans SumUp.`, Prête: `Commande #${id} est prête.`, "En livraison": `Commande #${id} confiée au livreur.`, Terminée: `Commande #${id} terminée.` };
     showToast(messages[status]);
   } catch {
-    order.status = previousStatus;
-    refreshMetrics();
-    renderOrders();
-    showToast("La mise à jour n’a pas été enregistrée.");
-  }
+    if (token === dashboardToken) showToast("Mise à jour non confirmée. Actualisez pour vérifier avant de réessayer.");
+  } finally { pendingOrderChanges.delete(id); if (token === dashboardToken) renderOrders(); }
 }
 
 async function changeReservation(id, status) {
@@ -604,8 +644,12 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["orders", "reservations", "rewards", "menu", "backups", "customers", "marketing", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "orders", "reservations", "rewards", "menu", "backups", "customers", "marketing", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
+  document.querySelector('#home-view').hidden = view !== 'home';
+  document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
+  document.querySelector('#marketing-subnav').hidden = !['marketing','crm','notifications'].includes(view);
+  document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
   document.querySelector("#schedule-view").hidden = view !== "schedule";
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
@@ -618,9 +662,12 @@ function showView(view) {
   document.querySelector("#notifications-view").hidden = view !== "notifications";
   document.querySelector("#crm-view").hidden = view !== "crm";
   document.querySelector("#settings-view").hidden = view !== "settings";
-  document.querySelector("#dashboard-title").textContent = { schedule: "Ouvertures et fermetures", orders: "Commandes en direct", reservations: "Réservations de tables", rewards: "Récompenses clients", menu: "Carte & disponibilité", backups: "Sauvegardes & sécurité", customers: "Fidélité clients", marketing: "Actualités & concours", notifications: "Notifications clients", crm: "CRM marketing & statistiques", settings: "Paramètres" }[view];
+  document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
+  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+  const group = {rewards:'customers',crm:'marketing',notifications:'marketing',backups:'settings'}[view] || view;
+  document.querySelectorAll('.sidebar nav .nav-item, .mobile-view-switch .nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === group));
   if (view === "schedule") void schedulePanel?.load();
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
@@ -629,6 +676,13 @@ function showView(view) {
   if (view === "notifications") void notificationsPanel?.load();
   if (["crm", "settings"].includes(view)) void crmPanel?.load();
 }
+
+document.querySelectorAll('[data-jump]').forEach(button => button.addEventListener('click', () => showView(button.dataset.jump)));
+document.querySelector('#home-period').addEventListener('change', renderHome);
+document.querySelector('#home-priority').addEventListener('click', () => {
+  if (orders.some(order => order.status === 'Nouvelle')) document.querySelector('#attention-orders').click();
+  else showView(reservations.some(table => table.status === 'pending') ? 'reservations' : 'orders');
+});
 
 document.querySelectorAll(".filter").forEach((button) => button.addEventListener("click", () => {
   filter = button.dataset.filter;
@@ -663,14 +717,16 @@ document.querySelector("#test-sound-button").addEventListener("click", async () 
   updateText("#sound-status", played ? soundPlayer.state().ringing ? "La sonnerie de commande reste active. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Son de test lancé. Si vous n’entendez rien, vérifiez le volume et la sortie audio du Mac." : "Le son n’est pas prêt. Cliquez sur Activer les alertes sonores.");
 });
 document.querySelector('#sound-volume').addEventListener('input', event => { soundPlayer.setVolume(Number(event.target.value) / 100); try { localStorage.setItem('bibous-restaurant-volume', String(soundPlayer.state().volume)); } catch {} });
-document.querySelector('#view-alarm-orders').addEventListener('click', () => document.querySelector('#attention-orders').click());
+document.querySelector('#view-alarm-orders').addEventListener('click', () => { selectedOrderId = orders.find(order => order.status === 'Nouvelle')?.apiId || null; document.querySelector('#attention-orders').click(); document.querySelector('#orders-view').scrollIntoView?.({block:'start'}); });
 // The browser may require a genuine gesture after loading or suspending the page.
 function unlockServiceSound(event) {
   if (!dashboardToken || soundPlayer.state().ready) return;
   if (event.target?.closest?.('#test-sound-button, #enable-alerts-button')) return;
   void soundPlayer.activate();
 }
-document.addEventListener('pointerdown', unlockServiceSound);
+// Unlock after the click reaches its button: hiding the audio warning during
+// pointerdown would move the target before pointerup and swallow the first click.
+document.addEventListener('click', unlockServiceSound);
 document.addEventListener('keydown', unlockServiceSound);
 document.querySelectorAll(".attention-links button").forEach((button) => button.addEventListener("click", () => {
   const view = button.id.replace("attention-", "");
@@ -740,6 +796,7 @@ document.querySelector("#service-date-heading").textContent = todayHeading();
 renderOrders();
 renderReservations();
 renderRewardClaims();
+showView('home');
 if (dashboardToken) { showDashboard(); void refreshFeeds({ notify: false }); } else { showLogin(); }
 const resumeUpdates = () => {
   if (!dashboardToken) return;

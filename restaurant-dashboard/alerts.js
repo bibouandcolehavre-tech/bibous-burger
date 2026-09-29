@@ -37,15 +37,15 @@
   };
 
   // An audio-clock loop keeps ringing even when background tabs throttle JS timers.
-  const createAlarmSamples = (sampleRate, seconds = 8) => {
+  const ALARM_SECONDS = 4.3;
+  const createAlarmSamples = (sampleRate, seconds = ALARM_SECONDS) => {
     const samples = new Float32Array(Math.round(sampleRate * seconds));
-    [740, 988, 1244, 740, 988, 1244, 740, 988, 1244].forEach((frequency, index) => {
-      const start = index * 0.38 + Math.floor(index / 3) * 0.38;
-      for (let i = 0; i < sampleRate * 0.32; i++) {
+    [[880,0,.18],[1174.66,.23,.28],[880,.65,.18],[1174.66,.88,.28],[1046.5,1.30,.18],[1396.91,1.53,.40]].forEach(([frequency,start,duration]) => {
+      for (let i = 0; i < sampleRate * duration; i++) {
         const time = i / sampleRate, at = Math.round(start * sampleRate) + i;
         if (at >= samples.length) break;
-        const envelope = Math.min(1, time / 0.015, (0.32 - time) / 0.065);
-        samples[at] = 0.65 * envelope * (Math.sin(2 * Math.PI * frequency * time) + 0.28 * Math.sin(4 * Math.PI * frequency * time));
+        const envelope = time < .018 ? time / .018 : Math.pow(.001, (time - .018) / (duration - .018));
+        samples[at] = 0.75 * envelope * (Math.sin(2 * Math.PI * frequency * time) + .135 * Math.sin(4 * Math.PI * frequency * time));
       }
     });
     return samples;
@@ -126,7 +126,7 @@
       stopBuffer(testNode); testNode = null;
       try {
         if (!alarmBuffer) {
-          alarmBuffer = context.createBuffer(1, Math.round(context.sampleRate * 8), context.sampleRate);
+          alarmBuffer = context.createBuffer(1, Math.round(context.sampleRate * ALARM_SECONDS), context.sampleRate);
           alarmBuffer.getChannelData(0).set(createAlarmSamples(context.sampleRate));
         }
         const source = context.createBufferSource(), gain = context.createGain();

@@ -132,7 +132,7 @@ function dashboardHarness({ savedSound = null } = {}) {
   const storage = new Map([['bibous-dashboard-token', 'test-only']]);
   const audio = new FakeAudioContext();
   const context = vm.createContext({
-    BibouAlerts: alerts, console, AbortController,
+    BibouAlerts: alerts, console, AbortController, AbortSignal,
     document: { title: '', querySelector: element, querySelectorAll: () => [], addEventListener() {} },
     navigator: { onLine: true },
     window: { location: { hostname: 'localhost' }, AudioContext: function () { return audio; }, setTimeout: setTimeoutFake, setInterval() {}, addEventListener() {} },
@@ -179,10 +179,10 @@ test('dashboard loops for paid orders; testing and repeated activation never mut
 
 test('loop is audible PCM without clipping, uses the audio clock, and obeys volume and stop', async () => {
   const samples = alerts.createAlarmSamples(8000);
-  assert.equal(samples.length, 64000);
+  assert.equal(samples.length, 34400);
   assert.ok(samples.some(value => Math.abs(value) > 0.6));
   assert.ok(samples.every(value => Number.isFinite(value) && Math.abs(value) < 1));
-  assert.ok(samples.slice(40000).every(value => value === 0), 'A rest between chimes, not a continuous siren');
+  assert.ok(samples.slice(16000).every(value => value === 0), 'A rest between chimes, not a continuous siren');
   const audio = new FakeAudioContext(), player = alerts.createSoundPlayer({ createContext: () => audio });
   assert.equal(player.startAlarm(), false);
   await player.activate();
@@ -289,4 +289,66 @@ test('dashboard deduplicates in-flight reads, reports failure and returns to log
   assert.equal(h.element('#login-screen').hidden, false);
   assert.equal(h.element('#dashboard-app').hidden, true);
   assert.match(h.element('#login-error').textContent, /session a expiré/);
+});
+
+test('workspace keeps every existing section accessible in its new navigation group', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  const views = ['home','orders','reservations','rewards','menu','customers','marketing','notifications','crm','settings','backups','schedule'];
+  for (const view of views) {
+    h.run(`showView(${JSON.stringify(view)})`);
+    for (const candidate of views) assert.equal(h.element(`#${candidate}-view`).hidden, candidate !== view, `${view}: ${candidate}`);
+    assert.equal(h.element('#clients-subnav').hidden, !['customers','rewards'].includes(view));
+    assert.equal(h.element('#marketing-subnav').hidden, !['marketing','notifications','crm'].includes(view));
+    assert.equal(h.element('#settings-subnav').hidden, !['settings','backups'].includes(view));
+  }
+});
+
+test('workspace displays the selected paid order only and escapes customer content', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  const base = {createdAt:new Date().toISOString(),serviceDate:'2099-01-01',slot:'19:00',items:[],total:20,method:'pickup'};
+  const orders = [{...base,...paid('first'),number:11,customerName:'<script>bad()</script>'}, {...base,...paid('second','ready'),number:12,customerName:'Test second'}];
+  h.context.fetch = async () => ({ok:true,status:200,json:async()=>({orders,revenue:{today:40,week:80,month:160}})});
+  await h.run('loadOrders()');
+  assert.match(h.element('#order-queue').innerHTML, /data-select-order="first"/);
+  assert.match(h.element('#order-queue').innerHTML, /data-select-order="second"/);
+  assert.doesNotMatch(h.element('#orders-list').innerHTML, /<script>|Test second/);
+  assert.match(h.element('#orders-list').innerHTML, /&lt;script&gt;/);
+  h.run("selectedOrderId='second';renderOrders()");
+  assert.match(h.element('#orders-list').innerHTML, /Test second/);
+  assert.match(h.element('#orders-list').innerHTML, /data-action="Terminée"[^>]*>Remettre au client/);
+  assert.doesNotMatch(h.element('#orders-list').innerHTML, /&lt;script&gt;/);
+  assert.equal(h.element('#home-active').textContent, '2');
+  h.element('#home-period').value = 'week'; h.run('renderHome()');
+  assert.equal(h.element('#home-revenue').textContent,'80,00 €');
+});
+
+test('order actions reject duplicate clicks and keep the next step visible after confirmation', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  const order = {...paid('one'),number:23,createdAt:new Date().toISOString(),items:[],total:16.9};
+  h.context.fetch = async () => ({ok:true,status:200,json:async()=>({orders:[order]})});
+  await h.run('loadOrders()'); h.run("setOrderFilter('Nouvelle')");
+  let respond, calls=0;
+  h.context.fetch = () => {calls++;return new Promise(resolve=>{respond=resolve;});};
+  const pending = h.run('changeOrder(23,"Acceptée")');
+  await h.run('changeOrder(23,"Acceptée")');
+  assert.equal(calls,1);
+  assert.equal(h.run('orders[0].status'),'Nouvelle');
+  respond({ok:true,status:200}); await pending;
+  assert.equal(h.run('filter'),'all');
+  assert.equal(h.run('orders[0].raw.status'),'preparing');
+  assert.match(h.element('#orders-list').innerHTML,/Marquer prête/);
+});
+
+test('an order response from an expired session cannot restore private UI or silence a later session', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  const order = {...paid('one'),number:23,createdAt:new Date().toISOString(),items:[],total:16.9};
+  h.context.fetch = async () => ({ok:true,status:200,json:async()=>({orders:[order]})});
+  await h.run('loadOrders()');
+  let respond; h.context.fetch = () => new Promise(resolve=>{respond=resolve;});
+  const pending = h.run('changeOrder(23,"Acceptée")');
+  h.run('showLogin("Session expirée")');
+  respond({ok:true,status:200}); await pending;
+  assert.equal(h.element('#dashboard-app').hidden,true);
+  assert.equal(h.run('pendingOrderChanges.size'),0);
+  assert.equal(h.run('orderAlarm.state().count'),0);
 });
