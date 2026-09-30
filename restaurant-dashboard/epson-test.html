@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Test imprimante — Bibou's Burgers</title>
+  <style>
+    body { font: 18px/1.5 system-ui, sans-serif; background: #f7f3ee; color: #211c19; margin: 0; padding: 24px; }
+    main { max-width: 640px; margin: 30px auto; background: white; border-radius: 22px; padding: 28px; box-shadow: 0 8px 30px #321a121a; }
+    h1 { font-size: 1.6rem; margin: 0 0 12px; }
+    .state { border-radius: 14px; padding: 16px; background: #fff2d7; font-weight: 700; }
+    .state.ok { background: #ddf2e3; }
+    .state.error { background: #ffe1dc; }
+    small { color: #685b54; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vérification de l’imprimante</h1>
+    <p>Ce test vérifie la liaison entre l’iPad et la TM‑m30II. Il n’imprime aucun ticket et ne modifie aucun réglage.</p>
+    <p id="result" class="state" role="status" aria-live="polite">Vérification en cours…</p>
+    <small>Si la liaison échoue, SumUp et Uber restent inchangés.</small>
+  </main>
+  <script src="./epson-print.js"></script>
+  <script>
+    (async () => {
+      const output = document.querySelector('#result');
+      let token = '';
+      try { token = localStorage.getItem('bibous-dashboard-token') || sessionStorage.getItem('bibous-dashboard-token') || ''; } catch {}
+      if (!token) { output.textContent = 'Ouvrez d’abord votre espace restaurant sur cet iPad, puis revenez à cette page.'; output.className = 'state error'; return; }
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        let access;
+        try { access = await fetch('https://bibous-burger.onrender.com/api/dashboard/orders', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal }); }
+        finally { clearTimeout(timeout); }
+        if (!access.ok) throw new Error('La connexion à l’espace restaurant doit être renouvelée sur cet iPad.');
+        const answer = await BibouEpsonPrint.probe('192.168.192.50');
+        if (!answer.success) throw new Error(`L’imprimante a refusé le test (${answer.code || 'code inconnu'}).`);
+        output.textContent = 'Liaison confirmée avec le service Epson. Aucun papier n’a été imprimé.';
+        output.className = 'state ok';
+      } catch (error) {
+        output.textContent = error.message || 'La liaison avec Epson n’a pas pu être vérifiée.';
+        output.className = 'state error';
+      }
+    })();
+  </script>
+</body>
+</html>
