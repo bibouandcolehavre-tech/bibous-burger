@@ -89,14 +89,22 @@ test('récapitulatif client : articles, paiement initial, état et aucun taux de
   const request = printer.orderReceiptEnvelope({
     id: 'paid-1', number: 42, status: 'delivered', method: 'pickup', createdAt: '2026-09-30T18:00:00Z',
     customerName: 'Camille & Co', payment: { status: 'PAID', paidAt: '2026-09-30T18:01:00Z' },
-    items: [{ name: 'Menu <Classique>', quantity: 2, price: 14.9, options: [{ label: 'Coca & frites' }] }],
-    total: 29.8, discount: 0,
+    items: [
+      { productId: 'classique-menu', name: 'Menu <Classique>', quantity: 2, price: 14.9,
+        options: [{ groupId: 'drink', label: 'Coca & frites' }] },
+      { productId: 'classique', name: 'Classique', quantity: 1, price: 9.9, options: [] },
+    ],
+    total: 39.7, discount: 0,
   });
   assert.match(request, /COMMANDE #42/);
   assert.match(request, /Camille &amp; Co/);
   assert.match(request, /2 x Menu &lt;Classique&gt;/);
-  assert.match(request, /Coca &amp; frites/);
-  assert.match(request, /PAIEMENT INITIAL : 29,80 EUR/);
+  assert.match(request, /<text dw="true" dh="true" em="true"\/><text>MENU&#10;<\/text>/);
+  assert.match(request, /<text dw="true" dh="true" em="true"\/><text>BURGER SEUL&#10;<\/text>/);
+  assert.match(request, /Boisson : Coca &amp; frites/);
+  assert.match(request, /Prix article : 29,80 EUR/);
+  assert.match(request, /<text>PAIEMENT INITIAL&#10;<\/text><text dw="true" dh="true"\/><text>39,70 EUR&#10;<\/text>/);
+  assert.ok((request.match(/<text>&#10;<\/text>/g) || []).length >= 6, 'le ticket sépare visuellement les groupes');
   assert.match(request, /NON FACTURE TVA/);
   assert.doesNotMatch(request, /5,5 %|10 %|TVA collectee/);
   assert.match(request, /<cut type="feed"\/>/);
@@ -107,4 +115,14 @@ test('récapitulatif refusé pour paiement non confirmé ou prix manquant', () =
   assert.throws(() => printer.orderReceiptEnvelope({ ...order, payment: { status: 'PENDING' } }));
   assert.throws(() => printer.orderReceiptEnvelope({ ...order, reviewMode: true }));
   assert.throws(() => printer.orderReceiptEnvelope({ ...order, items: [{ name: 'Burger', quantity: 1 }] }));
+});
+
+test('les intitulés MENU et BURGER SEUL suivent les produits et non le nom libre', () => {
+  const base = { id: 'paid-2', number: 43, method: 'pickup', payment: { status: 'PAID' }, total: 26.8 };
+  const request = printer.orderReceiptEnvelope({ ...base, items: [
+    { productId: 'taurus', name: 'Taurus', quantity: 1, price: 16.9, options: [] },
+    { productId: 'classique', name: 'Classique', quantity: 1, price: 9.9, options: [] },
+  ] });
+  assert.match(request, /<text>MENU&#10;<\/text><text dw="false" dh="false"\/><text>1 x Taurus/);
+  assert.match(request, /<text>BURGER SEUL&#10;<\/text><text dw="false" dh="false"\/><text>1 x Classique/);
 });

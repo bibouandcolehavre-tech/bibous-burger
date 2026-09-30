@@ -1,5 +1,5 @@
-// ePOS-Print XML for the restaurant's networked TM-m30II. The HTTPS status
-// probe works on the restaurant iPad; physical printing is still to verify.
+// ePOS-Print XML for the restaurant's networked TM-m30II. Physical printing
+// from the restaurant iPad was confirmed on 30 September 2026.
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -79,32 +79,56 @@
     const date = Number.isFinite(Date.parse(dateValue)) ? new Date(dateValue).toLocaleString('fr-FR', {
       timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short'
     }) : 'Date non disponible';
+    const itemType = item => {
+      const id = String(item.productId || '');
+      if (id === 'taurus' || id.endsWith('-menu') || id === 'menu-duo-tenders') return 'MENU';
+      if (['atlas', 'classique', 'duck', 'dynamite', 'hambagu', 'basilic', 'montagnes', 'gros-lard', 'pork'].includes(id)) return 'BURGER SEUL';
+      if (id.startsWith('drink-')) return 'BOISSON';
+      return 'AUTRE ARTICLE';
+    };
+    const optionTitle = { protein: 'Composition', 'meat-type': 'Viande', drink: 'Boisson',
+      'duo-drink-one': 'Boisson 1', 'duo-drink-two': 'Boisson 2', sauces: 'Sauce',
+      salad: 'Crudites', extras: 'Supplement', sides: 'Accompagnement', desserts: 'Dessert' };
     const parts = [
-      '<text align="center" dw="true" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
-      '<text align="left" dw="false" dh="false" em="false"/>',
-      line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),
-      line(`COMMANDE ${number} - ${date}`),
-      line('RECAPITULATIF - NON FACTURE TVA'),
-      line(order.method === 'delivery' ? 'Livraison' : order.method === 'pickup' ? 'Retrait' : 'Mode non renseigne'),
+      '<text align="center" em="true"/>', line("BIBOU'S BURGERS"),
+      '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),
+      '<text dw="false" dh="false" em="false"/>',
+      line(order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE NON RENSEIGNE'),
+      line(''),
+      '<text align="left"/>',
+      line(`Date : ${date}`),
       line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
+      line(''),
+      line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),
+      line('RECAPITULATIF - NON FACTURE TVA'),
+      line(''),
       line('--------------------------------'),
     ];
     for (const item of order.items) {
       const quantity = Number(item.quantity);
       if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error('Quantité de produit invalide.');
       if (item.price === null || item.price === undefined) throw new Error('Prix de produit manquant.');
-      parts.push(line(`${quantity} x ${item.name || item.productId || 'Produit'}`));
-      parts.push(line(`  ${amount(Number(item.price) * quantity)}`));
-      for (const option of item.options || []) if (option?.label) parts.push(line(`  - ${option.label}`));
+      parts.push(line(''), '<text dw="true" dh="true" em="true"/>', line(itemType(item)),
+        '<text dw="false" dh="false"/>', line(`${quantity} x ${item.name || item.productId || 'Produit'}`),
+        '<text em="false"/>');
+      for (const option of item.options || []) {
+        if (!option?.label) continue;
+        const title = optionTitle[option.groupId];
+        parts.push(line(`  ${title ? `${title} : ` : '- '}${option.label}`));
+      }
+      parts.push(line(''), '<text em="true"/>', line(`Prix article : ${amount(Number(item.price) * quantity)}`), '<text em="false"/>', line(''));
+      parts.push(line('--------------------------------'));
     }
-    parts.push(line('--------------------------------'));
     if (Number(order.discount) > 0) parts.push(line(`Remise : -${amount(order.discount)}`));
     if (order.method === 'delivery') parts.push(line(`Livraison : ${amount(order.deliveryFee ?? 0)}`));
-    parts.push('<text em="true"/>', line(`PAIEMENT INITIAL : ${amount(paid)}`), '<text em="false"/>');
+    parts.push(line(''), '<text align="center" em="true"/>', line('PAIEMENT INITIAL'),
+      '<text dw="true" dh="true"/>', line(amount(paid)),
+      '<text dw="false" dh="false" em="false" align="left"/>', line(''));
     if (order.refund?.status === 'recorded') parts.push(line(`Remboursement declare : ${amount(order.refund.amount)}`));
     if (order.refund?.status === 'due') parts.push(line(`Remboursement a effectuer : ${amount(order.refund.amount)}`));
     if (order.status === 'cancelled') parts.push(line('COMMANDE ANNULEE'));
-    parts.push(line('Document de commande - TVA non detaillee'), line('Demandez une facture au restaurant si besoin.'), '<cut type="feed"/>');
+    parts.push(line('Document de commande - TVA non detaillee'),
+      line('Demandez une facture au restaurant si besoin.'), line(''), '<cut type="feed"/>');
     return wrap(parts.join(''));
   }
 
