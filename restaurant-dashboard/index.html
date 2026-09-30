@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="./styles.css?v=amendments-1" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
     <link rel="stylesheet" href="./service-schedule.css?v=workspace-1" />
-    <link rel="stylesheet" href="./workspace.css?v=workspace-1" />
+    <link rel="stylesheet" href="./workspace.css?v=order-history-1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -123,8 +123,12 @@
               <button class="filter" data-filter="Acceptée">En préparation</button>
               <button class="filter" data-filter="Prête">Prêtes</button>
               <button class="filter" data-filter="Terminée">Terminées <span id="completed-filter-count">0</span></button>
+              <button class="filter" data-filter="Historique">Historique</button>
             </div>
           </div>
+          <label id="archive-search-wrap" class="archive-search" for="archive-search" hidden>Retrouver une commande payée
+            <input id="archive-search" type="search" autocomplete="off" placeholder="Numéro, client, téléphone ou date…" />
+          </label>
           <div class="orders-workspace"><aside id="order-queue" class="order-queue" aria-label="Choisir une commande"></aside><div id="orders-list" class="orders-list"></div></div>
         </section>
 
@@ -191,6 +195,6 @@
     <script src="./planner.js?v=workspace-1"></script>
     <script src="./order-amendments.js?v=1"></script>
     <script src="./uber-direct.js?v=1"></script>
-    <script src="./app.js?v=workspace-1"></script>
+    <script src="./app.js?v=order-history-1"></script>
   </body>
 </html>

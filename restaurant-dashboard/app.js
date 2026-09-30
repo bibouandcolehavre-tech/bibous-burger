@@ -19,6 +19,7 @@ let customerDetailRequest = 0;
 let customerSearchTimer = null;
 let customerLastUpdate = 0;
 let filter = "all";
+let archiveSearch = "";
 let selectedOrderId = null;
 const pendingOrderChanges = new Set();
 let reservationFilter = "upcoming";
@@ -65,7 +66,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
@@ -158,12 +159,24 @@ function customerOrderHistoryMarkup(order, historyStatuses) {
 
 function renderOrders() {
   const completedView = filter === "Terminée";
-  const visible = completedView ? orders.filter((order) => order.status === "Terminée") : active().filter((order) => filter === "all" || order.status === filter);
+  const historyView = filter === "Historique";
+  const archiveQuery = archiveSearch.trim().toLocaleLowerCase('fr-FR');
+  const visible = historyView
+    ? orders.filter((order) => {
+      if (!archiveQuery) return true;
+      const date = order.raw?.serviceDate || '';
+      return [order.id, order.customer, order.phone, date, date.split('-').reverse().join('/'), order.raw?.payment?.paidAt?.slice(0, 10), order.raw?.createdAt?.slice(0, 10)]
+        .some(value => String(value || '').toLocaleLowerCase('fr-FR').includes(archiveQuery));
+    })
+      .sort((left, right) => Date.parse(right.raw?.payment?.paidAt || right.raw?.createdAt || 0) - Date.parse(left.raw?.payment?.paidAt || left.raw?.createdAt || 0))
+      .slice(0, archiveQuery ? undefined : 100)
+    : completedView ? orders.filter((order) => order.status === "Terminée") : active().filter((order) => filter === "all" || order.status === filter);
+  document.querySelector('#archive-search-wrap').hidden = !historyView;
   if (!visible.some(order => order.apiId === selectedOrderId)) selectedOrderId = visible[0]?.apiId || null;
-  document.querySelector('#order-queue').hidden = completedView || !visible.length;
-  document.querySelector('#order-queue').innerHTML = completedView ? '' : visible.map(order => `<button class="queue-order ${order.apiId === selectedOrderId ? 'selected' : ''}" data-select-order="${escapeHtml(order.apiId)}" aria-pressed="${order.apiId === selectedOrderId}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><b>${euro(order.total)}</b></span><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></button>`).join('');
+  document.querySelector('#order-queue').hidden = completedView || historyView || !visible.length;
+  document.querySelector('#order-queue').innerHTML = completedView || historyView ? '' : visible.map(order => `<button class="queue-order ${order.apiId === selectedOrderId ? 'selected' : ''}" data-select-order="${escapeHtml(order.apiId)}" aria-pressed="${order.apiId === selectedOrderId}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><b>${euro(order.total)}</b></span><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></button>`).join('');
   document.querySelectorAll('[data-select-order]').forEach(button => button.onclick = () => { selectedOrderId = button.dataset.selectOrder; renderOrders(); });
-  const shown = completedView ? visible : visible.filter(order => order.apiId === selectedOrderId);
+  const shown = completedView || historyView ? visible : visible.filter(order => order.apiId === selectedOrderId);
   document.querySelector("#orders-list").innerHTML = shown.length ? shown.map((order) => {
     const lines = order.items.map(orderItemMarkup).join("");
     const address = order.deliveryAddress;
@@ -173,9 +186,9 @@ function renderOrders() {
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
     const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>`;
-    if (completedView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status Terminée">Terminée</span></div>${body}</div></details>`;
+    if (completedView || historyView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
-  }).join("") : `<div class="empty">🍔<strong>${completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
+  }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
   document.querySelectorAll('[data-uber-order]').forEach(button => button.onclick = () => {
     const order = orders.find(o => o.id === Number(button.dataset.uberOrder)), token = dashboardToken;
     if (order) window.BibouUber.open(order.raw, {api:API_BASE_URL,headers:dashboardHeaders({'Content-Type':'application/json'}),current:()=>dashboardToken===token,refresh:()=>loadOrders()});
@@ -707,6 +720,7 @@ document.querySelectorAll(".filter").forEach((button) => button.addEventListener
   document.querySelectorAll(".filter").forEach((item) => item.classList.toggle("active", item === button));
   renderOrders();
 }));
+document.querySelector('#archive-search').addEventListener('input', event => { archiveSearch = event.target.value; renderOrders(); });
 
 document.querySelectorAll(".reservation-filter").forEach((button) => button.addEventListener("click", () => {
   if (button.dataset.rewardFilter) return;

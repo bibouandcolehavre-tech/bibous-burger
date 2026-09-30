@@ -132,6 +132,30 @@ test("commandes : les commandes terminées ont un onglet et un détail ouvrable"
   assert.equal(html.includes("data-action"), false);
 });
 
+test("historique des commandes payées : recherche les dossiers terminés ou annulés sans action d'impression fiscale", async () => {
+  const h = await harness();
+  const original = { id: 'old-1', number: 411, customerName: 'Léa Martin', customerPhone: '+33612345678', method: 'pickup', serviceDate: '2026-09-25', slot: '12:15', createdAt: '2026-09-25T10:00:00Z', status: 'delivered', payment: { status: 'PAID', paidAt: '2026-09-25T10:02:00Z' }, total: 14.9, items: [{ name: 'Classique', quantity: 1, price: 14.9 }] };
+  const cancelled = { ...original, id: 'old-2', number: 412, customerName: '<script>Client</script>', status: 'cancelled' };
+  h.context.original = original;
+  h.context.cancelled = cancelled;
+  h.run('orders = [orderFromApi(original), orderFromApi(cancelled)]; filter = "Historique"; renderOrders()');
+  assert.equal(h.element('#archive-search-wrap').hidden, false);
+  let html = h.element('#orders-list').innerHTML;
+  assert.match(html, /#411 · Léa Martin/);
+  assert.match(html, /#412 · &lt;script&gt;Client&lt;\/script&gt;/);
+  assert.equal(html.includes('<script>Client</script>'), false);
+  h.run('archiveSearch = "411"; renderOrders()');
+  html = h.element('#orders-list').innerHTML;
+  assert.match(html, /#411 · Léa Martin/);
+  assert.doesNotMatch(html, /#412/);
+  h.run('archiveSearch = "2026-09-25"; renderOrders()');
+  assert.match(h.element('#orders-list').innerHTML, /#411/);
+  h.run('archiveSearch = "25/09/2026"; renderOrders()');
+  assert.match(h.element('#orders-list').innerHTML, /#411/);
+  h.run('filter = "all"; renderOrders()');
+  assert.equal(h.element('#archive-search-wrap').hidden, true);
+});
+
 test('panier en attente : préparation absente et remboursement dû visible même après annulation', async () => {
   const h = await harness();
   h.context.fixtureOrder = {id:'amendment-test',number:91,customerName:'Fictif',createdAt:new Date().toISOString(),status:'awaiting_customer',method:'pickup',total:3.6,items:[],amendment:{revision:1,status:'pending',expiresAt:new Date(Date.now()+600000).toISOString(),proposal:{reason:'<script>Indisponible</script>',items:[],total:1.8,refundAmount:1.8}}};
