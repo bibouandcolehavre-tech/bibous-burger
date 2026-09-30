@@ -57,6 +57,20 @@ function restaurantPage() {
     <section class="practical" id="horaires"><div><h2>Nous retrouver au Havre</h2><address>${escape(address)}, France</address><p>Sur place, à emporter ou en livraison : choisissez votre façon de profiter de Bibou’s Burgers.</p><a href="/">Choisir un créneau ou réserver une table →</a></div><div><h2>Horaires des services</h2>${hoursHtml()}<p class="note">Les disponibilités et les éventuelles fermetures exceptionnelles sont indiquées dans le parcours de commande ou de réservation.</p></div></section>
   </main><footer><p>Bibou & Co · ${escape(info.name)} · ${escape(address)}</p><nav class="footer-links" aria-label="Liens utiles">${info.socials.map(social => `<a href="${escape(social.url)}" target="_blank" rel="noopener noreferrer">${escape(social.name)} ↗</a>`).join('')}<a href="/?legal=privacy">Confidentialité</a></nav></footer></body></html>`;
 }
+function supportPage() {
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assistance — Bibou's Burgers</title><meta name="description" content="Contacter Bibou & Co pour une commande, une réservation ou une question sur l'application Bibou's Burgers.">
+  <link rel="canonical" href="${info.origin}/assistance.html"><link rel="stylesheet" href="/seo/restaurant.css"></head><body>
+  <header><a class="brand" href="/">${escape(info.name)}</a><nav aria-label="Navigation"><a href="/">L'application</a><a href="${info.page}">Le restaurant</a></nav></header>
+  <main><p class="eyebrow">Aide & contact</p><h1>Comment pouvons-nous vous aider ?</h1>
+  <section class="practical" aria-label="Contacter le restaurant"><div><h2>Votre commande ou réservation</h2><p>Pour une demande urgente concernant un repas ou une table, appelez directement le restaurant pendant le service.</p><a class="button" href="tel:+33278088498">02 78 08 84 98</a></div>
+  <div><h2>Une question sur l'application</h2><p>Écrivez-nous en précisant le problème et, si vous en avez une, la référence de commande. N'envoyez jamais votre numéro de carte, un mot de passe ou un code de connexion.</p><a href="mailto:contact@bibousburgers.com">contact@bibousburgers.com</a></div></section>
+  <section class="services" aria-label="Questions fréquentes"><article><h2>Paiement en attente</h2><p>Consultez le suivi dans l'application avant de recommencer un paiement. Si votre banque affiche un débit mais que la commande n'est pas confirmée, contactez le restaurant avec sa référence.</p></article>
+  <article><h2>Annulation et remboursement</h2><p>Contactez le restaurant pour une commande déjà validée. L'annulation d'une commande n'entraîne pas à elle seule un remboursement bancaire automatique.</p></article>
+  <article><h2>Compte et données personnelles</h2><p>La suppression du compte est disponible dans Mon compte. Vous pouvez également ouvrir <a href="/?legal=delete-account">la page de suppression</a> ou consulter <a href="/?legal=privacy">la politique de confidentialité</a>.</p></article></section>
+  <p>Bibou & Co — ${escape(info.name)}</p><address>${escape(address)}, France</address><p><a href="${info.page}">Consulter les horaires et les informations pratiques</a></p></main>
+  <footer><a href="/">Retour à l'application</a> · <a href="/?legal=privacy">Confidentialité</a></footer></body></html>`;
+}
 function enrichIndex(source) {
   if (!source.includes('<div id="root"></div>')) throw new Error('Structure Expo inattendue : ne pas publier une page sans contenu public.');
   // Same lightweight loading view for everyone, with an ordinary link to the full public page.
@@ -75,6 +89,7 @@ function build(directory = path.resolve(__dirname, '../dist')) {
   fs.mkdirSync(path.join(directory, 'seo'), { recursive: true });
   fs.writeFileSync(path.join(directory, 'index.html'), html);
   fs.writeFileSync(path.join(directory, info.page.slice(1)), restaurantPage());
+  fs.writeFileSync(path.join(directory, 'assistance.html'), supportPage());
   fs.writeFileSync(path.join(directory, 'seo/restaurant.css'), css);
   fs.copyFileSync(path.resolve(__dirname, '../assets/taurus.jpg'), path.join(directory, 'seo/taurus.jpg'));
   fs.writeFileSync(path.join(directory, 'robots.txt'), robots);
@@ -82,4 +97,4 @@ function build(directory = path.resolve(__dirname, '../dist')) {
   console.log('SEO : accueil français, informations restaurant, données structurées, robots.txt et sitemap générés.');
 }
 if (require.main === module) build();
-module.exports = { escape, head, restaurantSchema, enrichIndex, restaurantPage, robots, sitemap, build };
+module.exports = { escape, head, restaurantSchema, enrichIndex, restaurantPage, supportPage, robots, sitemap, build };

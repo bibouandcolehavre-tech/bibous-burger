@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { RESTAURANT } = require('../restaurant-info');
-const { enrichIndex, restaurantPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
+const { enrichIndex, restaurantPage, supportPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
 const sample = '<!DOCTYPE html><html lang="en"><head><title>Bibou</title></head><body><noscript>You need JavaScript</noscript><div id="root"></div><script src="/app.js" defer></script></body></html>';
 const graphFrom = html => JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1]);
 
@@ -60,11 +60,20 @@ test('Le générateur complète le vrai export sans modifier le JavaScript ou co
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.writeFileSync(path.join(dir, 'index.html'), sample);
   build(dir);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['index.html', 'restaurant-le-havre.html', 'robots.txt', 'seo', 'sitemap.xml']);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['assistance.html', 'index.html', 'restaurant-le-havre.html', 'robots.txt', 'seo', 'sitemap.xml']);
   assert.deepEqual(fs.readdirSync(path.join(dir, 'seo')).sort(), ['restaurant.css', 'taurus.jpg']);
   assert.match(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), /\/app.js/);
   assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
   assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
+});
+test('Assistance publique : contacts et liens utiles sans données privées', () => {
+  const page = supportPage();
+  assert.match(page, /<title>Assistance/);
+  assert.match(page, /href="tel:\+33278088498"/);
+  assert.match(page, /href="mailto:contact@bibousburgers.com"/);
+  assert.match(page, /href="\/\?legal=delete-account"/);
+  assert.match(page, /href="\/\?legal=privacy"/);
+  assert.doesNotMatch(page, /code de revue|mot de passe technique|clé privée/i);
 });
 test('Accueil discret : lien pratique accessible vers la page complète, sans grand bloc ni HTML natif', () => {
   const web = fs.readFileSync(path.join(__dirname, '../RestaurantInfo.web.js'), 'utf8');
