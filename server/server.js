@@ -23,6 +23,7 @@ const { createProductStockStore } = require("./product-stock");
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { createAuthRateLimiter } = require("./auth-rate-limit");
+const { createDashboardSessionStore } = require('./dashboard-sessions');
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
@@ -81,7 +82,7 @@ const smsAttemptLimiter = createSmsAttemptLimiter();
 const registrations = createRegistrationStore();
 const dashboardLoginLimiter = createAuthRateLimiter();
 const smsCodeLimiter = createAuthRateLimiter({ limit: 8, windowMs: 15 * 60000 });
-const dashboardSessions = new Map();
+const dashboardSessions = createDashboardSessionStore(path.join(path.dirname(databasePath), 'dashboard-sessions.json'), { secret: restaurantDashboardPassword || customerSessionSecret });
 const reviewSandbox = createReviewSandbox({ enabled: process.env.STORE_REVIEW_ENABLED !== 'false' });
 const acquireDatabase = createDatabaseLock();
 let googleReviewsCache = { value: null, expiresAt: 0 };
@@ -230,8 +231,7 @@ const authenticatedCustomer = (request, database) => {
 };
 const authenticatedDashboard = (request) => {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
-  const session = token && dashboardSessions.get(token);
-  return Boolean(session && session.expiresAt > Date.now());
+  return dashboardSessions.valid(token);
 };
 const passwordsMatch = (candidate, expected) => {
   const candidateBuffer = Buffer.from(String(candidate || ""));
@@ -521,6 +521,12 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { configured: Boolean(restaurantDashboardPassword) });
     }
 
+    if (request.method === 'POST' && url.pathname === '/api/dashboard/auth/logout') {
+      const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+      dashboardSessions.revoke(token);
+      return send(response, 200, { ok: true });
+    }
+
     if (request.method === "POST" && url.pathname === "/api/dashboard/auth/login") {
       // Use the connection peer, not a forgeable forwarded header. Behind a reverse
       // proxy this conservative limit can be shared by restaurant operators.
@@ -534,10 +540,8 @@ const server = http.createServer(async (request, response) => {
       if (!restaurantDashboardPassword) return send(response, 503, { error: "L’accès restaurant n’est pas encore configuré." });
       if (!passwordsMatch(password, restaurantDashboardPassword)) return send(response, 401, { error: "Mot de passe incorrect." });
       dashboardLoginLimiter.reset(loginKey);
-      for (const [key, session] of dashboardSessions) if (session.expiresAt <= Date.now()) dashboardSessions.delete(key);
-      if (dashboardSessions.size >= 1000) return send(response, 503, { error: 'Trop de sessions actives. Réessayez plus tard.' });
-      const token = crypto.randomBytes(32).toString("base64url");
-      dashboardSessions.set(token, { expiresAt: Date.now() + 1000 * 60 * 60 * 12 });
+      const token = dashboardSessions.issue();
+      if (!token) return send(response, 503, { error: 'Trop de sessions actives. Réessayez plus tard.' });
       return send(response, 200, { token });
     }
 

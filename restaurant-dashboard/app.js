@@ -35,7 +35,20 @@ let orderAlarm = null;
 const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, volume: savedSoundVolume(), onChange: () => { updateSoundControls(); orderAlarm?.refresh(); } });
 orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, onChange: updateOrderAlarm });
 let currentView = "home";
-let dashboardToken = sessionStorage.getItem("bibous-dashboard-token") || "";
+const dashboardTokenKey = 'bibous-dashboard-token';
+const savedDashboardToken = () => {
+  try { return localStorage.getItem(dashboardTokenKey) || sessionStorage.getItem(dashboardTokenKey) || ''; }
+  catch { try { return sessionStorage.getItem(dashboardTokenKey) || ''; } catch { return ''; } }
+};
+const saveDashboardToken = token => {
+  try { localStorage.setItem(dashboardTokenKey, token); sessionStorage.removeItem(dashboardTokenKey); }
+  catch { try { sessionStorage.setItem(dashboardTokenKey, token); } catch {} }
+};
+const removeDashboardToken = () => {
+  try { localStorage.removeItem(dashboardTokenKey); } catch {}
+  try { sessionStorage.removeItem(dashboardTokenKey); } catch {}
+};
+let dashboardToken = savedDashboardToken();
 let marketingPanel = null;
 let notificationsPanel = null;
 let crmPanel = null;
@@ -52,7 +65,12 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); sessionStorage.removeItem("bibous-dashboard-token"); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const logoutDashboard = () => {
+  const token = dashboardToken;
+  showLogin('Vous êtes déconnecté de cet appareil.');
+  if (token) void fetch(`${API_BASE_URL}/dashboard/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+};
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
 function orderFromApi(order) {
@@ -770,7 +788,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Connexion impossible.");
     dashboardToken = payload.token;
-    sessionStorage.setItem("bibous-dashboard-token", dashboardToken);
+    saveDashboardToken(dashboardToken);
     showDashboard();
     void refreshFeeds({ notify: false });
     if (currentView === "menu") loadMenu();
@@ -788,7 +806,7 @@ document.querySelector("#dashboard-password").addEventListener("keydown", (event
 if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMarketing({ root: document.querySelector('#marketing-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouNotifications === 'function') notificationsPanel = window.BibouNotifications({ root: document.querySelector('#notifications-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSchedule({root:document.querySelector('#schedule-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:showLogin});
-if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: () => showLogin('Vous êtes déconnecté de cet onglet.') });
+if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });
 refreshMetrics();
 updateSoundControls();
 updateConnectionStatus();
