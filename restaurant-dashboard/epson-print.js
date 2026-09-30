@@ -13,6 +13,7 @@
   const address = value => typeof value === 'string' ? clean(value) : value && typeof value === 'object'
     ? [value.address, value.postalCode, value.city].map(part => clean(part)).filter(Boolean).join(' ') : '';
   const line = value => `<text>${xml(clean(value))}&#10;</text>`;
+  const indentedLine = value => `<text>&#32;&#32;${xml(clean(value))}&#10;</text>`;
   const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
 
   const statusEnvelope = () => wrap('');
@@ -90,9 +91,9 @@
       'duo-drink-one': 'Boisson 1', 'duo-drink-two': 'Boisson 2', sauces: 'Sauce',
       salad: 'Crudites', extras: 'Supplement', sides: 'Accompagnement', desserts: 'Dessert' };
     const parts = [
-      '<text align="center" em="true"/>', line("BIBOU'S BURGERS"),
+      '<text align="center" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
       '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),
-      '<text dw="false" dh="false" em="false"/>',
+      '<text dw="false" dh="true" em="false"/>',
       line(order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE NON RENSEIGNE'),
       line(''),
       '<text align="left"/>',
@@ -109,12 +110,12 @@
       if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error('Quantité de produit invalide.');
       if (item.price === null || item.price === undefined) throw new Error('Prix de produit manquant.');
       parts.push(line(''), '<text dw="true" dh="true" em="true"/>', line(itemType(item)),
-        '<text dw="false" dh="false"/>', line(`${quantity} x ${item.name || item.productId || 'Produit'}`),
-        '<text em="false"/>');
+        line(`${quantity} x ${item.name || item.productId || 'Produit'}`),
+        '<text dw="false" dh="true" em="false"/>');
       for (const option of item.options || []) {
         if (!option?.label) continue;
         const title = optionTitle[option.groupId];
-        parts.push(line(`  ${title ? `${title} : ` : '- '}${option.label}`));
+        parts.push(indentedLine(`${title ? `${title} : ` : '- '}${option.label}`));
       }
       parts.push(line(''), '<text em="true"/>', line(`Prix article : ${amount(Number(item.price) * quantity)}`), '<text em="false"/>', line(''));
       parts.push(line('--------------------------------'));
@@ -123,7 +124,7 @@
     if (order.method === 'delivery') parts.push(line(`Livraison : ${amount(order.deliveryFee ?? 0)}`));
     parts.push(line(''), '<text align="center" em="true"/>', line('PAIEMENT INITIAL'),
       '<text dw="true" dh="true"/>', line(amount(paid)),
-      '<text dw="false" dh="false" em="false" align="left"/>', line(''));
+      '<text dw="false" dh="true" em="false" align="left"/>', line(''));
     if (order.refund?.status === 'recorded') parts.push(line(`Remboursement declare : ${amount(order.refund.amount)}`));
     if (order.refund?.status === 'due') parts.push(line(`Remboursement a effectuer : ${amount(order.refund.amount)}`));
     if (order.status === 'cancelled') parts.push(line('COMMANDE ANNULEE'));

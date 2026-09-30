@@ -99,8 +99,10 @@ test('récapitulatif client : articles, paiement initial, état et aucun taux de
   assert.match(request, /COMMANDE #42/);
   assert.match(request, /Camille &amp; Co/);
   assert.match(request, /2 x Menu &lt;Classique&gt;/);
-  assert.match(request, /<text dw="true" dh="true" em="true"\/><text>MENU&#10;<\/text>/);
-  assert.match(request, /<text dw="true" dh="true" em="true"\/><text>BURGER SEUL&#10;<\/text>/);
+  assert.match(request, /<text dw="false" dh="true" em="false"\/><text>RETRAIT&#10;<\/text>/);
+  assert.match(request, /<text dw="true" dh="true" em="true"\/><text>MENU&#10;<\/text><text>2 x Menu &lt;Classique&gt;&#10;<\/text>/);
+  assert.match(request, /<text dw="true" dh="true" em="true"\/><text>BURGER SEUL&#10;<\/text><text>1 x Classique&#10;<\/text>/);
+  assert.match(request, /<text dw="false" dh="true" em="false"\/><text>&#32;&#32;Boisson : Coca &amp; frites/);
   assert.match(request, /Boisson : Coca &amp; frites/);
   assert.match(request, /Prix article : 29,80 EUR/);
   assert.match(request, /<text>PAIEMENT INITIAL&#10;<\/text><text dw="true" dh="true"\/><text>39,70 EUR&#10;<\/text>/);
@@ -123,6 +125,6 @@ test('les intitulés MENU et BURGER SEUL suivent les produits et non le nom libr
     { productId: 'taurus', name: 'Taurus', quantity: 1, price: 16.9, options: [] },
     { productId: 'classique', name: 'Classique', quantity: 1, price: 9.9, options: [] },
   ] });
-  assert.match(request, /<text>MENU&#10;<\/text><text dw="false" dh="false"\/><text>1 x Taurus/);
-  assert.match(request, /<text>BURGER SEUL&#10;<\/text><text dw="false" dh="false"\/><text>1 x Classique/);
+  assert.match(request, /<text>MENU&#10;<\/text><text>1 x Taurus/);
+  assert.match(request, /<text>BURGER SEUL&#10;<\/text><text>1 x Classique/);
 });
