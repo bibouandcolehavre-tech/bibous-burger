@@ -12,6 +12,8 @@
     .state { border-radius: 14px; padding: 16px; background: #fff2d7; font-weight: 700; }
     .state.ok { background: #ddf2e3; }
     .state.error { background: #ffe1dc; }
+    button { border: 0; border-radius: 12px; background: #bd452e; color: white; font: inherit; font-weight: 700; padding: 14px 20px; }
+    button:disabled { opacity: .5; }
     small { color: #685b54; }
   </style>
 </head>
@@ -20,6 +22,7 @@
     <h1>Vérification de l’imprimante</h1>
     <p>Ce test vérifie la liaison entre l’iPad et la TM‑m30II. Il n’imprime aucun ticket et ne modifie aucun réglage.</p>
     <p id="result" class="state" role="status" aria-live="polite">Vérification en cours…</p>
+    <button id="print-test" type="button" hidden>Imprimer un seul ticket d’essai</button>
     <small>Si la liaison échoue, SumUp et Uber restent inchangés.</small>
   </main>
   <script src="./epson-print.js"></script>
@@ -40,6 +43,21 @@
         if (!answer.success) throw new Error(`L’imprimante a refusé le test (${answer.code || 'code inconnu'}).`);
         output.textContent = 'Liaison confirmée avec le service Epson. Aucun papier n’a été imprimé.';
         output.className = 'state ok';
+        const button = document.querySelector('#print-test');
+        button.hidden = false;
+        button.onclick = async () => {
+          button.disabled = true;
+          output.textContent = 'Envoi d’un seul ticket d’essai…';
+          try {
+            const printed = await BibouEpsonPrint.send('192.168.192.50', BibouEpsonPrint.testEnvelope());
+            if (!printed.success) throw new Error(`L’imprimante a refusé le ticket (${printed.code || 'code inconnu'}).`);
+            output.textContent = 'Epson a confirmé le ticket d’essai. Vérifiez qu’un seul papier « ESSAI BIBOU » est bien sorti.';
+            output.className = 'state ok';
+          } catch (error) {
+            output.textContent = `${error.message || 'Ticket non confirmé.'} Vérifiez le papier avant tout nouvel essai.`;
+            output.className = 'state error';
+          }
+        };
       } catch (error) {
         output.textContent = error.message || 'La liaison avec Epson n’a pas pu être vérifiée.';
         output.className = 'state error';

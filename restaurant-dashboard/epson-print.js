@@ -14,6 +14,9 @@
   const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
 
   const statusEnvelope = () => wrap('');
+  const testEnvelope = () => wrap('<text align="center" dw="true" dh="true" em="true"/>' +
+    line('ESSAI BIBOU') + '<text align="left" dw="false" dh="false" em="false"/>' +
+    line('AUCUNE COMMANDE REELLE') + line('Test de liaison avec le restaurant') + '<cut type="feed"/>');
 
   function preparationEnvelope(order) {
     if (!order || order.payment?.status !== 'PAID' || order.reviewMode || !order.id || !Array.isArray(order.items)) {
@@ -58,7 +61,10 @@
     return { success: /^(1|true)$/i.test(element.getAttribute('success') || ''), code: element.getAttribute('code') || '', status: element.getAttribute('status') || '' };
   }
 
-  function probe(host, { xhrFactory = () => new XMLHttpRequest() } = {}) {
+  function send(host, documentXml, { xhrFactory = () => new XMLHttpRequest() } = {}) {
+    if (typeof documentXml !== 'string' || !documentXml.startsWith('<?xml') || documentXml.length > 200000) {
+      return Promise.reject(new Error('Document Epson invalide.'));
+    }
     return new Promise((resolve, reject) => {
       const xhr = xhrFactory();
       xhr.open('POST', endpoint(host), true);
@@ -73,9 +79,11 @@
       };
       xhr.onerror = () => reject(new Error('La page sécurisée ne peut pas joindre le service d’impression Epson.'));
       xhr.ontimeout = () => reject(new Error('L’imprimante ne répond pas au test du service d’impression.'));
-      xhr.send(statusEnvelope());
+      xhr.send(documentXml);
     });
   }
 
-  return { statusEnvelope, preparationEnvelope, endpoint, responseResult, probe };
+  const probe = (host, options) => send(host, statusEnvelope(), options);
+
+  return { statusEnvelope, testEnvelope, preparationEnvelope, endpoint, responseResult, probe, send };
 });

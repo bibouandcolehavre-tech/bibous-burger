@@ -47,3 +47,11 @@ test('sonde envoie un document vide sans imprimer et lit la confirmation Epson',
   assert.equal(result.success, true);
   assert.doesNotMatch(sent, /<text|<cut/);
 });
+
+test('ticket d’essai distinct de toute commande réelle', () => {
+  const request = printer.testEnvelope();
+  assert.match(request, /ESSAI BIBOU/);
+  assert.match(request, /AUCUNE COMMANDE REELLE/);
+  assert.match(request, /<cut type="feed"\/>/);
+  assert.doesNotMatch(request, /Client|Tel|TVA/);
+});
