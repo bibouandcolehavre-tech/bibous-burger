@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Ticket d’une ancienne commande — Bibou's Burgers</title>
+  <style>
+    body { font: 18px/1.5 system-ui, sans-serif; background: #f7f3ee; color: #211c19; margin: 0; padding: 24px; }
+    main { max-width: 640px; margin: 30px auto; background: white; border-radius: 22px; padding: 28px; box-shadow: 0 8px 30px #321a121a; }
+    h1 { font-size: 1.6rem; margin: 0 0 12px; }
+    .state { border-radius: 14px; padding: 16px; background: #fff2d7; font-weight: 700; }
+    .state.ok { background: #ddf2e3; }
+    .state.error { background: #ffe1dc; }
+    small { color: #685b54; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Ticket d’une ancienne commande</h1>
+    <p>Cette page choisit une seule commande déjà terminée et envoie automatiquement son ticket à l’Epson du restaurant. Il portera la mention « Duplicata test — ne pas préparer ».</p>
+    <p id="result" class="state" role="status" aria-live="polite">Vérification en cours…</p>
+    <small>Ce ticket de cuisine n’est pas une facture ni un justificatif de TVA. SumUp et Uber ne sont pas modifiés.</small>
+  </main>
+  <script src="./epson-print.js?v=real-order-test-1"></script>
+  <script>
+    (async () => {
+      const output = document.querySelector('#result');
+      const attemptKey = 'bibous-epson-real-order-test-2026-09-30';
+      const fail = message => { output.textContent = message; output.className = 'state error'; };
+      try {
+        if (localStorage.getItem(attemptKey)) {
+          fail('Un essai a déjà été lancé depuis cet iPad. Pour éviter un doublon, aucun autre ticket ne sera envoyé par cette page.');
+          return;
+        }
+        const token = localStorage.getItem('bibous-dashboard-token') || sessionStorage.getItem('bibous-dashboard-token');
+        if (!token) throw new Error('Ouvrez d’abord votre espace restaurant sur cet iPad, puis revenez à ce lien.');
+        const response = await fetch('https://bibous-burger.onrender.com/api/dashboard/orders', {
+          headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: AbortSignal.timeout(15000)
+        });
+        if (response.status === 401) throw new Error('Reconnectez-vous à l’espace restaurant sur cet iPad, puis revenez à ce lien.');
+        if (!response.ok) throw new Error('La liste des commandes ne répond pas. Aucun ticket envoyé.');
+        const payload = await response.json();
+        const order = BibouEpsonPrint.completedOrderForTest(payload.orders);
+        if (!order) throw new Error('Aucune commande terminée et réglée ne peut servir à ce test. Aucun ticket envoyé.');
+        const documentXml = BibouEpsonPrint.preparationEnvelope(order, { duplicateTest: true });
+        const status = await BibouEpsonPrint.probe('192.168.192.50');
+        if (!status.success) throw new Error(`L’imprimante a refusé la vérification (${status.code || 'code inconnu'}). Aucun ticket envoyé.`);
+        if (localStorage.getItem(attemptKey)) throw new Error('Un essai est déjà en cours sur cet iPad. Aucun doublon envoyé.');
+        // Persist the attempt before sending: an ambiguous timeout must never silently reprint a real order.
+        localStorage.setItem(attemptKey, JSON.stringify({ orderId: order.id, at: new Date().toISOString() }));
+        output.textContent = `Envoi du duplicata de la commande #${order.number || order.id}…`;
+        const printed = await BibouEpsonPrint.send('192.168.192.50', documentXml);
+        if (!printed.success) throw new Error(`Epson a refusé le ticket (${printed.code || 'code inconnu'}). Vérifiez le papier avant tout nouvel essai.`);
+        output.textContent = `Epson a accepté le duplicata de la commande #${order.number || order.id}. Vérifiez qu’un seul papier est sorti.`;
+        output.className = 'state ok';
+      } catch (error) {
+        fail(error.message || 'Test non confirmé. Vérifiez le papier avant tout nouvel essai.');
+      }
+    })();
+  </script>
+</body>
+</html>

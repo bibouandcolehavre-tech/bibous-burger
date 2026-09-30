@@ -1,5 +1,5 @@
-// ePOS-Print XML for the restaurant's networked TM-m30II. This module is not
-// wired into automatic printing until the printer's HTTPS service is tested.
+// ePOS-Print XML for the restaurant's networked TM-m30II. The HTTPS status
+// probe works on the restaurant iPad; physical printing is still to verify.
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -10,6 +10,8 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
   })[character]);
   const clean = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  const address = value => typeof value === 'string' ? clean(value) : value && typeof value === 'object'
+    ? [value.address, value.postalCode, value.city].map(part => clean(part)).filter(Boolean).join(' ') : '';
   const line = value => `<text>${xml(clean(value))}&#10;</text>`;
   const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
 
@@ -18,23 +20,33 @@
     line('ESSAI BIBOU') + '<text align="left" dw="false" dh="false" em="false"/>' +
     line('AUCUNE COMMANDE REELLE') + line('Test de liaison avec le restaurant') + '<cut type="feed"/>');
 
-  function preparationEnvelope(order) {
+  function completedOrderForTest(orders) {
+    if (!Array.isArray(orders)) throw new Error('Liste de commandes invalide.');
+    return orders.filter(order => order?.status === 'delivered' && order.payment?.status === 'PAID' &&
+      !order.reviewMode && order.id && ['pickup', 'delivery'].includes(order.method) &&
+      Array.isArray(order.items) && order.items.length > 0 && Number.isFinite(Date.parse(order.createdAt)))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] || null;
+  }
+
+  function preparationEnvelope(order, { duplicateTest = false } = {}) {
     if (!order || order.payment?.status !== 'PAID' || order.reviewMode || !order.id || !Array.isArray(order.items)) {
       throw new Error('Seule une commande réelle réglée peut être imprimée.');
     }
+    if (duplicateTest && order.status !== 'delivered') throw new Error('Le duplicata de test exige une commande terminée.');
     const number = Number.isSafeInteger(Number(order.number)) ? `#${Number(order.number)}` : clean(order.id);
     const method = order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : null;
     if (!method) throw new Error('Mode de commande inconnu.');
     const parts = [
       '<text align="center" dw="true" dh="true" em="true"/>', line(`BIBOU'S BURGERS ${number}`),
       '<text align="left" dw="false" dh="false" em="false"/>',
+      ...(duplicateTest ? [line('DUPLICATA TEST - NE PAS PREPARER'), line('COMMANDE DEJA TERMINEE')] : []),
       line('TICKET DE PREPARATION - NON FISCAL'),
       line(method),
       line(`${clean(order.serviceDate)} ${clean(order.slot)}`),
       line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
     ];
     if (order.customerPhone) parts.push(line(`Tel : ${order.customerPhone}`));
-    if (method === 'LIVRAISON' && order.deliveryAddress) parts.push(line(`Adresse : ${order.deliveryAddress}`));
+    if (method === 'LIVRAISON' && address(order.deliveryAddress)) parts.push(line(`Adresse : ${address(order.deliveryAddress)}`));
     parts.push(line('--------------------------------'));
     for (const item of order.items) {
       const quantity = Number(item.quantity);
@@ -45,7 +57,9 @@
       }
     }
     if (order.comment) parts.push(line('--------------------------------'), line(`Note : ${order.comment}`));
-    parts.push(line('--------------------------------'), line('TICKET CUISINE - PAS UNE FACTURE'), '<cut type="feed"/>');
+    parts.push(line('--------------------------------'), line('TICKET CUISINE - PAS UNE FACTURE'));
+    if (duplicateTest) parts.push(line('DUPLICATA TEST - NE PAS PREPARER'));
+    parts.push('<cut type="feed"/>');
     return wrap(parts.join(''));
   }
 
@@ -85,5 +99,5 @@
 
   const probe = (host, options) => send(host, statusEnvelope(), options);
 
-  return { statusEnvelope, testEnvelope, preparationEnvelope, endpoint, responseResult, probe, send };
+  return { statusEnvelope, testEnvelope, completedOrderForTest, preparationEnvelope, endpoint, responseResult, probe, send };
 });

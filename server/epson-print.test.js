@@ -55,3 +55,32 @@ test('ticket d’essai distinct de toute commande réelle', () => {
   assert.match(request, /<cut type="feed"\/>/);
   assert.doesNotMatch(request, /Client|Tel|TVA/);
 });
+
+test('choisit la commande réelle réglée et terminée la plus récente pour un unique test', () => {
+  const base = { id: 'old', status: 'delivered', payment: { status: 'PAID' }, method: 'pickup', items: [{ name: 'Burger', quantity: 1 }], createdAt: '2026-09-29T12:00:00.000Z' };
+  const selected = printer.completedOrderForTest([
+    base,
+    { ...base, id: 'new', createdAt: '2026-09-30T12:00:00.000Z' },
+    { ...base, id: 'unpaid', payment: { status: 'PENDING' }, createdAt: '2026-09-30T14:00:00.000Z' },
+    { ...base, id: 'ongoing', status: 'confirmed', createdAt: '2026-09-30T15:00:00.000Z' },
+    { ...base, id: 'review', reviewMode: true, createdAt: '2026-09-30T16:00:00.000Z' },
+  ]);
+  assert.equal(selected.id, 'new');
+  assert.equal(printer.completedOrderForTest([]), null);
+});
+
+test('duplicata contient la vraie commande mais interdit de la préparer et ne prétend pas être fiscal', () => {
+  const order = { id: 'order-2', number: 824, status: 'delivered', payment: { status: 'PAID' }, method: 'delivery',
+    serviceDate: '2026-09-29', slot: '20:20', customerName: 'Camille',
+    deliveryAddress: { address: '153 Quai Georges V', postalCode: '76600', city: 'Le Havre' },
+    items: [{ name: 'Menu Classique', quantity: 1, options: [{ label: 'Boisson citron' }] }] };
+  const request = printer.preparationEnvelope(order, { duplicateTest: true });
+  assert.match(request, /#824/);
+  assert.match(request, /Menu Classique/);
+  assert.match(request, /Boisson citron/);
+  assert.match(request, /153 Quai Georges V 76600 Le Havre/);
+  assert.doesNotMatch(request, /\[object Object\]/);
+  assert.equal((request.match(/DUPLICATA TEST - NE PAS PREPARER/g) || []).length, 2);
+  assert.match(request, /NON FISCAL/);
+  assert.throws(() => printer.preparationEnvelope({ ...order, status: 'confirmed' }, { duplicateTest: true }));
+});
