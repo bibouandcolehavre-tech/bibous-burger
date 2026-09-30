@@ -54,3 +54,19 @@ test('changer le mot de passe invalide les sessions déjà créées', t => {
   assert.equal(createDashboardSessionStore(file, { secret: 'restaurant-password-a' }).valid(token), true);
   assert.equal(createDashboardSessionStore(file, { secret: 'restaurant-password-b' }).valid(token), false);
 });
+
+test('deux serveurs démarrés ensemble partagent les connexions et les déconnexions', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bibou-dashboard-sessions-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'sessions.json');
+  const options = { secret: 'restaurant-password-a' };
+  const first = createDashboardSessionStore(file, options);
+  const second = createDashboardSessionStore(file, options);
+  const firstToken = first.issue();
+  assert.equal(second.valid(firstToken), true);
+  const secondToken = second.issue();
+  assert.equal(first.valid(secondToken), true);
+  first.revoke(firstToken);
+  assert.equal(second.valid(firstToken), false);
+  assert.equal(second.valid(secondToken), true);
+});

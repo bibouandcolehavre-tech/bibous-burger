@@ -130,6 +130,7 @@ function dashboardHarness({ savedSound = null } = {}) {
   const timers = new Map();
   const setTimeoutFake = (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; };
   const storage = new Map([['bibous-dashboard-token', 'test-only']]);
+  const persistentStorage = new Map();
   const audio = new FakeAudioContext();
   const context = vm.createContext({
     BibouAlerts: alerts, console, AbortController, AbortSignal,
@@ -137,14 +138,21 @@ function dashboardHarness({ savedSound = null } = {}) {
     navigator: { onLine: true },
     window: { location: { hostname: 'localhost' }, AudioContext: function () { return audio; }, setTimeout: setTimeoutFake, setInterval() {}, addEventListener() {} },
     sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) },
-    localStorage: { getItem: key => key === 'bibous-restaurant-sound' ? savedSound : null, setItem() {} },
+    localStorage: { getItem: key => key === 'bibous-restaurant-sound' ? savedSound : persistentStorage.get(key) || null, setItem: (key, value) => persistentStorage.set(key, value), removeItem: key => persistentStorage.delete(key) },
     setTimeout: setTimeoutFake, clearTimeout: id => timers.delete(id),
     fetch: async () => ({ ok: true, status: 200, json: async () => ({ orders: [], reservations: [], claims: [] }) })
   });
   const run = source => vm.runInContext(source, context);
   run(fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/app.js'), 'utf8'));
-  return { context, run, element, audio, flush: () => { for (const [id, timer] of [...timers]) if (timer.ms === 250) { timers.delete(id); timer.fn(); } } };
+  return { context, run, element, audio, storage, persistentStorage, flush: () => { for (const [id, timer] of [...timers]) if (timer.ms === 250) { timers.delete(id); timer.fn(); } } };
 }
+
+test('une ancienne connexion dans un onglet est transférée au stockage durable', () => {
+  const h = dashboardHarness();
+  assert.equal(h.run('dashboardToken'), 'test-only');
+  assert.equal(h.persistentStorage.get('bibous-dashboard-token'), 'test-only');
+  assert.equal(h.storage.has('bibous-dashboard-token'), false);
+});
 
 test('dashboard loops for paid orders; testing and repeated activation never mute the alarm', async () => {
   const h = dashboardHarness();

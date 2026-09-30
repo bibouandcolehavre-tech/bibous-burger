@@ -38,8 +38,14 @@ orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, onChange: updat
 let currentView = "home";
 const dashboardTokenKey = 'bibous-dashboard-token';
 const savedDashboardToken = () => {
-  try { return localStorage.getItem(dashboardTokenKey) || sessionStorage.getItem(dashboardTokenKey) || ''; }
-  catch { try { return sessionStorage.getItem(dashboardTokenKey) || ''; } catch { return ''; } }
+  let legacyToken = '';
+  try { legacyToken = sessionStorage.getItem(dashboardTokenKey) || ''; } catch {}
+  if (legacyToken) {
+    // Pages opened before persistent login saved the token only for the current tab.
+    saveDashboardToken(legacyToken);
+    return legacyToken;
+  }
+  try { return localStorage.getItem(dashboardTokenKey) || ''; } catch { return ''; }
 };
 const saveDashboardToken = token => {
   try { localStorage.setItem(dashboardTokenKey, token); sessionStorage.removeItem(dashboardTokenKey); }
