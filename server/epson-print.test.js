@@ -84,3 +84,27 @@ test('duplicata contient la vraie commande mais interdit de la préparer et ne p
   assert.match(request, /NON FISCAL/);
   assert.throws(() => printer.preparationEnvelope({ ...order, status: 'confirmed' }, { duplicateTest: true }));
 });
+
+test('récapitulatif client : articles, paiement initial, état et aucun taux de TVA inventé', () => {
+  const request = printer.orderReceiptEnvelope({
+    id: 'paid-1', number: 42, status: 'delivered', method: 'pickup', createdAt: '2026-09-30T18:00:00Z',
+    customerName: 'Camille & Co', payment: { status: 'PAID', paidAt: '2026-09-30T18:01:00Z' },
+    items: [{ name: 'Menu <Classique>', quantity: 2, price: 14.9, options: [{ label: 'Coca & frites' }] }],
+    total: 29.8, discount: 0,
+  });
+  assert.match(request, /COMMANDE #42/);
+  assert.match(request, /Camille &amp; Co/);
+  assert.match(request, /2 x Menu &lt;Classique&gt;/);
+  assert.match(request, /Coca &amp; frites/);
+  assert.match(request, /PAIEMENT INITIAL : 29,80 EUR/);
+  assert.match(request, /NON FACTURE TVA/);
+  assert.doesNotMatch(request, /5,5 %|10 %|TVA collectee/);
+  assert.match(request, /<cut type="feed"\/>/);
+});
+
+test('récapitulatif refusé pour paiement non confirmé ou prix manquant', () => {
+  const order = { id: 'paid-1', method: 'pickup', payment: { status: 'PAID' }, items: [{ name: 'Burger', quantity: 1, price: 10 }], total: 10 };
+  assert.throws(() => printer.orderReceiptEnvelope({ ...order, payment: { status: 'PENDING' } }));
+  assert.throws(() => printer.orderReceiptEnvelope({ ...order, reviewMode: true }));
+  assert.throws(() => printer.orderReceiptEnvelope({ ...order, items: [{ name: 'Burger', quantity: 1 }] }));
+});

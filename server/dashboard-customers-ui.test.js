@@ -115,6 +115,23 @@ test("commandes : coordonnées échappées, choix verticaux et anciennes command
   assert.equal(h.element('#orders-list').innerHTML.includes('Adresse de livraison'), false);
 });
 
+test('un bouton Imprimer sur une ancienne commande envoie son récapitulatif à Epson', async () => {
+  const h = await harness();
+  const order = { id: 'paid-print-1', number: 83, status: 'delivered', method: 'pickup', createdAt: '2026-09-29T18:00:00Z', payment: { status: 'PAID' }, customerName: 'Client test', items: [{ name: 'Burger', quantity: 1, price: 10, options: [] }], total: 10 };
+  h.context.orderForPrint = order;
+  h.run('orders = [orderFromApi(orderForPrint)]; filter = "Historique"; renderOrders()');
+  assert.match(h.element('#orders-list').innerHTML, /data-print-order="paid-print-1"/);
+  let sent = 0;
+  h.context.window.BibouEpsonPrint = { orderReceiptEnvelope: current => { assert.equal(current.id, order.id); return '<ticket-test>'; }, send: async (host, documentXml) => { assert.equal(host, '192.168.192.50'); assert.equal(documentXml, '<ticket-test>'); sent++; return { success: true }; } };
+  h.context.fetch = async () => result({ orders: [order] });
+  const feedback = { textContent: '' };
+  h.context.printButton = { dataset: { printOrder: order.id }, disabled: false, textContent: 'Imprimer', closest: () => ({ querySelector: () => feedback }) };
+  await h.run('printOrder(printButton)');
+  assert.equal(sent, 1);
+  assert.match(feedback.textContent, /Ticket envoyé/);
+  assert.equal(h.context.printButton.disabled, false);
+});
+
 test("commandes : les commandes terminées ont un onglet et un détail ouvrable", async () => {
   const h = await harness();
   h.context.completedOrder = { id: "order-249", number: 249, customerName: "Alexandre", customerPhone: "+33600000000", method: "delivery", serviceDate: "2026-09-22", slot: "20:00", createdAt: "2026-09-22T18:00:00Z", status: "delivered", subtotal: 20.8, discount: 2.08, discountLabel: "Cadeau de bienvenue", discountRate: 0.1, standardDeliveryFee: 4.99, deliveryFee: 4.99, total: 23.71, items: [{ productId: "gros-lard-menu", name: "Le gros lard", quantity: 1, price: 20.8, options: [{ groupId: "drink", label: "Coca 33 cl", price: 0 }] }] };

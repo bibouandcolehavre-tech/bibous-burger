@@ -22,6 +22,9 @@ let filter = "all";
 let archiveSearch = "";
 let selectedOrderId = null;
 const pendingOrderChanges = new Set();
+const pendingPrints = new Set();
+const uncertainPrints = new Set();
+const printFeedback = new Map();
 let reservationFilter = "upcoming";
 let rewardFilter = "active";
 const arrivalTracker = BibouAlerts.createArrivalTracker();
@@ -163,6 +166,42 @@ function customerOrderHistoryMarkup(order, historyStatuses) {
   return `<details class="customer-history-order"><summary><span><strong>#${Number(order.number)} · ${customerDate(order.paidAt)}</strong><small>${escapeHtml(status)} · ${type}</small></span><span><strong>${euro(order.total)}</strong><small>Voir le détail</small></span></summary><div class="customer-history-order-body">${service ? `<p class="customer-order-service">🕒 ${escapeHtml(service)}</p>` : ""}${order.comment ? `<div class="order-comment"><strong>Commentaire client</strong><p>${escapeHtml(order.comment)}</p></div>` : ""}<div class="order-items">${(order.items || []).map(orderItemMarkup).join("") || '<p class="menu-note">Le détail des articles n’a pas été enregistré pour cette ancienne commande.</p>'}</div>${orderPricingMarkup(order)}${points}</div></details>`;
 }
 
+async function printOrder(button) {
+  const orderId = button.dataset.printOrder;
+  const feedback = button.closest('.order-card')?.querySelector('[data-print-feedback]');
+  const report = message => { printFeedback.set(orderId, message); if (feedback) feedback.textContent = message; };
+  if (pendingPrints.has(orderId) || uncertainPrints.has(orderId)) return;
+  const token = dashboardToken;
+  if (!token) return report('Reconnectez-vous à l’espace restaurant pour imprimer.');
+  if (!window.BibouEpsonPrint) return report('Le module d’impression n’est pas chargé. Actualisez la page.');
+  pendingPrints.add(orderId);
+  button.disabled = true;
+  button.textContent = 'Impression…';
+  report('Vérification de la commande puis envoi à l’Epson…');
+  let sending = false;
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/orders`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    if (token !== dashboardToken) throw new Error('La connexion a changé. Aucun ticket envoyé.');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Reconnectez-vous à l’espace restaurant. Aucun ticket envoyé.' : 'La commande ne peut pas être vérifiée. Aucun ticket envoyé.');
+    const payload = await response.json();
+    const order = payload.orders?.find(item => item.id === orderId);
+    if (!order) throw new Error('Cette commande payée est introuvable. Aucun ticket envoyé.');
+    const documentXml = window.BibouEpsonPrint.orderReceiptEnvelope(order);
+    sending = true;
+    const printed = await window.BibouEpsonPrint.send('192.168.192.50', documentXml);
+    sending = false;
+    if (!printed.success) throw new Error(`L’Epson a refusé le ticket (${printed.code || 'code inconnu'}). Vérifiez le papier.`);
+    report('Ticket envoyé à l’Epson. Vérifiez qu’un papier est bien sorti.');
+  } catch (error) {
+    if (sending) uncertainPrints.add(orderId);
+    report(`${error.message || 'Impression non confirmée.'}${sending ? ' Vérifiez le papier avant de réessayer ou de recharger la page.' : ''}`);
+  } finally {
+    pendingPrints.delete(orderId);
+    button.disabled = uncertainPrints.has(orderId);
+    button.textContent = '🖨 Imprimer';
+  }
+}
+
 function renderOrders() {
   const completedView = filter === "Terminée";
   const historyView = filter === "Historique";
@@ -191,7 +230,8 @@ function renderOrders() {
     const stages = ['Nouvelle', 'Acceptée', 'Prête', ...(order.type === 'Livraison' ? ['En livraison'] : []), 'Terminée'];
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
-    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>`;
+    const printControls = `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
     if (completedView || historyView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
@@ -214,6 +254,7 @@ function renderOrders() {
       await loadOrders(); showToast('Remboursement déclaré effectué.');
     } catch (e) { showToast(e.message || 'Enregistrement impossible.'); button.disabled=false; }
   });
+  document.querySelectorAll('#orders-list [data-print-order]').forEach(button => button.onclick = () => printOrder(button));
   document.querySelectorAll("#orders-list [data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
   document.querySelectorAll('#orders-list [data-action], #orders-list [data-edit-order], #orders-list [data-refund-order], #orders-list [data-uber-order]').forEach(button => { button.disabled = pendingOrderChanges.has(Number(button.dataset.id || button.dataset.editOrder || button.dataset.refundOrder || button.dataset.uberOrder)); });
 }

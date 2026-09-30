@@ -63,6 +63,51 @@
     return wrap(parts.join(''));
   }
 
+  function orderReceiptEnvelope(order) {
+    if (!order || order.payment?.status !== 'PAID' || order.reviewMode || !order.id || !Array.isArray(order.items) || !order.items.length) {
+      throw new Error('Seule une vraie commande payée peut être imprimée.');
+    }
+    const amount = value => {
+      if (value === null || value === undefined || value === '') throw new Error('Montant de commande manquant.');
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0) throw new Error('Montant de commande invalide.');
+      return `${number.toFixed(2).replace('.', ',')} EUR`;
+    };
+    const paid = order.paidTotal ?? order.total;
+    const number = Number.isSafeInteger(Number(order.number)) ? `#${Number(order.number)}` : clean(order.id);
+    const dateValue = order.payment.paidAt || order.createdAt;
+    const date = Number.isFinite(Date.parse(dateValue)) ? new Date(dateValue).toLocaleString('fr-FR', {
+      timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short'
+    }) : 'Date non disponible';
+    const parts = [
+      '<text align="center" dw="true" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
+      '<text align="left" dw="false" dh="false" em="false"/>',
+      line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),
+      line(`COMMANDE ${number} - ${date}`),
+      line('RECAPITULATIF - NON FACTURE TVA'),
+      line(order.method === 'delivery' ? 'Livraison' : order.method === 'pickup' ? 'Retrait' : 'Mode non renseigne'),
+      line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
+      line('--------------------------------'),
+    ];
+    for (const item of order.items) {
+      const quantity = Number(item.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error('Quantité de produit invalide.');
+      if (item.price === null || item.price === undefined) throw new Error('Prix de produit manquant.');
+      parts.push(line(`${quantity} x ${item.name || item.productId || 'Produit'}`));
+      parts.push(line(`  ${amount(Number(item.price) * quantity)}`));
+      for (const option of item.options || []) if (option?.label) parts.push(line(`  - ${option.label}`));
+    }
+    parts.push(line('--------------------------------'));
+    if (Number(order.discount) > 0) parts.push(line(`Remise : -${amount(order.discount)}`));
+    if (order.method === 'delivery') parts.push(line(`Livraison : ${amount(order.deliveryFee ?? 0)}`));
+    parts.push('<text em="true"/>', line(`PAIEMENT INITIAL : ${amount(paid)}`), '<text em="false"/>');
+    if (order.refund?.status === 'recorded') parts.push(line(`Remboursement declare : ${amount(order.refund.amount)}`));
+    if (order.refund?.status === 'due') parts.push(line(`Remboursement a effectuer : ${amount(order.refund.amount)}`));
+    if (order.status === 'cancelled') parts.push(line('COMMANDE ANNULEE'));
+    parts.push(line('Document de commande - TVA non detaillee'), line('Demandez une facture au restaurant si besoin.'), '<cut type="feed"/>');
+    return wrap(parts.join(''));
+  }
+
   function endpoint(host, { secure = true, deviceId = 'local_printer' } = {}) {
     if (!/^([a-z0-9.-]+|\[[0-9a-f:]+\])$/i.test(String(host || ''))) throw new Error('Adresse imprimante invalide.');
     if (!/^[a-z0-9_-]{1,32}$/i.test(deviceId)) throw new Error('Identifiant imprimante invalide.');
@@ -99,5 +144,5 @@
 
   const probe = (host, options) => send(host, statusEnvelope(), options);
 
-  return { statusEnvelope, testEnvelope, completedOrderForTest, preparationEnvelope, endpoint, responseResult, probe, send };
+  return { statusEnvelope, testEnvelope, completedOrderForTest, preparationEnvelope, orderReceiptEnvelope, endpoint, responseResult, probe, send };
 });
