@@ -21,6 +21,7 @@ import { readSession, saveSession, clearSession, readAttempt, saveAttempt, clear
 const { createAttempt, parseAttempt, paymentState, openCheckoutUrl } = require("./payment-recovery");
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
+const { slotAlreadyStarted } = require('./client-slots');
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
@@ -546,7 +547,16 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
   const [slotRetry, setSlotRetry] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
+  const [clockNow, setClockNow] = useState(() => new Date());
   const autoAdvance = useRef(true);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (slot && slotAlreadyStarted(day.date, slot, clockNow)) setSlot(null);
+  }, [slot, day.date, clockNow]);
 
   useEffect(() => {
     let active = true;
@@ -590,15 +600,16 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
   if (confirmed) return <SafeAreaView style={styles.safeArea}><View style={styles.reservationSuccess}><Header onBack={onBack} /><View style={styles.reservationSuccessBody}><Text style={styles.successEmoji}>🍽</Text><Text style={styles.successTitle}>Demande envoyée !</Text><Text style={styles.successText}>Le restaurant a bien reçu ta demande de réservation n°{confirmed.number}.</Text><View style={styles.reservationRecapCard}><View style={styles.reservationRecapRow}><Text style={styles.reservationRecapLabel}>Date</Text><Text style={styles.reservationRecapValue}>{day.dayLabel}</Text></View><View style={styles.reservationRecapRow}><Text style={styles.reservationRecapLabel}>Heure d’arrivée</Text><Text style={styles.reservationRecapValue}>{confirmed.slot}</Text></View><View style={styles.reservationRecapRow}><Text style={styles.reservationRecapLabel}>Table</Text><Text style={styles.reservationRecapValue}>{confirmed.guests} personne{confirmed.guests > 1 ? "s" : ""}</Text></View><View style={[styles.reservationRecapRow, styles.reservationRecapRowLast]}><Text style={styles.reservationRecapLabel}>Nom</Text><Text style={styles.reservationRecapValue}>{name.trim()}</Text></View></View><View style={styles.reservationPendingCard}><Text style={styles.reservationPendingTitle}>◷ En attente de confirmation</Text><Text style={styles.reservationPendingText}>{authToken ? "Le statut se mettra à jour automatiquement dans « Mes réservations »." : "Après l’activation de la connexion SMS, tu pourras suivre la réponse du restaurant depuis ton compte."}</Text></View>{authToken && <Pressable onPress={onOpenReservations} style={[styles.trackOrderButton, styles.reservationHomeButton]}><Text style={styles.trackOrderButtonText}>Suivre ma réservation</Text></Pressable>}<Pressable onPress={onBack} style={[styles.primaryButton, styles.reservationHomeButton]}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></View></SafeAreaView>;
 
   const slotsReady = !loadingSlots && !slotError && slotsDate === day.date;
-  const complete = name.trim().length > 1 && phone.trim().length >= 10 && Boolean(slot) && slotsReady && Boolean(availability[slot]) && !availability[slot].unavailable && !availability[slot].full;
+  const complete = name.trim().length > 1 && phone.trim().length >= 10 && Boolean(slot) && slotsReady && Boolean(availability[slot]) && !availability[slot].unavailable && !availability[slot].full && !slotAlreadyStarted(day.date, slot, clockNow);
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 15 minutes. Merci d’arriver à l’heure réservée. Aucun paiement n’est demandé.</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par demi-heure, partagées entre les deux heures d’arrivée proposées. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : quarterHourSlots(day.slots)).map((item) => {
     const slotInfo = availability[item];
     const unavailable = Boolean(slotInfo?.unavailable);
     const full = Boolean(slotInfo?.full);
-    const disabled = !slotsReady || !slotInfo || unavailable || full;
-    const status = !slotsReady ? "À vérifier" : slotInfo?.closed ? "Fermé" : unavailable ? "Passé" : full ? "Complet" : slotInfo ? `${slotInfo.remaining} réservation${slotInfo.remaining > 1 ? "s" : ""} possible${slotInfo.remaining > 1 ? "s" : ""}` : "Indisponible";
-    const selected = slot === item;
-    return <Pressable key={item} disabled={disabled} onPress={() => setSlot(item)} style={[styles.slot, selected && styles.slotSelected, disabled && styles.slotDisabled]}><View style={styles.slotRow}><Text style={[styles.slotText, selected && styles.slotTextSelected, (unavailable || full) && styles.slotTextFull]}>{item}</Text><View style={styles.slotStatus}><Text style={[styles.slotAvailability, selected && styles.slotAvailabilitySelected, (unavailable || full) && styles.slotAvailabilityFull]}>{selected ? "Sélectionné" : status}</Text><View style={[styles.slotCheck, selected && styles.slotCheckSelected]}>{selected && <Text style={styles.slotCheckmark}>✓</Text>}</View></View></View></Pressable>;
+    const started = slotAlreadyStarted(day.date, item, clockNow);
+    const disabled = !slotsReady || !slotInfo || unavailable || full || started;
+    const status = !slotsReady ? "À vérifier" : slotInfo?.closed ? "Fermé" : unavailable || started ? "Passé" : full ? "Complet" : slotInfo ? `${slotInfo.remaining} réservation${slotInfo.remaining > 1 ? "s" : ""} possible${slotInfo.remaining > 1 ? "s" : ""}` : "Indisponible";
+    const selected = slot === item && !disabled;
+    return <Pressable key={item} disabled={disabled} onPress={() => setSlot(item)} style={[styles.slot, selected && styles.slotSelected, disabled && styles.slotDisabled]}><View style={styles.slotRow}><Text style={[styles.slotText, selected && styles.slotTextSelected, (unavailable || full || started) && styles.slotTextFull]}>{item}</Text><View style={styles.slotStatus}><Text style={[styles.slotAvailability, selected && styles.slotAvailabilitySelected, (unavailable || full || started) && styles.slotAvailabilityFull]}>{selected ? "Sélectionné" : status}</Text><View style={[styles.slotCheck, selected && styles.slotCheckSelected]}>{selected && <Text style={styles.slotCheckmark}>✓</Text>}</View></View></View></Pressable>;
   })}</View><Text style={styles.deliveryLabel}>TES COORDONNÉES</Text><TextInput value={name} onChangeText={setName} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoComplete="name" /><TextInput value={phone} onChangeText={setPhone} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" /><Text style={styles.deliveryLabel}>UNE PRÉCISION ? (FACULTATIF)</Text><TextInput value={note} onChangeText={setNote} placeholder="Chaise bébé, accessibilité, anniversaire…" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} /><View style={styles.reservationInfo}><Text style={styles.reservationInfoTitle}>Demande sans paiement</Text><Text style={styles.reservationInfoText}>La table est bloquée uniquement lorsque le restaurant accepte la demande.</Text></View><Pressable disabled={!complete || submitting} onPress={submit} style={[styles.primaryButton, styles.reservationSubmit, (!complete || submitting) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{submitting ? "Envoi en cours…" : "Envoyer ma demande"}</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
@@ -608,28 +619,53 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   const [availabilityStatus, setAvailabilityStatus] = useState("loading");
   const [availabilityKey, setAvailabilityKey] = useState(null);
   const [slotRetry, setSlotRetry] = useState(0);
+  const [clockNow, setClockNow] = useState(() => new Date());
   const pricing = customerOrderPricing(cart.total, deliveryCost(delivery.method), customer, delivery.method === "delivery");
   const selectedDay = UPCOMING_DELIVERY_DAYS.find((day) => day.date === delivery.date) || DEFAULT_DELIVERY_DAY;
   useEffect(() => {
     let active = true;
+    let latestRequest = 0;
+    let controller = null;
     setAvailabilityStatus("loading");
-    fetch(`${API_BASE_URL}/availability?date=${encodeURIComponent(selectedDay.date)}&method=${delivery.method}`)
-      .then(async (response) => {
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || "Disponibilités indisponibles");
-        if (!active) return;
-        setAvailability(payload.slots || {});
-        setAvailabilityKey(delivery.method + selectedDay.date);
-        setAvailabilityStatus("ready");
-        if (delivery.slot && (payload.slots?.[delivery.slot]?.full || payload.slots?.[delivery.slot]?.unavailable)) onChange({ ...delivery, slot: null });
-      })
-      .catch(() => { if (active) setAvailabilityStatus("error"); });
-    return () => { active = false; };
+    const refresh = () => {
+      const request = ++latestRequest;
+      controller?.abort();
+      controller = new AbortController();
+      const requestController = controller;
+      const timeout = setTimeout(() => requestController.abort(), 12000);
+      setClockNow(new Date());
+      fetch(`${API_BASE_URL}/availability?date=${encodeURIComponent(selectedDay.date)}&method=${delivery.method}`, { signal: requestController.signal })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || "Disponibilités indisponibles");
+          if (!active || request !== latestRequest) return;
+          setAvailability(payload.slots || {});
+          setAvailabilityKey(delivery.method + selectedDay.date);
+          setAvailabilityStatus("ready");
+          setClockNow(new Date());
+        })
+        .catch(() => { if (active && request === latestRequest) setAvailabilityStatus("error"); })
+        .finally(() => clearTimeout(timeout));
+    };
+    refresh();
+    const timer = setInterval(refresh, 15000);
+    const stopFocus = observeBrowserFocus(Platform.OS, refresh);
+    const appState = Platform.OS === 'web' ? null : AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    return () => { active = false; controller?.abort(); clearInterval(timer); stopFocus(); appState?.remove(); };
   }, [delivery.method, selectedDay.date, slotRetry]);
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 5000);
+    return () => clearInterval(timer);
+  }, []);
   const slotsReady = availabilityStatus === "ready" && availabilityKey === delivery.method + selectedDay.date;
   const offeredSlots = slotsReady ? Object.keys(availability).sort() : delivery.method === "pickup" ? quarterHourSlots(selectedDay.slots) : selectedDay.slots;
   const selectedSlot = slotsReady && availability[delivery.slot];
-  const canContinue = Boolean(selectedSlot && !selectedSlot.full && !selectedSlot.unavailable);
+  const selectedSlotStarted = delivery.slot && slotAlreadyStarted(selectedDay.date, delivery.slot, clockNow);
+  const canContinue = Boolean(selectedSlot && !selectedSlot.full && !selectedSlot.unavailable && !selectedSlotStarted);
+
+  useEffect(() => {
+    if (slotsReady && delivery.slot && (!selectedSlot || selectedSlot.full || selectedSlot.unavailable || selectedSlotStarted)) onChange({ ...delivery, slot: null });
+  }, [availability, availabilityStatus, availabilityKey, delivery.slot, selectedDay.date, clockNow]);
 
 
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
@@ -649,11 +685,12 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
       const slotInfo = availability[slot];
       const full = Boolean(slotInfo?.full);
       const unavailable = Boolean(slotInfo?.unavailable);
+      const started = slotAlreadyStarted(selectedDay.date, slot, clockNow);
       const checking = !slotsReady;
-      const disabled = full || unavailable || checking || !slotInfo;
-      const blocked = full || unavailable;
-      const status = checking ? "Vérification…" : slotInfo?.closed ? "Fermé" : unavailable ? "Passé" : full ? "Complet" : !slotInfo ? "Indisponible" : delivery.method === "pickup" ? "Retrait disponible" : `${slotInfo.remaining} place${slotInfo.remaining > 1 ? "s" : ""}`;
-      const selected = delivery.slot === slot;
+      const disabled = full || unavailable || started || checking || !slotInfo;
+      const blocked = full || unavailable || started;
+      const status = checking ? "Vérification…" : slotInfo?.closed ? "Fermé" : unavailable || started ? "Passé" : full ? "Complet" : !slotInfo ? "Indisponible" : delivery.method === "pickup" ? "Retrait disponible" : `${slotInfo.remaining} place${slotInfo.remaining > 1 ? "s" : ""}`;
+      const selected = delivery.slot === slot && !disabled;
       return <Pressable key={slot} disabled={disabled} onPress={() => onChange({ ...delivery, slot })} style={[styles.slot, selected && styles.slotSelected, disabled && styles.slotDisabled]}><View style={styles.slotRow}><Text style={[styles.slotText, selected && styles.slotTextSelected, blocked && styles.slotTextFull]}>{slot}</Text><View style={styles.slotStatus}><Text style={[styles.slotAvailability, selected && styles.slotAvailabilitySelected, blocked && styles.slotAvailabilityFull]}>{selected ? "Sélectionné" : status}</Text><View style={[styles.slotCheck, selected && styles.slotCheckSelected]}>{selected && <Text style={styles.slotCheckmark}>✓</Text>}</View></View></View></Pressable>;
     })}</View>
   </ScrollView><View style={styles.stickyAction}>{!canContinue && <Text style={styles.requiredHint}>Choisis un horaire disponible pour continuer.</Text>}<Pressable disabled={!canContinue} style={[styles.primaryButton, !canContinue && styles.primaryButtonDisabled]} onPress={onContinue}><Text style={styles.primaryButtonText}>Mes coordonnées · {money(pricing.total)}</Text></Pressable></View></SafeAreaView>;
