@@ -32,7 +32,8 @@ test("records the imposed sauce and rejects a replacement sauce", () => {
   };
   for (const [burgerId, [sauceId, label]] of Object.entries(recipes)) {
     for (const productId of [burgerId, `${burgerId}-menu`]) {
-      const fixedSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: sauceId }];
+      const saladId = ['duck', 'hambagu', 'pork'].includes(burgerId) ? 'concombre' : 'roquette';
+      const fixedSelections = [requiredSelections[0], { groupId: 'salad', id: saladId }, { groupId: "sauces", id: sauceId }];
       const result = validateAndPriceOrderItems([{ productId, quantity: 1, selections: fixedSelections }], { "atlas-menu": true });
       assert.equal(result.items[0].options[2].label, label);
       assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: requiredSelections }], { "atlas-menu": true }), /sauce de ce burger est imposée/);
@@ -70,4 +71,32 @@ test("requires and prices both drinks in the Duo menu", () => {
   ] }]);
   assert.equal(result.subtotal, 19.9);
   assert.equal(result.items[0].options.length, 2);
+});
+
+test('les quatre recettes acceptent plusieurs nouvelles crudités et les anciens choix Android', () => {
+  const recipes = {
+    duck: ['concombre', 'chou-rouge', 'salade-thai', 'tomate'],
+    hambagu: ['concombre', 'chou-rouge', 'salade-thai', 'tomate'],
+    pork: ['concombre', 'chou-rouge', 'salade-thai', 'tomate'],
+    dynamite: ['cornichons', 'roquette', 'chou-rouge', 'tomate', 'oignon']
+  };
+  const sauces = { duck: 'fixed-duck', hambagu: 'fixed-hambagu', pork: 'fixed-pork', dynamite: 'fixed-dynamite' };
+  for (const [burger, ids] of Object.entries(recipes)) for (const productId of [burger, `${burger}-menu`]) {
+    const selections = [{ groupId: 'protein', id: 'viande' }, ...ids.slice(0, 2).map(id => ({ groupId: 'salad', id })), { groupId: 'sauces', id: sauces[burger] }];
+    assert.equal(validateAndPriceOrderItems([{ productId, quantity: 1, selections }]).items[0].options.filter(option => option.groupId === 'salad').length, 2);
+    const legacy = burger === 'dynamite' ? 'oignons' : 'roquette';
+    const oldAndroidSelections = [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: legacy }, { groupId: 'sauces', id: sauces[burger] }];
+    assert.equal(validateAndPriceOrderItems([{ productId, quantity: 1, selections: oldAndroidSelections }]).items[0].options.find(option => option.groupId === 'salad').id, legacy);
+  }
+});
+
+test('dessert à 2 € dans un menu et 3,90 € à la carte, prix imposés par le serveur', () => {
+  const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [
+    ...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }
+  ] }]);
+  assert.equal(menu.subtotal, 16.9);
+  assert.equal(menu.items[0].options.find(option => option.groupId === 'menu-desserts').price, 2);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'dessert-oreo', quantity: 1, selections: [] }]).subtotal, 3.9);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }] }]), /option/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }, { groupId: 'menu-desserts', id: 'cookie' }] }]), /maximum 1 choix/);
 });

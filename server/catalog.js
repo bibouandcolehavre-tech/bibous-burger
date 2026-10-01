@@ -31,7 +31,10 @@ const PRODUCT_CATALOG = {
   "drink-oasis-pomme": { name: "Oasis pomme cassis framboise", price: 1.8, kind: "simple" },
   "drink-oasis-tropical": { name: "Oasis tropical", price: 1.8, kind: "simple" },
   "drink-perrier": { name: "Perrier", price: 1.8, kind: "simple" },
-  "drink-tropico": { name: "Tropico", price: 1.8, kind: "simple" }
+  "drink-tropico": { name: "Tropico", price: 1.8, kind: "simple" },
+  "dessert-oreo": { name: "Tiramisu Oreo", price: 3.9, kind: "simple", category: "desserts" },
+  "dessert-cookie": { name: "Tiramisu cookie", price: 3.9, kind: "simple", category: "desserts" },
+  "dessert-framboise": { name: "Tiramisu framboise pistache", price: 3.9, kind: "simple", category: "desserts" }
 };
 
 const STOCK_ONLY_CATALOG = {
@@ -42,10 +45,7 @@ const STOCK_ONLY_CATALOG = {
   "ingredient-mozzarella": { name: "Supplément · Mozzarella", price: 1, category: "supplements" },
   "ingredient-fourme": { name: "Supplément · Fourme d'Ambert", price: 1, category: "supplements" },
   "ingredient-lard": { name: "Supplément · Lard fumé", price: 1.5, category: "supplements" },
-  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" },
-  "dessert-oreo": { name: "Tiramisu Oreo", price: 3.9, category: "desserts" },
-  "dessert-cookie": { name: "Tiramisu cookie", price: 3.9, category: "desserts" },
-  "dessert-framboise": { name: "Tiramisu framboise pistache", price: 3.9, category: "desserts" }
+  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" }
 };
 const STOCK_CATALOG = { ...PRODUCT_CATALOG, ...STOCK_ONLY_CATALOG };
 
@@ -59,6 +59,10 @@ const OPTIONS = [
   option("salad", "tomate", "Tomate"),
   option("salad", "oignons", "Oignons caramélisés"),
   option("salad", "cornichons", "Cornichons"),
+  option("salad", "concombre", "Concombre"),
+  option("salad", "chou-rouge", "Chou rouge"),
+  option("salad", "salade-thai", "Salade thaï"),
+  option("salad", "oignon", "Oignon"),
   option("salad", "sans-crudites", "Pas de crudités", 0, { exclusive: true }),
   option("sauces", "ketchup", "Ketchup"),
   option("sauces", "mayo", "Mayonnaise"),
@@ -88,6 +92,9 @@ const OPTIONS = [
   option("desserts", "oreo", "Tiramisu Oreo", 3.9),
   option("desserts", "cookie", "Tiramisu cookie", 3.9),
   option("desserts", "framboise", "Tiramisu framboise pistache", 3.9),
+  option("menu-desserts", "oreo", "Tiramisu Oreo", 2),
+  option("menu-desserts", "cookie", "Tiramisu cookie", 2),
+  option("menu-desserts", "framboise", "Tiramisu framboise pistache", 2),
   option("drink", "coca", "Coca 33 cl"),
   option("drink", "coca-zero", "Coca Zero"),
   option("drink", "coca-cherry", "Coca Cherry"),
@@ -120,23 +127,23 @@ const OPTION_CATALOG = new Map(OPTIONS.map((entry) => [`${entry.groupId}:${entry
 const GROUP_RULES = {
   protein: { min: 1, max: 1 },
   'meat-type': { max: 1 },
-  salad: { min: 1, max: 4 },
+  salad: { min: 1, max: 5 },
   sauces: { min: 1, max: 1 },
   drink: { max: 1 },
   "duo-drink-one": { min: 1, max: 1 },
   "duo-drink-two": { min: 1, max: 1 },
   extras: {},
   sides: {},
-  desserts: {}
+  desserts: { max: 1 },
+  'menu-desserts': { max: 1 }
 };
-const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides"]);
+const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides", "menu-desserts"]);
 const BURGER_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "extras", "sides", "desserts"]);
 const DUO_GROUPS = new Set(["duo-drink-one", "duo-drink-two"]);
 const SIMPLE_GROUPS = new Set();
 
 const cents = (value) => Math.round(Number(value) * 100);
 const orderInputError = (message) => Object.assign(new Error(message), { statusCode: 400 });
-
 // Stock is shared by a standalone product and the same product selected in a menu.
 const optionProductId = ({ groupId, id }) => {
   if (groupId === "protein" && id === "galette") return "ingredient-potato-patty";
@@ -144,7 +151,7 @@ const optionProductId = ({ groupId, id }) => {
     "second-steak": "ingredient-second-steak", "galette-plus": "ingredient-potato-patty", cheddar: "ingredient-cheddar",
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
-  if (groupId === "desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
+  if (groupId === "desserts" || groupId === "menu-desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;
@@ -210,6 +217,9 @@ const validatedSelections = (product, selections, productId) => {
     if (count > 1 && byGroup[groupId].some((entry) => entry.exclusive)) throw orderInputError("Deux choix incompatibles ont été sélectionnés.");
   }
   if (product.fixedSauce && (byGroup.sauces.length !== 1 || byGroup.sauces[0].id !== product.fixedSauce)) throw orderInputError("La sauce de ce burger est imposée. Actualise l’application avant de commander.");
+  // Android v4 still offers the former crudités. Keep accepting those choices
+  // until that installed version has been replaced; the web UI shows the new
+  // recipe-specific lists without making existing carts fail at checkout.
   if (allowedGroups.has('meat-type')) {
     const vegetarian = byGroup.protein[0]?.id === 'galette';
     const meatType = byGroup['meat-type'][0]?.id;
