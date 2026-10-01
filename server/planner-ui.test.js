@@ -33,34 +33,45 @@ function harness() {
   const panel=window.BibouSchedule({root,api:'/api',token:()=>token,onUnauthorized:()=>{token='';panel.clear();}});
   return {panel,el,handlers,requests,context,root,setToken:value=>{token=value;},response:(payload,status=200)=>{result=payload;responseStatus=status;}};
 }
-test('planning UI: selecting does not save, review plus explicit acknowledgement required',async()=>{
+test('planning UI: one tap toggles a slot, existing bookings still require acknowledgement',async()=>{
   const h=harness();await h.panel.load();
   h.el('slot:12:00').onclick();assert.equal(h.requests.length,1);
-  h.el('#schedule-toggle').onclick();assert.match(h.el('#schedule-summary').textContent,/1 horaire/);
-  await h.el('#schedule-save').onclick();assert.equal(h.requests.length,1,'No save before review');
-  h.el('#schedule-review').onclick();assert.equal(h.el('#schedule-ack-label').hidden,false);assert.equal(h.el('#schedule-save').disabled,true);
-  await h.el('#schedule-save').onclick();assert.equal(h.requests.length,1,'No save without acknowledgement');
+  assert.match(h.el('#schedule-summary').textContent,/1 créneau/);
+  await h.el('#schedule-save').onclick();assert.equal(h.requests.length,1,'No save before acknowledgement');
+  assert.equal(h.el('#schedule-review-panel').hidden,false);
+  await h.el('#schedule-confirm').onclick();assert.equal(h.requests.length,1,'No save without acknowledgement');
   h.el('#schedule-ack').checked=true;h.el('#schedule-ack').onchange();assert.equal(h.el('#schedule-save').disabled,false);
-  await h.el('#schedule-save').onclick();
+  await h.el('#schedule-confirm').onclick();
   const saved=JSON.parse(h.requests.at(-1).body);
   assert.equal(saved.services.pickup['12:00'],false);assert.equal(saved.services.reservation['12:00'],true);assert.equal(saved.acknowledgeExisting,true);assert.equal(saved.revision,0);
   assert.equal(h.el('#schedule-review-panel').hidden,true);
 });
 test('planning UI: draft survives tab/date/reload, undo clears all changes',async()=>{
-  const h=harness();await h.panel.load();h.el('slot:12:00').onclick();h.el('#schedule-toggle').onclick();
-  h.el('method:delivery').onclick();assert.match(h.el('#schedule-summary').textContent,/1 horaire/);
+  const h=harness();await h.panel.load();h.el('slot:12:00').onclick();
+  h.el('method:delivery').onclick();assert.match(h.el('#schedule-summary').textContent,/1 créneau/);
   const before=h.el('#schedule-date').value;h.el('#schedule-date').value='2026-10-01';h.el('#schedule-date').onchange();assert.equal(h.el('#schedule-date').value,before);
   await h.panel.load();assert.equal(h.requests.length,1);
   let prevented=false;h.handlers.beforeunload({preventDefault(){prevented=true;}});assert.equal(prevented,true);
   h.el('#schedule-discard').onclick();await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.requests.length,2);assert.equal(h.el('#schedule-review').disabled,true);
+  assert.equal(h.requests.length,1);assert.equal(h.el('#schedule-save').disabled,true);
 });
 test('planning UI: bulk change affects selected service only, conflict retains draft',async()=>{
-  const h=harness();await h.panel.load();h.el('#schedule-close-period').onclick();h.el('#schedule-review').onclick();
-  h.el('#schedule-ack').checked=true;h.el('#schedule-ack').onchange();h.response({error:'Les créneaux ont changé dans un autre onglet.'},409);await h.el('#schedule-save').onclick();
+  const h=harness();await h.panel.load();h.el('#schedule-close-period').onclick();await h.el('#schedule-save').onclick();
+  h.el('#schedule-ack').checked=true;h.el('#schedule-ack').onchange();h.response({error:'Les créneaux ont changé dans un autre onglet.'},409);await h.el('#schedule-confirm').onclick();
   const saved=JSON.parse(h.requests.at(-1).body);
   assert.equal(saved.services.delivery['12:00 – 12:30'],true);assert.equal(saved.services.pickup['19:00'],true);assert.equal(saved.services.pickup['12:00'],false);
   assert.match(h.el('#schedule-message').textContent,/autre onglet/);assert.equal(h.el('#schedule-review-panel').hidden,false);
+});
+test('planning UI: closing an unbooked slot saves directly, and tomorrow is one tap',async()=>{
+  const h=harness();await h.panel.load();
+  h.el('slot:12:15').onclick();
+  await h.el('#schedule-save').onclick();
+  assert.equal(h.requests.length,2);
+  assert.equal(JSON.parse(h.requests[1].body).services.pickup['12:15'],false);
+  h.el('#schedule-tomorrow').onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.requests.length,3);
+  assert.match(h.requests[2].url,/service-schedule\?date=/);
 });
 test('planning UI: expired and late sessions never restore private data or send changes',async()=>{
   const h=harness();await h.panel.load();let respond;

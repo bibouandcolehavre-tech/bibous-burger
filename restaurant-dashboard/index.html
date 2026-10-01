@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="./styles.css?v=amendments-1" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
     <link rel="stylesheet" href="./service-schedule.css?v=workspace-1" />
-    <link rel="stylesheet" href="./workspace.css?v=order-print-20260930" />
+    <link rel="stylesheet" href="./workspace.css?v=simple-slots-audio-20261001" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -64,11 +64,7 @@
         <section class="service-alerts" aria-label="Alertes du restaurant">
           <div id="audio-warning" class="audio-warning"><div><strong>Attention : aucune sonnerie active</strong><p id="audio-warning-text">Autorisez le son avant le service.</p></div><button type="button" id="enable-alerts-button">Activer les alertes sonores</button></div>
           <p id="connection-status" class="connection-status" role="status">Connexion au restaurant…</p>
-          <details class="sound-settings"><summary>Sonnerie du restaurant · tester et régler le volume</summary>
-          <div class="alert-controls"><div><strong>Une sonnerie, jusqu’à votre réponse</strong><p id="sound-status">Activez le son pour entendre les nouvelles demandes.</p></div><div class="alert-buttons"><button type="button" class="secondary-button" id="test-sound-button" disabled>Tester le son</button></div></div>
-          <label class="sound-volume" for="sound-volume">Volume de la sonnerie <input id="sound-volume" type="range" min="10" max="100" step="5" value="85" /><output id="sound-volume-value" for="sound-volume">85 %</output></label>
-          <small>Les alertes restent actives sans bouton de coupure ni de pause. Faites un test avant le service. Le volume du Mac, la sortie audio et le son de cet onglet doivent être activés. Gardez ce tableau ouvert et le Mac éveillé : une page fermée ou un ordinateur en veille ne peut pas sonner. Utilisez un seul onglet.</small>
-          </details>
+          <p id="sound-status" class="sound-status" role="status">La sonnerie des commandes s'active avec le tableau.</p>
           <div class="attention-links"><button type="button" id="attention-orders">0 commande à accepter</button><button type="button" id="attention-reservations">0 réservation à confirmer</button><button type="button" id="attention-rewards">0 récompense à remettre</button></div>
           <p id="arrival-message" class="arrival-message" role="status" aria-live="polite" aria-atomic="true"></p>
         </section>
@@ -188,14 +184,14 @@
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
-    <script src="./alerts.js?v=workspace-1"></script>
+    <script src="./alerts.js?v=simple-slots-audio-20261001"></script>
     <script src="./marketing.js?v=actualites-1"></script>
     <script src="./notifications.js?v=push-1"></script>
     <script src="./crm.js?v=crm-1"></script>
-    <script src="./planner.js?v=workspace-1"></script>
+    <script src="./planner.js?v=simple-slots-audio-20261001"></script>
     <script src="./order-amendments.js?v=1"></script>
     <script src="./uber-direct.js?v=1"></script>
-    <script src="./epson-print.js?v=larger-ticket-text-20260930"></script>
-    <script src="./app.js?v=order-print-20260930"></script>
+    <script src="./epson-print.js?v=service-time-20261001"></script>
+    <script src="./app.js?v=simple-slots-audio-20261001"></script>
   </body>
 </html>

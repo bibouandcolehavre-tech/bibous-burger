@@ -14,6 +14,19 @@
     ? [value.address, value.postalCode, value.city].map(part => clean(part)).filter(Boolean).join(' ') : '';
   const line = value => `<text>${xml(clean(value))}&#10;</text>`;
   const indentedLine = value => `<text>&#32;&#32;${xml(clean(value))}&#10;</text>`;
+  const serviceDay = value => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : 'DATE A CONFIRMER';
+  };
+  const serviceTime = value => {
+    const slot = clean(value).replace(/\s*[–—-]\s*/g, ' - ');
+    return slot || 'HEURE A CONFIRMER';
+  };
+  const serviceHeading = order => {
+    const method = order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE A CONFIRMER';
+    return [method, `POUR LE ${serviceDay(order.serviceDate)}`,
+      order.method === 'pickup' ? `A ${serviceTime(order.slot)}` : `CRENEAU ${serviceTime(order.slot)}`];
+  };
   const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
 
   const statusEnvelope = () => wrap('');
@@ -42,8 +55,10 @@
       '<text align="left" dw="false" dh="false" em="false"/>',
       ...(duplicateTest ? [line('DUPLICATA TEST - NE PAS PREPARER'), line('COMMANDE DEJA TERMINEE')] : []),
       line('TICKET DE PREPARATION - NON FISCAL'),
-      line(method),
-      line(`${clean(order.serviceDate)} ${clean(order.slot)}`),
+      '<text align="center" dw="false" dh="true" em="true"/>',
+      ...serviceHeading(order).map(line),
+      '<text align="left" dw="false" dh="false" em="false"/>',
+      line(''),
       line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
     ];
     if (order.customerPhone) parts.push(line(`Tel : ${order.customerPhone}`));
@@ -93,11 +108,11 @@
     const parts = [
       '<text align="center" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
       '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),
-      '<text dw="false" dh="true" em="false"/>',
-      line(order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE NON RENSEIGNE'),
+      '<text dw="false" dh="true" em="true"/>',
+      ...serviceHeading(order).map(line),
       line(''),
-      '<text align="left"/>',
-      line(`Date : ${date}`),
+      '<text align="left" dw="false" dh="false" em="false"/>',
+      line(`Paiement : ${date}`),
       line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
       line(''),
       line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),

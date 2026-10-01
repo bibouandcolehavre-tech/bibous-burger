@@ -154,7 +154,7 @@ test('une ancienne connexion dans un onglet est transférée au stockage durable
   assert.equal(h.storage.has('bibous-dashboard-token'), false);
 });
 
-test('dashboard loops for paid orders; testing and repeated activation never mute the alarm', async () => {
+test('dashboard loops for paid orders; repeated activation never mutes the alarm', async () => {
   const h = dashboardHarness();
   await h.run('refreshFeeds()');
   assert.equal(h.element('#arrival-message').textContent, '');
@@ -170,7 +170,6 @@ test('dashboard loops for paid orders; testing and repeated activation never mut
   assert.match(h.element('#arrival-message').textContent, /commande payée/);
   await h.run('loadOrders()'); h.flush();
   assert.equal(h.audio.sources.length, activationNotes + 1);
-  await h.element('#test-sound-button').handlers.click();
   await h.element('#enable-alerts-button').handlers.click();
   assert.equal(h.audio.sources.at(-1).stopped, undefined, 'Neither button stops a pending order');
   assert.equal(h.audio.sources.length, activationNotes + 1, 'Neither button stacks a second alarm');
@@ -251,18 +250,19 @@ test('old mute preference is ignored; suspended browser sound resumes pending al
   h.run('unlockServiceSound({})'); await Promise.resolve();
   assert.equal(h.run('orderAlarm.state().ringing'), true);
   assert.equal(h.element('#audio-warning').hidden, true);
-  await h.element('#test-sound-button').handlers.click();
   assert.equal(h.run('orderAlarm.state().ringing'), true);
 });
 
-test('dashboard exposes only activation, test and nonzero volume, never a mute or pause control', () => {
+test('dashboard exposes no test, mute or pause control and ignores old quiet volume', () => {
   const html = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/index.html'), 'utf8');
   assert.doesNotMatch(html, /id="(?:sound-button|pause-order-alarm)"/);
   assert.match(html, /id="enable-alerts-button"/);
-  assert.match(html, /id="test-sound-button"/);
+  assert.doesNotMatch(html, /id="(?:test-sound-button|sound-volume)"/);
   const h = dashboardHarness();
   assert.equal(h.element('#sound-button').handlers.click, undefined);
   assert.equal(h.element('#pause-order-alarm').handlers.click, undefined);
+  assert.equal(h.element('#test-sound-button').handlers.click, undefined);
+  assert.equal(h.run('soundPlayer.state().volume'), 1);
   const player = alerts.createSoundPlayer({ createContext: null });
   player.setVolume(0); assert.equal(player.state().volume, 0.1);
 });
