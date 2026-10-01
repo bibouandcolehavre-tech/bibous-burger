@@ -37,6 +37,20 @@ const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 let orderAlarm = null;
 const soundPlayer = BibouAlerts.createSoundPlayer({ createContext: AudioContextClass ? () => new AudioContextClass() : null, volume: 1, onChange: () => { updateSoundControls(); orderAlarm?.refresh(); } });
 orderAlarm = BibouAlerts.createOrderAlarm({ player: soundPlayer, onChange: updateOrderAlarm });
+let soundActivationPending = null;
+let lastSoundAttemptAt = 0;
+function ensureServiceSound({ staffGesture = false } = {}) {
+  if (!dashboardToken || soundPlayer.state().ready || !soundPlayer.state().supported) return Promise.resolve(soundPlayer.state().ready);
+  if (soundActivationPending && !staffGesture) return soundActivationPending;
+  if (!staffGesture && Date.now() - lastSoundAttemptAt < 30000) return Promise.resolve(false);
+  lastSoundAttemptAt = Date.now();
+  const attempt = soundPlayer.activate().finally(() => {
+    if (soundActivationPending === attempt) soundActivationPending = null;
+    updateSoundControls();
+  });
+  soundActivationPending = attempt;
+  return soundActivationPending;
+}
 let currentView = "home";
 const dashboardTokenKey = 'bibous-dashboard-token';
 const savedDashboardToken = () => {
@@ -328,7 +342,7 @@ function updateSoundControls() {
   document.querySelector('#audio-warning').hidden = Boolean(state.ready);
   document.querySelector('#enable-alerts-button').disabled = !state.supported;
   updateText('#audio-warning-text', !state.supported ? 'Ce navigateur ne peut pas sonner. Ouvrez le tableau dans Safari ou Chrome.' : 'Le navigateur a suspendu le son. Touchez « Activer les alertes sonores » pour recevoir les commandes.');
-  updateText('#sound-status', !state.supported ? 'Son indisponible sur cet appareil.' : state.ready ? '🔔 Sonnerie des commandes active' : '🔕 Sonnerie bloquée par le navigateur');
+  updateText('#sound-status', !state.supported ? 'Son indisponible sur cet appareil.' : state.ready ? '🔔 Son autorisé par le navigateur · vérifiez le volume de l’appareil' : '🔕 Sonnerie bloquée par le navigateur');
 }
 
 function updateOrderAlarm(state) {
@@ -405,6 +419,7 @@ function loadFeed(kind, { notify = true } = {}) {
       if (kind === "orders") {
         orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi);
         orderAlarm.sync(items);
+        if (orderAlarm.state().count && !soundPlayer.state().ready) void ensureServiceSound();
         revenue = payload.revenue && ["today", "week", "month"].every((key) => Number.isFinite(Number(payload.revenue[key]))) ? payload.revenue : { today: 0, week: 0, month: 0 };
         renderOrders();
       }
@@ -779,7 +794,7 @@ document.querySelectorAll(".reward-filter").forEach((button) => button.addEventL
 }));
 
 async function activateServiceSound() {
-  const ready = await soundPlayer.activate();
+  const ready = await ensureServiceSound({ staffGesture: true });
   updateSoundControls();
   if (!ready) updateText("#sound-status", "🔕 Son bloqué : vérifiez le volume de l'appareil et l'autorisation audio du navigateur.");
 }
@@ -789,7 +804,7 @@ document.querySelector('#view-alarm-orders').addEventListener('click', () => { s
 function unlockServiceSound(event) {
   if (!dashboardToken || soundPlayer.state().ready) return;
   if (event.target?.closest?.('#enable-alerts-button')) return;
-  void soundPlayer.activate();
+  void ensureServiceSound({ staffGesture: true });
 }
 // A normal click unlocks audio after its target has been activated, so hiding
 // the warning cannot move the target before the tap completes on an iPad.
@@ -865,11 +880,12 @@ renderOrders();
 renderReservations();
 renderRewardClaims();
 showView('home');
-if (dashboardToken) { showDashboard(); void refreshFeeds({ notify: false }); } else { showLogin(); }
+if (dashboardToken) { showDashboard(); void ensureServiceSound(); void refreshFeeds({ notify: false }); } else { showLogin(); }
 const resumeUpdates = () => {
   if (!dashboardToken) return;
   updateConnectionStatus();
   updateSoundControls();
+  if (!soundPlayer.state().ready && !document.hidden) void ensureServiceSound();
   orderAlarm.refresh();
   void refreshFeeds();
   if (currentView === "menu") void loadMenu();
@@ -879,5 +895,5 @@ const resumeUpdates = () => {
 window.setInterval(resumeUpdates, 10000);
 window.addEventListener("online", resumeUpdates);
 window.addEventListener("offline", updateConnectionStatus);
-window.addEventListener("focus", () => { if (dashboardToken && !soundPlayer.state().ready) void soundPlayer.activate(); resumeUpdates(); });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { if (dashboardToken && !soundPlayer.state().ready) void soundPlayer.activate(); resumeUpdates(); } });
+window.addEventListener("focus", resumeUpdates);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) resumeUpdates(); });

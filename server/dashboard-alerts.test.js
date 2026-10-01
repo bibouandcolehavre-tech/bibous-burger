@@ -241,7 +241,7 @@ test('dashboard does not silence an order until acceptance is saved; errors and 
 
 test('old mute preference is ignored; suspended browser sound resumes pending alarm on staff gesture', async () => {
   const h = dashboardHarness({ savedSound: 'off' }); await h.run('refreshFeeds()');
-  assert.equal(h.element('#audio-warning').hidden, false);
+  assert.equal(h.element('#audio-warning').hidden, true, 'A restored session attempts to resume sound without a separate button');
   h.run('orderAlarm.sync([{id:"pending",status:"confirmed",payment:{status:"PAID"}}])');
   await h.element('#enable-alerts-button').handlers.click();
   assert.equal(h.element('#audio-warning').hidden, true); assert.equal(h.run('orderAlarm.state().ringing'), true);
@@ -251,6 +251,18 @@ test('old mute preference is ignored; suspended browser sound resumes pending al
   assert.equal(h.run('orderAlarm.state().ringing'), true);
   assert.equal(h.element('#audio-warning').hidden, true);
   assert.equal(h.run('orderAlarm.state().ringing'), true);
+});
+
+test('visible dashboard retries a suspended alarm automatically without stacking sounds', async () => {
+  const h = dashboardHarness(); await h.run('refreshFeeds()');
+  h.run('orderAlarm.sync([{id:"pending",number:42,status:"confirmed",payment:{status:"PAID"}}])');
+  assert.equal(h.run('orderAlarm.state().ringing'), true);
+  h.audio.state = 'suspended'; h.audio.onstatechange();
+  assert.equal(h.run('orderAlarm.state().ringing'), false);
+  h.run('lastSoundAttemptAt = Date.now() - 31000; resumeUpdates()');
+  await Promise.resolve();
+  assert.equal(h.run('orderAlarm.state().ringing'), true);
+  assert.equal(h.audio.sources.length, 2, 'The original alarm is stopped and only one new loop starts');
 });
 
 test('dashboard exposes no test, mute or pause control and ignores old quiet volume', () => {
