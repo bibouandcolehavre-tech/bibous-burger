@@ -1,8 +1,8 @@
 // Only use a promotion returned by the authenticated API. Final pricing and
 // fulfillment authorization remain server-side. No redeemable code is bundled.
-function previewPromotion(base, subtotal, promotion) {
+function previewPromotion(base, subtotal, promotion, method) {
   if (!promotion) return base;
-  if (typeof promotion.code !== 'string' || promotion.discountPercent !== 100 || promotion.freeDelivery !== true) throw new Error('Réponse de code promo invalide.');
+  if (typeof promotion.code !== 'string' || promotion.discountPercent !== 100 || (!promotion.freeDelivery && !promotion.pickupOnly) || (promotion.pickupOnly && method !== 'pickup')) throw new Error('Réponse de code promo invalide.');
   return { ...base, discountRate: 1, discount: subtotal, discountLabel: `Code promo ${promotion.code} · −100 %`, deliveryFee: 0, total: 0 };
 }
 function differentPendingPromo(attempt, kind, input) {

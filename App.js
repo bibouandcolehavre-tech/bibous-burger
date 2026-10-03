@@ -786,7 +786,7 @@ function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
   const standardFee = cart.delivery.fee ?? deliveryCost(cart.delivery.method);
   const [promotion, setPromotion] = useState(null);
   const [promoPending, setPromoPending] = useState(false);
-  const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, customer, isDelivery), cart.total, promotion);
+  const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, customer, isDelivery), cart.total, promotion, cart.delivery.method);
   const [paying, setPaying] = useState(false);
   const paymentInFlight = useRef(false);
   const submitPayment = async () => {
@@ -798,7 +798,7 @@ function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailsContent} keyboardShouldPersistTaps="handled">
       <Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text>
-      <Text style={styles.deliveryIntro}>{promotion ? 'Ta commande est offerte. Vérifie les détails avant de la confirmer.' : 'Tout est prêt pour le paiement sécurisé.'}</Text>
+      <Text style={styles.deliveryIntro}>{promotion?.pickupOnly ? 'Tes deux menus sont offerts en Click & Collect. Tu peux aussi les manger sur place.' : promotion ? 'Ta commande est offerte. Vérifie les détails avant de la confirmer.' : 'Tout est prêt pour le paiement sécurisé.'}</Text>
       <PromoCodeField promotion={promotion} onChange={setPromotion} onPendingChange={setPromoPending} onValidate={onValidatePromo} disabled={paying} />
       <View style={styles.paymentSummary}>
         <Text style={styles.paymentProduct}>{cart.items.map(item => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(' · ')}</Text>
@@ -816,7 +816,7 @@ function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
     <View style={styles.stickyAction}>
       {promoPending && <Text style={styles.requiredHint}>Applique ton code promo ou efface-le pour continuer.</Text>}
       <Pressable accessibilityRole="button" disabled={paying || promoPending} style={[styles.primaryButton, (paying || promoPending) && styles.primaryButtonDisabled]} onPress={submitPayment}>
-        <Text style={styles.primaryButtonText}>{paying ? promotion ? 'Validation de la commande…' : 'Ouverture de SumUp…' : promotion ? 'Confirmer ma commande offerte · 0,00 €' : `Payer avec SumUp · ${money(pricing.total)}`}</Text>
+        <Text style={styles.primaryButtonText}>{paying ? promotion ? 'Validation de la commande…' : 'Ouverture de SumUp…' : promotion?.pickupOnly ? 'Confirmer mes deux menus offerts · 0,00 €' : promotion ? 'Confirmer ma commande offerte · 0,00 €' : `Payer avec SumUp · ${money(pricing.total)}`}</Text>
       </Pressable>
     </View>
   </SafeAreaView>;
@@ -1364,9 +1364,9 @@ function AppContent({ onReviewModeChange }) {
     } finally { paymentStartRef.current = false; }
   };
   const validatePromo = async code => {
-    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code });
+    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code, method: cart.delivery.method, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })) });
     if (!ok) throw new Error(payload.error || 'Impossible de vérifier ce code. Réessaie.');
-    previewPromotion({}, cart.total, payload.promotion);
+    previewPromotion({}, cart.total, payload.promotion, cart.delivery.method);
     if (!payload.promotion) throw new Error('Code promo non confirmé.');
     return payload.promotion;
   };

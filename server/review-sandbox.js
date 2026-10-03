@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { createAuthRateLimiter } = require('./auth-rate-limit');
 const { validateAndPriceOrderItems } = require('./catalog');
 const { validateRequestId, orderFingerprint } = require('./order-attempt');
-const { promotionForCode, applyPromotion } = require('./promo-codes');
+const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion } = require('./promo-codes');
 const { validateServiceSlot, qualifiesForAdvancePickup } = require('./availability');
 const { createReservation } = require('./reservations');
 const { claimReward } = require('./rewards');
@@ -54,8 +54,12 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
       if (route === '/auth/me' && method === 'GET') return { customer: snapshot(customer), reviewMode: true };
       if (route === '/health' && method === 'GET') return { ok: true, reviewMode: true, capabilities: { paymentRecovery: 1, promoCodes: 1 } };
       if (route === '/promotions/validate' && method === 'POST') {
-        const promotion = promotionForCode((await readBody())?.code);
+        const input = await readBody();
+        const promotion = promotionForCode(input?.code);
         if (!promotion) throw fail('Saisis un code promo.');
+        assertPromotionAvailable(db, promotion);
+        assertPromotionMethod(promotion, input.method);
+        if (promotion.requiredMenuCount) assertPromotionCart(promotion, validateAndPriceOrderItems(input.items).items);
         return { promotion };
       }
       if (route === '/customer/account' && method === 'DELETE') { sessions.delete(token); return { deleted: true }; }
@@ -121,8 +125,11 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         if (slotError) throw fail(slotError);
         const active = bibouPlusStatus(customer, date).active;
         const promotion = promotionForCode(input.promoCode);
+        assertPromotionAvailable(db, promotion);
+        assertPromotionMethod(promotion, input.method);
+        assertPromotionCart(promotion, priced.items);
         const welcome = !promotion && customer.welcomeReward?.status === 'available';
-        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: priced.subtotal, deliveryFee: input.method === 'delivery' ? 3.99 : 0, active, discountRate: welcome ? .1 : active ? .05 : 0 }), promotion);
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: priced.subtotal, deliveryFee: input.method === 'delivery' ? 3.99 : 0, active, discountRate: welcome ? .1 : active ? .05 : 0 }), promotion, input.method);
         const number = db.orders.length + 1;
         const order = { ...pricing, id: `review-order-${number}`, number: `TEST-${number}`, customerId: customer.id, customerName: customer.name, items: priced.items, requestId, requestFingerprint: fingerprint, method: input.method, serviceDate: input.serviceDate, slot: input.slot, comment: boundedText(input.comment, 500), createdAt: date.toISOString(), status: 'awaiting_payment', reviewMode: true, bibouPlusApplied: active, welcomeRewardApplied: welcome, loyaltyBasePoints: priced.items.reduce((sum, item) => sum + ((item.productId.endsWith('-menu') || item.productId === 'taurus') ? 15 : ['atlas','classique','duck','dynamite','hambagu','basilic','montagnes','gros-lard','pork'].includes(item.productId) ? 10 : 0) * item.quantity, 0) };
         order.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(order);

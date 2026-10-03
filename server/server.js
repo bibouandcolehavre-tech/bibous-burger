@@ -9,7 +9,7 @@ const { createReviewSandbox } = require('./review-sandbox');
 const { createRegistrationStore } = require('./customer-registration');
 const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../customer-identity');
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
-const { promotionForCode, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
+const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
@@ -1141,6 +1141,12 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const promotion = promotionForCode(input?.code);
       if (!promotion) return send(response, 400, { error: 'Saisis un code promo.' });
+      assertPromotionAvailable(database, promotion);
+      assertPromotionMethod(promotion, input.method);
+      if (promotion.requiredMenuCount) {
+        const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
+        assertPromotionCart(promotion, pricedCart.items);
+      }
       return send(response, 200, { promotion });
     }
 
@@ -1162,6 +1168,8 @@ const server = http.createServer(async (request, response) => {
       const promotion = promotionForCode(input.promoCode);
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
+      assertPromotionMethod(promotion, input.method);
+      assertPromotionCart(promotion, pricedCart.items);
       const subtotal = pricedCart.subtotal;
       const grid = input.slotGrid === 20 ? 20 : 15;
       const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database, subtotal, grid);
@@ -1183,6 +1191,7 @@ const server = http.createServer(async (request, response) => {
         if (!(await serviceModuleStore.read()).modules[input.method]) throw Object.assign(new Error('Ce mode de commande est momentanément indisponible.'), { statusCode: 409 });
         assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());
         const latestDatabase = await readDatabase();
+        assertPromotionAvailable(latestDatabase, promotion);
         ensureBibouPlusStore(latestDatabase);
         const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId);
         if (!latestCustomer) return null;
@@ -1194,7 +1203,7 @@ const server = http.createServer(async (request, response) => {
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
         const crmOffer = !promotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
         const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;
-        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), promotion);
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), promotion, input.method);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;

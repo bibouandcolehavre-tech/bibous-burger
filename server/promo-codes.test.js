@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { promotionForCode, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
+const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
 const { previewPromotion, differentPendingPromo } = require('../promo-client');
 const { orderFingerprint } = require('./order-attempt');
 const amendments = require('./order-amendments');
@@ -17,6 +17,31 @@ test('CHORUS : normalisation, panier entier et livraison offerts, codes inconnus
     assert.equal(previewPromotion(base, base.subtotal, promo).total, pricing.total);
     assert.equal(applyPromotion(base, null), base);
   }
+});
+test('GROSLARD : exactement deux menus au choix, utilisable une seule fois', () => {
+  const promo = promotionForCode(' groslard ');
+  assert.equal(promo.code, 'GROSLARD');
+  assert.equal(promo.pickupOnly, true);
+  assert.equal(promo.freeDelivery, false);
+  assert.match(promo.message, /deux menus offerts/);
+  assert.match(promo.message, /sur place/);
+  assertPromotionMethod(promo, 'pickup');
+  assert.throws(() => assertPromotionMethod(promo, 'delivery'), /Click & Collect/);
+  assert.throws(() => applyPromotion({ subtotal: 30 }, promo, 'delivery'), /Click & Collect/);
+  assert.equal(previewPromotion({ subtotal: 30 }, 30, promo, 'pickup').total, 0);
+  assertPromotionCart(promo, [{ productId: 'classique-menu', quantity: 1 }, { productId: 'duck-menu', quantity: 1 }]);
+  assertPromotionCart(promo, [{ productId: 'taurus', quantity: 2 }]);
+  for (const items of [
+    [{ productId: 'classique-menu', quantity: 1 }],
+    [{ productId: 'classique-menu', quantity: 3 }],
+    [{ productId: 'classique-menu', quantity: 2 }, { productId: 'drink-coca', quantity: 1 }],
+    [{ productId: 'classique', quantity: 2 }],
+  ]) assert.throws(() => assertPromotionCart(promo, items), /exactement deux menus/);
+  assert.throws(() => assertPromotionCart(promo, [{ productId: 'classique-menu', quantity: 2, options: [{ price: 2 }] }]), /suppléments payants/);
+  assertPromotionAvailable({ orders: [] }, promo);
+  assertPromotionAvailable({ orders: [{ promotion: promo, status: 'awaiting_payment' }] }, promo);
+  assert.throws(() => assertPromotionAvailable({ orders: [{ promotion: promo, payment: { status: 'PAID' }, status: 'cancelled' }] }, promo), /déjà été utilisé/);
+  assertPromotionAvailable({ orders: [{ promotion: promo, payment: { status: 'PAID' } }] }, promotionForCode('CHORUS'));
 });
 test('promotion : règlement gratuit distinct de SumUp, cohérence et idempotence', () => {
   const order = { ...applyPromotion({ subtotal: 20, standardDeliveryFee: 5.99 }, promotionForCode('CHORUS')), promotion: promotionForCode('CHORUS'), status: 'awaiting_payment' };

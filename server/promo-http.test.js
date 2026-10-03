@@ -73,4 +73,29 @@ test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et 
   const normal = await request('/payments/sumup-checkout', { orderId: forged.data.order.id });
   assert.equal(normal.status, 201); assert.ok(normal.data.checkoutUrl); assert.equal(normal.data.order.payment.status, 'PENDING');
   assert.equal((await request('/dashboard/orders', undefined, admin)).data.orders.some(o => o.id === forged.data.order.id), false);
+
+  const menu = { productId: 'classique-menu', quantity: 2, selections: [
+    { groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' },
+    { groupId: 'sauces', id: 'mayo' }, { groupId: 'drink', id: 'coca' }
+  ] };
+  const gift = { ...body, items: [menu], promoCode: ' groslard ', requestId: 'attempt-two-menus-gift-001' };
+  const promoInput = { code: 'GROSLARD', method: 'pickup', items: gift.items };
+  const validatedGift = await request('/promotions/validate', promoInput);
+  assert.equal(validatedGift.status, 200);
+  assert.match(validatedGift.data.promotion.message, /sur place/);
+  assert.equal((await request('/promotions/validate', { ...promoInput, method: 'delivery' })).status, 400);
+  assert.equal((await request('/orders', { ...gift, method: 'delivery', slot: '19:00 – 19:30', requestId: 'attempt-gift-delivery-001' })).status, 400);
+  assert.equal((await request('/orders', { ...gift, items: [{ ...menu, quantity: 1 }], requestId: 'attempt-one-menu-gift-001' })).status, 400);
+  assert.equal((await request('/orders', { ...gift, items: [...gift.items, { productId: 'drink-coca', quantity: 1, selections: [] }], requestId: 'attempt-extra-product-gift-001' })).status, 400);
+  const withSupplement = { ...menu, selections: [...menu.selections, { groupId: 'extras', id: 'cheddar' }] };
+  assert.equal((await request('/promotions/validate', { ...promoInput, items: [withSupplement] })).status, 400);
+  assert.equal((await request('/orders', { ...gift, items: [withSupplement], requestId: 'attempt-extra-cost-gift-001' })).status, 400);
+  const uses = await Promise.all([request('/orders', gift), request('/orders', { ...gift, requestId: 'attempt-two-menus-gift-002' })]);
+  assert.deepEqual(uses.map(result => result.status).sort(), [201, 409]);
+  const gifted = uses.find(result => result.status === 201).data.order;
+  assert.equal(gifted.total, 0); assert.equal(gifted.payment.provider, 'promotion');
+  assert.equal((await request('/promotions/validate', promoInput)).status, 409);
+  assert.equal((await request('/orders', { ...gift, requestId: 'attempt-two-menus-gift-003' })).status, 409);
+  assert.equal((await request('/orders', gift)).status, 200, 'Une réponse perdue peut être relue sans deuxième utilisation.');
+  assert.equal((await db()).orders.filter(item => item.promotion?.code === 'GROSLARD').length, 1);
 });
