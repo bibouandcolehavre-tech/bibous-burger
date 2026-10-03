@@ -25,6 +25,7 @@ const pendingOrderChanges = new Set();
 const pendingPrints = new Set();
 const uncertainPrints = new Set();
 const printFeedback = new Map();
+let autoPrintBusy = false;
 let reservationFilter = "upcoming";
 let rewardFilter = "active";
 const arrivalTracker = BibouAlerts.createArrivalTracker();
@@ -192,27 +193,71 @@ async function printOrder(button) {
   button.textContent = 'Impression…';
   report('Vérification de la commande puis envoi à l’Epson…');
   let sending = false;
+  let claimed = null;
   try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/orders`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    const response = await fetch(`${API_BASE_URL}/dashboard/print-jobs/${encodeURIComponent(orderId)}/manual`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     if (token !== dashboardToken) throw new Error('La connexion a changé. Aucun ticket envoyé.');
-    if (!response.ok) throw new Error(response.status === 401 ? 'Reconnectez-vous à l’espace restaurant. Aucun ticket envoyé.' : 'La commande ne peut pas être vérifiée. Aucun ticket envoyé.');
+    if (!response.ok) throw new Error(response.status === 401 ? 'Reconnectez-vous à l’espace restaurant. Aucun ticket envoyé.' : response.status === 409 ? 'Une impression est déjà en cours. Vérifiez le papier avant de réessayer.' : 'La commande ne peut pas être vérifiée. Aucun ticket envoyé.');
     const payload = await response.json();
-    const order = payload.orders?.find(item => item.id === orderId);
-    if (!order) throw new Error('Cette commande payée est introuvable. Aucun ticket envoyé.');
-    const documentXml = window.BibouEpsonPrint.orderReceiptEnvelope(order);
+    claimed = payload.job;
+    const documentXml = window.BibouEpsonPrint.orderReceiptEnvelope(claimed.order);
     sending = true;
     const printed = await window.BibouEpsonPrint.send('192.168.192.50', documentXml);
     sending = false;
     if (!printed.success) throw new Error(`L’Epson a refusé le ticket (${printed.code || 'code inconnu'}). Vérifiez le papier.`);
+    await completePrintJob(orderId, claimed.claimId, 'printed', token);
     report('Ticket envoyé à l’Epson. Vérifiez qu’un papier est bien sorti.');
   } catch (error) {
     if (sending) uncertainPrints.add(orderId);
+    if (claimed?.claimId) void completePrintJob(orderId, claimed.claimId, sending ? 'uncertain' : 'failed', token).catch(() => {});
     report(`${error.message || 'Impression non confirmée.'}${sending ? ' Vérifiez le papier avant de réessayer ou de recharger la page.' : ''}`);
   } finally {
     pendingPrints.delete(orderId);
     button.disabled = uncertainPrints.has(orderId);
     button.textContent = '🖨 Imprimer';
   }
+}
+
+async function completePrintJob(orderId, claimId, status, token) {
+  const response = await fetch(`${API_BASE_URL}/dashboard/print-jobs/${encodeURIComponent(orderId)}/result`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ claimId, status })
+  });
+  if (!response.ok) throw new Error('Le résultat de l’impression n’a pas été enregistré. Vérifiez le papier.');
+}
+
+async function dispatchAutoPrint() {
+  if (autoPrintBusy || !dashboardToken || !window.BibouEpsonPrint) return;
+  autoPrintBusy = true;
+  const token = dashboardToken;
+  try {
+    const probe = await window.BibouEpsonPrint.probe('192.168.192.50');
+    if (!probe.success) throw new Error('Service Epson indisponible.');
+    if (token !== dashboardToken) return;
+    const response = await fetch(`${API_BASE_URL}/dashboard/print-jobs/claim`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok || token !== dashboardToken) throw new Error('File d’impression indisponible.');
+    const { job } = await response.json();
+    if (!job) { updateText('#printer-status', '🖨 Imprimante prête · tickets automatiques activés'); return; }
+    const id = job.order.id;
+    let sending = false;
+    try {
+      const documentXml = window.BibouEpsonPrint.orderReceiptEnvelope(job.order);
+      sending = true;
+      const result = await window.BibouEpsonPrint.send('192.168.192.50', documentXml);
+      sending = false;
+      if (!result.success) throw new Error(`Imprimante : ${result.code || 'ticket refusé'}`);
+      await completePrintJob(id, job.claimId, 'printed', token);
+      printFeedback.set(id, 'Ticket imprimé automatiquement.');
+      updateText('#printer-status', `🖨 Commande #${job.order.number} envoyée à l’imprimante`);
+    } catch (error) {
+      void completePrintJob(id, job.claimId, sending ? 'uncertain' : 'failed', token).catch(() => {});
+      printFeedback.set(id, `Impression automatique non confirmée : ${error.message || 'vérifiez le papier'}.`);
+      updateText('#printer-status', `⚠️ Ticket #${job.order.number} non confirmé · vérifiez le papier`);
+    }
+    renderOrders();
+  } catch {
+    updateText('#printer-status', '⚠️ Impression automatique indisponible · commandes visibles à l’écran');
+  } finally { autoPrintBusy = false; }
 }
 
 function renderOrders() {
@@ -422,6 +467,7 @@ function loadFeed(kind, { notify = true } = {}) {
         if (orderAlarm.state().count && !soundPlayer.state().ready) void ensureServiceSound();
         revenue = payload.revenue && ["today", "week", "month"].every((key) => Number.isFinite(Number(payload.revenue[key]))) ? payload.revenue : { today: 0, week: 0, month: 0 };
         renderOrders();
+        void dispatchAutoPrint();
       }
       else if (kind === "reservations") { reservations = items.map(reservationFromApi); renderReservations(); }
       else { rewardClaims = items.map(rewardClaimFromApi); renderRewardClaims(); }

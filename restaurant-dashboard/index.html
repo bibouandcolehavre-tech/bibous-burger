@@ -64,6 +64,7 @@
         <section class="service-alerts" aria-label="Alertes du restaurant">
           <div id="audio-warning" class="audio-warning"><div><strong>Attention : aucune sonnerie active</strong><p id="audio-warning-text">Autorisez le son avant le service.</p></div><button type="button" id="enable-alerts-button">Activer les alertes sonores</button></div>
           <p id="connection-status" class="connection-status" role="status">Connexion au restaurant…</p>
+          <p id="printer-status" class="printer-status" role="status">🖨 Vérification de l’imprimante…</p>
           <p id="sound-status" class="sound-status" role="status">La sonnerie des commandes s'active avec le tableau.</p>
           <div class="attention-links"><button type="button" id="attention-orders">0 commande à accepter</button><button type="button" id="attention-reservations">0 réservation à confirmer</button><button type="button" id="attention-rewards">0 récompense à remettre</button></div>
           <p id="arrival-message" class="arrival-message" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -192,6 +193,6 @@
     <script src="./order-amendments.js?v=1"></script>
     <script src="./uber-direct.js?v=1"></script>
     <script src="./epson-print.js?v=service-time-20261001"></script>
-    <script src="./app.js?v=auto-recover-audio-20261001"></script>
+    <script src="./app.js?v=automatic-print-20261003"></script>
   </body>
 </html>

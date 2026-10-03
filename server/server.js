@@ -25,6 +25,7 @@ const { createCustomerSession, readCustomerSession } = require("./customer-sessi
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { createAuthRateLimiter } = require("./auth-rate-limit");
 const { createDashboardSessionStore } = require('./dashboard-sessions');
+const autoPrint = require('./auto-print');
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
@@ -87,6 +88,7 @@ const smsCodeLimiter = createAuthRateLimiter({ limit: 8, windowMs: 15 * 60000 })
 const dashboardSessions = createDashboardSessionStore(path.join(path.dirname(databasePath), 'dashboard-sessions.json'), { secret: restaurantDashboardPassword || customerSessionSecret });
 const reviewSandbox = createReviewSandbox({ enabled: process.env.STORE_REVIEW_ENABLED !== 'false' });
 const acquireDatabase = createDatabaseLock();
+const autoPrintStartedAt = new Date().toISOString();
 let googleReviewsCache = { value: null, expiresAt: 0 };
 let orderCreationQueue = Promise.resolve();
 
@@ -1057,6 +1059,30 @@ const server = http.createServer(async (request, response) => {
       if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
       const orders = paidOrders(database);
       return send(response, 200, { orders, revenue: revenuePeriods(orders) });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/dashboard/print-jobs/claim') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const firstClaim = !database.restaurantAutoPrint;
+      const job = autoPrint.claim(database, autoPrintStartedAt);
+      if (firstClaim || job) await writeDatabase(database);
+      return send(response, 200, { job });
+    }
+
+    const manualPrint = /^\/api\/dashboard\/print-jobs\/([^/]+)\/manual$/.exec(url.pathname);
+    if (request.method === 'POST' && manualPrint) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const job = autoPrint.manual(database, decodeURIComponent(manualPrint[1]), autoPrintStartedAt);
+      await writeDatabase(database);
+      return send(response, 200, { job });
+    }
+
+    const printResult = /^\/api\/dashboard\/print-jobs\/([^/]+)\/result$/.exec(url.pathname);
+    if (request.method === 'POST' && printResult) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const result = autoPrint.finish(database, decodeURIComponent(printResult[1]), await readBody(request));
+      await writeDatabase(database);
+      return send(response, 200, result);
     }
 
     if (request.method === "GET" && url.pathname === "/api/dashboard/reservations") {

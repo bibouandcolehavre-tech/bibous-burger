@@ -123,13 +123,35 @@ test('un bouton Imprimer sur une ancienne commande envoie son récapitulatif à 
   assert.match(h.element('#orders-list').innerHTML, /data-print-order="paid-print-1"/);
   let sent = 0;
   h.context.window.BibouEpsonPrint = { orderReceiptEnvelope: current => { assert.equal(current.id, order.id); return '<ticket-test>'; }, send: async (host, documentXml) => { assert.equal(host, '192.168.192.50'); assert.equal(documentXml, '<ticket-test>'); sent++; return { success: true }; } };
-  h.context.fetch = async () => result({ orders: [order] });
+  h.context.fetch = async url => url.endsWith('/manual') ? result({ job: { order, claimId: 'manual-test' } }) : result({ status: 'printed' });
   const feedback = { textContent: '' };
   h.context.printButton = { dataset: { printOrder: order.id }, disabled: false, textContent: 'Imprimer', closest: () => ({ querySelector: () => feedback }) };
   await h.run('printOrder(printButton)');
   assert.equal(sent, 1);
   assert.match(feedback.textContent, /Ticket envoyé/);
   assert.equal(h.context.printButton.disabled, false);
+});
+
+test('une nouvelle commande réclamée est imprimée sans clic puis acquittée une seule fois', async () => {
+  const h = await harness();
+  const order = { id: 'paid-auto-1', number: 84, status: 'confirmed', method: 'pickup', payment: { status: 'PAID' }, items: [{ name: 'Menu', quantity: 1, price: 15 }] };
+  let probes = 0, sent = 0, claims = 0, completed = 0;
+  h.context.window.BibouEpsonPrint = {
+    probe: async () => { probes++; return { success: true }; },
+    orderReceiptEnvelope: current => { assert.equal(current.id, order.id); return '<ticket-auto>'; },
+    send: async (host, xml) => { assert.equal(host, '192.168.192.50'); assert.equal(xml, '<ticket-auto>'); sent++; return { success: true }; }
+  };
+  h.context.fetch = async (url, options) => {
+    if (url.endsWith('/claim')) { claims++; return result({ job: claims === 1 ? { order, claimId: 'auto-test' } : null }); }
+    if (url.endsWith('/result')) { assert.equal(JSON.parse(options.body).status, 'printed'); completed++; return result({ status: 'printed' }); }
+    throw new Error('Route inattendue');
+  };
+  await h.run('dispatchAutoPrint()');
+  await h.run('dispatchAutoPrint()');
+  assert.equal(probes, 2);
+  assert.equal(sent, 1);
+  assert.equal(completed, 1);
+  assert.match(h.element('#printer-status').textContent, /prête/);
 });
 
 test("commandes : les commandes terminées ont un onglet et un détail ouvrable", async () => {
