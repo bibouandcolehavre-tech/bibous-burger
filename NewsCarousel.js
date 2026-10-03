@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import SocialLinks from './SocialLinks';
 const { DEFAULT_NEWS, safePublicUrl } = require('./news-config');
-const duoPreview = Platform.OS === 'web' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') === 'duo-equilibre';
+const duoPreview = Platform.OS === 'web' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') !== 'ancien';
 
 export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
   const [items, setItems] = useState(DEFAULT_NEWS);

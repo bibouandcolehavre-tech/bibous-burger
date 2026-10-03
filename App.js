@@ -25,6 +25,7 @@ const { slotAlreadyStarted } = require('./client-slots');
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
+const officialWordmarkPreview = require("./assets/bibous-official-wordmark-preview.png");
 const drinkCocaPhoto = require("./assets/drinks/cutout/coca.png");
 const drinkCocaCherryPhoto = require("./assets/drinks/cutout/coca-cherry.png");
 const drinkFuseMenthePhoto = require("./assets/drinks/cutout/fuse-menthe.png");
@@ -268,7 +269,12 @@ const quarterHourSlots = (ranges) => ranges.flatMap(range => {
 function Header({ onBack, right, onRight }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
-  return <>{!onBack && <View accessibilityRole="text" accessibilityLabel="Cadeau de bienvenue : crée ton compte et profite de 10 % sur ta première commande" style={styles.welcomeSignupStrip}><Text style={styles.welcomeSignupStripIcon}>🎁</Text><View style={styles.welcomeSignupStripCopy}><Text style={styles.welcomeSignupStripTitle}>Crée ton compte : −10 %</Text><Text style={styles.welcomeSignupStripText}>sur ta première commande · remise automatique</Text></View></View>}<View style={[styles.header, desktop && styles.headerDesktop]}>{onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <View style={styles.headerBrand}><View style={[styles.wordmarkBadge, desktop && styles.wordmarkBadgeDesktop]}><Image source={headerWordmark} style={[styles.wordmarkImage, desktop && styles.wordmarkImageDesktop]} resizeMode="contain" /></View>{desktop && <Text style={styles.wordmarkTagline}>Burgers faits maison · Le Havre</Text>}</View>}{onRight ? <Pressable accessibilityLabel="Ouvrir le panier" onPress={onRight} style={styles.headerCart}><Text style={styles.headerCartText}>{right || "🛍"}</Text></Pressable> : <Text style={styles.headerRight}>{right || ""}</Text>}</View></>;
+  const welcomeStrip = !onBack && <View accessibilityRole="text" accessibilityLabel="Cadeau de bienvenue : crée ton compte et profite de 10 % sur ta première commande" style={styles.welcomeSignupStrip}><Text style={styles.welcomeSignupStripIcon}>🎁</Text><View style={styles.welcomeSignupStripCopy}><Text style={styles.welcomeSignupStripTitle}>Crée ton compte : −10 %</Text><Text style={styles.welcomeSignupStripText}>sur ta première commande · remise automatique</Text></View></View>;
+  const navigation = <View style={[styles.header, desktop && styles.headerDesktop]}>
+      {onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <View style={styles.headerBrand}><View style={[styles.wordmarkBadge, desktop && styles.wordmarkBadgeDesktop]}><Image source={DUO_WEB_THEME ? officialWordmarkPreview : headerWordmark} style={[styles.wordmarkImage, desktop && styles.wordmarkImageDesktop]} resizeMode="contain" /></View>{desktop && <Text style={styles.wordmarkTagline}>Burgers faits maison · Le Havre</Text>}</View>}
+      {onRight ? <Pressable accessibilityLabel="Ouvrir le panier" onPress={onRight} style={styles.headerCart}><Text style={styles.headerCartText}>{right || "🛍"}</Text></Pressable> : <Text style={styles.headerRight}>{right || ""}</Text>}
+    </View>;
+  return DUO_WEB_THEME ? <>{navigation}{welcomeStrip}</> : <>{welcomeStrip}{navigation}</>;
 }
 
 function PrestigeEmblem({ level, unlocked = true, large = false }) {
@@ -1464,10 +1470,10 @@ const APP_PALETTE = {
   "#C7E1BF": "#D8C3B7"
 };
 
-// A phone-only, opt-in colour preview. The normal URL and native apps keep
-// their existing appearance until the restaurant approves the new palette.
-const DUO_PREVIEW = Platform.OS === "web" && typeof window !== "undefined" &&
-  new URLSearchParams(window.location.search).get("theme") === "duo-equilibre";
+// The approved web palette is the default. Keep the previous look accessible
+// via ?theme=ancien for comparison and quick rollback; native builds are intact.
+const DUO_WEB_THEME = Platform.OS === "web" && typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("theme") !== "ancien";
 
 const DUO_PALETTE = {
   "#E54832": "#FBF3E6", // warm cream background
@@ -1486,12 +1492,15 @@ const DUO_PALETTE = {
 };
 
 const DUO_STYLE_OVERRIDES = {
-  header: { backgroundColor: "#B7DDD0", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
-  headerDesktop: { borderBottomColor: "#B7DDD0" },
-  wordmarkBadge: { backgroundColor: "#315B4B", borderRadius: 13, paddingHorizontal: 5 },
+  header: { backgroundColor: "transparent", paddingHorizontal: 0, paddingVertical: 0, marginBottom: 12 },
+  headerDesktop: { borderBottomWidth: 0 },
+  wordmarkBadge: { width: 156, height: 78, backgroundColor: "transparent", paddingHorizontal: 0 },
+  wordmarkBadgeDesktop: { width: 174, height: 87 },
+  wordmarkImage: { width: 156, height: 78, filter: "brightness(0) saturate(100%) invert(25%) sepia(15%) saturate(962%) hue-rotate(104deg) brightness(91%) contrast(92%)" },
+  wordmarkImageDesktop: { width: 174, height: 87 },
   headerCart: { backgroundColor: "#BB7258" },
   headerCartText: { color: "#FFFAF1" },
-  backButton: { backgroundColor: "#D6EEE3" },
+  backButton: { backgroundColor: "#B7DDD0", borderRadius: 12 },
   addressBox: { backgroundColor: "#D6EEE3" },
   accountShortcut: { backgroundColor: "#E8D7C6" },
   serviceAction: { backgroundColor: "#FFFAF1", borderColor: "#B7DDD0" },
@@ -1515,7 +1524,7 @@ const DUO_STYLE_OVERRIDES = {
 const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleSheet).map(([name, style]) => {
   const themedStyle = Object.fromEntries(Object.entries(style).map(([property, value]) => [property, APP_PALETTE[value] || value]));
   if (["wordmark", "siteFooterTitle"].includes(name)) themedStyle.color = "#171412";
-  if (DUO_PREVIEW) {
+  if (DUO_WEB_THEME) {
     for (const [property, value] of Object.entries(themedStyle)) themedStyle[property] = DUO_PALETTE[value] || value;
     Object.assign(themedStyle, DUO_STYLE_OVERRIDES[name]);
   }
