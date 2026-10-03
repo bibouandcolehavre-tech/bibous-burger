@@ -1,0 +1,16 @@
+.module-panel { margin-bottom: 24px; }
+.module-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.module-panel-heading h2 { margin: 3px 0 9px; }
+.module-panel-heading p:last-child { max-width: 650px; line-height: 1.5; }
+.module-state { white-space: nowrap; border-radius: 999px; background: #e6f3ea; color: #276347; padding: 9px 13px; font-weight: 800; }
+.module-choices { display: grid; gap: 11px; margin: 20px 0 12px; }
+.module-choice { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #ded9d1; border-radius: 16px; padding: 16px; background: #fff; }
+.module-choice > div { display: grid; gap: 4px; }
+.module-choice strong { font-size: 1.05rem; }
+.module-choice span { color: #65594f; }
+.module-switch { min-width: 94px; border: 0; border-radius: 999px; padding: 11px 14px; background: #f3e3dc; color: #873e2c; font-weight: 800; cursor: pointer; }
+.module-switch[aria-checked="true"] { background: #dceee4; color: #245b40; }
+.module-switch:disabled { opacity: .55; cursor: wait; }
+.module-feedback { min-height: 1.4em; font-weight: 700; }
+.module-panel-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+@media (max-width: 680px) { .module-panel-heading { display: block; } .module-state { display: inline-block; margin-top: 10px; } .module-choice { padding: 13px; } }
