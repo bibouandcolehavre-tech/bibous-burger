@@ -42,6 +42,7 @@ const orderSms = require('./order-sms');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
+const { destinationForLegacyPath } = require('./domain-forwarding');
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -1356,6 +1357,11 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { order });
     }
 
+    const legacyDestination = destinationForLegacyPath(url.pathname, request.method);
+    if (legacyDestination) {
+      response.writeHead(302, { Location: legacyDestination, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      return response.end();
+    }
     return send(response, 404, { error: "Route introuvable" });
   } catch (error) {
     console.error(error);
