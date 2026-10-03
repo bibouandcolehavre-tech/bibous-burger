@@ -27,9 +27,11 @@
       "package": "com.krokly.bibousburgers",
       "googleServicesFile": "./google-services.json",
       "versionCode": 1,
+      "icon": "./assets/android-icon-05h-logo-only.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0342D4"
+        "foregroundImage": "./assets/android-adaptive-foreground-05h-logo-only.png",
+        "backgroundImage": "./assets/android-adaptive-background-05h-logo-only.png",
+        "backgroundColor": "#CC8066"
       }
     },
     "web": {
@@ -42,7 +44,12 @@
           "backgroundColor": "#E95122",
           "image": "./assets/adaptive-icon.png",
           "imageWidth": 220,
-          "resizeMode": "contain"
+          "resizeMode": "contain",
+          "android": {
+            "backgroundColor": "#CC8066",
+            "image": "./assets/bibous-official-wordmark-preview.png",
+            "imageWidth": 220
+          }
         }
       ],
       "expo-secure-store",

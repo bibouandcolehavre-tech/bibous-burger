@@ -271,10 +271,10 @@ function Header({ onBack, right, onRight }) {
   const desktop = width >= 900;
   const welcomeStrip = !onBack && <View accessibilityRole="text" accessibilityLabel="Cadeau de bienvenue : crée ton compte et profite de 10 % sur ta première commande" style={styles.welcomeSignupStrip}><Text style={styles.welcomeSignupStripIcon}>🎁</Text><View style={styles.welcomeSignupStripCopy}><Text style={styles.welcomeSignupStripTitle}>Crée ton compte : −10 %</Text><Text style={styles.welcomeSignupStripText}>sur ta première commande · remise automatique</Text></View></View>;
   const navigation = <View style={[styles.header, desktop && styles.headerDesktop]}>
-      {onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <View style={styles.headerBrand}><View style={[styles.wordmarkBadge, desktop && styles.wordmarkBadgeDesktop]}><Image source={DUO_WEB_THEME ? officialWordmarkPreview : headerWordmark} style={[styles.wordmarkImage, desktop && styles.wordmarkImageDesktop]} resizeMode="contain" /></View>{desktop && <Text style={styles.wordmarkTagline}>Burgers faits maison · Le Havre</Text>}</View>}
+      {onBack ? <Pressable accessibilityLabel="Retour" onPress={onBack} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable> : <View style={styles.headerBrand}><View style={[styles.wordmarkBadge, desktop && styles.wordmarkBadgeDesktop]}><Image source={DUO_THEME ? officialWordmarkPreview : headerWordmark} style={[styles.wordmarkImage, desktop && styles.wordmarkImageDesktop]} resizeMode="contain" /></View>{desktop && <Text style={styles.wordmarkTagline}>Burgers faits maison · Le Havre</Text>}</View>}
       {onRight ? <Pressable accessibilityLabel="Ouvrir le panier" onPress={onRight} style={styles.headerCart}><Text style={styles.headerCartText}>{right || "🛍"}</Text></Pressable> : <Text style={styles.headerRight}>{right || ""}</Text>}
     </View>;
-  return DUO_WEB_THEME ? <>{navigation}{welcomeStrip}</> : <>{welcomeStrip}{navigation}</>;
+  return DUO_THEME ? <>{navigation}{welcomeStrip}</> : <>{welcomeStrip}{navigation}</>;
 }
 
 function PrestigeEmblem({ level, unlocked = true, large = false }) {
@@ -323,7 +323,7 @@ function BibouPlusHomeCard({ active, customer, onPress }) {
   return <View style={styles.bibouPlusShortcut}>
     <Pressable onPress={() => setExpanded((value) => !value)} style={styles.bibouPlusShortcutHeader} accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel="Afficher les avantages de l’abonnement Bibou +">
       <View style={styles.bibouPlusShortcutMark}><Text style={styles.bibouPlusShortcutMarkText}>✦</Text></View>
-      <View style={styles.bibouPlusShortcutHeading}><Text style={styles.bibouPlusShortcutTitle}>L’ABONNEMENT BIBOU +</Text></View>
+      <View style={styles.bibouPlusShortcutHeading}><Text style={styles.bibouPlusShortcutTitle}>L’ABONNEMENT BIBOU +</Text><Text style={styles.bibouPlusShortcutSummary}>Livraison offerte · −5 % · points ×2</Text></View>
       {active && <View style={styles.bibouPlusShortcutActiveBadge}><Text style={styles.bibouPlusShortcutActiveText}>ACTIF</Text></View>}
       <Text style={styles.bibouPlusShortcutDisclosure}>{expanded ? "⌃" : "⌄"}</Text>
     </Pressable>
@@ -903,7 +903,19 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
 
 export default function App() {
   const [reviewMode, setReviewMode] = useState(false);
-  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={styles.safeArea}><View style={{ flex: 1 }}>{reviewMode && <View style={{ backgroundColor: "#172b48", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}<AppContent onReviewModeChange={setReviewMode} /></View></DeviceSafeAreaView></SafeAreaProvider>;
+  const [showLaunch, setShowLaunch] = useState(() => Platform.OS === "android" || (Platform.OS === "web" && typeof window !== "undefined" && initialScreenFromUrl() === "menu"));
+  const launchTimer = useRef(null);
+  useEffect(() => {
+    if (!showLaunch) return;
+    const fallback = setTimeout(() => setShowLaunch(false), 8000);
+    return () => { clearTimeout(fallback); if (launchTimer.current) clearTimeout(launchTimer.current); };
+  }, [showLaunch]);
+  const onLaunchImageLoaded = () => {
+    if (launchTimer.current) return;
+    const preview = Platform.OS === "web" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("apercu") === "chargement";
+    launchTimer.current = setTimeout(() => setShowLaunch(false), preview ? 6000 : Platform.OS === "web" ? 1400 : 1500);
+  };
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={[styles.safeArea, showLaunch && styles.launchSafeArea]}><View style={{ flex: 1 }}>{reviewMode && <View style={{ backgroundColor: "#172b48", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}<View style={{ flex: 1 }} importantForAccessibility={showLaunch ? "no-hide-descendants" : "auto"}><AppContent onReviewModeChange={setReviewMode} /></View>{showLaunch && <View style={styles.launchOverlay} accessible accessibilityLabel="Bibou’s Burgers. Click and Collect, livraison et réservation de table. Ouverture de l’application."><Image source={require("./assets/android-launch-05h.png")} style={styles.launchImage} resizeMode={Platform.OS === "web" ? "contain" : "stretch"} onLoad={onLaunchImageLoaded} onError={() => setShowLaunch(false)} /></View>}</View></DeviceSafeAreaView></SafeAreaProvider>;
 }
 
 function AppContent({ onReviewModeChange }) {
@@ -1470,10 +1482,10 @@ const APP_PALETTE = {
   "#C7E1BF": "#D8C3B7"
 };
 
-// The approved web palette is the default. Keep the previous look accessible
-// via ?theme=ancien for comparison and quick rollback; native builds are intact.
-const DUO_WEB_THEME = Platform.OS === "web" && typeof window !== "undefined" &&
-  new URLSearchParams(window.location.search).get("theme") !== "ancien";
+// Android's next store binary uses the approved web palette. The existing iOS
+// binary remains untouched; the web can still compare ?theme=ancien.
+const DUO_THEME = Platform.OS === "android" || (Platform.OS === "web" && typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("theme") !== "ancien");
 
 const DUO_PALETTE = {
   "#E54832": "#FBF3E6", // warm cream background
@@ -1496,7 +1508,9 @@ const DUO_STYLE_OVERRIDES = {
   headerDesktop: { borderBottomWidth: 0 },
   wordmarkBadge: { width: 156, height: 78, backgroundColor: "transparent", paddingHorizontal: 0 },
   wordmarkBadgeDesktop: { width: 174, height: 87 },
-  wordmarkImage: { width: 156, height: 78, filter: "brightness(0) saturate(100%) invert(25%) sepia(15%) saturate(962%) hue-rotate(104deg) brightness(91%) contrast(92%)" },
+  wordmarkImage: Platform.OS === "android"
+    ? { width: 156, height: 78, tintColor: "#25473B" }
+    : { width: 156, height: 78, filter: "brightness(0) saturate(100%) invert(25%) sepia(15%) saturate(962%) hue-rotate(104deg) brightness(91%) contrast(92%)" },
   wordmarkImageDesktop: { width: 174, height: 87 },
   headerCart: { backgroundColor: "#BB7258" },
   headerCartText: { color: "#FFFAF1" },
@@ -1524,7 +1538,7 @@ const DUO_STYLE_OVERRIDES = {
 const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleSheet).map(([name, style]) => {
   const themedStyle = Object.fromEntries(Object.entries(style).map(([property, value]) => [property, APP_PALETTE[value] || value]));
   if (["wordmark", "siteFooterTitle"].includes(name)) themedStyle.color = "#171412";
-  if (DUO_WEB_THEME) {
+  if (DUO_THEME) {
     for (const [property, value] of Object.entries(themedStyle)) themedStyle[property] = DUO_PALETTE[value] || value;
     Object.assign(themedStyle, DUO_STYLE_OVERRIDES[name]);
   }
@@ -1532,6 +1546,9 @@ const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleS
 }));
 
 const styles = StyleSheet.create(applyAppPalette({
+  launchSafeArea: { backgroundColor: "#CC8066" },
+  launchOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "#CC8066" },
+  launchImage: { width: "100%", height: "100%" },
   paymentRecoveryText: { color: '#25120B' },
   paymentRecoveryPrimary: { backgroundColor: '#191919', width: '100%' },
   paymentRecoverySecondary: { borderColor: '#25120B', backgroundColor: '#FFEBDC', width: '100%' },
@@ -1595,6 +1612,7 @@ const styles = StyleSheet.create(applyAppPalette({
   bibouPlusShortcutMarkText: { color: "#4C1713", fontSize: 22, fontWeight: "900" },
   bibouPlusShortcutHeading: { flex: 1 },
   bibouPlusShortcutTitle: { color: "#FFF8EE", fontSize: 16, fontWeight: "900", letterSpacing: 0.35 },
+  bibouPlusShortcutSummary: { color: "#FFF8EE", fontSize: 12, fontWeight: "700", marginTop: 4 },
   bibouPlusShortcutEyebrow: { color: "#F6C98D", fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
   bibouPlusShortcutName: { color: "#FFF8EE", fontSize: 22, fontWeight: "900", marginTop: 2 },
   bibouPlusShortcutActiveBadge: { borderRadius: 10, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "#EAF5E4" },
