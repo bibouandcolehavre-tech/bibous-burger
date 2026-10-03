@@ -24,7 +24,7 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
       controller.signal.addEventListener('abort', cancel, { once: true });
       const timeout = setTimeout(cancel, 12000);
       try {
-        const response = await fetch(`${apiBaseUrl}/news`, { signal: requestController.signal, cache: 'no-store' });
+        const response = await fetch(`${apiBaseUrl}/news?contestApi=2`, { signal: requestController.signal, cache: 'no-store' });
         const data = await response.json();
         if (alive && response.ok && Array.isArray(data.items)) setItems(data.items);
       } catch { /* Keep the last successful cards; never block ordering. */ }
@@ -53,7 +53,7 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
           {source && <><Image source={source} style={s.photo} /><View style={s.shade} /></>}
           {item.kind === 'contest' && <Text style={s.decor} importantForAccessibility="no">✦</Text>}
           {item.kind === 'video' && <Text style={s.play} importantForAccessibility="no">▶</Text>}
-          <View style={s.copy}><Text style={s.tag}>{item.kind === 'contest' ? 'BIENTÔT ENSEMBLE' : item.kind === 'article' ? 'ON PARLE DE NOUS' : item.kind === 'video' ? (item.id === 'epicu' ? 'LE HAVRE · EPICU' : 'ON PARLE DE NOUS · VIDÉO') : 'À LA UNE'}</Text><Text style={s.title}>{item.title}</Text><Text style={s.subtitle}>{item.subtitle}</Text></View>
+          <View style={s.copy}><Text style={s.tag}>{item.kind === 'contest' ? 'LE CONCOURS BIBOU' : item.kind === 'article' ? 'ON PARLE DE NOUS' : item.kind === 'video' ? (item.id === 'epicu' ? 'LE HAVRE · EPICU' : 'ON PARLE DE NOUS · VIDÉO') : 'À LA UNE'}</Text><Text style={s.title}>{item.title}</Text><Text style={s.subtitle}>{item.subtitle}</Text></View>
         </Pressable>;
       })}
     </ScrollView>

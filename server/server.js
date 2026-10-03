@@ -13,7 +13,7 @@ const { promotionForCode, applyPromotion, settlePromotionalOrder } = require('./
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
-const { dashboardContest, saveContestDraft, publicContest, customerContest, joinContest, purgeExpiredContestEntries } = require('./referral-contest');
+const { dashboardContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, purgeExpiredContestEntries } = require('./referral-contest');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const push = require('./push-notifications');
@@ -586,7 +586,19 @@ const server = http.createServer(async (request, response) => {
         if (newsRoute) saveNews(database, input); else saveContestDraft(database, input);
         await writeDatabase(database);
       }
-      return send(response, 200, privateRoute ? (newsRoute ? dashboardNews(database) : dashboardContest(database)) : (newsRoute ? publicNews(database) : publicContest(database)));
+      const modernContestClient = url.searchParams.get('contestApi') === '2';
+      return send(response, 200, privateRoute ? (newsRoute ? dashboardNews(database) : dashboardContest(database)) : (newsRoute ? publicNews(database, new Date(), modernContestClient) : modernContestClient ? publicContest(database) : { status: 'inactive' }));
+    }
+
+    if (url.pathname === '/api/dashboard/contest/publish') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      if (request.method !== 'POST') return send(response, 405, { error: 'Action non disponible.' });
+      const input = await readBody(request);
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      publishContest(database, input);
+      await writeDatabase(database);
+      return send(response, 200, dashboardContest(database));
     }
 
     if (url.pathname === "/api/dashboard/customers" || url.pathname.startsWith("/api/dashboard/customers/")) {
@@ -711,14 +723,23 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { campaign, ...push.dashboardPush(database, pushConfig) });
     }
 
-    if (url.pathname === '/api/customer/contest' || url.pathname === '/api/customer/contest/join') {
+    if (url.pathname === '/api/customer/contest' || url.pathname === '/api/customer/contest/join' || url.pathname === '/api/customer/contest/share') {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: 'Connecte-toi par SMS pour participer.' });
+      if (url.searchParams.get('contestApi') !== '2') {
+        if (request.method === 'GET') return send(response, 200, { contest: { status: 'inactive' }, participation: null });
+        return send(response, 409, { error: 'Mets à jour l’application pour participer au concours.' });
+      }
       if (request.method === 'GET' && url.pathname === '/api/customer/contest') return send(response, 200, customerContest(database, customer));
       if (request.method === 'POST' && url.pathname.endsWith('/join')) {
         const result = joinContest(database, customer, await readBody(request), customerSessionSecret);
         if (result.changed) await writeDatabase(database);
         return send(response, result.changed ? 201 : 200, result);
+      }
+      if (request.method === 'POST' && url.pathname.endsWith('/share')) {
+        const result = recordShareAction(database, customer, await readBody(request));
+        if (result.changed) await writeDatabase(database);
+        return send(response, 200, result);
       }
       return send(response, 405, { error: 'Action non disponible.' });
     }

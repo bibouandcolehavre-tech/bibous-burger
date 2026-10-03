@@ -15,6 +15,8 @@ test('API marketing : permissions, brouillon privé, écritures limitées et té
   const draftResponse=await req('/dashboard/contest',auth);assert.equal(draftResponse.headers.get('cache-control'),'no-store');
   assert.equal((await draftResponse.json()).launchLocked,true);
   assert.equal((await req('/dashboard/contest',auth,'PATCH',{revision:0,status:'published'})).status,400);
+  assert.equal((await req('/dashboard/contest/publish','','POST',{revision:0,confirmation:'PUBLIER LE CONCOURS'})).status,401);
+  assert.equal((await req('/dashboard/contest/publish',auth,'POST',{revision:0,confirmation:'PUBLIER LE CONCOURS'})).status,409);
   assert.equal((await req('/dashboard/contest',auth,'PATCH',{revision:0,title:'Secret draft'})).status,200);
   assert.deepEqual(await(await req('/contest')).json(),{status:'inactive'});
   assert.equal((await req('/customer/contest/join',client,'POST',{})).status,409);
@@ -27,4 +29,13 @@ test('API marketing : permissions, brouillon privé, écritures limitées et té
   assert.equal(verified.customer.verifiedPhone,'+33600000001');assert.ok(verified.customer.firstPhoneVerifiedAt);
   const again=await(await req('/auth/sms/check','','POST',{phone:'0600000001',code:'123456'})).json();
   assert.equal(again.customer.firstPhoneVerifiedAt,verified.customer.firstPhoneVerifiedAt);
+  const ready=await req('/dashboard/contest',auth,'PATCH',{revision:1,startDate:'2099-10-05',endDate:'2099-10-31',rules:'Règlement fictif réservé au test.'});
+  assert.equal(ready.status,200);
+  const published=await req('/dashboard/contest/publish',auth,'POST',{revision:2,confirmation:'PUBLIER LE CONCOURS'});
+  assert.equal(published.status,200);
+  assert.deepEqual(await(await req('/contest')).json(),{status:'inactive'},'une ancienne application ne doit pas voir le nouveau règlement');
+  assert.equal((await(await req('/contest?contestApi=2')).json()).status,'scheduled');
+  assert.match((await(await req('/news')).json()).items[0].title,/se prépare/);
+  assert.match((await(await req('/news?contestApi=2')).json()).items[0].title,/arrive/);
+  assert.deepEqual((await(await req('/customer/contest',client)).json()).contest,{status:'inactive'});
 });
