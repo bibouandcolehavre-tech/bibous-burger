@@ -1092,6 +1092,7 @@ function AppContent({ onReviewModeChange }) {
         setAuthToken(savedToken);
         setCustomer((current) => ({ ...current, ...payload.customer }));
         setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
+        setSessionRestored(true);
         void loadCustomerOrders(savedToken);
         void loadCustomerReservations({ token: savedToken, silent: true });
         void loadCustomerRewards({ token: savedToken, silent: true });
