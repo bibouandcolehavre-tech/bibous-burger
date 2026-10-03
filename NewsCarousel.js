@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import SocialLinks from './SocialLinks';
 const { DEFAULT_NEWS, safePublicUrl } = require('./news-config');
+const duoPreview = Platform.OS === 'web' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') === 'duo-equilibre';
 
 export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
   const [items, setItems] = useState(DEFAULT_NEWS);
@@ -43,7 +44,7 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
     if (safePublicUrl(item.url)) void Linking.openURL(item.url).catch(() => {});
   };
   if (!items.length) return null;
-  return <View style={s.section}><Text style={s.heading}>Nos actualités</Text><Text style={s.intro}>La vie de Bibou, au fil des envies.</Text>
+  return <View style={s.section}><Text style={[s.heading, duoPreview && s.headingOnLight]}>Nos actualités</Text><Text style={[s.intro, duoPreview && s.introOnLight]}>La vie de Bibou, au fil des envies.</Text>
     <ScrollView ref={scroll} horizontal showsHorizontalScrollIndicator={false} snapToInterval={step} decelerationRate="fast" disableIntervalMomentum contentContainerStyle={{ gap: 12, paddingRight: Math.max(0, available - cardWidth) }} onScroll={event => { const next = Math.min(items.length - 1, Math.max(0, Math.round(event.nativeEvent.contentOffset.x / step))); setIndex(next); selectedId.current = items[next]?.id; }} scrollEventThrottle={16}>
       {items.map(item => {
         if (item.kind === 'social') return <SocialLinks key={item.id} style={{ width: cardWidth }} />;
@@ -56,15 +57,17 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
         </Pressable>;
       })}
     </ScrollView>
-    <View style={s.dots}>{items.map((item, i) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: i === index }} accessibilityLabel={`Afficher ${item.title}, diapositive ${i + 1} sur ${items.length}`} onPress={() => scroll.current?.scrollTo({ x: i * step, animated: true })} style={s.dotButton}><View style={[s.dot, i === index && s.selected]} /></Pressable>)}</View>
+    <View style={s.dots}>{items.map((item, i) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: i === index }} accessibilityLabel={`Afficher ${item.title}, diapositive ${i + 1} sur ${items.length}`} onPress={() => scroll.current?.scrollTo({ x: i * step, animated: true })} style={s.dotButton}><View style={[s.dot, duoPreview && s.dotOnLight, i === index && (duoPreview ? s.selectedOnLight : s.selected)]} /></Pressable>)}</View>
   </View>;
 }
 const s = StyleSheet.create({
   section: { marginTop: 12 }, heading: { color: '#fff', fontSize: 27, fontWeight: '900' }, intro: { color: '#fff', fontSize: 14, marginTop: 3, marginBottom: 15 },
+  headingOnLight: { color: '#25473B' }, introOnLight: { color: '#405447' },
   card: { height: 190, borderRadius: 22, overflow: 'hidden', backgroundColor: '#171a19', justifyContent: 'flex-end' }, contest: { backgroundColor: '#26251e', borderColor: '#ffd07b', borderWidth: 1 },
   photo: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%', resizeMode: 'cover' }, shade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,.48)' },
   copy: { padding: 20 }, tag: { fontSize: 10, letterSpacing: 2, fontWeight: '800', color: '#ffd07b', marginBottom: 8 }, title: { fontSize: 24, fontWeight: '900', color: '#fff' }, subtitle: { fontSize: 13, lineHeight: 19, color: '#fff', marginTop: 8 },
   decor: { position: 'absolute', right: 14, top: -23, fontSize: 132, color: '#ffd07b', opacity: .17 },
   play: { position: 'absolute', right: 19, top: 16, fontSize: 27, color: '#ffd07b' },
   dots: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap' }, dotButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }, dot: { width: 7, height: 7, borderRadius: 8, backgroundColor: 'rgba(255,255,255,.4)' }, selected: { width: 23, backgroundColor: '#fff' },
+  dotOnLight: { backgroundColor: '#B7DDD0' }, selectedOnLight: { width: 23, backgroundColor: '#315B4B' },
 });

@@ -1464,9 +1464,61 @@ const APP_PALETTE = {
   "#C7E1BF": "#D8C3B7"
 };
 
+// A phone-only, opt-in colour preview. The normal URL and native apps keep
+// their existing appearance until the restaurant approves the new palette.
+const DUO_PREVIEW = Platform.OS === "web" && typeof window !== "undefined" &&
+  new URLSearchParams(window.location.search).get("theme") === "duo-equilibre";
+
+const DUO_PALETTE = {
+  "#E54832": "#FBF3E6", // warm cream background
+  "#FFFCF7": "#FFFAF1",
+  "#EEE2D6": "#D6EEE3",
+  "#F3DDD3": "#D6EEE3",
+  "#DED0C4": "#C1D7CB",
+  "#B85C3C": "#BB7258", // terracotta action
+  "#98452F": "#A9543C",
+  "#171412": "#25473B", // deep green text
+  "#332A25": "#284438",
+  "#76665D": "#405447",
+  "#88786F": "#5E6F62",
+  "#F2E7DE": "#D6EEE3",
+  "#D8C3B7": "#B7DDD0"
+};
+
+const DUO_STYLE_OVERRIDES = {
+  header: { backgroundColor: "#B7DDD0", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
+  headerDesktop: { borderBottomColor: "#B7DDD0" },
+  wordmarkBadge: { backgroundColor: "#315B4B", borderRadius: 13, paddingHorizontal: 5 },
+  headerCart: { backgroundColor: "#BB7258" },
+  headerCartText: { color: "#FFFAF1" },
+  backButton: { backgroundColor: "#D6EEE3" },
+  addressBox: { backgroundColor: "#D6EEE3" },
+  accountShortcut: { backgroundColor: "#E8D7C6" },
+  serviceAction: { backgroundColor: "#FFFAF1", borderColor: "#B7DDD0" },
+  serviceActionSelected: { backgroundColor: "#D6EEE3", borderColor: "#315B4B" },
+  serviceActionReservation: { backgroundColor: "#E8D7C6", borderColor: "#D7BDAA" },
+  categoryHeader: { backgroundColor: "#AD553F", borderColor: "#AD553F", shadowColor: "#784436" },
+  categoryHeaderTitle: { color: "#FFFAF1" },
+  categoryHeaderSubtitle: { color: "#FFFAF1" },
+  productDescription: { color: "#405447", fontSize: 14, lineHeight: 20 },
+  detailDescription: { backgroundColor: "#D6EEE3", color: "#284438", fontSize: 17, lineHeight: 25, fontWeight: "600", borderRadius: 16, padding: 16, marginTop: 14 },
+  primaryButton: { backgroundColor: "#315B4B" },
+  stickyAction: { backgroundColor: "#FBF3E6" },
+  floatingCart: { backgroundColor: "#315B4B" },
+  loyaltyShortcut: { backgroundColor: "#315B4B" },
+  plus: { backgroundColor: "#BB7258" },
+  welcomeSignupStrip: { backgroundColor: "#D6EEE3", borderColor: "#B7DDD0" },
+  welcomeSignupStripTitle: { color: "#25473B" },
+  welcomeSignupStripText: { color: "#405447" }
+};
+
 const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleSheet).map(([name, style]) => {
   const themedStyle = Object.fromEntries(Object.entries(style).map(([property, value]) => [property, APP_PALETTE[value] || value]));
   if (["wordmark", "siteFooterTitle"].includes(name)) themedStyle.color = "#171412";
+  if (DUO_PREVIEW) {
+    for (const [property, value] of Object.entries(themedStyle)) themedStyle[property] = DUO_PALETTE[value] || value;
+    Object.assign(themedStyle, DUO_STYLE_OVERRIDES[name]);
+  }
   return [name, themedStyle];
 }));
 
