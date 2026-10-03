@@ -3,7 +3,7 @@ window.BibouAmendments = (() => {
   let dialog;
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = n => Number(n).toFixed(2).replace('.', ',') + ' €';
-  const groups = { protein:'Protéine', 'meat-type':'Viande halal ou non halal', salad:'Crudités', sauces:'Sauce', drink:'Boisson du menu', extras:'Suppléments', sides:'Accompagnements ajoutés', desserts:'Desserts', 'menu-desserts':'Dessert du menu (+2 €)', 'duo-drink-one':'Première boisson', 'duo-drink-two':'Deuxième boisson' };
+  const groups = { protein:'Protéine', 'meat-type':'Viande halal ou non halal', salad:'Crudités', sauces:'Sauce', drink:'Boisson du menu', extras:'Suppléments', 'menu-fries':'Frites du menu (remplacement +2,50 €)', sides:'Accompagnements ajoutés', desserts:'Desserts', 'menu-desserts':'Dessert du menu (+2 €)', 'duo-drink-one':'Première boisson', 'duo-drink-two':'Deuxième boisson' };
   function clear() { dialog?.remove(); dialog = null; }
   async function open(order, { api, headers, current, refresh }) {
     clear();

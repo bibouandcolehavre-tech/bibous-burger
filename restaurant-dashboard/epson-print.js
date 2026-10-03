@@ -104,7 +104,7 @@
     };
     const optionTitle = { protein: 'Composition', 'meat-type': 'Viande', drink: 'Boisson',
       'duo-drink-one': 'Boisson 1', 'duo-drink-two': 'Boisson 2', sauces: 'Sauce',
-      salad: 'Crudites', extras: 'Supplement', sides: 'Accompagnement', desserts: 'Dessert' };
+      salad: 'Crudites', extras: 'Supplement', 'menu-fries': 'Frites du menu', sides: 'Accompagnement', desserts: 'Dessert' };
     const parts = [
       '<text align="center" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
       '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),

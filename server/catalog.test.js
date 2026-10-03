@@ -100,3 +100,31 @@ test('dessert à 2 € dans un menu et 3,90 € à la carte, prix imposés par l
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }] }]), /option/);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }, { groupId: 'menu-desserts', id: 'cookie' }] }]), /maximum 1 choix/);
 });
+
+test('frites cheddar bacon : remplacement du menu à 2,50 €, portion seule à 6,90 €', () => {
+  const upgrade = { groupId: 'menu-fries', id: 'cheddar-bacon' };
+  const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, upgrade] }]);
+  assert.equal(menu.subtotal, 17.4);
+  assert.deepEqual(menu.items[0].options.find(option => option.groupId === 'menu-fries'), {
+    ...upgrade, label: 'Frites du menu remplacées par des frites cheddar bacon', price: 2.5
+  });
+  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: requiredSelections }]).subtotal, 14.9);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'frites-cheddar-bacon', quantity: 1, selections: [] }]).subtotal, 6.9);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, upgrade] }]), /option/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, upgrade] }], { 'frites-cheddar-bacon': false }), /plus disponible/);
+});
+
+test('le serveur refuse le bacon de porc avec viande halal, même en portion supplémentaire', () => {
+  const halal = [...requiredSelections, { groupId: 'meat-type', id: 'halal' }];
+  for (const selection of [
+    { groupId: 'menu-fries', id: 'cheddar-bacon' },
+    { groupId: 'sides', id: 'frites-cheddar' }
+  ]) {
+    assert.throws(
+      () => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...halal, selection] }]),
+      /bacon de porc, non halal/
+    );
+  }
+  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: halal }]).subtotal, 14.9);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, { groupId: 'meat-type', id: 'non-halal' }, { groupId: 'menu-fries', id: 'cheddar-bacon' }] }]).subtotal, 17.4);
+});

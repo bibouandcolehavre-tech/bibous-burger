@@ -89,6 +89,7 @@ const OPTIONS = [
   option("sides", "frites", "Portion de frites maison ajoutée", 3.9),
   option("sides", "frites-cheddar", "Frites cheddar bacon ajoutées", 6.9),
   option("sides", "tenders", "3 Tenders ajoutés", 6.9),
+  option("menu-fries", "cheddar-bacon", "Frites du menu remplacées par des frites cheddar bacon", 2.5),
   option("desserts", "oreo", "Tiramisu Oreo", 3.9),
   option("desserts", "cookie", "Tiramisu cookie", 3.9),
   option("desserts", "framboise", "Tiramisu framboise pistache", 3.9),
@@ -134,10 +135,11 @@ const GROUP_RULES = {
   "duo-drink-two": { min: 1, max: 1 },
   extras: {},
   sides: {},
+  'menu-fries': { max: 1 },
   desserts: { max: 1 },
   'menu-desserts': { max: 1 }
 };
-const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides", "menu-desserts"]);
+const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides", "menu-fries", "menu-desserts"]);
 const BURGER_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "extras", "sides", "desserts"]);
 const DUO_GROUPS = new Set(["duo-drink-one", "duo-drink-two"]);
 const SIMPLE_GROUPS = new Set();
@@ -152,6 +154,7 @@ const optionProductId = ({ groupId, id }) => {
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
   if (groupId === "desserts" || groupId === "menu-desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
+  if (groupId === "menu-fries" && id === "cheddar-bacon") return "frites-cheddar-bacon";
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;
@@ -226,6 +229,8 @@ const validatedSelections = (product, selections, productId) => {
     // Android v4 has no meat-type selector. An absent choice stays absent: never
     // infer halal/non-halal. Still validate explicit choices from cached clients.
     if (vegetarian && meatType) throw orderInputError('Retire le choix de viande pour la version végétarienne.');
+    if (vegetarian && byGroup['menu-fries']?.length) throw orderInputError('Les frites cheddar bacon ne conviennent pas à la version végétarienne.');
+    if (meatType === 'halal' && (byGroup['menu-fries']?.some(option => option.id === 'cheddar-bacon') || byGroup.sides.some(option => option.id === 'frites-cheddar'))) throw orderInputError('Les frites cheddar bacon contiennent du bacon de porc, non halal. Cette option est indisponible avec une viande halal.');
     if (meatType === 'halal' && (containsPork(productId) || resolved.some(porkOption))) throw orderInputError('Cette recette ou un supplément contient du porc et ne peut pas être commandé en version halal.');
   }
   return resolved;
