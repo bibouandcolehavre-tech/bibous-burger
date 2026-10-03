@@ -1,5 +1,16 @@
 # Google Play — reprise du 24 septembre 2026
 
+## Mise à jour du 3 octobre 2026 — icône dégradée
+
+- La version initiale 1.0.0 (4) est publiée en production depuis le 2 octobre à 09 h 26, selon la Play Console.
+- Le propriétaire a validé le logo seul sur fond dégradé terracotta / vert d’eau pour Android. L’image approuvée est conservée dans `store-assets/android-icon-concepts/bicolor-palette/05h-logo-seul-degrade-carre.png` ; les fichiers natifs utilisés sont `assets/android-icon-gradient.png`, `assets/android-adaptive-foreground-gradient.png` et `assets/android-adaptive-background-gradient.png`.
+- Pour ne pas intégrer les autres changements en cours, le build 1.0.0 (5) a été fabriqué depuis le code exact de la version 4 (`3239d38`), avec uniquement les nouveaux visuels Android et `app.json`. Commit isolé `db3c1d6`, branche locale `codex/android-gradient-icon`, dossier `/Users/nowar/Documents/Codex/android-gradient-icon`. Les mêmes visuels et réglages ont également été enregistrés dans la branche de travail courante, commit `821b8eb`, sans toucher aux changements préexistants.
+- Build Expo terminé : https://expo.dev/accounts/bibou-and-co/projects/bibous-burger/builds/15f40b02-e726-4be4-aa6d-b4f13107610b. Expo a incrémenté le code Android de 4 à 5, avec la clé de signature distante existante. Archive AAB téléchargée temporairement dans `/private/tmp/bibou-android-gradient-v5.aab` ; ZIP intègre, package `com.krokly.bibousburgers` présent dans le manifeste, SHA-256 `82470f58336b7ecfa99c5f3f334474dfb62a8179726b06dfd6f8cf763828e758`.
+- Google Play a accepté l’AAB sous le code 5, avec zéro appareil rendu incompatible. Seul avertissement non bloquant : absence de fichier de désobscurcissement. Release de production 2 : https://play.google.com/console/u/1/developers/8477636530916827216/app/4975001923758008093/tracks/4697410309862779058/releases/2/review.
+- La nouvelle icône 512 px de la fiche est `store-assets/google-play/icon-512-gradient.png`. La Play Console n’a recensé que deux modifications : « Lancer le déploiement complet » de 1.0.0 (5) et « Modifier l’icône de l’appli ».
+- Ces deux modifications ont été **envoyées à Google pour examen** le 3 octobre ; la page https://play.google.com/console/u/1/developers/8477636530916827216/app/4975001923758008093/publishing affichait « Modifications en cours d’examen ». Les vérifications rapides étaient encore en cours (maximum indiqué : 13 minutes). **Ne pas annoncer la mise à jour comme déjà publiée** ; confirmer ultérieurement son état sur cette page puis sur la fiche publique.
+- L’icône de lancement Android est mise à jour. Le parcours de connexion et l’écran de chargement n’ont pas été modifiés dans ce build isolé ; l’accès de revue reste identique à la version 4. Le logo iPhone n’a pas été modifié.
+
 Le propriétaire demande de reprendre la publication Android et souhaite un envoi aujourd'hui. La soumission est autorisée ; la date de mise en ligne reste soumise à l'examen de Google. Aucun achat supplémentaire autorisé.
 
 ## État actuel — envoi confirmé le 24 septembre à 18 h 34 (Paris)
