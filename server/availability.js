@@ -1,14 +1,12 @@
-const { clock, clockMinutes } = require('../service-policy');
-// Temporary Android v4 contract: delivery ranges of 30 minutes; fixed pickup
-// and table appointments every 15 minutes. The 20-minute feature is archived.
-const slotMinutesForMethod = method => method === 'delivery' ? 30 : 15;
+const { SLOT_MINUTES, preparationMinutes, clock, clockMinutes, regularSlotsForWeekday } = require('../service-policy');
+const slotMinutesForMethod = () => SLOT_MINUTES;
 const SLOT_CAPACITY = 2;
 const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
 
 // One-off closure requested by the restaurant; dates use the Paris service day.
-const serviceClosureReason = (dateKey, slot, method = "delivery", database = {}) => {
-  const override = scheduleOverride(database, dateKey, slot, method);
+const serviceClosureReason = (dateKey, slot, method = "delivery", database = {}, grid = 20) => {
+  const override = scheduleOverride(database, dateKey, slot, method, slotWindow(slot, grid === 20 ? 20 : legacySlotMinutes(method)));
   if (typeof override === "boolean") return override ? null : "Ce créneau est exceptionnellement fermé. Choisis un autre horaire.";
   return dateKey === "2026-09-25" && String(slot).slice(0, 5) >= "19:00"
     ? "Le restaurant est exceptionnellement fermé ce vendredi 25 septembre au soir. Choisis un autre jour." : null;
@@ -29,27 +27,36 @@ const dateFromKey = (dateKey) => {
   const parsed = new Date(`${dateKey}T12:00:00Z`);
   return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dateKey ? null : parsed;
 };
+const legacySlotMinutes = method => method === 'delivery' ? 30 : 15;
 
 const regularSlotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
   if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
+  return regularSlotsForWeekday(date.getUTCDay());
+};
+const legacySlotsForDate = (dateKey, method) => {
+  const date = dateFromKey(dateKey);
+  if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
   const weekday = date.getUTCDay();
   const windows = weekday === 0 ? [[19, 21]] : weekday === 6 ? [[19, 22]] : [[12, 14], [19, 22]];
-  const step = slotMinutesForMethod(method);
-  return windows.flatMap(([start, end]) => Array.from({ length: (end - start) * 60 / step }, (_, i) => {
-    const minutes = start * 60 + i * step;
-    return method === 'delivery' ? `${clock(minutes)} – ${clock(minutes + step)}` : clock(minutes);
+  const step = legacySlotMinutes(method);
+  return windows.flatMap(([start, end]) => Array.from({ length: (end - start) * 60 / step }, (_, index) => {
+    const minute = start * 60 + index * step;
+    return method === 'delivery' ? `${clock(minute)} – ${clock(minute + step)}` : clock(minute);
   }));
 };
 
-const candidateSlots = method => Array.from({ length: 1440 / slotMinutesForMethod(method) }, (_, i) => {
-  const minutes = i * slotMinutesForMethod(method);
-  return method === 'delivery' ? `${clock(minutes)} – ${clock((minutes + 30) % 1440)}` : clock(minutes);
-});
+const candidateSlots = (method = 'delivery', grid = 20) => {
+  const step = grid === 20 ? SLOT_MINUTES : legacySlotMinutes(method);
+  return Array.from({ length: 1440 / step }, (_, index) => {
+    const minute = index * step;
+    return grid === 20 || method !== 'delivery' ? clock(minute) : `${clock(minute)} – ${clock((minute + step) % 1440)}`;
+  });
+};
 
 // Table appointments share a half-hour capacity window. Preserve the explicit
 // footprint of bookings made during the 20-minute rollout. Never move bookings.
-const slotWindow = (slot, duration = 15, legacyTable = false) => {
+const slotWindow = (slot, duration = SLOT_MINUTES, legacyTable = false) => {
   const parts = String(slot || '').split(' – ');
   let start = clockMinutes(parts[0]);
   if (start === null) return null;
@@ -65,7 +72,7 @@ const slotWindow = (slot, duration = 15, legacyTable = false) => {
 };
 const windowsOverlap = (a, b) => Boolean(a && b && a[0] < b[1] && b[0] < a[1]);
 const bookingWindow = (booking, method = booking.method) => slotWindow(booking.slot,
-  booking.slotDurationMinutes || slotMinutesForMethod(method),
+  booking.slotDurationMinutes || (method === 'delivery' ? 30 : method === 'pickup' ? 15 : SLOT_MINUTES),
   method === 'reservation' && booking.slotDurationMinutes !== 20);
 
 // Project saved exceptions onto the active grid, conservatively: no newly offered
@@ -74,7 +81,7 @@ const scheduleOverride = (database, dateKey, slot, method, window = slotWindow(s
   const saved = database.serviceSchedule?.dates?.[dateKey];
   const entries = Object.entries(saved?.services?.[method] || {});
   if (!window || !entries.length) return undefined;
-  const duration = saved.slotMinutes === 20 ? 20 : slotMinutesForMethod(method);
+  const duration = saved.slotMinutes === 20 ? 20 : method === 'delivery' ? 30 : 15;
   const affected = entries.map(([key, open]) => ({ window: slotWindow(key, duration), open }))
     .filter(entry => typeof entry.open === 'boolean' && windowsOverlap(window, entry.window));
   if (!affected.length) return undefined;
@@ -87,10 +94,10 @@ const scheduleOverride = (database, dateKey, slot, method, window = slotWindow(s
   }
   return true;
 };
-const slotsForDate = (dateKey, method = "delivery", database = {}) => {
-  const regular = regularSlotsForDate(dateKey, method);
+const slotsForDate = (dateKey, method = "delivery", database = {}, grid = 15) => {
+  const regular = grid === 20 ? regularSlotsForDate(dateKey, method) : legacySlotsForDate(dateKey, method);
   if (!dateFromKey(dateKey) || !["delivery", "pickup", "reservation"].includes(method)) return [];
-  const extra = candidateSlots(method).filter(slot => scheduleOverride(database, dateKey, slot, method) !== undefined);
+  const extra = candidateSlots(method, grid).filter(slot => scheduleOverride(database, dateKey, slot, method, slotWindow(slot, grid === 20 ? 20 : legacySlotMinutes(method))) !== undefined);
   return [...new Set([...regular, ...extra])].sort();
 };
 
@@ -123,11 +130,11 @@ const validateServiceDate = (dateKey, now = new Date()) => {
   return null;
 };
 
-const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery", database = {}) => {
+const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery", database = {}, subtotal, grid = 15) => {
   const dateError = validateServiceDate(dateKey, now);
   if (dateError) return dateError;
-  if (!slotsForDate(dateKey, method, database).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
-  const closureReason = serviceClosureReason(dateKey, slot, method, database);
+  if (!slotsForDate(dateKey, method, database, grid).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
+  const closureReason = serviceClosureReason(dateKey, slot, method, database, grid);
   if (closureReason) return closureReason;
   if (dateKey === parisDateKey(now)) {
     const clockParts = Object.fromEntries(new Intl.DateTimeFormat("fr-FR", {
@@ -138,6 +145,11 @@ const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery
     }).formatToParts(now).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
     const [startHour, startMinute] = slot.slice(0, 5).split(":").map(Number);
     if (startHour * 60 + startMinute <= clockParts.hour * 60 + clockParts.minute) return "Ce créneau est déjà passé.";
+  }
+  if (method !== 'reservation' && subtotal !== undefined) {
+    const minimum = grid === 20 ? preparationMinutes(subtotal) : 20;
+    const arrival = serviceSlotInstant(dateKey, String(slot).slice(0, 5));
+    if (arrival && arrival.getTime() < now.getTime() + minimum * 60000) return `Prévois au moins ${minimum} minutes de préparation pour ce panier. Choisis un horaire plus tard.`;
   }
   return null;
 };
@@ -169,11 +181,11 @@ const remainingDeliveryPlaces = (database, dateKey, slot, now = new Date()) => {
   return { capacity: SLOT_CAPACITY, reserved, remaining: Math.max(0, SLOT_CAPACITY - reserved), full: reserved >= SLOT_CAPACITY };
 };
 
-const availabilityForDate = (database, dateKey, now = new Date(), method = "delivery") => Object.fromEntries(
-  slotsForDate(dateKey, method, database).map((slot) => {
+const availabilityForDate = (database, dateKey, now = new Date(), method = "delivery", subtotal, grid = 15) => Object.fromEntries(
+  slotsForDate(dateKey, method, database, grid).map((slot) => {
     const status = method === "delivery" ? remainingDeliveryPlaces(database, dateKey, slot, now) : { full: false };
-    const unavailableReason = validateServiceSlot(dateKey, slot, now, method, database);
-    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, method, database)), unavailable: Boolean(unavailableReason), unavailableReason,
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, method, database, subtotal, grid);
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, method, database, grid)), unavailable: Boolean(unavailableReason), unavailableReason,
       ...(method === "pickup" ? { pickupAdvanceEligible: qualifiesForAdvancePickup({ method, serviceDate: dateKey, slot, createdAt: now.toISOString() }) } : {}) }];
   })
 );

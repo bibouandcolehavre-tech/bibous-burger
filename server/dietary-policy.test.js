@@ -34,13 +34,13 @@ test('ticket restaurant : choix de viande mis en évidence avant les crudités',
   assert.match(markup,/<strong>Viande halal<\/strong>/);
   assert.ok(markup.indexOf('Choix de viande')<markup.indexOf('Crudités'));
 });
-test('interface temporaire compatible Android v4, sans nouveau choix viande',()=>{
+test('interface Android v6 : choix de viande dans la fiche, sans bandeau halal en accueil',()=>{
   const fs=require('node:fs'),path=require('node:path');
   const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
   assert.doesNotMatch(source,/MeatPreference|meatPreference|TA PRÉFÉRENCE DE VIANDE/);
   const cards=source.slice(source.indexOf('function ProductCard'),source.indexOf('function AccessoryCard'));
   assert.doesNotMatch(cards,/halal|CONTIENT DU PORC/);
-  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, SALAD/);
-  assert.match(source,/BURGER_OPTION_GROUPS = \[PROTEIN, SALAD/);
-  assert.doesNotMatch(source,/MEAT_TYPE|regularSlotsForWeekday|preparationMinutes/);
+  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
+  assert.match(source,/BURGER_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
+  assert.match(source,/regularSlotsForWeekday|preparationMinutes/);
 });

@@ -1,18 +1,21 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const schedule=require('./service-schedule');
-const {availabilityForDate,validateServiceSlot,qualifiesForAdvancePickup}=require('./availability');
-const {reservationAvailabilityForDate}=require('./reservations');
+const availability=require('./availability');
+const {qualifiesForAdvancePickup}=availability;
+const availabilityForDate=(db,date,now,method)=>availability.availabilityForDate(db,date,now,method,undefined,20);
+const validateServiceSlot=(date,slot,now,method,db)=>availability.validateServiceSlot(date,slot,now,method,db,undefined,20);
+const reservationAvailabilityForDate=(db,date,now)=>require('./reservations').reservationAvailabilityForDate(db,date,now,20);
 const now=new Date('2026-09-25T08:00:00Z'), date='2026-09-26';
 const draft=(db,d=date)=>{const state=schedule.dashboard(db,d,now);return {date:d,revision:state.revision,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))};};
 test('extra hours are authoritative for each service, persisted and isolated by date',()=>{
- const db={};const input=draft(db);input.services.pickup['22:45']=true;input.services.delivery['22:30 – 23:00']=true;input.services.reservation['22:15']=true;schedule.save(db,input,now);
+ const db={};const input=draft(db);input.services.pickup['22:40']=true;input.services.delivery['22:40']=true;input.services.reservation['22:40']=true;schedule.save(db,input,now);
  const restored=JSON.parse(JSON.stringify(db));
- for(const [m,slot] of [['pickup','22:45'],['delivery','22:30 – 23:00'],['reservation','22:15']]){
+ for(const [m,slot] of [['pickup','22:40'],['delivery','22:40'],['reservation','22:40']]){
   assert.equal(validateServiceSlot(date,slot,now,m,restored),null);
   const statuses=m==='reservation'?reservationAvailabilityForDate(restored,date,now):availabilityForDate(restored,date,now,m);
   assert.equal(statuses[slot].unavailable,false);assert.match(validateServiceSlot('2026-09-27',slot,now,m,restored),/pas disponible/);
  }
- assert.equal(qualifiesForAdvancePickup({method:'pickup',serviceDate:date,slot:'22:45',createdAt:'2026-09-26T19:00:00Z'}),true);
+ assert.equal(qualifiesForAdvancePickup({method:'pickup',serviceDate:date,slot:'22:40',createdAt:'2026-09-26T19:00:00Z'}),true);
 });
 test('closing one service preserves the others and warns about existing business',()=>{
  const db={orders:[{serviceDate:date,method:'pickup',slot:'19:00',status:'confirmed',payment:{status:'PAID'}}]};const input=draft(db);input.services.pickup['19:00']=false;

@@ -1,4 +1,4 @@
-const { slotsForDate, validateServiceSlot, serviceClosureReason, bookingWindow, windowsOverlap } = require("./availability");
+const { slotsForDate, validateServiceSlot, serviceClosureReason, bookingWindow, slotWindow, windowsOverlap } = require("./availability");
 
 const RESERVATION_STATUSES = ["pending", "confirmed", "cancelled"];
 const RESERVATION_SLOT_CAPACITY = 2;
@@ -18,19 +18,19 @@ const ensureReservationStore = (database) => {
   return database;
 };
 
-const holdsReservationSlot = (reservation, dateKey, slot) => reservation.serviceDate === dateKey && windowsOverlap(bookingWindow(reservation, 'reservation'), bookingWindow({ slot }, 'reservation')) && reservation.status !== "cancelled";
+const holdsReservationSlot = (reservation, dateKey, slot, grid = 15) => reservation.serviceDate === dateKey && windowsOverlap(bookingWindow(reservation, 'reservation'), grid === 20 ? slotWindow(slot, 20) : bookingWindow({ slot }, 'reservation')) && reservation.status !== "cancelled";
 
-const remainingReservationPlaces = (database, dateKey, slot) => {
+const remainingReservationPlaces = (database, dateKey, slot, grid = 15) => {
   ensureReservationStore(database);
-  const reserved = database.reservations.filter((reservation) => holdsReservationSlot(reservation, dateKey, slot)).length;
+  const reserved = database.reservations.filter((reservation) => holdsReservationSlot(reservation, dateKey, slot, grid)).length;
   return { capacity: RESERVATION_SLOT_CAPACITY, reserved, remaining: Math.max(0, RESERVATION_SLOT_CAPACITY - reserved), full: reserved >= RESERVATION_SLOT_CAPACITY };
 };
 
-const reservationAvailabilityForDate = (database, dateKey, now = new Date()) => Object.fromEntries(
-  slotsForDate(dateKey, "reservation", database).map((slot) => {
-    const status = remainingReservationPlaces(database, dateKey, slot);
-    const unavailableReason = validateServiceSlot(dateKey, slot, now, "reservation", database);
-    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, "reservation", database)), unavailable: Boolean(unavailableReason), unavailableReason }];
+const reservationAvailabilityForDate = (database, dateKey, now = new Date(), grid = 15) => Object.fromEntries(
+  slotsForDate(dateKey, "reservation", database, grid).map((slot) => {
+    const status = remainingReservationPlaces(database, dateKey, slot, grid);
+    const unavailableReason = validateServiceSlot(dateKey, slot, now, "reservation", database, undefined, grid);
+    return [slot, { ...status, closed: Boolean(serviceClosureReason(dateKey, slot, "reservation", database, grid)), unavailable: Boolean(unavailableReason), unavailableReason }];
   })
 );
 
@@ -50,9 +50,10 @@ const createReservation = (database, input, now = new Date()) => {
   if (customerName.length < 2) throw new Error("Indique ton nom pour réserver.");
   if (!phone) throw new Error("Indique un numéro de téléphone français valide.");
   if (!Number.isInteger(guests) || guests < 1 || guests > 4) throw new Error("Choisis entre 1 et 4 personnes.");
-  const slotError = validateServiceSlot(input.serviceDate, input.slot, now, "reservation", database);
+  const grid = input.slotGrid === 20 ? 20 : 15;
+  const slotError = validateServiceSlot(input.serviceDate, input.slot, now, "reservation", database, undefined, grid);
   if (slotError) throw new Error(slotError.replace("livraison", "réservation"));
-  if (remainingReservationPlaces(database, input.serviceDate, input.slot).full) throw new Error("Ce créneau de réservation est complet.");
+  if (remainingReservationPlaces(database, input.serviceDate, input.slot, grid).full) throw new Error("Ce créneau de réservation est complet.");
 
   const number = database.nextReservationNumber++;
   const reservation = {
@@ -64,6 +65,7 @@ const createReservation = (database, input, now = new Date()) => {
     guests,
     serviceDate: input.serviceDate,
     slot: input.slot,
+    ...(grid === 20 ? { slotDurationMinutes: 20 } : {}),
     note,
     status: "pending",
     createdAt: now.toISOString(),

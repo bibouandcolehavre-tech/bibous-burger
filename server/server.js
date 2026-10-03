@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
 const { createDatabaseLock } = require("./database-lock");
+const { createServiceModuleStore } = require('./service-modules');
 const { createReviewSandbox } = require('./review-sandbox');
 const { createRegistrationStore } = require('./customer-registration');
 const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../customer-identity');
@@ -57,6 +58,7 @@ const pushConfig = push.configFromEnv(process.env);
 const uberConfig = uber.configFromEnv(process.env);
 const uberClient = uber.createClient(uberConfig);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
+const serviceModuleStore = createServiceModuleStore(path.join(path.dirname(databasePath), 'service-modules.json'));
 const keyyoConfig = keyyo.configFromEnv(process.env);
 const orderSmsConfig = orderSms.configFromEnv(process.env);
 const keyyoSms = keyyo.createCallSms({ config: keyyoConfig, file: path.join(path.dirname(databasePath), 'keyyo-call-sms.json') });
@@ -436,6 +438,19 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
 
+    if (url.pathname === '/api/service-modules' && request.method === 'GET') {
+      return send(response, 200, await serviceModuleStore.read());
+    }
+    if (url.pathname === '/api/dashboard/service-modules') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      if (request.method === 'GET') return send(response, 200, await serviceModuleStore.read());
+      if (request.method === 'PATCH') {
+        const input = await readBody(request);
+        return send(response, 200, await serializeOrderCreation(() => serviceModuleStore.update(input)));
+      }
+      return send(response, 405, { error: 'Méthode non autorisée.' });
+    }
+
     if (url.pathname === "/api/dashboard/backups" || url.pathname.startsWith("/api/dashboard/backups/")) {
       response.setHeader("Cache-Control", "no-store");
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
@@ -711,25 +726,35 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/availability") {
       const serviceDate = url.searchParams.get("date");
       const method = url.searchParams.get("method") || "delivery";
+      const grid = url.searchParams.get('grid') === '20' ? 20 : 15;
+      const subtotalValue = url.searchParams.get('subtotal');
+      const subtotal = subtotalValue === null ? undefined : Number(subtotalValue);
+      if (subtotalValue !== null && (!Number.isFinite(subtotal) || subtotal < 0)) return send(response, 400, { error: 'Montant du panier invalide.' });
       if (!["delivery", "pickup"].includes(method)) return send(response, 400, { error: "Mode de commande invalide." });
+      if (!(await serviceModuleStore.read()).modules[method]) return send(response, 200, { serviceDate, method, capacity: method === 'delivery' ? SLOT_CAPACITY : null, slots: [], unavailable: true });
       const validationError = validateServiceDate(serviceDate);
       if (validationError) return send(response, 400, { error: validationError });
-      const slots = availabilityForDate(database, serviceDate, new Date(), method);
+      const slots = availabilityForDate(database, serviceDate, new Date(), method, subtotal, grid);
       return send(response, 200, { serviceDate, method, capacity: method === "delivery" ? SLOT_CAPACITY : null, slots });
     }
 
     if (request.method === "GET" && url.pathname === "/api/reservation-availability") {
       const serviceDate = url.searchParams.get("date");
+      const grid = url.searchParams.get('grid') === '20' ? 20 : 15;
+      const capacityWindowMinutes = grid === 20 ? 20 : 30;
+      if (!(await serviceModuleStore.read()).modules.tables) return send(response, 200, { serviceDate, capacity: RESERVATION_SLOT_CAPACITY, capacityWindowMinutes, slots: [], unavailable: true });
       const validationError = validateServiceDate(serviceDate);
       if (validationError) return send(response, 400, { error: validationError.replace("livraison", "réservation") });
-      const slots = reservationAvailabilityForDate(database, serviceDate);
-      return send(response, 200, { serviceDate, capacity: RESERVATION_SLOT_CAPACITY, capacityWindowMinutes: 30, slots });
+      const slots = reservationAvailabilityForDate(database, serviceDate, new Date(), grid);
+      return send(response, 200, { serviceDate, capacity: RESERVATION_SLOT_CAPACITY, capacityWindowMinutes, slots });
     }
 
     if (request.method === "POST" && url.pathname === "/api/reservations") {
+      if (!(await serviceModuleStore.read()).modules.tables) return send(response, 409, { code: 'MODULE_DISABLED', error: 'Les nouvelles réservations de table sont momentanément indisponibles.' });
       const input = await readBody(request);
       try {
         const reservation = await serializeOrderCreation(async () => {
+          if (!(await serviceModuleStore.read()).modules.tables) throw Object.assign(new Error('Les nouvelles réservations de table sont momentanément indisponibles.'), { statusCode: 409 });
           const latestDatabase = await readDatabase();
           const customer = authenticatedCustomer(request, latestDatabase);
           if (!customer) throw Object.assign(new Error("Connecte-toi par SMS avant de réserver."), { statusCode: 401 });
@@ -1112,11 +1137,13 @@ const server = http.createServer(async (request, response) => {
         if (previous.requestFingerprint !== fingerprint) return send(response, 409, { code: "ATTEMPT_CONFLICT", error: "Cette tentative correspond déjà à une autre commande. Vérifie son paiement avant de continuer." });
         return send(response, 200, { order: previous, reused: true });
       }
+      if (['delivery', 'pickup'].includes(input.method) && !(await serviceModuleStore.read()).modules[input.method]) return send(response, 409, { code: 'MODULE_DISABLED', error: 'Ce mode de commande est momentanément indisponible.' });
       const promotion = promotionForCode(input.promoCode);
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
       const subtotal = pricedCart.subtotal;
-      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database);
+      const grid = input.slotGrid === 20 ? 20 : 15;
+      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database, subtotal, grid);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
       let distanceKm = 0;
       let deliveryFee = 0;
@@ -1132,6 +1159,7 @@ const server = http.createServer(async (request, response) => {
       }
       if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
       const order = await serializeOrderCreation(async () => {
+        if (!(await serviceModuleStore.read()).modules[input.method]) throw Object.assign(new Error('Ce mode de commande est momentanément indisponible.'), { statusCode: 409 });
         assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());
         const latestDatabase = await readDatabase();
         ensureBibouPlusStore(latestDatabase);
@@ -1148,12 +1176,12 @@ const server = http.createServer(async (request, response) => {
         const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), promotion);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
-        createdOrder.slotDurationMinutes = slotMinutesForMethod(input.method);
+        createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
         createdOrder.requestId = requestId;
         if (promotion) { createdOrder.promotion = promotion; createdOrder.discountLabel = `Code promo ${promotion.code}`; }
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
-        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase);
+        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
         createdOrder.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(createdOrder);
         latestDatabase.orders.unshift(createdOrder);
@@ -1365,4 +1393,6 @@ if (keyyo.configured(keyyoConfig)) {
   keyyoWorker.unref();
   server.once('close', () => clearInterval(keyyoWorker));
 }
-server.listen(port, () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`));
+const onListen = () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`);
+if (process.env.LISTEN_HOST) server.listen(port, process.env.LISTEN_HOST, onListen);
+else server.listen(port, onListen);

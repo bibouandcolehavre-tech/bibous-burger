@@ -41,10 +41,10 @@ function save(database, input, now = new Date()) {
   }
   database.serviceSchedule ||= { dates: {} };
   database.serviceSchedule.dates ||= {};
-  database.serviceSchedule.dates[input.date] = { revision: current.revision + 1, services, updatedAt: now.toISOString() };
+  database.serviceSchedule.dates[input.date] = { revision: current.revision + 1, slotMinutes: 20, services, updatedAt: now.toISOString() };
   // Each day's changes remain available for an audit without customer details.
   database.serviceSchedule.history ||= [];
-  database.serviceSchedule.history.push({ date: input.date, revision: current.revision + 1, services, at: now.toISOString() });
+  database.serviceSchedule.history.push({ date: input.date, revision: current.revision + 1, slotMinutes: 20, services, at: now.toISOString() });
   database.serviceSchedule.history = database.serviceSchedule.history.slice(-200);
 }
 module.exports = { dashboard, save, METHODS };

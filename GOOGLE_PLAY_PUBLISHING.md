@@ -1,5 +1,13 @@
 # Google Play — reprise du 24 septembre 2026
 
+## État actuel — 3 octobre 2026 : version 5 retirée, version 6 en préparation
+
+- À la demande du propriétaire, la version 1.0.0 (5), qui ne portait que le logo Android dégradé, a été **retirée de l’examen** dans la Play Console via « Supprimer les modifications ». La console affiche maintenant les deux modifications de la version 5 comme **brouillons non envoyés** (release 2 et icône de la fiche), et la version 4 reste publiée. **Ne pas renvoyer ces deux brouillons seuls.**
+- Le propriétaire demande **un seul nouvel envoi**, avec toutes les modifications approuvées depuis le 24 septembre. Le code de la version 6 est préparé dans `burger-order-sms` ; aucun AAB v6 n’est encore construit ni soumis à Google à cette étape.
+- Modifications préparées : icône officielle dégradée, thème terracotta / vert d’eau déjà validé, proposition facultative de création de compte à l’ouverture Android, choix halal ou non halal dans la composition (pas de version halal pour les recettes contenant du porc), trois créneaux par heure, préparation de 20/30/45 minutes selon le panier, modifications déjà validées du catalogue et des desserts. Le serveur accepte simultanément l’ancienne grille pour les clients Android v4 et la nouvelle grille demandée explicitement par la future version 6.
+- Vérifications locales au 3 octobre : export web et export Android réussis ; **341/341 tests serveur réussis** après autorisation de la seule écoute réseau locale des tests. Aucune commande ni donnée client réelle modifiée. Les modifications du serveur et de l’application ne sont **pas encore déployées** par cet état documentaire.
+- Avant un envoi Google : vérifier que le serveur compatible double grille est déployé, construire l’AAB production code 6, vérifier package/version/signature, remplacer le brouillon release 2 qui contient le code 5, conserver l’icône validée dans la fiche, puis envoyer **une seule** mise à jour en examen. Google ne garantit pas que l’examen de la 6 conserve le délai acquis par la 5.
+
 ## Mise à jour du 3 octobre 2026 — icône dégradée
 
 - La version initiale 1.0.0 (4) est publiée en production depuis le 2 octobre à 09 h 26, selon la Play Console.

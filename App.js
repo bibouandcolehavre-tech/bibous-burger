@@ -22,6 +22,8 @@ const { createAttempt, parseAttempt, paymentState, openCheckoutUrl } = require("
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 const { slotAlreadyStarted } = require('./client-slots');
+const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
+const { containsPork, porkOption } = require('./dietary-policy');
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
@@ -143,6 +145,7 @@ const FIXED_SAUCES = {
 const fixedSauceForProduct = (product) => FIXED_SAUCES[product.id.replace(/-menu$/, "")] || null;
 
 const PROTEIN = { id: "protein", title: "VÉGÉTARIEN OU NON ?", required: true, min: 1, max: 1, options: [{ id: "viande", label: "Viande", price: 0 }, { id: "galette", label: "Galette de pomme de terre (végétarien)", price: 0 }] };
+const MEAT_TYPE = { id: "meat-type", title: "HALAL OU NON HALAL ?", required: true, min: 1, max: 1, options: [{ id: "halal", label: "Viande halal", price: 0 }, { id: "non-halal", label: "Viande non halal", price: 0 }] };
 const SALAD = { id: "salad", title: "CRUDITÉS", required: true, min: 1, max: 5, options: [{ id: "roquette", label: "Roquette", price: 0 }, { id: "tomate", label: "Tomate", price: 0 }, { id: "oignons", label: "Oignons caramélisés", price: 0 }, { id: "cornichons", label: "Cornichons", price: 0 }, { id: "concombre", label: "Concombre", price: 0 }, { id: "chou-rouge", label: "Chou rouge", price: 0 }, { id: "salade-thai", label: "Salade thaï", price: 0 }, { id: "oignon", label: "Oignon", price: 0 }, { id: "sans-crudites", label: "Pas de crudités", price: 0, exclusive: true }] };
 const RECIPE_SALAD_IDS = {
   duck: ['concombre', 'chou-rouge', 'salade-thai', 'tomate', 'oignons'],
@@ -218,8 +221,8 @@ const MENU_DRINK_OPTIONS = [
 const DRINKS = { id: "drink", title: "BOISSONS", max: 1, options: MENU_DRINK_OPTIONS };
 const DUO_DRINK_ONE = { id: "duo-drink-one", title: "PREMIÈRE BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
 const DUO_DRINK_TWO = { id: "duo-drink-two", title: "DEUXIÈME BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
-const MENU_OPTION_GROUPS = [PROTEIN, SALAD, SAUCES, DRINKS, SUPPLEMENTS, MENU_SIDES, MENU_DESSERTS];
-const BURGER_OPTION_GROUPS = [PROTEIN, SALAD, SAUCES, SUPPLEMENTS, SIDES, DESSERTS];
+const MENU_OPTION_GROUPS = [PROTEIN, MEAT_TYPE, SALAD, SAUCES, DRINKS, SUPPLEMENTS, MENU_SIDES, MENU_DESSERTS];
+const BURGER_OPTION_GROUPS = [PROTEIN, MEAT_TYPE, SALAD, SAUCES, SUPPLEMENTS, SIDES, DESSERTS];
 const SNACK_PRODUCTS = [
   { id: "frites-maison", name: "Frites maison", price: 3.9, kind: "simple", emoji: "🍟", image: { uri: "https://images.sumup.com/img_5TCPD9QKS8903BEZRHHP009TDC/image.png" }, description: "Pommes de terre fraîches, épluchées et préparées maison." },
   { id: "frites-cheddar-bacon", name: "Frites cheddar bacon", price: 6.9, kind: "simple", emoji: "🍟", image: { uri: "https://images.sumup.com/img_24R58J2CVM80V8D65XB3DQXXC5/image.png" }, description: "Frites maison généreuses, cheddar fondant et bacon." },
@@ -244,13 +247,13 @@ const DESSERT_PRODUCTS = SNACK_PRODUCTS.filter(product => product.id.startsWith(
 const RESTAURANT_ADDRESS = "153 quai Georges V, 76600 Le Havre";
 const DELIVERY_ZONE = "Rayon de 5 km autour de Bibou's Burgers";
 const DELIVERY_SCHEDULE = [
-  { id: "monday", label: "Lun.", name: "Lundi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
-  { id: "tuesday", label: "Mar.", name: "Mardi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
-  { id: "wednesday", label: "Mer.", name: "Mercredi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
-  { id: "thursday", label: "Jeu.", name: "Jeudi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
-  { id: "friday", label: "Ven.", name: "Vendredi", slots: ["12:00 – 12:30", "12:30 – 13:00", "13:00 – 13:30", "13:30 – 14:00", "19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
-  { id: "saturday", label: "Sam.", name: "Samedi", slots: ["19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00", "21:00 – 21:30", "21:30 – 22:00"] },
-  { id: "sunday", label: "Dim.", name: "Dimanche", slots: ["19:00 – 19:30", "19:30 – 20:00", "20:00 – 20:30", "20:30 – 21:00"] },
+  { id: "monday", label: "Lun.", name: "Lundi", slots: regularSlotsForWeekday(1) },
+  { id: "tuesday", label: "Mar.", name: "Mardi", slots: regularSlotsForWeekday(2) },
+  { id: "wednesday", label: "Mer.", name: "Mercredi", slots: regularSlotsForWeekday(3) },
+  { id: "thursday", label: "Jeu.", name: "Jeudi", slots: regularSlotsForWeekday(4) },
+  { id: "friday", label: "Ven.", name: "Vendredi", slots: regularSlotsForWeekday(5) },
+  { id: "saturday", label: "Sam.", name: "Samedi", slots: regularSlotsForWeekday(6) },
+  { id: "sunday", label: "Dim.", name: "Dimanche", slots: regularSlotsForWeekday(0) },
 ];
 const localDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const scheduleIdForDate = (date) => ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][date.getDay()];
@@ -263,10 +266,6 @@ const UPCOMING_DELIVERY_DAYS = Array.from({ length: 7 }, (_, index) => {
   return { ...schedule, date: localDateKey(date), label: `${schedule.label} ${shortDate}`, dayLabel: `${schedule.name} ${shortDate}` };
 });
 const DEFAULT_DELIVERY_DAY = UPCOMING_DELIVERY_DAYS[0];
-const quarterHourSlots = (ranges) => ranges.flatMap(range => {
-  const start = range.slice(0, 5);
-  return [start, start.slice(0, 3) + String(Number(start.slice(3)) + 15).padStart(2, "0")];
-});
 function Header({ onBack, right, onRight }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
@@ -385,6 +384,20 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.legalContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.deleteAccountIcon}><Text style={styles.deleteAccountIconText}>×</Text></View><Text style={styles.title}>Supprimer mon compte</Text><Text style={styles.legalIntro}>Cette action efface tes coordonnées, ton solde et tes avantages. Tes réservations actives seront annulées. Les anciennes commandes seront anonymisées lorsqu’elles doivent être conservées pour la comptabilité.</Text>{!authToken ? <><View style={styles.legalSection}><Text style={styles.legalSectionTitle}>Vérification nécessaire</Text><Text style={styles.legalSectionText}>Connecte-toi par SMS avec le numéro du compte à supprimer.</Text></View><Pressable onPress={onLogin} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Me connecter par SMS</Text></Pressable></> : !confirmed ? <Pressable onPress={() => setConfirmed(true)} style={styles.deleteAccountOutline}><Text style={styles.deleteAccountOutlineText}>Continuer</Text></Pressable> : <View style={styles.deleteConfirmCard}><Text style={styles.deleteConfirmTitle}>Dernière confirmation</Text><Text style={styles.deleteConfirmText}>La suppression est définitive et ne peut pas être annulée.</Text><Pressable disabled={loading} onPress={onDelete} style={[styles.deleteAccountButton, loading && styles.primaryButtonDisabled]}><Text style={styles.deleteAccountButtonText}>{loading ? "Suppression…" : "Supprimer définitivement"}</Text></Pressable><Pressable disabled={loading} onPress={() => setConfirmed(false)} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Annuler</Text></Pressable></View>}</ScrollView></SafeAreaView>;
 }
 
+function NativeWelcomeChoice({ onCreateAccount, onViewMenu, onPrivacy }) {
+  return <SafeAreaView style={styles.safeArea}>
+    <StatusBar barStyle="dark-content" />
+    <View style={styles.nativeWelcome}>
+      <View style={styles.nativeWelcomeBrand}><Text style={styles.nativeWelcomeBrandText}>Bibou’s Burgers</Text></View>
+      <Text style={styles.nativeWelcomeTitle}>Bienvenue chez Bibou !</Text>
+      <Text style={styles.nativeWelcomeDescription}>Crée ton compte pour retrouver tes commandes, profiter de la fidélité et réserver une table. Tu peux aussi découvrir la carte d’abord.</Text>
+      <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Créer mon compte</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={onViewMenu} style={styles.nativeWelcomeSecondary}><Text style={styles.nativeWelcomeSecondaryText}>Voir la carte sans m’inscrire</Text></Pressable>
+      <Pressable accessibilityRole="link" onPress={onPrivacy} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Confidentialité et données personnelles</Text></Pressable>
+    </View>
+  </SafeAreaView>;
+}
+
 function SmsLoginScreen({ onBack, onAuthenticated, accountFirst = false, onPrivacy }) {
   const [reviewLogin, setReviewLogin] = useState(false);
   const [registrationToken, setRegistrationToken] = useState('');
@@ -458,15 +471,25 @@ function ReservationsScreen({ reservations, onBack, onRefresh }) {
 
 function ProductScreen({ product, catalog, onBack, onAdd }) {
   const fixedSauce = fixedSauceForProduct(product);
-  const optionGroups = availableOptionGroups((product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS)).map(group => group.id === 'salad' ? saladGroupForProduct(product) : group), catalog).filter((group) => group.id !== "sauces" || !fixedSauce);
   const [choices, setChoices] = useState({});
+  const hasPork = containsPork(product);
+  const halalChosen = choices['meat-type']?.includes('halal');
+  const optionGroups = availableOptionGroups((product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS)).map(group => {
+    if (group.id === 'salad') return saladGroupForProduct(product);
+    if (group.id === 'protein' && hasPork) return { ...group, options: group.options.filter(option => option.id === 'viande') };
+    if (group.id === 'meat-type' && hasPork) return { ...group, options: group.options.filter(option => option.id === 'non-halal') };
+    if (halalChosen) return { ...group, options: group.options.filter(option => !porkOption({ ...option, groupId: group.id })) };
+    return group;
+  }), catalog).filter(group =>
+    (group.id !== 'sauces' || !fixedSauce) && (group.id !== 'meat-type' || choices.protein?.includes('viande'))
+  );
   const selectedOptions = useMemo(() => {
     const choicesMade = optionGroups.flatMap((group) => group.options.filter((option) => choices[group.id]?.includes(option.id)).map((option) => ({ ...option, groupId: group.id })));
     return fixedSauce ? [...choicesMade, { groupId: "sauces", id: fixedSauce.id, label: `Sauce imposée · ${fixedSauce.label}`, price: 0 }] : choicesMade;
   }, [choices, optionGroups, fixedSauce]);
   const total = product.price + selectedOptions.reduce((sum, option) => sum + option.price, 0);
   const stockProblem = cartStockProblem([{ product, selections: selectedOptions }], catalog);
-  const hasRequiredChoices = !stockProblem && optionGroups.filter((group) => group.required).every((group) => (choices[group.id] || []).length >= group.min);
+  const hasRequiredChoices = !stockProblem && optionGroups.filter(group => group.required).every(group => (choices[group.id] || []).length >= group.min);
   const toggleChoice = (group, option) => {
     const current = choices[group.id] || [];
     const isSelected = current.includes(option.id);
@@ -475,9 +498,30 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
     else if (option.soldOut) return;
     else if (option.exclusive) next = [option.id];
     else { const withoutExclusive = current.filter((id) => !group.options.find((item) => item.id === id)?.exclusive); next = group.max === 1 ? [option.id] : [...withoutExclusive, option.id]; if (group.max && next.length > group.max) return; }
-    setChoices({ ...choices, [group.id]: next });
+    const updated = { ...choices, [group.id]: next };
+    if (group.id === 'protein' && next.includes('galette')) delete updated['meat-type'];
+    if (group.id === 'meat-type' && next.includes('halal')) {
+      for (const key of ['extras', 'sides']) updated[key] = (updated[key] || []).filter(id => !porkOption({ groupId: key, id }));
+    }
+    setChoices(updated);
   };
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Image source={product.image} style={styles.detailImage} /><View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View><Text style={styles.detailDescription}>{product.detail}</Text>{product.isMenu && <Text style={styles.includedText}>Frites maison incluses dans le menu</Text>}<Text style={styles.sectionTitle}>{product.kind === "duo" ? "Choisis les deux boissons" : product.isMenu ? "Compose ton menu" : "Compose ton burger"}</Text>{fixedSauce && <View style={styles.fixedSauceNotice}><Text style={styles.fixedSauceEyebrow}>SAUCE IMPOSÉE</Text><Text style={styles.fixedSauceName}>{fixedSauce.label}</Text><Text style={styles.fixedSauceText}>Cette sauce fait partie de la recette et ne peut pas être remplacée.</Text></View>}{optionGroups.map((group) => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} onToggleChoice={(option) => toggleChoice(group, option)} />)}</ScrollView><View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>Choisis les options marquées « requis » pour continuer.</Text>}<Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map((option) => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}>
+    <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+      <Header onBack={onBack} />
+      <Image source={product.image} style={styles.detailImage} />
+      <View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View>
+      <Text style={styles.detailDescription}>{product.detail}</Text>
+      {hasPork && <View accessibilityRole="alert" style={styles.porkNotice}><Text style={styles.dietaryNoticeTitle}>CONTIENT DU PORC</Text><Text style={styles.dietaryNoticeText}>Cette recette n’existe pas en version halal.</Text></View>}
+      {product.isMenu && <Text style={styles.includedText}>Frites maison incluses dans le menu</Text>}
+      <Text style={styles.sectionTitle}>{product.kind === 'duo' ? 'Choisis les deux boissons' : product.isMenu ? 'Compose ton menu' : 'Compose ton burger'}</Text>
+      {fixedSauce && <View style={styles.fixedSauceNotice}><Text style={styles.fixedSauceEyebrow}>SAUCE IMPOSÉE</Text><Text style={styles.fixedSauceName}>{fixedSauce.label}</Text><Text style={styles.fixedSauceText}>Cette sauce fait partie de la recette et ne peut pas être remplacée.</Text></View>}
+      {optionGroups.map(group => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} onToggleChoice={option => toggleChoice(group, option)} />)}
+    </ScrollView>
+    <View style={styles.stickyAction}>
+      {stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>Choisis les options marquées « requis » pour continuer.</Text>}
+      <Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map(option => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable>
+    </View>
+  </SafeAreaView>;
 }
 
 function OptionVisual({ groupId, option }) {
@@ -488,7 +532,7 @@ function OptionVisual({ groupId, option }) {
 
 function OptionGroup({ group, selectedIds, onToggleChoice }) {
   const selectionText = group.max ? `${selectedIds.length} sur ${group.max} sélectionné${selectedIds.length > 1 ? "s" : ""}` : `${selectedIds.length} sélectionné${selectedIds.length > 1 ? "s" : ""}`;
-  const helper = group.id === "protein" ? "Choisis viande ou version végétarienne" : group.id === "salad" ? "Sélectionne les crudités que tu souhaites" : group.id === "sauces" ? "Choisis une seule sauce" : group.id === "drink" || group.id.startsWith("duo-drink") ? "Choisis une boisson" : group.max === 1 ? "Sélectionne jusqu’à 1 choix" : "Facultatif";
+  const helper = group.id === "meat-type" ? "Choisis le type de viande pour ce burger" : group.id === "protein" ? "Choisis viande ou version végétarienne" : group.id === "salad" ? "Sélectionne les crudités que tu souhaites" : group.id === "sauces" ? "Choisis une seule sauce" : group.id === "drink" || group.id.startsWith("duo-drink") ? "Choisis une boisson" : group.max === 1 ? "Sélectionne jusqu’à 1 choix" : "Facultatif";
   return <View style={styles.optionGroup}><View style={styles.optionGroupHeader}><View style={styles.optionGroupTitleWrap}><Text style={styles.optionGroupTitle}>{group.title}{group.required ? "  (requis)" : ""}</Text><Text style={styles.optionGroupHelper}>{selectionText} · {helper}</Text></View></View><View style={styles.optionGrid}>{group.options.map((option) => <OptionRow key={option.id} groupId={group.id} option={option} selected={selectedIds.includes(option.id)} onPress={() => onToggleChoice(option)} />)}</View></View>;
 }
 
@@ -569,7 +613,7 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
     let active = true;
     setLoadingSlots(true);
     setSlotError(false);
-    fetch(`${API_BASE_URL}/reservation-availability?date=${encodeURIComponent(day.date)}`)
+    fetch(`${API_BASE_URL}/reservation-availability?date=${encodeURIComponent(day.date)}&grid=20`)
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || "Créneaux indisponibles");
@@ -594,7 +638,7 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
     setSubmitting(true);
     try {
       const headers = { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) };
-      const response = await customerFetch(`${API_BASE_URL}/reservations`, { method: "POST", headers, body: JSON.stringify({ name, phone, guests, serviceDate: day.date, slot, note }) });
+      const response = await customerFetch(`${API_BASE_URL}/reservations`, { method: "POST", headers, body: JSON.stringify({ name, phone, guests, serviceDate: day.date, slot, slotGrid: 20, note }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Impossible d’envoyer la réservation.");
       setConfirmed(payload.reservation);
@@ -608,7 +652,7 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
 
   const slotsReady = !loadingSlots && !slotError && slotsDate === day.date;
   const complete = name.trim().length > 1 && phone.trim().length >= 10 && Boolean(slot) && slotsReady && Boolean(availability[slot]) && !availability[slot].unavailable && !availability[slot].full && !slotAlreadyStarted(day.date, slot, clockNow);
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 15 minutes. Merci d’arriver à l’heure réservée. Aucun paiement n’est demandé.</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par demi-heure, partagées entre les deux heures d’arrivée proposées. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : quarterHourSlots(day.slots)).map((item) => {
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 20 minutes. Merci d’arriver à l’heure réservée. Aucun paiement n’est demandé.</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par créneau de 20 minutes. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : day.slots).map((item) => {
     const slotInfo = availability[item];
     const unavailable = Boolean(slotInfo?.unavailable);
     const full = Boolean(slotInfo?.full);
@@ -628,6 +672,7 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   const [slotRetry, setSlotRetry] = useState(0);
   const [clockNow, setClockNow] = useState(() => new Date());
   const pricing = customerOrderPricing(cart.total, deliveryCost(delivery.method), customer, delivery.method === "delivery");
+  const minimumPreparation = preparationMinutes(cart.total);
   const selectedDay = UPCOMING_DELIVERY_DAYS.find((day) => day.date === delivery.date) || DEFAULT_DELIVERY_DAY;
   useEffect(() => {
     let active = true;
@@ -641,7 +686,7 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
       const requestController = controller;
       const timeout = setTimeout(() => requestController.abort(), 12000);
       setClockNow(new Date());
-      fetch(`${API_BASE_URL}/availability?date=${encodeURIComponent(selectedDay.date)}&method=${delivery.method}`, { signal: requestController.signal })
+      fetch(`${API_BASE_URL}/availability?date=${encodeURIComponent(selectedDay.date)}&method=${delivery.method}&grid=20&subtotal=${encodeURIComponent(cart.total)}`, { signal: requestController.signal })
         .then(async (response) => {
           const payload = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(payload.error || "Disponibilités indisponibles");
@@ -659,13 +704,13 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
     const stopFocus = observeBrowserFocus(Platform.OS, refresh);
     const appState = Platform.OS === 'web' ? null : AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
     return () => { active = false; controller?.abort(); clearInterval(timer); stopFocus(); appState?.remove(); };
-  }, [delivery.method, selectedDay.date, slotRetry]);
+  }, [delivery.method, selectedDay.date, cart.total, slotRetry]);
   useEffect(() => {
     const timer = setInterval(() => setClockNow(new Date()), 5000);
     return () => clearInterval(timer);
   }, []);
   const slotsReady = availabilityStatus === "ready" && availabilityKey === delivery.method + selectedDay.date;
-  const offeredSlots = slotsReady ? Object.keys(availability).sort() : delivery.method === "pickup" ? quarterHourSlots(selectedDay.slots) : selectedDay.slots;
+  const offeredSlots = slotsReady ? Object.keys(availability).sort() : selectedDay.slots;
   const selectedSlot = slotsReady && availability[delivery.slot];
   const selectedSlotStarted = delivery.slot && slotAlreadyStarted(selectedDay.date, delivery.slot, clockNow);
   const canContinue = Boolean(selectedSlot && !selectedSlot.full && !selectedSlot.unavailable && !selectedSlotStarted);
@@ -678,7 +723,8 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
     <Header onBack={onBack} />
     <Text style={styles.title}>{delivery.method === "pickup" ? "À quelle heure viens-tu retirer ?" : "Quand veux-tu être livré ?"}</Text>
-    <Text style={styles.deliveryIntro}>Choisis le mode, le jour et l’horaire qui t’arrangent.</Text>
+    <Text style={styles.deliveryIntro}>Horaires toutes les 20 minutes. Préparation minimum pour ton panier : {minimumPreparation} minutes.</Text>
+    <Text style={styles.deliveryFeeHint}>Moins de 25 € : 20 min · De 25 à 60 € : 30 min · Au-delà de 60 € : 45 min. Seuls les horaires laissant ce délai sont disponibles.</Text>
     <Text style={styles.deliveryLabel}>MODE</Text>
     <View style={styles.methodRow}><ChoiceChip label="🛵 Livraison" selected={delivery.method === "delivery"} onPress={() => onChange({ ...delivery, method: "delivery", fee: undefined, slot: null })} /><ChoiceChip label="🏠 Retrait" selected={delivery.method === "pickup"} onPress={() => onChange({ ...delivery, method: "pickup", fee: 0, slot: null })} /></View>
     <View style={styles.addressNotice}><Text style={styles.addressNoticeTitle}>{delivery.method === "delivery" ? "Zone de livraison" : "Retrait au restaurant"}</Text><Text style={styles.addressNoticeText}>{delivery.method === "delivery" ? DELIVERY_ZONE : RESTAURANT_ADDRESS}</Text>{delivery.method === "delivery" && <><View style={styles.deliveryPrices}>{DELIVERY_PRICING.map((tier) => <View key={tier.label} style={styles.deliveryPriceRow}><Text style={styles.deliveryPriceDistance}>{tier.label}</Text><Text style={styles.deliveryPriceValue}>{money(tier.price)}</Text></View>)}</View><Text style={styles.deliveryFeeHint}>Le tarif sera choisi automatiquement selon l’adresse. Deux livraisons maximum par créneau.</Text></>}</View>
@@ -947,6 +993,7 @@ function AppContent({ onReviewModeChange }) {
   }, []);
   const [screen, setScreen] = useState(initialScreenFromUrl);
   const [sessionRestored, setSessionRestored] = useState(!nativeAccountFirst);
+  const [showNativeWelcome, setShowNativeWelcome] = useState(nativeAccountFirst);
   const [crmWelcomeDestination, setCrmWelcomeDestination] = useState('account');
   const [activeProduct, setActiveProduct] = useState(null);
   const [cart, setCart] = useState(null);
@@ -1325,7 +1372,7 @@ function AppContent({ onReviewModeChange }) {
   };
   const pay = async (promoCode = '') => {
     if (!authToken || !customer.id || !cart?.items?.length) { setScreen('login'); return; }
-    const input = { customerId: customer.id, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, comment: cart.comment?.trim() || "" };
+    const input = { customerId: customer.id, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, slotGrid: 20, comment: cart.comment?.trim() || "" };
     if (promoCode) input.promoCode = promoCode;
     await beginPayment('order', input);
   };
@@ -1426,7 +1473,7 @@ function AppContent({ onReviewModeChange }) {
     }
   };
   if (nativeAccountFirst && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de ton compte…</Text></View></SafeAreaView>;
-  if (nativeAccountFirst && !authToken && !['privacy', 'delete-account'].includes(screen)) return <SmsLoginScreen accountFirst onAuthenticated={authenticate} onPrivacy={() => setScreen('privacy')} />;
+  if (nativeAccountFirst && !authToken && showNativeWelcome && screen === 'menu') return <NativeWelcomeChoice onCreateAccount={() => { setShowNativeWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen("menu")} onAdd={addToCart} />;
@@ -1576,6 +1623,7 @@ const styles = StyleSheet.create(applyAppPalette({
   drinkProductImage: { width: 66, height: 66, resizeMode: "contain" },
   floatingCartDesktop: { maxWidth: 420, alignSelf: "flex-end", width: "100%", marginTop: 28 }, siteFooter: { marginTop: 46, paddingVertical: 28, borderTopWidth: 1, borderTopColor: "#EADBD2", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, siteFooterTitle: { color: "#E95122", fontSize: 24, fontWeight: "900" }, siteFooterText: { color: "#826E63", fontSize: 13, lineHeight: 20, marginTop: 7 }, siteFooterButton: { backgroundColor: "#FFF0E9", borderRadius: 14, paddingHorizontal: 17, paddingVertical: 13 }, siteFooterButtonText: { color: "#D74318", fontWeight: "800" },
   detailImage: { width: "100%", height: 230, borderRadius: 25, resizeMode: "cover", marginTop: 14, backgroundColor: "#EADBD2" }, priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 18 }, detailTitle: { color: "#2C201B", fontSize: 26, fontWeight: "900", letterSpacing: -1, flex: 1, paddingRight: 14 }, detailPrice: { color: "#2C201B", fontSize: 16, fontWeight: "800" }, detailDescription: { color: "#826E63", lineHeight: 20, marginTop: 7 }, includedText: { color: "#397353", fontSize: 13, fontWeight: "700", marginTop: 10 }, fixedSauceNotice: { backgroundColor: "#FFF0E9", borderWidth: 1.5, borderColor: "#E95122", borderRadius: 16, padding: 14, marginBottom: 14 }, fixedSauceEyebrow: { color: "#D74318", fontSize: 11, fontWeight: "900", letterSpacing: 0.6 }, fixedSauceName: { color: "#2C201B", fontSize: 15, fontWeight: "900", marginTop: 4 }, fixedSauceText: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 4 },
+  porkNotice: { backgroundColor: "#FFF0E9", borderColor: "#B85C3C", borderWidth: 2, borderRadius: 15, padding: 14, marginTop: 12 }, dietaryNoticeTitle: { color: "#98452F", fontSize: 15, fontWeight: "900" }, dietaryNoticeText: { color: "#2C201B", fontSize: 13, lineHeight: 19, marginTop: 4 },
   optionGroup: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 16, overflow: "hidden", marginBottom: 14 }, optionGroupHeader: { minHeight: 70, padding: 14, backgroundColor: "#F8EAE0" }, optionGroupTitleWrap: { flex: 1 }, optionGroupTitle: { color: "#2C201B", fontSize: 12, fontWeight: "900", letterSpacing: 0.2 }, optionGroupHelper: { color: "#826E63", fontSize: 12, marginTop: 5 }, optionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, padding: 10 }, option: { width: "48.5%", minHeight: 78, paddingHorizontal: 9, paddingVertical: 9, flexDirection: "row", alignItems: "center", borderColor: "#EADBD2", borderWidth: 1.5, borderRadius: 13, backgroundColor: "#FFFDFC" }, optionSelected: { backgroundColor: "#FFF0E9", borderColor: "#E95122", borderWidth: 2.5, paddingHorizontal: 8 }, checkbox: { width: 22, height: 22, borderColor: "#CBB7AA", borderWidth: 1.5, borderRadius: 7, alignItems: "center", justifyContent: "center", marginRight: 6, flexShrink: 0 }, checkboxSelected: { backgroundColor: "#E95122", borderColor: "#E95122" }, checkmark: { color: "white", fontWeight: "900" }, optionName: { color: "#2C201B", flex: 1, fontSize: 12, lineHeight: 15, fontWeight: "700", paddingRight: 2 }, optionNameSelected: { color: "#98452F", fontWeight: "900" }, optionValue: { color: "#826E63", fontSize: 10, fontWeight: "800", flexShrink: 0 }, optionDrinkImage: { width: 36, height: 48, resizeMode: "contain", marginRight: 4 }, sideOption: { minHeight: 180, flexDirection: "column", alignItems: "stretch" }, optionSideImage: { width: "100%", height: 92, borderRadius: 10, resizeMode: "cover", backgroundColor: "#F5EBDD" }, sideOptionChoice: { flexDirection: "row", alignItems: "center", marginTop: 9 }, sideOptionValue: { color: "#826E63", fontSize: 11, fontWeight: "800", marginTop: 7, marginLeft: 28 }, optionDrinkFallback: { width: 36, height: 44, borderRadius: 11, backgroundColor: "#F5EBDD", alignItems: "center", justifyContent: "center", marginRight: 4 }, optionDrinkFallbackText: { fontSize: 20 }, saucePotPhoto: { width: 43, height: 50, resizeMode: "contain", marginRight: 3 }, noSauceVisual: { width: 43, height: 43, borderRadius: 22, backgroundColor: "#F2E8E2", alignItems: "center", justifyContent: "center", marginRight: 3 }, noSauceVisualText: { color: "#826E63", fontSize: 24, fontWeight: "700" },
   stickyAction: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 14, paddingBottom: 18, backgroundColor: "#FFF8F2", borderTopColor: "#EADBD2", borderTopWidth: 1 }, requiredHint: { color: "#826E63", fontSize: 12, textAlign: "center", marginBottom: 8 }, primaryButton: { backgroundColor: "#E95122", borderRadius: 16, padding: 16, alignItems: "center" }, primaryButtonDisabled: { backgroundColor: "#C9B4A7" }, primaryButtonText: { color: "white", fontSize: 16, fontWeight: "800" },
   emptyState: { alignItems: "center", paddingTop: 75 }, emptyIcon: { fontSize: 56 }, emptyTitle: { color: "#2C201B", fontSize: 20, fontWeight: "800", marginTop: 12 }, emptyText: { color: "#826E63", marginTop: 7 }, cartItems: { marginTop: 14 }, cartItem: { flexDirection: "row", alignItems: "center", gap: 11, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#EADBD2" }, cartImage: { width: 74, height: 74, borderRadius: 18, resizeMode: "cover", backgroundColor: "#EADBD2" }, cartEmoji: { width: 74, height: 74, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF0E9" }, cartEmojiText: { fontSize: 34 }, cartRemove: { color: "#D74318", fontSize: 12, fontWeight: "800", marginTop: 6 }, addMoreButton: { alignItems: "center", borderWidth: 1.5, borderColor: "#E95122", borderRadius: 14, paddingVertical: 12, marginTop: 15 }, addMoreButtonText: { color: "#D74318", fontWeight: "900" }, cartSuggestions: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 19, padding: 14, marginTop: 20 }, cartSuggestionsTitle: { color: "#2C201B", fontSize: 18, fontWeight: "900" }, cartSuggestionsIntro: { color: "#826E63", fontSize: 12, marginTop: 3, marginBottom: 8 }, cartSuggestion: { flexDirection: "row", alignItems: "center", minHeight: 64, paddingVertical: 9, borderTopWidth: 1, borderTopColor: "#F0E3DC" }, cartSuggestionVisual: { width: 48, height: 48, borderRadius: 14, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", overflow: "hidden", marginRight: 10 }, cartSuggestionImage: { width: 48, height: 48, resizeMode: "cover" }, cartSuggestionEmoji: { fontSize: 24 }, cartSuggestionCopy: { flex: 1 }, cartSuggestionName: { color: "#2C201B", fontSize: 13, fontWeight: "900" }, cartSuggestionPrice: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 3 }, cartSuggestionAdd: { backgroundColor: "#E95122", borderRadius: 11, paddingVertical: 8, paddingHorizontal: 9 }, cartSuggestionAddText: { color: "white", fontSize: 10, fontWeight: "900" }, receipt: { backgroundColor: "#F8EAE0", borderRadius: 18, padding: 16, marginTop: 24 }, receiptLine: { flexDirection: "row", justifyContent: "space-between", marginVertical: 5, color: "#2C201B" }, receiptDivider: { height: 1, backgroundColor: "#DEC8BA", marginVertical: 9 }, strong: { fontWeight: "800", color: "#2C201B" }, eta: { color: "#397353", fontWeight: "700", marginTop: 17 },
@@ -1592,6 +1640,7 @@ const styles = StyleSheet.create(applyAppPalette({
   customerReservationCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 14, flexDirection: "row", alignItems: "flex-start", marginBottom: 10 }, customerReservationIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", marginRight: 12 }, customerReservationIconText: { fontSize: 21, fontWeight: "900" }, customerReservationCopy: { flex: 1 }, customerReservationTitle: { color: "#2C201B", fontSize: 14, fontWeight: "900", textTransform: "capitalize" }, customerReservationMeta: { color: "#826E63", fontSize: 11, marginTop: 4 }, customerReservationStatus: { fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 8 }, emptyReservationState: { alignItems: "center", paddingVertical: 28, backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18 },
   loginContent: { padding: 20, paddingBottom: 44 }, loginIcon: { width: 68, height: 68, borderRadius: 24, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginTop: 26 }, loginIconText: { color: "#E95122", fontSize: 31 }, loginIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, loginCard: { backgroundColor: "#F8EAE0", borderRadius: 22, padding: 17, marginTop: 23 }, loginFinePrint: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 2, marginBottom: 16 }, loginError: { color: "#A3472A", fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 2, marginBottom: 16 }, loginSecondary: { alignItems: "center", paddingTop: 17 }, loginSecondaryText: { color: "#D74318", fontWeight: "800" }, loginLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 18 }, codeInput: { fontSize: 24, fontWeight: "800", letterSpacing: 8, textAlign: "center" },
   accountRestore: { flex: 1, alignItems: "center", justifyContent: "center" }, accountRestoreText: { color: "#173F3E", fontSize: 17, fontWeight: "700" },
+  nativeWelcome: { flex: 1, justifyContent: "center", padding: 25, gap: 14 }, nativeWelcomeBrand: { alignSelf: "flex-start", borderRadius: 18, backgroundColor: "#315B4B", paddingHorizontal: 17, paddingVertical: 13 }, nativeWelcomeBrandText: { color: "#FFFCF7", fontSize: 23, fontWeight: "900" }, nativeWelcomeTitle: { color: "#2C201B", fontSize: 30, fontWeight: "900", marginTop: 10 }, nativeWelcomeDescription: { color: "#493A33", fontSize: 16, lineHeight: 24, marginBottom: 10 }, nativeWelcomeSecondary: { borderColor: "#315B4B", borderWidth: 2, borderRadius: 16, padding: 15, alignItems: "center" }, nativeWelcomeSecondaryText: { color: "#315B4B", fontSize: 16, fontWeight: "900" },
   loyaltyContent: { padding: 20, paddingBottom: 44 }, loyaltyIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, pointsCard: { backgroundColor: "#2C201B", borderRadius: 24, padding: 21, marginTop: 22 }, pointsEyebrow: { color: "#FFB797", fontSize: 11, fontWeight: "900", letterSpacing: 0.8 }, pointsTotal: { color: "white", fontSize: 30, fontWeight: "800", marginTop: 7 }, pointsSubtext: { color: "#F9D6C8", fontWeight: "600", marginTop: 7 }, progressTrack: { height: 9, backgroundColor: "#5D4740", borderRadius: 6, overflow: "hidden", marginTop: 19 }, progressFill: { height: "100%", backgroundColor: "#E95122", borderRadius: 6 }, progressCaption: { color: "#EBC8B9", fontSize: 11, fontWeight: "700", marginTop: 8, textAlign: "right" }, prestigeCard: { backgroundColor: "#FFF0E9", borderRadius: 20, padding: 16, borderWidth: 1, borderColor: "#F2C7B7" }, prestigeTop: { flexDirection: "row", alignItems: "center" }, prestigeBadge: { width: 94, height: 60, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center", marginRight: 12 }, prestigeBadgeText: { color: "#826E63", fontSize: 16, fontWeight: "900" }, prestigeCopy: { flex: 1 }, prestigeTitle: { color: "#2C201B", fontSize: 15, fontWeight: "900" }, prestigeReward: { color: "#826E63", fontSize: 12, lineHeight: 16, marginTop: 4 }, prestigeLevels: { flexDirection: "row", justifyContent: "space-between", marginTop: 19 }, prestigeLevel: { alignItems: "center", flex: 1 }, prestigeAboveLabel: { color: "#826E63", fontSize: 9, fontWeight: "800", marginBottom: 5 }, prestigeDot: { width: 50, height: 40, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center" }, prestigeDotUnlocked: { backgroundColor: "#E95122", borderColor: "#E95122" }, prestigeDotText: { color: "#826E63", fontSize: 10, fontWeight: "900" }, prestigeDotTextUnlocked: { color: "white" }, prestigeLevelLabel: { color: "#9B877B", fontSize: 8, lineHeight: 12, fontWeight: "700", marginTop: 5, textAlign: "center" }, prestigeLevelLabelActive: { color: "#D74318" }, prestigeNext: { color: "#826E63", fontSize: 12, marginTop: 15, textAlign: "center" }, rewardsTable: { borderRadius: 19, overflow: "hidden", borderWidth: 1, borderColor: "#EADBD2", backgroundColor: "#FFFDFC" }, rewardRow: { minHeight: 76, padding: 12, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EADBD2" }, rewardRowUnlocked: { backgroundColor: "#F4F8F0" }, rewardIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, rewardEmoji: { fontSize: 21 }, rewardCopy: { flex: 1, paddingRight: 8 }, rewardTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, rewardDetail: { color: "#826E63", fontSize: 11, lineHeight: 14, marginTop: 3 }, rewardStatus: { minWidth: 56, borderRadius: 11, backgroundColor: "#F2E8E2", paddingVertical: 6, paddingHorizontal: 5, alignItems: "center" }, rewardStatusText: { color: "#826E63", fontSize: 11, fontWeight: "900" }, rewardStatusSubtext: { color: "#826E63", fontSize: 9, marginTop: 2 }, rewardClaimButton: { minWidth: 70, borderRadius: 12, backgroundColor: "#397353", paddingVertical: 8, paddingHorizontal: 8, alignItems: "center" }, rewardClaimButtonText: { color: "white", fontSize: 11, fontWeight: "900" }, rewardClaimButtonHint: { color: "#DDF0E2", fontSize: 8, marginTop: 2 }, rewardClaimedStatus: { minWidth: 82, borderRadius: 12, backgroundColor: "#DDEED7", paddingVertical: 7, paddingHorizontal: 7, alignItems: "center" }, rewardClaimedLabel: { color: "#397353", fontSize: 9, fontWeight: "900" }, rewardClaimCode: { color: "#2E6144", fontSize: 9, fontWeight: "900", marginTop: 3 }, rewardUsedStatus: { backgroundColor: "#E8E2DE" }, rewardUsedText: { color: "#826E63" }, rewardClaimFootnote: { color: "#5A4A42", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 11 }, weeklyCard: { backgroundColor: "#F8EAE0", borderRadius: 20, padding: 17 }, weeklyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, weeklyTitle: { color: "#2C201B", fontSize: 16, fontWeight: "800" }, weeklySubtext: { color: "#826E63", fontSize: 12, marginTop: 4 }, multiplierBadge: { width: 53, height: 53, borderRadius: 18, backgroundColor: "#E95122", justifyContent: "center", alignItems: "center" }, multiplierText: { color: "white", fontSize: 22, fontWeight: "900" }, weeklyPoints: { color: "#397353", fontWeight: "800", marginTop: 16 }, stepsRow: { flexDirection: "row", alignItems: "center", marginTop: 20 }, step: { width: 48, alignItems: "center" }, stepActive: { opacity: 1 }, stepNumber: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: "#CDB7AB", color: "#826E63", textAlign: "center", lineHeight: 28, fontWeight: "800", backgroundColor: "#FFF8F2" }, stepNumberActive: { backgroundColor: "#E95122", borderColor: "#E95122", color: "white" }, stepLabel: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 5 }, stepLine: { flex: 1, height: 2, backgroundColor: "#D5BDB0", marginBottom: 17 }, weeklyFootnote: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 16 }, simulateButton: { borderRadius: 16, borderWidth: 1.5, borderColor: "#E95122", padding: 14, alignItems: "center", marginTop: 14 }, simulateButtonText: { color: "#D74318", fontWeight: "800" }, simulateHint: { color: "#826E63", fontSize: 11, marginTop: 4 }, referralCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 15, flexDirection: "row", alignItems: "center" }, referralIcon: { width: 45, height: 45, borderRadius: 15, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 12 }, referralEmoji: { fontSize: 22 }, referralCopy: { flex: 1 }, referralTitle: { color: "#2C201B", fontWeight: "800" }, referralText: { color: "#826E63", fontSize: 12, marginTop: 4, lineHeight: 16 }, loyaltyLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 18, textAlign: "center" },
   headerCart: { minWidth: 44, height: 38, borderRadius: 13, backgroundColor: "#FFF0E9", paddingHorizontal: 11, alignItems: "center", justifyContent: "center" },
   headerCartText: { color: "#D74318", fontSize: 16, fontWeight: "900" },

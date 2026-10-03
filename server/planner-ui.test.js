@@ -11,7 +11,7 @@ test('planning: exact server hours and occupancy preserved, changes isolated by 
   assert.equal(planner.impacts(data,draft).length,1);
   assert.equal(planner.changes(data,draft)[0].method,'pickup');
   assert.equal(draft.reservation['12:00'],true);
-  assert.equal(draft.delivery['12:00 – 12:30'],true);
+  assert.equal(draft.delivery['12:00'],true);
   assert.equal(JSON.stringify(data),original);
   draft.pickup['12:00']=true;assert.equal(planner.changes(data,draft).length,0);
   for(const method of ['pickup','delivery','reservation'])for(const row of data.services[method]){
@@ -59,15 +59,15 @@ test('planning UI: bulk change affects selected service only, conflict retains d
   const h=harness();await h.panel.load();h.el('#schedule-close-period').onclick();await h.el('#schedule-save').onclick();
   h.el('#schedule-ack').checked=true;h.el('#schedule-ack').onchange();h.response({error:'Les créneaux ont changé dans un autre onglet.'},409);await h.el('#schedule-confirm').onclick();
   const saved=JSON.parse(h.requests.at(-1).body);
-  assert.equal(saved.services.delivery['12:00 – 12:30'],true);assert.equal(saved.services.pickup['19:00'],true);assert.equal(saved.services.pickup['12:00'],false);
+  assert.equal(saved.services.delivery['12:00'],true);assert.equal(saved.services.pickup['19:00'],true);assert.equal(saved.services.pickup['12:00'],false);
   assert.match(h.el('#schedule-message').textContent,/autre onglet/);assert.equal(h.el('#schedule-review-panel').hidden,false);
 });
 test('planning UI: closing an unbooked slot saves directly, and tomorrow is one tap',async()=>{
   const h=harness();await h.panel.load();
-  h.el('slot:12:15').onclick();
+  h.el('slot:12:20').onclick();
   await h.el('#schedule-save').onclick();
   assert.equal(h.requests.length,2);
-  assert.equal(JSON.parse(h.requests[1].body).services.pickup['12:15'],false);
+  assert.equal(JSON.parse(h.requests[1].body).services.pickup['12:20'],false);
   h.el('#schedule-tomorrow').onclick();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.requests.length,3);
