@@ -27,10 +27,10 @@
       "package": "com.krokly.bibousburgers",
       "googleServicesFile": "./google-services.json",
       "versionCode": 1,
-      "icon": "./assets/android-icon-05h-logo-only.png",
+      "icon": "./assets/android-icon-gradient.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/android-adaptive-foreground-05h-logo-only.png",
-        "backgroundImage": "./assets/android-adaptive-background-05h-logo-only.png",
+        "foregroundImage": "./assets/android-adaptive-foreground-gradient.png",
+        "backgroundImage": "./assets/android-adaptive-background-gradient.png",
         "backgroundColor": "#CC8066"
       }
     },
