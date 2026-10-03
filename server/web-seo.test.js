@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { RESTAURANT } = require('../restaurant-info');
-const { enrichIndex, restaurantPage, supportPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
+const { enrichIndex, restaurantPage, supportPage, installPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
 const sample = '<!DOCTYPE html><html lang="en"><head><title>Bibou</title></head><body><noscript>You need JavaScript</noscript><div id="root"></div><script src="/app.js" defer></script></body></html>';
 const graphFrom = html => JSON.parse(html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1]);
 
@@ -60,11 +60,23 @@ test('Le générateur complète le vrai export sans modifier le JavaScript ou co
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.writeFileSync(path.join(dir, 'index.html'), sample);
   build(dir);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['assistance.html', 'index.html', 'restaurant-le-havre.html', 'robots.txt', 'seo', 'sitemap.xml']);
-  assert.deepEqual(fs.readdirSync(path.join(dir, 'seo')).sort(), ['restaurant.css', 'taurus.jpg']);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['app', 'assistance.html', 'index.html', 'restaurant-le-havre.html', 'robots.txt', 'seo', 'sitemap.xml']);
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'seo')).sort(), ['bibou-icon.png', 'restaurant.css', 'taurus.jpg']);
+  assert.match(fs.readFileSync(path.join(dir, 'app/index.html'), 'utf8'), /Télécharger sur Google Play/);
   assert.match(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), /\/app.js/);
   assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
   assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
+});
+test('Lien intelligent : Android vers Google Play, iPhone vers la web app tant que l’App Store n’est pas public', () => {
+  const page = installPage();
+  assert.match(page, /com\.krokly\.bibousburgers/);
+  assert.match(page, /Android/);
+  assert.match(page, /iPhone\|iPad\|iPod/);
+  assert.match(page, /MacIntel/);
+  assert.match(page, /window\.location\.replace/);
+  assert.match(page, /Ouvrir sur iPhone/);
+  assert.match(page, /https:\/\/bibous-burger-app\.onrender\.com\//);
+  assert.doesNotMatch(page, /apps\.apple\.com|6817744169/, 'Ne pas envoyer vers une fiche Apple non publiée.');
 });
 test('Assistance publique : contacts et liens utiles sans données privées', () => {
   const page = supportPage();
