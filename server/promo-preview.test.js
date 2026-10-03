@@ -11,6 +11,9 @@ test('le client affiche un code avec paiement et calcule la bienvenue après la 
   assert.equal(result.total,8.91);
   assert.match(result.discountLabel,/bienvenue/);
   assert.equal(previewPromotion(base,19.8,{ ...promotion, type:'free_delivery', previewProductDiscount:0 },'delivery').deliveryFee,0);
+  for (const type of ['buy3_get1_burger', 'buy3_get1_menu']) {
+    assert.equal(previewPromotion(base,19.8,{ ...promotion, type, previewProductDiscount:9.9 },'pickup').total,8.91);
+  }
 });
 
 test('les bons cadeaux déjà existants restent gratuits et séparés des nouvelles remises', () => {

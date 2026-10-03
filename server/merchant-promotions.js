@@ -5,7 +5,7 @@ const fail = (message, statusCode = 400) => { throw Object.assign(new Error(mess
 const money = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const burgerIds = Object.keys(PRODUCT_CATALOG).filter(id => !PRODUCT_CATALOG[id].menu && !PRODUCT_CATALOG[id].kind);
-const types = ['percent_order', 'percent_burger', 'bogo_burger', 'free_delivery'];
+const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery'];
 const normalizeCode = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
 const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filter(order => {
   if (order.promotion?.id !== promotion.id) return false;
@@ -100,6 +100,13 @@ function discountFor(promotion, items, subtotal, deliveryFee = 0) {
       .flatMap(item => Array(item.quantity).fill(PRODUCT_CATALOG[item.productId].price)).sort((a, b) => a - b);
     if (prices.length < 2) fail('Ajoute au moins deux burgers seuls pour profiter de cette offre. Les menus ne comptent pas.');
     products = money(prices.slice(0, Math.floor(prices.length / 2)).reduce((sum, price) => sum + price, 0));
+  }
+  if (promotion.type === 'buy3_get1_burger' || promotion.type === 'buy3_get1_menu') {
+    const menu = promotion.type === 'buy3_get1_menu';
+    const prices = items.filter(item => menu ? PRODUCT_CATALOG[item.productId]?.menu === true : burgerIds.includes(item.productId))
+      .flatMap(item => Array(item.quantity).fill(PRODUCT_CATALOG[item.productId].price)).sort((a, b) => a - b);
+    if (prices.length < 4) fail(menu ? 'Ajoute au moins quatre menus burgers pour profiter de cette offre.' : 'Ajoute au moins quatre burgers seuls pour profiter de cette offre.');
+    products = money(prices.slice(0, Math.floor(prices.length / 4)).reduce((sum, price) => sum + price, 0));
   }
   if (promotion.type === 'free_delivery') {
     if (!deliveryFee) fail('Ce code est réservé aux commandes en livraison avec des frais à payer.');

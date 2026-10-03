@@ -41,6 +41,30 @@ test('un burger offert est le moins cher, hors menus et suppléments; bienvenue 
   assert.throws(() => promos.discountFor(bogo, [item('classique-menu', 14.9)], 14.9), /deux burgers seuls/);
 });
 
+test('trois burgers seuls achetés : le quatrième le moins cher est offert, hors suppléments et menus', () => {
+  const offer = promos.validate(example('buy3_get1_burger', { code:'QUATREBURGER' }));
+  const items = [item('classique', 11.9), item('duck', 13.9), item('dynamite', 11.9), item('hambagu', 11.9), item('taurus', 16.9)];
+  assert.throws(() => promos.discountFor(offer, items.slice(0, 3), 37.7), /quatre burgers seuls/);
+  assert.deepEqual(promos.discountFor(offer, items, 66.5), { products:9.9, delivery:0 });
+  const price = promos.apply({ subtotal:66.5, deliveryFee:0, discountRate:.1 }, offer, items);
+  assert.equal(price.promotionDiscount, 9.9);
+  assert.equal(price.baseDiscount, 5.66);
+  assert.equal(price.total, 50.94);
+  assert.deepEqual(promos.discountFor(offer, [item('classique', 9.9, 8)], 79.2), { products:19.8, delivery:0 });
+});
+
+test('trois menus burgers achetés : le quatrième le moins cher est offert, hors suppléments et burgers seuls', () => {
+  const offer = promos.validate(example('buy3_get1_menu', { code:'QUATREMENUS' }));
+  const items = [item('classique-menu', 16.9), item('duck-menu', 18.9), item('montagnes-menu', 16.9), item('dynamite-menu', 16.9), item('classique', 9.9)];
+  assert.throws(() => promos.discountFor(offer, [item('classique-menu', 14.9, 3), item('classique', 9.9)], 54.6), /quatre menus burgers/);
+  assert.deepEqual(promos.discountFor(offer, items, 79.5), { products:14.9, delivery:0 });
+  const price = promos.apply({ subtotal:79.5, deliveryFee:0, discountRate:.1 }, offer, items);
+  assert.equal(price.promotionDiscount, 14.9);
+  assert.equal(price.baseDiscount, 6.46);
+  assert.equal(price.total, 58.14);
+  assert.throws(() => promos.discountFor(offer, [item('menu-duo-tenders', 19.9, 4)], 79.6), /quatre menus burgers/);
+});
+
 test('la remise produit ne réduit pas les suppléments; livraison offerte se cumule avec la bienvenue', () => {
   const burger = promos.validate(example('percent_burger'));
   const items = [item('classique', 11.9, 2), item('drink-coca', 1.8)];

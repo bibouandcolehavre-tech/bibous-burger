@@ -4,6 +4,8 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     percent_burger: { title:'−10 % sur un burger', type:'percent_burger', code:'BURGER10', percent:10, minimum:0, message:'−10 % sur le burger choisi. Cumulable avec les 10 % de bienvenue.' },
     percent_order: { title:'−15 % sur la commande', type:'percent_order', code:'MIDI15', percent:15, minimum:25, message:'−15 % sur les produits, dès 25 € de commande. Cumulable avec les 10 % de bienvenue.' },
     bogo_burger: { title:'1 burger acheté = 1 offert', type:'bogo_burger', code:'DUOBURGER', percent:0, minimum:0, message:'Pour deux burgers seuls, le moins cher est offert, hors suppléments. Cumulable avec les 10 % de bienvenue.' },
+    buy3_get1_burger: { title:'3 burgers achetés = le 4e offert', type:'buy3_get1_burger', code:'QUATREBURGER', percent:0, minimum:0, message:'Dès quatre burgers seuls, le moins cher est offert, hors suppléments. Cumulable avec les 10 % de bienvenue.' },
+    buy3_get1_menu: { title:'3 menus achetés = le 4e offert', type:'buy3_get1_menu', code:'QUATREMENUS', percent:0, minimum:0, message:'Dès quatre menus burgers, le moins cher est offert, hors suppléments. Cumulable avec les 10 % de bienvenue.' },
     free_delivery: { title:'Livraison offerte', type:'free_delivery', code:'LIVRAISON', percent:0, minimum:30, message:'Livraison offerte dès 30 € de produits. Cumulable avec les 10 % de bienvenue.' },
     flash: { title:'−20 % coup de boost', type:'percent_order', code:'FLASH20', percent:20, minimum:0, usageLimit:50, message:'−20 % sur les produits. Offre limitée. Cumulable avec les 10 % de bienvenue.' }
   };
@@ -34,7 +36,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     const products = data.burgers.map(item => `<option value="${esc(item.id)}" ${item.id === draft.productId ? 'selected' : ''}>${esc(item.name)}</option>`).join('');
     q('#promo-form').innerHTML = `<div class="promo-fields">
       <label>Code à partager<input data-field="code" maxlength="40" autocomplete="off" value="${esc(draft.code)}" required></label>
-      <label>Type d’offre<select data-field="type"><option value="percent_burger" ${draft.type==='percent_burger'?'selected':''}>Réduction sur un burger</option><option value="percent_order" ${draft.type==='percent_order'?'selected':''}>Réduction sur la commande</option><option value="bogo_burger" ${draft.type==='bogo_burger'?'selected':''}>Un burger acheté, un offert</option><option value="free_delivery" ${draft.type==='free_delivery'?'selected':''}>Livraison offerte</option></select></label>
+      <label>Type d’offre<select data-field="type"><option value="percent_burger" ${draft.type==='percent_burger'?'selected':''}>Réduction sur un burger</option><option value="percent_order" ${draft.type==='percent_order'?'selected':''}>Réduction sur la commande</option><option value="bogo_burger" ${draft.type==='bogo_burger'?'selected':''}>Un burger acheté, un offert</option><option value="buy3_get1_burger" ${draft.type==='buy3_get1_burger'?'selected':''}>Trois burgers seuls achetés, le quatrième offert</option><option value="buy3_get1_menu" ${draft.type==='buy3_get1_menu'?'selected':''}>Trois menus burgers achetés, le quatrième offert</option><option value="free_delivery" ${draft.type==='free_delivery'?'selected':''}>Livraison offerte</option></select></label>
       ${draft.type === 'percent_burger' ? `<label>Burger concerné<select data-field="productId"><option value="">Choisir le burger</option>${products}</select></label>` : ''}
       ${draft.type.startsWith('percent_') ? `<label>Réduction (%)<input data-field="percent" type="number" min="1" max="50" step="1" value="${Number(draft.percent)||10}"></label>` : ''}
       <label>Minimum de produits (€)<input data-field="minimum" type="number" min="0" max="10000" step="0.01" value="${Number(draft.minimum)||0}"></label>
@@ -43,7 +45,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       <label>Nombre total d’utilisations (facultatif)<input data-field="usageLimit" type="number" min="1" max="100000" value="${draft.usageLimit ?? ''}" placeholder="Sans limite"></label>
       <label class="promo-check"><input data-field="oncePerCustomer" type="checkbox" ${draft.oncePerCustomer?'checked':''}> Une utilisation par client</label>
       <label class="promo-wide">Texte affiché au client<textarea data-field="message" maxlength="180" rows="3">${esc(draft.message)}</textarea></label>
-      <p class="promo-wide promo-rule">Les 10 % de bienvenue se cumulent avec cette offre sur le montant restant à payer. Un seul code promo par commande. Les suppléments ne sont pas offerts par l’offre « 1 burger acheté = 1 offert ».</p>
+      <p class="promo-wide promo-rule">Les 10 % de bienvenue se cumulent avec cette offre sur le montant restant à payer. Un seul code promo par commande. Pour les offres « acheté, offert », le produit le moins cher est offert hors suppléments payants. Burgers seuls et menus sont comptés séparément.</p>
     </div><div class="promo-actions"><button type="button" id="promo-save" class="login-button">${draft.enabled ? 'Enregistrer les modifications' : 'Enregistrer en pause'}</button><button type="button" id="promo-toggle" class="secondary-button">${draft.enabled ? 'Mettre en pause' : 'Activer cette offre'}</button></div>`;
   }
   function readForm() {
