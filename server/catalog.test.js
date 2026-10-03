@@ -102,6 +102,12 @@ test('dessert à 2 € dans un menu et 3,90 € à la carte, prix imposés par l
 });
 
 test('frites cheddar bacon : remplacement du menu à 2,50 €, portion seule à 6,90 €', () => {
+  const included = { groupId: 'menu-fries', id: 'maison' };
+  const regularMenu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, included] }]);
+  assert.equal(regularMenu.subtotal, 14.9);
+  assert.deepEqual(regularMenu.items[0].options.find(option => option.groupId === 'menu-fries'), {
+    ...included, label: 'Frites maison incluses dans le menu', price: 0
+  });
   const upgrade = { groupId: 'menu-fries', id: 'cheddar-bacon' };
   const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, upgrade] }]);
   assert.equal(menu.subtotal, 17.4);
@@ -111,6 +117,7 @@ test('frites cheddar bacon : remplacement du menu à 2,50 €, portion seule à 
   assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: requiredSelections }]).subtotal, 14.9);
   assert.equal(validateAndPriceOrderItems([{ productId: 'frites-cheddar-bacon', quantity: 1, selections: [] }]).subtotal, 6.9);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, upgrade] }]), /option/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, included, upgrade] }]), /maximum 1 choix/);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, upgrade] }], { 'frites-cheddar-bacon': false }), /plus disponible/);
 });
 

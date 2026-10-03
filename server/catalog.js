@@ -89,6 +89,7 @@ const OPTIONS = [
   option("sides", "frites", "Portion de frites maison ajoutée", 3.9),
   option("sides", "frites-cheddar", "Frites cheddar bacon ajoutées", 6.9),
   option("sides", "tenders", "3 Tenders ajoutés", 6.9),
+  option("menu-fries", "maison", "Frites maison incluses dans le menu", 0),
   option("menu-fries", "cheddar-bacon", "Frites du menu remplacées par des frites cheddar bacon", 2.5),
   option("desserts", "oreo", "Tiramisu Oreo", 3.9),
   option("desserts", "cookie", "Tiramisu cookie", 3.9),
@@ -154,7 +155,7 @@ const optionProductId = ({ groupId, id }) => {
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
   if (groupId === "desserts" || groupId === "menu-desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
-  if (groupId === "menu-fries" && id === "cheddar-bacon") return "frites-cheddar-bacon";
+  if (groupId === "menu-fries") return { maison: "frites-maison", "cheddar-bacon": "frites-cheddar-bacon" }[id];
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;
