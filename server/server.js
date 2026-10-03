@@ -10,6 +10,7 @@ const { createRegistrationStore } = require('./customer-registration');
 const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../customer-identity');
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
+const merchantPromotions = require('./merchant-promotions');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
@@ -439,6 +440,16 @@ const server = http.createServer(async (request, response) => {
       finally { release(); }
     }
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
+
+    if (url.pathname === '/api/dashboard/promotions') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      if (!['GET', 'POST', 'PATCH'].includes(request.method)) return send(response, 405, { error: 'Méthode non autorisée.' });
+      const input = request.method === 'GET' ? null : await readBody(request);
+      releaseDatabase = await acquireDatabase();
+      const latestDatabase = await readDatabase();
+      if (input) { merchantPromotions.save(latestDatabase, input); await writeDatabase(latestDatabase); }
+      return send(response, 200, merchantPromotions.dashboard(latestDatabase));
+    }
 
     if (url.pathname === '/api/service-modules' && request.method === 'GET') {
       return send(response, 200, await serviceModuleStore.read());
@@ -1163,15 +1174,21 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === 'POST' && url.pathname === '/api/promotions/validate') {
-      if (!authenticatedCustomer(request, database)) return send(response, 401, { error: 'Connecte-toi pour utiliser un code promo.' });
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Connecte-toi pour utiliser un code promo.' });
       const input = await readBody(request);
-      const promotion = promotionForCode(input?.code);
+      const promotion = promotionForCode(input?.code, database);
       if (!promotion) return send(response, 400, { error: 'Saisis un code promo.' });
-      assertPromotionAvailable(database, promotion);
+      assertPromotionAvailable(database, promotion, customer.id);
       assertPromotionMethod(promotion, input.method);
-      if (promotion.requiredMenuCount) {
+      if (promotion.type === 'free_delivery' && bibouPlusStatus(customer).active) return send(response, 400, { error: 'Ta livraison est déjà offerte avec Bibou + ; ce code ne t’apporterait pas de réduction supplémentaire.' });
+      if (promotion.requiredMenuCount || promotion.id) {
         const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
         assertPromotionCart(promotion, pricedCart.items);
+        if (promotion.id) {
+          promotion.previewProductDiscount = merchantPromotions.discountFor(promotion, pricedCart.items, pricedCart.subtotal, promotion.type === 'free_delivery' ? 1 : 0).products;
+          promotion.previewBaseRate = welcomeRewardAvailable(customer, database.orders, new Date(), PENDING_RESERVATION_MS) ? WELCOME_DISCOUNT_RATE : bibouPlusStatus(customer).active ? BIBOU_PLUS_DISCOUNT_RATE : 0;
+        }
       }
       return send(response, 200, { promotion });
     }
@@ -1191,7 +1208,7 @@ const server = http.createServer(async (request, response) => {
         return send(response, 200, { order: previous, reused: true });
       }
       if (['delivery', 'pickup'].includes(input.method) && !(await serviceModuleStore.read()).modules[input.method]) return send(response, 409, { code: 'MODULE_DISABLED', error: 'Ce mode de commande est momentanément indisponible.' });
-      const promotion = promotionForCode(input.promoCode);
+      const promotion = promotionForCode(input.promoCode, database);
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
       assertPromotionMethod(promotion, input.method);
@@ -1217,7 +1234,10 @@ const server = http.createServer(async (request, response) => {
         if (!(await serviceModuleStore.read()).modules[input.method]) throw Object.assign(new Error('Ce mode de commande est momentanément indisponible.'), { statusCode: 409 });
         assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());
         const latestDatabase = await readDatabase();
-        assertPromotionAvailable(latestDatabase, promotion);
+        const activePromotion = promotionForCode(input.promoCode, latestDatabase);
+        assertPromotionAvailable(latestDatabase, activePromotion, input.customerId);
+        assertPromotionMethod(activePromotion, input.method);
+        assertPromotionCart(activePromotion, pricedCart.items);
         ensureBibouPlusStore(latestDatabase);
         const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId);
         if (!latestCustomer) return null;
@@ -1225,16 +1245,17 @@ const server = http.createServer(async (request, response) => {
         const sessionCustomer = authenticatedCustomer(request, latestDatabase);
         const benefitsAllowed = sessionCustomer?.id === latestCustomer.id;
         const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
-        const welcomeRewardApplied = !promotion && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
+        const welcomeRewardApplied = (!activePromotion || Boolean(activePromotion.id)) && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
-        const crmOffer = !promotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
+        const crmOffer = !activePromotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
         const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;
-        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), promotion, input.method);
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
         createdOrder.requestId = requestId;
-        if (promotion) { createdOrder.promotion = promotion; createdOrder.discountLabel = `Code promo ${promotion.code}`; }
+        if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
+        if (activePromotion?.id) Object.assign(createdOrder, { promotionDiscount: pricing.promotionDiscount, promotionDeliveryDiscount: pricing.promotionDeliveryDiscount, baseDiscount: pricing.baseDiscount });
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
         const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);

@@ -1,0 +1,9 @@
+.promo-layout{display:grid;grid-template-columns:minmax(230px,30%) minmax(0,1fr);gap:18px;margin-top:20px}
+.promo-layout .workspace-panel h2{font-size:19px;margin:0 0 14px}.promo-layout .workspace-panel h3{font-size:15px;margin:20px 0 10px}
+.promo-list-item,.promo-template{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;border:1px solid #d8e4d9;border-radius:12px;background:#f8fcf7;color:#225a46;text-align:left;padding:13px 14px;margin:8px 0;font:inherit;cursor:pointer}
+.promo-list-item{flex-wrap:wrap}.promo-list-item strong{font-size:16px}.promo-list-item span{font-size:12px}.promo-template{font-weight:750}.promo-template span{font-size:21px}
+.promo-list-item:hover,.promo-template:hover{background:#e8f3e9}.promo-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.promo-fields label{display:block;font-size:13px;font-weight:750;color:#183b30}.promo-fields input,.promo-fields select,.promo-fields textarea{display:block;width:100%;margin-top:7px;min-height:44px;border:1px solid #bfd3c4;border-radius:10px;background:white;color:#183b30;padding:10px;font:inherit;font-size:16px}
+.promo-fields .promo-wide{grid-column:1/-1}.promo-fields .promo-check{display:flex;align-items:center;gap:8px}.promo-fields .promo-check input{width:20px;height:20px;min-height:0;margin:0;accent-color:#225a46}
+.promo-rule{font-size:13px;line-height:1.5;background:#edf6ee;border-radius:12px;padding:14px;margin:0;color:#315c48}.promo-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.promo-actions button{min-height:46px}
+@media(max-width:850px){.promo-layout{grid-template-columns:1fr}}@media(max-width:600px){.promo-fields{grid-template-columns:1fr}}

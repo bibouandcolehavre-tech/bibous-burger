@@ -786,7 +786,8 @@ function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
   const standardFee = cart.delivery.fee ?? deliveryCost(cart.delivery.method);
   const [promotion, setPromotion] = useState(null);
   const [promoPending, setPromoPending] = useState(false);
-  const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, customer, isDelivery), cart.total, promotion, cart.delivery.method);
+  const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, promotion?.id ? { ...customer, crmOffers: [] } : customer, isDelivery), cart.total, promotion, cart.delivery.method);
+  const gifted = Boolean(promotion && !promotion.id);
   const [paying, setPaying] = useState(false);
   const paymentInFlight = useRef(false);
   const submitPayment = async () => {
@@ -798,7 +799,7 @@ function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailsContent} keyboardShouldPersistTaps="handled">
       <Header onBack={onBack} /><Text style={styles.title}>Vérifie ta commande</Text>
-      <Text style={styles.deliveryIntro}>{promotion?.pickupOnly ? 'Tes deux menus sont offerts en Click & Collect. Tu peux aussi les manger sur place.' : promotion ? 'Ta commande est offerte. Vérifie les détails avant de la confirmer.' : 'Tout est prêt pour le paiement sécurisé.'}</Text>
+      <Text style={styles.deliveryIntro}>{promotion?.pickupOnly ? 'Tes deux menus sont offerts en Click & Collect. Tu peux aussi les manger sur place.' : gifted ? 'Ta commande est offerte. Vérifie les détails avant de la confirmer.' : promotion ? 'Ton code est appliqué. Vérifie le total avant le paiement.' : 'Tout est prêt pour le paiement sécurisé.'}</Text>
       <PromoCodeField promotion={promotion} onChange={setPromotion} onPendingChange={setPromoPending} onValidate={onValidatePromo} disabled={paying} />
       <View style={styles.paymentSummary}>
         <Text style={styles.paymentProduct}>{cart.items.map(item => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(' · ')}</Text>
@@ -806,17 +807,17 @@ function PaymentScreen({ cart, customer, onBack, onPay, onValidatePromo }) {
         <ReceiptLine label="Sous-total" value={money(cart.total)} />
         {pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}
         <ReceiptLine label={isDelivery ? 'Livraison' : 'Retrait'} value={pricing.deliveryFee ? money(pricing.deliveryFee) : 'Offert'} />
-        {(promotion || pricing.bibouPlus) && isDelivery && standardFee > 0 && <ReceiptLine label={promotion ? 'Livraison offerte avec le code' : 'Économie livraison Bibou +'} value={`− ${money(standardFee)}`} />}
+        {isDelivery && standardFee > 0 && pricing.deliveryFee < standardFee && <ReceiptLine label={promotion?.type === 'free_delivery' || gifted ? 'Livraison offerte avec le code' : 'Économie livraison Bibou +'} value={`− ${money(standardFee - pricing.deliveryFee)}`} />}
         <View style={styles.receiptDivider} /><ReceiptLine label={promotion ? 'Total à payer' : 'Total débité par SumUp'} value={money(pricing.total)} strong />
       </View>
-      {promotion ? <Text style={styles.detailsFinePrint}>Cette commande offerte ne consomme pas tes autres remises et ne génère pas de points de fidélité ni de bonus parrainage.</Text> : pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après validation.</Text></View>}
+      {gifted ? <Text style={styles.detailsFinePrint}>Cette commande offerte ne consomme pas tes autres remises et ne génère pas de points de fidélité ni de bonus parrainage.</Text> : promotion?.id ? <Text style={styles.detailsFinePrint}>Le code se cumule avec les 10 % de bienvenue sur les produits restant à payer, si ce cadeau est encore disponible. Le serveur vérifie le total avant le paiement.</Text> : pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après validation.</Text></View>}
       <View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{isDelivery ? 'Livrer à' : 'Retrait par'}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View>
-      <View style={styles.securePayment}><Text style={styles.securePaymentIcon}>{promotion ? '🎁' : '🔒'}</Text><View style={{ flex: 1 }}><Text style={styles.securePaymentTitle}>{customer.reviewMode ? 'Commande de vérification' : promotion ? 'Commande offerte' : 'Paiement sécurisé avec SumUp'}</Text><Text style={styles.securePaymentText}>{customer.reviewMode ? 'Aucune carte demandée. Le restaurant ne reçoit pas cette commande.' : promotion ? 'Aucune carte demandée et aucun débit. Ta commande sera envoyée au restaurant après confirmation.' : 'Carte bancaire · le paiement sera ouvert par SumUp.'}</Text></View></View>
+      <View style={styles.securePayment}><Text style={styles.securePaymentIcon}>{gifted ? '🎁' : '🔒'}</Text><View style={{ flex: 1 }}><Text style={styles.securePaymentTitle}>{customer.reviewMode ? 'Commande de vérification' : gifted ? 'Commande offerte' : 'Paiement sécurisé avec SumUp'}</Text><Text style={styles.securePaymentText}>{customer.reviewMode ? 'Aucune carte demandée. Le restaurant ne reçoit pas cette commande.' : gifted ? 'Aucune carte demandée et aucun débit. Ta commande sera envoyée au restaurant après confirmation.' : 'Carte bancaire · le paiement sera ouvert par SumUp.'}</Text></View></View>
     </ScrollView>
     <View style={styles.stickyAction}>
       {promoPending && <Text style={styles.requiredHint}>Applique ton code promo ou efface-le pour continuer.</Text>}
       <Pressable accessibilityRole="button" disabled={paying || promoPending} style={[styles.primaryButton, (paying || promoPending) && styles.primaryButtonDisabled]} onPress={submitPayment}>
-        <Text style={styles.primaryButtonText}>{paying ? promotion ? 'Validation de la commande…' : 'Ouverture de SumUp…' : promotion?.pickupOnly ? 'Confirmer mes deux menus offerts · 0,00 €' : promotion ? 'Confirmer ma commande offerte · 0,00 €' : `Payer avec SumUp · ${money(pricing.total)}`}</Text>
+        <Text style={styles.primaryButtonText}>{paying ? gifted ? 'Validation de la commande…' : 'Ouverture de SumUp…' : promotion?.pickupOnly ? 'Confirmer mes deux menus offerts · 0,00 €' : gifted ? 'Confirmer ma commande offerte · 0,00 €' : `Payer avec SumUp · ${money(pricing.total)}`}</Text>
       </Pressable>
     </View>
   </SafeAreaView>;
@@ -838,7 +839,7 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
 
 function SuccessScreen({ order, onHome, onReview, onTrack }) {
   const label = order?.method === "delivery" ? "Livraison" : "Retrait";
-  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion && !order.promotion.id ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
 }
 
 function ReviewScreen({ onBack }) {

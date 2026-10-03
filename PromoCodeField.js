@@ -33,7 +33,7 @@ export default function PromoCodeField({ promotion, onChange, onPendingChange, o
       <Text style={s.buttonText}>{checking ? 'Vérification…' : promotion ? 'Retirer le code' : 'Appliquer le code'}</Text>
     </Pressable>
     {!!error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    {promotion && <Text accessibilityLiveRegion="polite" style={s.success}>✓ {promotion.message || `Code ${promotion.code} appliqué : commande et livraison offertes. Aucun paiement bancaire.`}</Text>}
+    {promotion && <Text accessibilityLiveRegion="polite" style={s.success}>✓ {promotion.message || (promotion.id ? `Code ${promotion.code} appliqué. Vérifie le total avant de payer.` : `Code ${promotion.code} appliqué : commande et livraison offertes. Aucun paiement bancaire.`)}</Text>}
   </View>;
 }
 const s = StyleSheet.create({

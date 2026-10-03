@@ -5,7 +5,7 @@ const { applyPromotion, assertPromotionCart } = require('./promo-codes');
 const { serviceSlotInstant } = require('./availability');
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
 const cents = n => Math.round(n * 100);
-const snapshot = o => structuredClone({ items: o.items, subtotal: o.subtotal, discount: o.discount, discountRate: o.discountRate, deliveryFee: o.deliveryFee, total: o.total });
+const snapshot = o => structuredClone({ items: o.items, subtotal: o.subtotal, discount: o.discount, discountRate: o.discountRate, baseDiscount: o.baseDiscount, promotionDiscount: o.promotionDiscount, promotionDeliveryDiscount: o.promotionDeliveryDiscount, deliveryFee: o.deliveryFee, total: o.total });
 const revision = order => order.amendment?.revision || 0;
 function editable(order, input, now) {
   if (order.payment?.status !== 'PAID' || !['confirmed', 'awaiting_customer'].includes(order.status) || order.amendment?.status === 'accepted') fail('Seule une nouvelle commande, avant acceptation, peut être modifiée.');
@@ -20,7 +20,7 @@ function preview(order, input, stock = {}, now = Date.now()) {
   if (typeof input.reason !== 'string' || !input.reason.trim() || input.reason.trim().length > 300) fail('Indiquez le motif de la modification (300 caractères maximum).', 400);
   const cart = validateAndPriceOrderItems(input.items, stock);
   assertPromotionCart(order.promotion, cart.items);
-  const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: cart.subtotal, deliveryFee: order.standardDeliveryFee ?? order.deliveryFee, active: order.bibouPlusApplied, discountRate: order.discountRate || 0 }), order.promotion, order.method);
+  const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: cart.subtotal, deliveryFee: order.standardDeliveryFee ?? order.deliveryFee, active: order.bibouPlusApplied, discountRate: order.discountRate || 0 }), order.promotion, order.method, cart.items);
   if (cents(pricing.total) > cents(order.total)) fail('Le nouveau total ne peut pas dépasser le montant payé. Choisissez un remplacement sans supplément.', 400);
   if (JSON.stringify(cart.items) === JSON.stringify(order.items)) fail('Le panier proposé est identique à la commande.', 400);
   return { ...pricing, items: cart.items, reason: input.reason.trim(), refundAmount: (cents(order.total) - cents(pricing.total)) / 100 };
@@ -64,8 +64,8 @@ function decide(order, input, stock = {}, now = Date.now()) {
   if (input.decision === 'refuse') { cancel(order, 'refused', now); return true; }
   assertStoredOrderAvailable(amendment.proposal.items, stock);
   order.paidTotal ??= order.total;
-  const { items, subtotal, discount, discountRate, standardDeliveryFee, deliveryFee, total } = amendment.proposal;
-  Object.assign(order, { items: structuredClone(items), subtotal, discount, discountRate, standardDeliveryFee, deliveryFee, total, status: 'confirmed', updatedAt: new Date(now).toISOString() });
+  const { items, subtotal, discount, discountRate, baseDiscount, promotionDiscount, promotionDeliveryDiscount, standardDeliveryFee, deliveryFee, total } = amendment.proposal;
+  Object.assign(order, { items: structuredClone(items), subtotal, discount, discountRate, baseDiscount, promotionDiscount, promotionDeliveryDiscount, standardDeliveryFee, deliveryFee, total, status: 'confirmed', updatedAt: new Date(now).toISOString() });
   Object.assign(amendment, { status: 'accepted', resolvedAt: new Date(now).toISOString() });
   setRefund(order, amendment.proposal.refundAmount);
   return true;

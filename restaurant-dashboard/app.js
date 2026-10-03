@@ -74,6 +74,7 @@ const removeDashboardToken = () => {
 };
 let dashboardToken = savedDashboardToken();
 let marketingPanel = null;
+let promotionsPanel = null;
 let notificationsPanel = null;
 let crmPanel = null;
 let schedulePanel = null;
@@ -89,7 +90,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
@@ -155,12 +156,15 @@ function orderPricingMarkup(order) {
   const discountLabel = order.discountLabel || (order.welcomeRewardApplied ? "Cadeau de bienvenue" : order.bibouPlusApplied ? "Remise Bibou +" : "Réduction");
   const rate = Number(order.discountRate) > 0 ? ` · −${Math.round(Number(order.discountRate) * 100)} %` : "";
   const rows = [`<div><span>Sous-total des articles</span><strong>${euro(subtotal)}</strong></div>`];
-  if (discount > 0) rows.push(`<div class="order-pricing-saving"><span>${escapeHtml(discountLabel)}${rate}</span><strong>− ${euro(discount)}</strong></div>`);
+  if (promotion?.id) {
+    if (Number(order.raw?.promotionDiscount) > 0) rows.push(`<div class="order-pricing-saving"><span>Code promo ${escapeHtml(promotion.code)}</span><strong>− ${euro(order.raw.promotionDiscount)}</strong></div>`);
+    if (Number(order.raw?.baseDiscount) > 0) rows.push(`<div class="order-pricing-saving"><span>${order.welcomeRewardApplied ? 'Bienvenue · −10 % après promotion' : 'Remise Bibou +'}</span><strong>− ${euro(order.raw.baseDiscount)}</strong></div>`);
+  } else if (discount > 0) rows.push(`<div class="order-pricing-saving"><span>${escapeHtml(discountLabel)}${rate}</span><strong>− ${euro(discount)}</strong></div>`);
   if (order.type === "Livraison" || order.method === "delivery") {
-    if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>${promotion ? 'Livraison offerte par code promo' : 'Économie livraison Bibou +'}</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
+    if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>${promotion?.type === 'free_delivery' || (promotion && !promotion.id) ? 'Livraison offerte par code promo' : 'Économie livraison Bibou +'}</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
     rows.push(`<div><span>Livraison facturée</span><strong>${deliveryFee ? euro(deliveryFee) : "Offerte"}</strong></div>`);
   } else rows.push(`<div><span>Retrait</span><strong>Gratuit</strong></div>`);
-  rows.push(`<div class="order-pricing-total"><span>${promotion ? 'Commande offerte · aucun débit bancaire' : 'Total débité par SumUp'}</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
+  rows.push(`<div class="order-pricing-total"><span>${promotion && !promotion.id ? 'Commande offerte · aucun débit bancaire' : 'Total débité par SumUp'}</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
   if (order.paidTotal !== undefined) rows.push(`<div><span>Total après modification</span><strong>${euro(order.total)}</strong></div>`);
   return `<div class="order-pricing">${rows.join("")}</div>`;
 }
@@ -289,7 +293,7 @@ function renderOrders() {
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
     const printControls = `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
-    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
     if (completedView || historyView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
@@ -779,11 +783,11 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "reservations", "rewards", "menu", "backups", "customers", "marketing", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "orders", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
-  document.querySelector('#marketing-subnav').hidden = !['marketing','crm','notifications'].includes(view);
+  document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
   document.querySelector("#schedule-view").hidden = view !== "schedule";
   document.querySelector("#orders-view").hidden = view !== "orders";
@@ -794,20 +798,22 @@ function showView(view) {
   document.querySelector("#backups-view").hidden = view !== "backups";
   document.querySelector("#customers-view").hidden = view !== "customers";
   document.querySelector("#marketing-view").hidden = view !== "marketing";
+  document.querySelector("#promotions-view").hidden = view !== "promotions";
   document.querySelector("#notifications-view").hidden = view !== "notifications";
   document.querySelector("#crm-view").hidden = view !== "crm";
   document.querySelector("#settings-view").hidden = view !== "settings";
-  document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
-  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
+  document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
+  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
-  const group = {rewards:'customers',crm:'marketing',notifications:'marketing',backups:'settings'}[view] || view;
+  const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing',backups:'settings'}[view] || view;
   document.querySelectorAll('.sidebar nav .nav-item, .mobile-view-switch .nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === group));
   if (view === "schedule") void schedulePanel?.load();
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
   if (view === "customers") void loadCustomers();
   if (view === "marketing") void marketingPanel?.load();
+  if (view === "promotions") void promotionsPanel?.load();
   if (view === "notifications") void notificationsPanel?.load();
   if (["crm", "settings"].includes(view)) void crmPanel?.load();
 }
@@ -907,6 +913,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     if (currentView === "customers") loadCustomers();
     if (currentView === "schedule") return schedulePanel?.load();
   if (currentView === "marketing") marketingPanel?.load();
+    if (currentView === "promotions") promotionsPanel?.load();
     if (currentView === "notifications") notificationsPanel?.load();
     if (["crm", "settings"].includes(currentView)) crmPanel?.load();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
@@ -915,6 +922,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
 document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
 if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMarketing({ root: document.querySelector('#marketing-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
+if (typeof window.BibouPromotions === 'function') promotionsPanel = window.BibouPromotions({ root: document.querySelector('#promotions-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouNotifications === 'function') notificationsPanel = window.BibouNotifications({ root: document.querySelector('#notifications-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSchedule({root:document.querySelector('#schedule-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:showLogin});
 if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });
