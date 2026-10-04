@@ -40,7 +40,7 @@ test('interface Android v6 : choix de viande dans la fiche, sans bandeau halal e
   assert.doesNotMatch(source,/MeatPreference|meatPreference|TA PRÉFÉRENCE DE VIANDE/);
   const cards=source.slice(source.indexOf('function ProductCard'),source.indexOf('function AccessoryCard'));
   assert.doesNotMatch(cards,/halal|CONTIENT DU PORC/);
-  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
+  assert.match(source,/MENU_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, MENU_FRIES, SALAD/);
   assert.match(source,/BURGER_OPTION_GROUPS = \[PROTEIN, MEAT_TYPE, SALAD/);
   assert.match(source,/regularSlotsForWeekday|preparationMinutes/);
 });
