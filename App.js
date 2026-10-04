@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView as DeviceSafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
 import NewsCarousel from "./NewsCarousel";
+import WelcomeCarousel from "./WelcomeCarousel";
 import ContestScreen from "./ContestScreen";
 import NotificationSettings from "./NotificationSettings";
 import NotificationOnboarding from "./NotificationOnboarding";
@@ -115,6 +116,16 @@ const initialScreenFromUrl = () => {
 const nativeAccountFirst = Platform.OS === "android" || Platform.OS === "ios";
 const webWelcomePreview = Platform.OS === "web" && typeof window !== "undefined" &&
   new URLSearchParams(window.location.search).get("welcome") === "preview";
+const webWelcomeFirstVisit = Platform.OS === "web" && typeof window !== "undefined" &&
+  !webWelcomePreview && initialScreenFromUrl() === "menu" && (() => {
+    try { return window.localStorage.getItem("bibou_welcome_carousel_v1") !== "seen"; }
+    catch { return true; }
+  })();
+const welcomeEnabled = nativeAccountFirst || webWelcomePreview || webWelcomeFirstVisit;
+const rememberWebWelcome = () => {
+  if (Platform.OS !== "web" || webWelcomePreview || typeof window === "undefined") return;
+  try { window.localStorage.setItem("bibou_welcome_carousel_v1", "seen"); } catch {}
+};
 const webCustomBurgerPreview = Platform.OS === "web";
 
 const PRODUCTS = [
@@ -395,20 +406,24 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
 }
 
 function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy }) {
+  const { height } = useWindowDimensions();
+  const compactWeb = Platform.OS === "web" && height < 750;
   return <SafeAreaView style={styles.safeArea}>
     <StatusBar barStyle="dark-content" />
     <ScrollView contentContainerStyle={styles.nativeWelcome} showsVerticalScrollIndicator={false}>
-      <View style={styles.nativeWelcomeBrand}><Image accessibilityLabel="Bibou’s Burgers" source={officialWordmarkPreview} resizeMode="contain" style={styles.nativeWelcomeLogo} /></View>
-      <View style={styles.nativeWelcomeMain}>
-        <Text style={styles.nativeWelcomeEyebrow}>BIENVENUE CHEZ BIBOU</Text>
-        <Text style={styles.nativeWelcomeTitle}>La fidélité a ses avantages.</Text>
-        <View style={styles.nativeWelcomeGift}><Text style={styles.nativeWelcomeGiftTitle}>−10 % sur ta première commande</Text><Text style={styles.nativeWelcomeGiftText}>Crée ton compte et la remise s’appliquera automatiquement.</Text><View style={styles.nativeWelcomeDivider} /><Text style={styles.nativeWelcomeBenefit}>★ Des points à chaque commande</Text><Text style={styles.nativeWelcomeBenefit}>♡ Tes commandes et réservations au même endroit</Text></View>
+      <View style={styles.nativeWelcomeBrand}><Image accessibilityLabel="Bibou’s Burgers" source={officialWordmarkPreview} resizeMode="contain" style={[styles.nativeWelcomeLogo, compactWeb && styles.nativeWelcomeLogoCompact]} /></View>
+      <View style={[styles.nativeWelcomeMain, Platform.OS === "web" && styles.nativeWelcomeMainWeb]}>
+        {Platform.OS === "web" ? <WelcomeCarousel /> : <>
+          <Text style={styles.nativeWelcomeEyebrow}>BIENVENUE CHEZ BIBOU</Text>
+          <Text style={styles.nativeWelcomeTitle}>La fidélité a ses avantages.</Text>
+          <View style={styles.nativeWelcomeGift}><Text style={styles.nativeWelcomeGiftTitle}>−10 % sur ta première commande</Text><Text style={styles.nativeWelcomeGiftText}>Crée ton compte et la remise s’appliquera automatiquement.</Text><View style={styles.nativeWelcomeDivider} /><Text style={styles.nativeWelcomeBenefit}>★ Des points à chaque commande</Text><Text style={styles.nativeWelcomeBenefit}>♡ Tes commandes et réservations au même endroit</Text></View>
+        </>}
       </View>
-      <View style={styles.nativeWelcomeActions}>
+      <View style={[styles.nativeWelcomeActions, compactWeb && styles.nativeWelcomeActionsCompact]}>
         <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Se connecter</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>S’inscrire</Text></Pressable>
-        <Pressable accessibilityRole="link" onPress={onPrivacy} style={styles.nativeWelcomePrivacy}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={onViewMenu} style={styles.nativeWelcomeGuest}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
+        <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWeb && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWeb && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
       </View>
     </ScrollView>
   </SafeAreaView>;
@@ -1016,9 +1031,10 @@ function AppContent({ onReviewModeChange }) {
     return () => { stopped = true; clearInterval(timer); subscription.remove(); stopBrowserFocus(); };
   }, []);
   const [screen, setScreen] = useState(initialScreenFromUrl);
-  const [sessionRestored, setSessionRestored] = useState(!nativeAccountFirst);
-  const [showNativeWelcome, setShowNativeWelcome] = useState(nativeAccountFirst || webWelcomePreview);
+  const [sessionRestored, setSessionRestored] = useState(!welcomeEnabled);
+  const [showNativeWelcome, setShowNativeWelcome] = useState(welcomeEnabled);
   const [loginFromWelcome, setLoginFromWelcome] = useState(false);
+  const [loginStartedFromWelcome, setLoginStartedFromWelcome] = useState(false);
   const [crmWelcomeDestination, setCrmWelcomeDestination] = useState('account');
   const [activeProduct, setActiveProduct] = useState(null);
   const [cart, setCart] = useState(null);
@@ -1125,6 +1141,8 @@ function AppContent({ onReviewModeChange }) {
   };
   const authenticate = async ({ token, customer: savedCustomer, isNewCustomer = false }) => {
     setLoginFromWelcome(false);
+    setLoginStartedFromWelcome(false);
+    rememberWebWelcome();
     sessionEpoch.current += 1;
     sessionTokenRef.current = token;
     setAuthToken(token);
@@ -1498,8 +1516,8 @@ function AppContent({ onReviewModeChange }) {
       if (error?.name !== "AbortError") Alert.alert("Ton code de parrainage", `${customer.referralCode}\n\n${referralUrl}`);
     }
   };
-  if (nativeAccountFirst && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de ton compte…</Text></View></SafeAreaView>;
-  if ((nativeAccountFirst || webWelcomePreview) && !authToken && showNativeWelcome && screen === 'menu') return <NativeWelcomeChoice onCreateAccount={() => { setShowNativeWelcome(false); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
+  if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
+  if (welcomeEnabled && !authToken && showNativeWelcome && screen === 'menu') return <NativeWelcomeChoice onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => { rememberWebWelcome(); setShowNativeWelcome(false); }} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={addToCart} onBack={() => setScreen("menu")} />;
@@ -1521,7 +1539,7 @@ function AppContent({ onReviewModeChange }) {
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
   if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} onBack={() => setScreen("menu")} onCreated={(reservation) => setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)])} onOpenReservations={() => setScreen("reservations")} />;
-  if (screen === "login") return <SmsLoginScreen accountFirst={loginFromWelcome} onBack={() => { if (loginFromWelcome) { setLoginFromWelcome(false); setShowNativeWelcome(true); setScreen('menu'); } else setScreen(loginDestination === "account" ? "menu" : loginDestination); }} onAuthenticated={authenticate} />;
+  if (screen === "login") return <SmsLoginScreen accountFirst={loginFromWelcome} onBack={() => { if (loginStartedFromWelcome) { setLoginStartedFromWelcome(false); setLoginFromWelcome(false); setShowNativeWelcome(true); setScreen('menu'); } else setScreen(loginDestination === "account" ? "menu" : loginDestination); }} onAuthenticated={authenticate} />;
   if (screen === "account") return authToken ? <AccountScreen onOpenOffers={() => setScreen("offers")} onOpenNotifications={() => setScreen("notifications")} onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "orders") return <OrdersScreen orders={orders} onDecide={decideAmendment} busy={amendmentBusy} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
   if (screen === "reservations") return <ReservationsScreen reservations={reservations} onBack={() => setScreen("account")} onRefresh={(silent = false) => void loadCustomerReservations({ silent })} />;
@@ -1673,7 +1691,9 @@ const styles = StyleSheet.create(applyAppPalette({
   nativeWelcome: { flexGrow: 1, width: "100%", maxWidth: 520, alignSelf: "center", paddingHorizontal: 24, paddingTop: 12, paddingBottom: 20 },
   nativeWelcomeBrand: { alignSelf: "center", alignItems: "center" },
   nativeWelcomeLogo: { width: 190, height: 96, ...(Platform.OS === "web" ? { filter: "brightness(0) saturate(100%) invert(25%) sepia(15%) saturate(962%) hue-rotate(104deg) brightness(91%) contrast(92%)" } : { tintColor: "#25473B" }) },
+  nativeWelcomeLogoCompact: { width: 158, height: 70 },
   nativeWelcomeMain: { flexGrow: 1, justifyContent: "center", paddingVertical: 20 },
+  nativeWelcomeMainWeb: { paddingVertical: 8 },
   nativeWelcomeEyebrow: { color: "#A9543C", fontSize: 12, fontWeight: "900", letterSpacing: 1.7, textAlign: "center", marginBottom: 9 },
   nativeWelcomeTitle: { color: "#25473B", fontSize: 30, lineHeight: 36, fontWeight: "900", textAlign: "center", marginBottom: 22 },
   nativeWelcomeGift: { backgroundColor: "#D6EEE3", borderColor: "#B7DDD0", borderWidth: 1, borderRadius: 22, paddingHorizontal: 22, paddingVertical: 24 },
@@ -1682,13 +1702,16 @@ const styles = StyleSheet.create(applyAppPalette({
   nativeWelcomeDivider: { height: 1, backgroundColor: "#A9D2C1", marginVertical: 20 },
   nativeWelcomeBenefit: { color: "#315B4B", fontSize: 14, lineHeight: 21, fontWeight: "700", marginTop: 6 },
   nativeWelcomeActions: { paddingTop: 12 },
+  nativeWelcomeActionsCompact: { paddingTop: 6 },
   nativeWelcomePrimary: { minHeight: 58, backgroundColor: "#315B4B", borderRadius: 16, paddingHorizontal: 20, justifyContent: "center", alignItems: "center" },
   nativeWelcomePrimaryText: { color: "#FFFCF7", fontSize: 18, fontWeight: "900" },
   nativeWelcomeSignIn: { minHeight: 58, borderWidth: 2, borderColor: "#315B4B", borderRadius: 16, paddingHorizontal: 20, justifyContent: "center", alignItems: "center", marginTop: 12 },
   nativeWelcomeSignInText: { color: "#315B4B", fontSize: 18, fontWeight: "900" },
   nativeWelcomePrivacy: { alignItems: "center", paddingVertical: 9 },
+  nativeWelcomePrivacyCompact: { paddingVertical: 6 },
   nativeWelcomePrivacyText: { color: "#75665B", fontSize: 12 },
   nativeWelcomeGuest: { minHeight: 44, justifyContent: "center", alignItems: "center", marginTop: 13 },
+  nativeWelcomeGuestCompact: { marginTop: 5 },
   nativeWelcomeGuestText: { color: "#405447", fontSize: 13, fontWeight: "600", textDecorationLine: "underline" },
   loyaltyContent: { padding: 20, paddingBottom: 44 }, loyaltyIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, pointsCard: { backgroundColor: "#2C201B", borderRadius: 24, padding: 21, marginTop: 22 }, pointsEyebrow: { color: "#FFB797", fontSize: 11, fontWeight: "900", letterSpacing: 0.8 }, pointsTotal: { color: "white", fontSize: 30, fontWeight: "800", marginTop: 7 }, pointsSubtext: { color: "#F9D6C8", fontWeight: "600", marginTop: 7 }, progressTrack: { height: 9, backgroundColor: "#5D4740", borderRadius: 6, overflow: "hidden", marginTop: 19 }, progressFill: { height: "100%", backgroundColor: "#E95122", borderRadius: 6 }, progressCaption: { color: "#EBC8B9", fontSize: 11, fontWeight: "700", marginTop: 8, textAlign: "right" }, prestigeCard: { backgroundColor: "#FFF0E9", borderRadius: 20, padding: 16, borderWidth: 1, borderColor: "#F2C7B7" }, prestigeTop: { flexDirection: "row", alignItems: "center" }, prestigeBadge: { width: 94, height: 60, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center", marginRight: 12 }, prestigeBadgeText: { color: "#826E63", fontSize: 16, fontWeight: "900" }, prestigeCopy: { flex: 1 }, prestigeTitle: { color: "#2C201B", fontSize: 15, fontWeight: "900" }, prestigeReward: { color: "#826E63", fontSize: 12, lineHeight: 16, marginTop: 4 }, prestigeLevels: { flexDirection: "row", justifyContent: "space-between", marginTop: 19 }, prestigeLevel: { alignItems: "center", flex: 1 }, prestigeAboveLabel: { color: "#826E63", fontSize: 9, fontWeight: "800", marginBottom: 5 }, prestigeDot: { width: 50, height: 40, borderRadius: 20, backgroundColor: "#F8EAE0", borderWidth: 2, borderColor: "#D3BDB1", alignItems: "center", justifyContent: "center" }, prestigeDotUnlocked: { backgroundColor: "#E95122", borderColor: "#E95122" }, prestigeDotText: { color: "#826E63", fontSize: 10, fontWeight: "900" }, prestigeDotTextUnlocked: { color: "white" }, prestigeLevelLabel: { color: "#9B877B", fontSize: 8, lineHeight: 12, fontWeight: "700", marginTop: 5, textAlign: "center" }, prestigeLevelLabelActive: { color: "#D74318" }, prestigeNext: { color: "#826E63", fontSize: 12, marginTop: 15, textAlign: "center" }, rewardsTable: { borderRadius: 19, overflow: "hidden", borderWidth: 1, borderColor: "#EADBD2", backgroundColor: "#FFFDFC" }, rewardRow: { minHeight: 76, padding: 12, flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#EADBD2" }, rewardRowUnlocked: { backgroundColor: "#F4F8F0" }, rewardIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, rewardEmoji: { fontSize: 21 }, rewardCopy: { flex: 1, paddingRight: 8 }, rewardTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, rewardDetail: { color: "#826E63", fontSize: 11, lineHeight: 14, marginTop: 3 }, rewardStatus: { minWidth: 56, borderRadius: 11, backgroundColor: "#F2E8E2", paddingVertical: 6, paddingHorizontal: 5, alignItems: "center" }, rewardStatusText: { color: "#826E63", fontSize: 11, fontWeight: "900" }, rewardStatusSubtext: { color: "#826E63", fontSize: 9, marginTop: 2 }, rewardClaimButton: { minWidth: 70, borderRadius: 12, backgroundColor: "#397353", paddingVertical: 8, paddingHorizontal: 8, alignItems: "center" }, rewardClaimButtonText: { color: "white", fontSize: 11, fontWeight: "900" }, rewardClaimButtonHint: { color: "#DDF0E2", fontSize: 8, marginTop: 2 }, rewardClaimedStatus: { minWidth: 82, borderRadius: 12, backgroundColor: "#DDEED7", paddingVertical: 7, paddingHorizontal: 7, alignItems: "center" }, rewardClaimedLabel: { color: "#397353", fontSize: 9, fontWeight: "900" }, rewardClaimCode: { color: "#2E6144", fontSize: 9, fontWeight: "900", marginTop: 3 }, rewardUsedStatus: { backgroundColor: "#E8E2DE" }, rewardUsedText: { color: "#826E63" }, rewardClaimFootnote: { color: "#5A4A42", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 11 }, weeklyCard: { backgroundColor: "#F8EAE0", borderRadius: 20, padding: 17 }, weeklyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, weeklyTitle: { color: "#2C201B", fontSize: 16, fontWeight: "800" }, weeklySubtext: { color: "#826E63", fontSize: 12, marginTop: 4 }, multiplierBadge: { width: 53, height: 53, borderRadius: 18, backgroundColor: "#E95122", justifyContent: "center", alignItems: "center" }, multiplierText: { color: "white", fontSize: 22, fontWeight: "900" }, weeklyPoints: { color: "#397353", fontWeight: "800", marginTop: 16 }, stepsRow: { flexDirection: "row", alignItems: "center", marginTop: 20 }, step: { width: 48, alignItems: "center" }, stepActive: { opacity: 1 }, stepNumber: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: "#CDB7AB", color: "#826E63", textAlign: "center", lineHeight: 28, fontWeight: "800", backgroundColor: "#FFF8F2" }, stepNumberActive: { backgroundColor: "#E95122", borderColor: "#E95122", color: "white" }, stepLabel: { color: "#826E63", fontSize: 11, fontWeight: "700", marginTop: 5 }, stepLine: { flex: 1, height: 2, backgroundColor: "#D5BDB0", marginBottom: 17 }, weeklyFootnote: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 16 }, simulateButton: { borderRadius: 16, borderWidth: 1.5, borderColor: "#E95122", padding: 14, alignItems: "center", marginTop: 14 }, simulateButtonText: { color: "#D74318", fontWeight: "800" }, simulateHint: { color: "#826E63", fontSize: 11, marginTop: 4 }, referralCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 15, flexDirection: "row", alignItems: "center" }, referralIcon: { width: 45, height: 45, borderRadius: 15, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 12 }, referralEmoji: { fontSize: 22 }, referralCopy: { flex: 1 }, referralTitle: { color: "#2C201B", fontWeight: "800" }, referralText: { color: "#826E63", fontSize: 12, marginTop: 4, lineHeight: 16 }, loyaltyLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, marginTop: 18, textAlign: "center" },
   headerCart: { minWidth: 44, height: 38, borderRadius: 13, backgroundColor: "#FFF0E9", paddingHorizontal: 11, alignItems: "center", justifyContent: "center" },
