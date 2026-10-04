@@ -1,15 +1,28 @@
 const { DEFAULT_NEWS, safePublicUrl } = require('../news-config');
 const { publicContest } = require('./referral-contest');
+const { parisDateKey, regularSlotsForDate, scheduleOverride } = require('./availability');
 const error = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const dashboardNews = database => database.news || { revision: 0, items: DEFAULT_NEWS.map(item => ({ ...item })) };
+const closedTonight = (database, now) => {
+  const date = parisDateKey(now);
+  return ['pickup', 'delivery', 'reservation'].every(method => {
+    const slots = regularSlotsForDate(date, method).filter(slot => slot >= '18:00');
+    return slots.length > 0 && slots.every(slot => scheduleOverride(database, date, slot, method) === false);
+  });
+};
 const publicNews = (database, now = new Date(), modernContestClient = true) => {
   const contest = modernContestClient ? publicContest(database, now) : { status: 'inactive' };
-  return { items: dashboardNews(database).items.filter(item => item.enabled && item.kind !== 'product').map(item => {
+  const items = dashboardNews(database).items.filter(item => item.enabled && item.kind !== 'product').map(item => {
     if (item.kind !== 'contest' || contest.status === 'inactive') return item;
     if (contest.status === 'scheduled') return { ...item, title: 'Le concours Bibou arrive', subtitle: `Ouverture le ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(`${contest.startDate}T12:00:00Z`))} · 3 gagnants · participation gratuite` };
     if (contest.status === 'closed') return { ...item, title: 'Le concours Bibou est terminé', subtitle: 'Le classement final est en cours de vérification.' };
     return { ...item, title: 'Le concours Bibou est ouvert', subtitle: '24 menus pour la 1re place · 20 points par ami inscrit · 1 point par partage du jour · 1 point par € payé · sans achat obligatoire' };
-  }) };
+  });
+  if (!closedTonight(database, now)) return { items };
+  const dateLabel = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(now);
+  return { items: [{ id: 'contest', kind: 'note', enabled: true, title: 'Fermé exceptionnellement ce soir',
+    subtitle: `Ce ${dateLabel} : pas de click & collect, de livraison ni de réservation de table. La carte reste consultable.`, url: '', imageUrl: '' },
+    ...items.filter(item => item.id !== 'contest')] };
 };
 function saveNews(database, input, now = new Date()) {
   if (!input || input.revision !== dashboardNews(database).revision) throw error('Les actualités ont changé. Actualisez avant de réessayer.', 409);
