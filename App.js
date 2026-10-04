@@ -405,10 +405,10 @@ function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy 
         <View style={styles.nativeWelcomeGift}><Text style={styles.nativeWelcomeGiftTitle}>−10 % sur ta première commande</Text><Text style={styles.nativeWelcomeGiftText}>Crée ton compte et la remise s’appliquera automatiquement.</Text><View style={styles.nativeWelcomeDivider} /><Text style={styles.nativeWelcomeBenefit}>★ Des points à chaque commande</Text><Text style={styles.nativeWelcomeBenefit}>♡ Tes commandes et réservations au même endroit</Text></View>
       </View>
       <View style={styles.nativeWelcomeActions}>
-        <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Créer un compte</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>Déjà inscrit ? Se connecter</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Se connecter</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>S’inscrire</Text></Pressable>
         <Pressable accessibilityRole="link" onPress={onPrivacy} style={styles.nativeWelcomePrivacy}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={onViewMenu} style={styles.nativeWelcomeGuest}><Text style={styles.nativeWelcomeGuestText}>Continuer sans s’inscrire</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={onViewMenu} style={styles.nativeWelcomeGuest}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
       </View>
     </ScrollView>
   </SafeAreaView>;
@@ -1499,7 +1499,7 @@ function AppContent({ onReviewModeChange }) {
     }
   };
   if (nativeAccountFirst && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de ton compte…</Text></View></SafeAreaView>;
-  if ((nativeAccountFirst || webWelcomePreview) && !authToken && showNativeWelcome && screen === 'menu') return <NativeWelcomeChoice onCreateAccount={() => { setShowNativeWelcome(false); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
+  if ((nativeAccountFirst || webWelcomePreview) && !authToken && showNativeWelcome && screen === 'menu') return <NativeWelcomeChoice onCreateAccount={() => { setShowNativeWelcome(false); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={addToCart} onBack={() => setScreen("menu")} />;
@@ -1684,8 +1684,8 @@ const styles = StyleSheet.create(applyAppPalette({
   nativeWelcomeActions: { paddingTop: 12 },
   nativeWelcomePrimary: { minHeight: 58, backgroundColor: "#315B4B", borderRadius: 16, paddingHorizontal: 20, justifyContent: "center", alignItems: "center" },
   nativeWelcomePrimaryText: { color: "#FFFCF7", fontSize: 18, fontWeight: "900" },
-  nativeWelcomeSignIn: { minHeight: 44, justifyContent: "center", alignItems: "center", marginTop: 7 },
-  nativeWelcomeSignInText: { color: "#315B4B", fontSize: 14, fontWeight: "700" },
+  nativeWelcomeSignIn: { minHeight: 58, borderWidth: 2, borderColor: "#315B4B", borderRadius: 16, paddingHorizontal: 20, justifyContent: "center", alignItems: "center", marginTop: 12 },
+  nativeWelcomeSignInText: { color: "#315B4B", fontSize: 18, fontWeight: "900" },
   nativeWelcomePrivacy: { alignItems: "center", paddingVertical: 9 },
   nativeWelcomePrivacyText: { color: "#75665B", fontSize: 12 },
   nativeWelcomeGuest: { minHeight: 44, justifyContent: "center", alignItems: "center", marginTop: 13 },
