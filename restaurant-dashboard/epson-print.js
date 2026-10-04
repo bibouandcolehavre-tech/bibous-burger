@@ -98,13 +98,15 @@
     const itemType = item => {
       const id = String(item.productId || '');
       if (id === 'taurus' || id.endsWith('-menu') || id === 'menu-duo-tenders') return 'MENU';
-      if (['atlas', 'classique', 'duck', 'dynamite', 'hambagu', 'basilic', 'montagnes', 'gros-lard', 'pork'].includes(id)) return 'BURGER SEUL';
+      if (['atlas', 'classique', 'duck', 'dynamite', 'hambagu', 'basilic', 'montagnes', 'gros-lard', 'pork', 'custom-burger'].includes(id)) return 'BURGER SEUL';
       if (id.startsWith('drink-')) return 'BOISSON';
       return 'AUTRE ARTICLE';
     };
     const optionTitle = { protein: 'Composition', 'meat-type': 'Viande', drink: 'Boisson',
       'duo-drink-one': 'Boisson 1', 'duo-drink-two': 'Boisson 2', sauces: 'Sauce',
-      salad: 'Crudites', extras: 'Supplement', 'menu-fries': 'Frites du menu', sides: 'Accompagnement', desserts: 'Dessert' };
+      salad: 'Crudites', extras: 'Supplement', 'menu-fries': 'Frites du menu', sides: 'Accompagnement', desserts: 'Dessert',
+      'custom-protein': 'Viande', 'custom-bread': 'Pain', 'custom-cheese': 'Fromage',
+      'custom-sauce': 'Sauce', 'custom-crudite': 'Crudites', 'custom-extra': 'Supplement', 'custom-diet': 'Viande' };
     const parts = [
       '<text align="center" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
       '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),

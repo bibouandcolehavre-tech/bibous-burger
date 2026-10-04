@@ -5,6 +5,7 @@ const fail = (message, statusCode = 400) => { throw Object.assign(new Error(mess
 const money = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const burgerIds = Object.keys(PRODUCT_CATALOG).filter(id => !PRODUCT_CATALOG[id].menu && !PRODUCT_CATALOG[id].kind);
+const burgerPriceForPromotion = item => item.productId === 'custom-burger' ? item.price : PRODUCT_CATALOG[item.productId].price;
 const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery'];
 const normalizeCode = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
 const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filter(order => {
@@ -92,19 +93,19 @@ function discountFor(promotion, items, subtotal, deliveryFee = 0) {
   if (promotion.type === 'percent_order') products = money(subtotal * promotion.percent / 100);
   if (promotion.type === 'percent_burger') {
     products = money(items.filter(item => item.productId === promotion.productId)
-      .reduce((sum, item) => sum + PRODUCT_CATALOG[item.productId].price * item.quantity, 0) * promotion.percent / 100);
+      .reduce((sum, item) => sum + burgerPriceForPromotion(item) * item.quantity, 0) * promotion.percent / 100);
     if (!products) fail('Ajoute le burger concerné pour utiliser ce code.');
   }
   if (promotion.type === 'bogo_burger') {
     const prices = items.filter(item => burgerIds.includes(item.productId))
-      .flatMap(item => Array(item.quantity).fill(PRODUCT_CATALOG[item.productId].price)).sort((a, b) => a - b);
+      .flatMap(item => Array(item.quantity).fill(burgerPriceForPromotion(item))).sort((a, b) => a - b);
     if (prices.length < 2) fail('Ajoute au moins deux burgers seuls pour profiter de cette offre. Les menus ne comptent pas.');
     products = money(prices.slice(0, Math.floor(prices.length / 2)).reduce((sum, price) => sum + price, 0));
   }
   if (promotion.type === 'buy3_get1_burger' || promotion.type === 'buy3_get1_menu') {
     const menu = promotion.type === 'buy3_get1_menu';
     const prices = items.filter(item => menu ? PRODUCT_CATALOG[item.productId]?.menu === true : burgerIds.includes(item.productId))
-      .flatMap(item => Array(item.quantity).fill(PRODUCT_CATALOG[item.productId].price)).sort((a, b) => a - b);
+      .flatMap(item => Array(item.quantity).fill(burgerPriceForPromotion(item))).sort((a, b) => a - b);
     if (prices.length < 4) fail(menu ? 'Ajoute au moins quatre menus burgers pour profiter de cette offre.' : 'Ajoute au moins quatre burgers seuls pour profiter de cette offre.');
     products = money(prices.slice(0, Math.floor(prices.length / 4)).reduce((sum, price) => sum + price, 0));
   }
@@ -130,7 +131,7 @@ function apply(pricing, promotion, items) {
 function dashboard(db) {
   const promotions = db.merchantPromotions || [];
   return { promotions: promotions.map(item => ({ ...item, used: activeOrders(db, item).filter(order => order.payment?.status === 'PAID').length })),
-    burgers: burgerIds.map(id => ({ id, name: PRODUCT_CATALOG[id].name, price: PRODUCT_CATALOG[id].price })) };
+    burgers: burgerIds.map(id => ({ id, name: PRODUCT_CATALOG[id].name, price: id === 'custom-burger' ? 9.9 : PRODUCT_CATALOG[id].price })) };
 }
 
 module.exports = { validate, save, findByCode, assertAvailable, discountFor, apply, dashboard, publicView };

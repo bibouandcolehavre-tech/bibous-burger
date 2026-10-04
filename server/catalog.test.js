@@ -1,12 +1,60 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { validateAndPriceOrderItems } = require("./catalog");
+const { PRODUCT_CATALOG, availabilityCatalog, validateAndPriceOrderItems } = require("./catalog");
+const { PROTEINS, initialBurger, priceCents, selectionEntries } = require('../custom-burger-preview');
 
 const requiredSelections = [
   { groupId: "protein", id: "viande" },
   { groupId: "salad", id: "roquette" },
   { groupId: "sauces", id: "mayo" }
 ];
+
+test('burger à composer : mêmes prix de départ que les burgers seuls, jamais sous le menu équivalent', () => {
+  for (const protein of PROTEINS.filter((choice) => choice.reference)) {
+    const selection = { ...initialBurger(), protein: protein.id, bread: protein.recipe.bread, cheese: protein.recipe.cheese, sauces: [protein.recipe.sauce] };
+    const burger = validateAndPriceOrderItems([{ productId: 'custom-burger', quantity: 1, price: 0.01, selections: selectionEntries(selection) }]);
+    assert.equal(burger.subtotal, PRODUCT_CATALOG[protein.productId].price, protein.label);
+    assert.equal(Math.round(burger.subtotal * 100), priceCents(selection));
+    assert.ok(burger.subtotal + 3.9 + 1.8 >= PRODUCT_CATALOG[`${protein.productId}-menu`].price, protein.label);
+    assert.equal(burger.items[0].name, 'Burger à composer');
+  }
+});
+
+test('burger à composer : les recettes bœuf comparables ne passent pas sous la carte', () => {
+  const base = initialBurger();
+  const comparable = [
+    [{ ...base, cheese: 'raclette', extras: ['bacon'] }, 'montagnes'],
+    [{ ...base, cheese: 'fourme', extras: ['lard'] }, 'gros-lard'],
+    [{ ...base, cheese: 'chevre', sauces: ['pesto-verde'], extras: ['extra-mozzarella'] }, 'basilic']
+  ];
+  for (const [selection, productId] of comparable) {
+    const actual = validateAndPriceOrderItems([{ productId: 'custom-burger', quantity: 1, selections: selectionEntries(selection) }]);
+    assert.ok(actual.subtotal >= PRODUCT_CATALOG[productId].price, productId);
+  }
+});
+
+test('burger à composer : chaque supplément est tarifé par le serveur et le prix transmis est ignoré', () => {
+  const selection = { ...initialBurger(), bread: 'charbon', sauces: ['barbecue', 'mayo'], crudites: ['roquette', 'tomate', 'oignons', 'cornichons', 'concombre', 'chou-rouge'], extras: ['bacon'] };
+  const priced = validateAndPriceOrderItems([{ productId: 'custom-burger', quantity: 2, price: 0.01, selections: selectionEntries(selection) }]);
+  assert.equal(priced.items[0].price, priceCents(selection) / 100);
+  assert.equal(priced.subtotal, priced.items[0].price * 2);
+  assert.equal(priced.items[0].options.find((option) => option.groupId === 'custom-bread').price, 1);
+  assert.equal(priced.items[0].options.filter((option) => option.groupId === 'custom-crudite' && option.price === 0.5).length, 1);
+});
+
+test('burger à composer : rejet des choix forgés, du porc halal et des ruptures', () => {
+  const base = selectionEntries(initialBurger());
+  const order = (selections, stock) => validateAndPriceOrderItems([{ productId: 'custom-burger', quantity: 1, selections }], stock);
+  assert.throws(() => order(base.filter((choice) => choice.groupId !== 'custom-protein')), /Choisis une viande/);
+  assert.throws(() => order([...base, { groupId: 'custom-protein', id: 'boeuf' }]), /invalide/);
+  assert.throws(() => order([...base, { groupId: 'custom-extra', id: 'jambon-parme' }]), /invalide/);
+  assert.throws(() => order([...base, { groupId: 'custom-extra', id: 'bacon' }, { groupId: 'custom-diet', id: 'halal' }]), /porc/);
+  assert.throws(() => order([...base, { groupId: 'custom-diet', id: 'halal' }], { classique: false }), /disponible/);
+  assert.throws(() => order([...base, { groupId: 'custom-extra', id: 'bacon' }], { 'ingredient-bacon': false }), /disponible/);
+  const catalog = availabilityCatalog({ 'ingredient-bacon': false });
+  assert.equal(catalog.options['custom-extra:bacon'], false);
+  assert.equal(catalog.products.find((product) => product.id === 'custom-burger').category, 'burgers');
+});
 
 test("prices a menu and supplements from the server catalog", () => {
   const result = validateAndPriceOrderItems([{ productId: "taurus", quantity: 1, price: 0.01, selections: [...requiredSelections, { groupId: "drink", id: "coca" }, { groupId: "extras", id: "second-steak" }] }]);

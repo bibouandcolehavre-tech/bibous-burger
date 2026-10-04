@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-const { PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, initialBurger, priceCents, stockAvailable } = require('./custom-burger-preview');
+const { BASE_CENTS, PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, EXTRA_STOCK_IDS, initialBurger, priceCents, pricedOptions, selectionEntries, stockAvailable } = require('./custom-burger-preview');
 
 const euro = (cents) => `${(cents / 100).toFixed(2).replace('.', ',')} €`;
 const categories = [
@@ -9,15 +9,7 @@ const categories = [
   { id: 'crudites', label: 'Crudités' }, { id: 'extras', label: 'Suppléments' }
 ];
 const choiceGroups = { protein: PROTEINS, bread: BREADS, cheese: CHEESES, sauces: SAUCES, crudites: CRUDITES, extras: EXTRAS };
-const stockIdForExtra = {
-  'second-steak': 'ingredient-second-steak', 'extra-poulet': 'dynamite', 'extra-canard': 'duck',
-  'extra-agneau': 'atlas', 'extra-pork': 'pork', 'extra-hambagu': 'hambagu',
-  'extra-galette': 'ingredient-potato-patty', 'extra-cheddar': 'ingredient-cheddar',
-  'extra-mozzarella': 'ingredient-mozzarella', 'extra-raclette': 'ingredient-raclette',
-  'extra-fourme': 'ingredient-fourme', bacon: 'ingredient-bacon', lard: 'ingredient-lard'
-};
-
-export default function CustomBurgerPreview({ catalog, onBack }) {
+export default function CustomBurgerPreview({ catalog, onBack, onAdd }) {
   const [selection, setSelection] = useState(initialBurger);
   const [category, setCategory] = useState('protein');
   const protein = PROTEINS.find((option) => option.id === selection.protein);
@@ -48,14 +40,26 @@ export default function CustomBurgerPreview({ catalog, onBack }) {
   };
   const isBlocked = (option) => {
     if (selection.halal && option.pork) return true;
+    const stockGroup = { protein: 'custom-protein', cheese: 'custom-cheese', extras: 'custom-extra' }[category];
+    if (stockGroup && catalog?.options?.[`${stockGroup}:${option.id}`] === false) return true;
     if (category === 'protein' && !stockAvailable(catalog, option.productId)) return true;
-    if (category === 'extras' && !stockAvailable(catalog, stockIdForExtra[option.id])) return true;
+    if (category === 'extras' && !stockAvailable(catalog, EXTRA_STOCK_IDS[option.id])) return true;
     return false;
   };
   const price = priceCents(selection);
+  const selections = selectionEntries(selection);
+  const productStatus = catalog?.products?.find((product) => product.id === 'custom-burger');
+  const unavailableChoice = selections.some(({ groupId, id }) => catalog?.options?.[`${groupId}:${id}`] === false);
+  const canOrder = Boolean(productStatus?.available) && !unavailableChoice;
+  const addBurger = () => onAdd({
+    product: { id: 'custom-burger', name: 'Burger à composer', price: BASE_CENTS / 100, emoji: '🍔' },
+    total: price / 100,
+    options: pricedOptions(selection).map((option) => option.label),
+    selections
+  });
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.content}>
     <Pressable accessibilityRole="button" onPress={onBack} style={s.back}><Text style={s.backText}>‹</Text></Pressable>
-    <Text style={s.eyebrow}>ESSAI DANS LA WEB APP</Text>
+    <Text style={s.eyebrow}>TON BURGER, TES CHOIX</Text>
     <Text style={s.title}>Compose ton burger</Text>
     <Text style={s.intro}>Choisis chaque ingrédient. Le prix évolue immédiatement ; tu peux revenir à la carte à tout moment.</Text>
     <View style={s.priceCard}><Text style={s.priceLabel}>Ton burger</Text><Text accessibilityLiveRegion="polite" style={s.price}>{euro(price)}</Text><Text style={s.priceHint}>{protein?.reference ? `Avec la recette de départ : même prix que « ${protein.reference} » seul.` : 'Base 6,90 € + protéine et suppléments choisis.'}</Text></View>
@@ -67,7 +71,7 @@ export default function CustomBurgerPreview({ catalog, onBack }) {
       const blocked = isBlocked(option);
       return <Pressable key={option.id} accessibilityRole={['sauces', 'crudites', 'extras'].includes(category) ? 'checkbox' : 'radio'} accessibilityState={{ checked: selected(option.id), disabled: blocked }} disabled={blocked} onPress={() => choose(option)} style={[s.option, selected(option.id) && s.optionSelected, blocked && s.disabled]}><View style={s.optionLeft}><Text style={s.check}>{selected(option.id) ? '✓' : ''}</Text><View style={s.optionCopy}><Text style={s.optionLabel}>{option.label}{option.pork ? ' · porc' : ''}</Text>{blocked && <Text style={s.blockedText}>{selection.halal && option.pork ? 'Non halal' : 'Actuellement indisponible'}</Text>}</View></View><Text style={s.optionPrice}>{priceFor(option)}</Text></Pressable>;
     })}
-    <View style={s.bottom}><Text style={s.bottomTitle}>Prix de ton burger : {euro(price)}</Text><Text style={s.bottomCopy}>Aucune commande ni paiement ne part de cet écran d’essai. Les menus et les burgers habituels restent commandables dans la carte.</Text></View>
+    <View style={s.bottom}><Text style={s.bottomTitle}>Prix de ton burger : {euro(price)}</Text>{!canOrder && <Text style={s.bottomCopy}>{!productStatus ? 'Le nouveau burger sera commandable dès que la mise à jour du restaurant sera terminée.' : 'Un ingrédient choisi est momentanément indisponible. Modifie ta composition.'}</Text>}<Pressable accessibilityRole="button" disabled={!canOrder} onPress={addBurger} style={[s.addButton, !canOrder && s.addButtonDisabled]}><Text style={s.addButtonText}>Ajouter au panier · {euro(price)}</Text></Pressable></View>
   </ScrollView></SafeAreaView>;
 }
 
@@ -104,5 +108,8 @@ const s = StyleSheet.create({
   disabled: { opacity: 0.5 },
   bottom: { paddingVertical: 19 },
   bottomTitle: { color: '#263D34', fontSize: 19, fontWeight: '900' },
-  bottomCopy: { color: '#67574D', fontSize: 13, lineHeight: 19, marginTop: 7 }
+  bottomCopy: { color: '#67574D', fontSize: 13, lineHeight: 19, marginTop: 7 },
+  addButton: { backgroundColor: '#315B4B', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 12 },
+  addButtonDisabled: { opacity: 0.5 },
+  addButtonText: { color: '#FFFDF8', fontSize: 16, fontWeight: '900' }
 });

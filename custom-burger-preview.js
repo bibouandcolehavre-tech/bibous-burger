@@ -56,6 +56,14 @@ const EXTRAS = [
   { id: 'lard', label: 'Lard fumé', cents: 150, pork: true }
 ];
 
+const EXTRA_STOCK_IDS = {
+  'second-steak': 'ingredient-second-steak', 'extra-poulet': 'dynamite', 'extra-canard': 'duck',
+  'extra-agneau': 'atlas', 'extra-pork': 'pork', 'extra-hambagu': 'hambagu',
+  'extra-galette': 'ingredient-potato-patty', 'extra-cheddar': 'ingredient-cheddar',
+  'extra-mozzarella': 'ingredient-mozzarella', 'extra-raclette': 'ingredient-raclette',
+  'extra-fourme': 'ingredient-fourme', bacon: 'ingredient-bacon', lard: 'ingredient-lard'
+};
+
 const initialBurger = () => ({ protein: 'boeuf', bread: 'brioche', cheese: 'cheddar', sauces: ['barbecue'], crudites: ['roquette', 'tomate', 'oignons', 'cornichons'], extras: [], halal: false });
 const find = (items, id) => items.find((item) => item.id === id);
 const signatureBreadIncluded = (proteinId) => ['canard', 'agneau', 'pork', 'hambagu'].includes(proteinId);
@@ -68,4 +76,61 @@ const priceCents = (selection) => {
 };
 const stockAvailable = (catalog, productId) => catalog?.products?.find((product) => product.id === productId)?.available !== false;
 
-module.exports = { BASE_CENTS, PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, initialBurger, priceCents, stockAvailable };
+const selectionEntries = (selection) => [
+  { groupId: 'custom-protein', id: selection.protein },
+  { groupId: 'custom-bread', id: selection.bread },
+  { groupId: 'custom-cheese', id: selection.cheese },
+  ...selection.sauces.map((id) => ({ groupId: 'custom-sauce', id })),
+  ...selection.crudites.map((id) => ({ groupId: 'custom-crudite', id })),
+  ...selection.extras.map((id) => ({ groupId: 'custom-extra', id })),
+  ...(selection.halal ? [{ groupId: 'custom-diet', id: 'halal' }] : [])
+];
+
+const parseSelectionEntries = (entries) => {
+  if (!Array.isArray(entries) || entries.length < 3 || entries.length > 50) throw Error('Complète les choix du burger à composer.');
+  const groups = {
+    'custom-protein': { choices: PROTEINS, limit: 1, required: true, field: 'protein' },
+    'custom-bread': { choices: BREADS, limit: 1, required: true, field: 'bread' },
+    'custom-cheese': { choices: CHEESES, limit: 1, required: true, field: 'cheese' },
+    'custom-sauce': { choices: SAUCES, limit: SAUCES.length, field: 'sauces' },
+    'custom-crudite': { choices: CRUDITES, limit: CRUDITES.length, field: 'crudites' },
+    'custom-extra': { choices: EXTRAS, limit: EXTRAS.length, field: 'extras' },
+    'custom-diet': { choices: [{ id: 'halal' }], limit: 1, field: 'halal' }
+  };
+  const values = Object.fromEntries(Object.values(groups).map(({ field }) => [field, []]));
+  const seen = new Set();
+  for (const entry of entries) {
+    const group = groups[entry?.groupId];
+    const key = `${entry?.groupId}:${entry?.id}`;
+    if (!group || !group.choices.some((choice) => choice.id === entry?.id) || seen.has(key)) throw Error('Un ingrédient du burger à composer est invalide.');
+    seen.add(key);
+    values[group.field].push(entry.id);
+    if (values[group.field].length > group.limit) throw Error('Trop de choix dans une catégorie du burger.');
+  }
+  for (const group of Object.values(groups)) if (group.required && values[group.field].length !== 1) throw Error('Choisis une viande, un pain et un fromage.');
+  const selection = {
+    protein: values.protein[0], bread: values.bread[0], cheese: values.cheese[0],
+    sauces: values.sauces, crudites: values.crudites, extras: values.extras, halal: values.halal.length > 0
+  };
+  if (selection.halal && (find(PROTEINS, selection.protein)?.pork || selection.extras.some((id) => find(EXTRAS, id)?.pork))) {
+    throw Error('Le porc et le bacon ne sont pas disponibles en version halal.');
+  }
+  return selection;
+};
+
+const pricedOptions = (selection) => {
+  const protein = find(PROTEINS, selection.protein);
+  const bread = find(BREADS, selection.bread);
+  const cheese = find(CHEESES, selection.cheese);
+  return [
+    { groupId: 'custom-protein', id: protein.id, label: protein.label, price: protein.cents / 100 },
+    { groupId: 'custom-bread', id: bread.id, label: bread.label, price: bread.id === 'charbon' && !signatureBreadIncluded(protein.id) ? 1 : 0 },
+    { groupId: 'custom-cheese', id: cheese.id, label: cheese.label, price: protein.id === 'agneau' && cheese.id === 'chevre' ? 0 : cheese.cents / 100 },
+    ...selection.sauces.map((id, index) => ({ groupId: 'custom-sauce', id, label: find(SAUCES, id).label, price: index ? 0.5 : 0 })),
+    ...selection.crudites.map((id, index) => ({ groupId: 'custom-crudite', id, label: find(CRUDITES, id).label, price: index >= 5 ? 0.5 : 0 })),
+    ...selection.extras.map((id) => ({ groupId: 'custom-extra', id, label: find(EXTRAS, id).label, price: find(EXTRAS, id).cents / 100 })),
+    ...(selection.halal ? [{ groupId: 'custom-diet', id: 'halal', label: 'Version halal', price: 0 }] : [])
+  ];
+};
+
+module.exports = { BASE_CENTS, PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, EXTRA_STOCK_IDS, initialBurger, priceCents, pricedOptions, selectionEntries, parseSelectionEntries, stockAvailable };

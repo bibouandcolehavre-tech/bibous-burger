@@ -7,6 +7,14 @@ const example = (type, changes = {}) => ({ code:'BURGER10', type, percent:10, pr
   minimum:0, startsAt:null, endsAt:null, usageLimit:null, oncePerCustomer:true, enabled:false, message:'Offre Bibou', ...changes });
 const item = (id, price, quantity = 1) => ({ productId:id, price, quantity });
 
+test('les promos burger utilisent le vrai prix du burger composé, pas sa base de 6,90 €', () => {
+  const custom = item('custom-burger', 13.9);
+  const percent = promos.validate(example('percent_burger', { code:'COMPOSE10', productId:'custom-burger' }));
+  assert.deepEqual(promos.discountFor(percent, [custom], 13.9), { products:1.39, delivery:0 });
+  const bogo = promos.validate(example('bogo_burger', { code:'COMPOSEDEUX' }));
+  assert.deepEqual(promos.discountFor(bogo, [custom, item('classique', 9.9)], 23.8), { products:9.9, delivery:0 });
+});
+
 test('une nouvelle offre reste en pause et exige une confirmation pour être activée', () => {
   const db = { orders:[] };
   const draft = promos.save(db, example('percent_order'));

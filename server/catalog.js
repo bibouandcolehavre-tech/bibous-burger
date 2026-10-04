@@ -1,4 +1,5 @@
 const { containsPork, porkOption } = require('../dietary-policy');
+const { BASE_CENTS, PROTEINS, CHEESES, EXTRAS, EXTRA_STOCK_IDS, parseSelectionEntries, pricedOptions } = require('../custom-burger-preview');
 const PRODUCT_CATALOG = {
   taurus: { name: "Le Taurus", price: 16.9, menu: true },
   "montagnes-menu": { name: "À travers les montagnes", price: 16.9, menu: true },
@@ -19,6 +20,7 @@ const PRODUCT_CATALOG = {
   montagnes: { name: "À travers les montagnes", price: 11.9 },
   "gros-lard": { name: "Le gros lard", price: 11.9 },
   pork: { name: "Le Pork", price: 11.9, fixedSauce: "fixed-pork" },
+  "custom-burger": { name: "Burger à composer", price: BASE_CENTS / 100, custom: true, category: "burgers" },
   "frites-maison": { name: "Frites maison", price: 3.9, kind: "simple" },
   "frites-cheddar-bacon": { name: "Frites cheddar bacon", price: 6.9, kind: "simple" },
   "tenders-xl-3": { name: "Tenders XL par 3", price: 6.9, kind: "simple" },
@@ -149,6 +151,9 @@ const cents = (value) => Math.round(Number(value) * 100);
 const orderInputError = (message) => Object.assign(new Error(message), { statusCode: 400 });
 // Stock is shared by a standalone product and the same product selected in a menu.
 const optionProductId = ({ groupId, id }) => {
+  if (groupId === "custom-protein") return PROTEINS.find((choice) => choice.id === id)?.productId || null;
+  if (groupId === "custom-extra") return EXTRA_STOCK_IDS[id] || null;
+  if (groupId === "custom-cheese") return { cheddar: "ingredient-cheddar", mozzarella: "ingredient-mozzarella", raclette: "ingredient-raclette", fourme: "ingredient-fourme" }[id] || null;
   if (groupId === "protein" && id === "galette") return "ingredient-potato-patty";
   if (groupId === "extras") return {
     "second-steak": "ingredient-second-steak", "galette-plus": "ingredient-potato-patty", cheddar: "ingredient-cheddar",
@@ -182,7 +187,11 @@ const availabilityCatalog = (overrides = {}) => ({
     category: product.category || (product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers"),
     ...productStock(id, overrides)
   })),
-  options: Object.fromEntries(OPTIONS.map((entry) => {
+  options: Object.fromEntries([...OPTIONS,
+    ...PROTEINS.map((choice) => ({ groupId: "custom-protein", id: choice.id })),
+    ...CHEESES.map((choice) => ({ groupId: "custom-cheese", id: choice.id })),
+    ...EXTRAS.map((choice) => ({ groupId: "custom-extra", id: choice.id }))
+  ].map((entry) => {
     const productId = optionProductId(entry);
     return [`${entry.groupId}:${entry.id}`, !productId || productStock(productId, overrides).available];
   }))
@@ -203,6 +212,10 @@ const assertStoredOrderAvailable = (items, overrides = {}) => {
 
 const validatedSelections = (product, selections, productId) => {
   if (!Array.isArray(selections)) throw orderInputError("Actualise l’application avant de commander.");
+  if (product.custom) {
+    try { return pricedOptions(parseSelectionEntries(selections)); }
+    catch (error) { throw orderInputError(error.message); }
+  }
   const allowedGroups = product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
   const seen = new Set();
   const resolved = selections.map((selection) => {
