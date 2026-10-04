@@ -407,23 +407,24 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
 
 function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy }) {
   const { height } = useWindowDimensions();
-  const compactWeb = Platform.OS === "web" && height < 750;
+  const compactWelcome = height < 750;
+  const animatedWelcome = Platform.OS === "web" || Platform.OS === "android";
   return <SafeAreaView style={styles.safeArea}>
     <StatusBar barStyle="dark-content" />
     <ScrollView contentContainerStyle={styles.nativeWelcome} showsVerticalScrollIndicator={false}>
-      <View style={styles.nativeWelcomeBrand}><Image accessibilityLabel="Bibou’s Burgers" source={officialWordmarkPreview} resizeMode="contain" style={[styles.nativeWelcomeLogo, compactWeb && styles.nativeWelcomeLogoCompact]} /></View>
-      <View style={[styles.nativeWelcomeMain, Platform.OS === "web" && styles.nativeWelcomeMainWeb]}>
-        {Platform.OS === "web" ? <WelcomeCarousel /> : <>
+      <View style={styles.nativeWelcomeBrand}><Image accessibilityLabel="Bibou’s Burgers" source={officialWordmarkPreview} resizeMode="contain" style={[styles.nativeWelcomeLogo, compactWelcome && styles.nativeWelcomeLogoCompact]} /></View>
+      <View style={[styles.nativeWelcomeMain, animatedWelcome && styles.nativeWelcomeMainWeb]}>
+        {animatedWelcome ? <WelcomeCarousel /> : <>
           <Text style={styles.nativeWelcomeEyebrow}>BIENVENUE CHEZ BIBOU</Text>
           <Text style={styles.nativeWelcomeTitle}>La fidélité a ses avantages.</Text>
           <View style={styles.nativeWelcomeGift}><Text style={styles.nativeWelcomeGiftTitle}>−10 % sur ta première commande</Text><Text style={styles.nativeWelcomeGiftText}>Crée ton compte et la remise s’appliquera automatiquement.</Text><View style={styles.nativeWelcomeDivider} /><Text style={styles.nativeWelcomeBenefit}>★ Des points à chaque commande</Text><Text style={styles.nativeWelcomeBenefit}>♡ Tes commandes et réservations au même endroit</Text></View>
         </>}
       </View>
-      <View style={[styles.nativeWelcomeActions, compactWeb && styles.nativeWelcomeActionsCompact]}>
+      <View style={[styles.nativeWelcomeActions, compactWelcome && styles.nativeWelcomeActionsCompact]}>
         <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Se connecter</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>S’inscrire</Text></Pressable>
-        <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWeb && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWeb && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
+        <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWelcome && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWelcome && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
       </View>
     </ScrollView>
   </SafeAreaView>;
