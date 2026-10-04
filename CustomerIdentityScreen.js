@@ -47,11 +47,11 @@ export default function CustomerIdentityScreen({ api, registrationToken, authTok
   </ScrollView></SafeAreaView>;
 }
 const s = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#E95122' }, content: { padding: 24, paddingTop: 40, paddingBottom: 48, width: '100%', maxWidth: 600, alignSelf: 'center' },
-  eyebrow: { color: '#FFF5EF', fontWeight: '800', letterSpacing: 2, fontSize: 12 }, title: { color: '#FFF', fontSize: 31, fontWeight: '900', marginTop: 12 }, intro: { color: '#FFF', fontSize: 16, lineHeight: 24, marginVertical: 20 },
-  card: { padding: 22, backgroundColor: '#FFFBF6', borderRadius: 22 }, label: { color: '#29201D', fontWeight: '800', fontSize: 15, marginBottom: 9 },
-  input: { borderWidth: 1, borderColor: '#BBA69B', borderRadius: 12, padding: 14, fontSize: 17, color: '#211610', backgroundColor: '#FFF', marginBottom: 22 },
-  previous: { color: '#514239', fontSize: 14, lineHeight: 21, marginBottom: 20 }, note: { color: '#514239', fontSize: 13, lineHeight: 20, marginBottom: 18 },
-  button: { padding: 18, backgroundColor: '#241A16', borderRadius: 14 }, buttonText: { color: '#FFF', fontWeight: '800', textAlign: 'center', fontSize: 16 }, dim: { opacity: .45 },
-  error: { color: '#A02416', lineHeight: 22, marginBottom: 16 }, link: { paddingVertical: 14, alignItems: 'center' }, linkText: { color: '#241A16', fontWeight: '700' },
+  page: { flex: 1, backgroundColor: '#FAF1E3' }, content: { padding: 24, paddingTop: 40, paddingBottom: 48, width: '100%', maxWidth: 600, alignSelf: 'center' },
+  eyebrow: { color: '#A9543C', fontWeight: '800', letterSpacing: 2, fontSize: 12 }, title: { color: '#25473B', fontSize: 31, fontWeight: '900', marginTop: 12 }, intro: { color: '#315B4B', fontSize: 16, lineHeight: 24, marginVertical: 20 },
+  card: { padding: 22, backgroundColor: '#D6EEE3', borderColor: '#B7DDD0', borderWidth: 1, borderRadius: 22 }, label: { color: '#25473B', fontWeight: '800', fontSize: 15, marginBottom: 9 },
+  input: { borderWidth: 1, borderColor: '#A9CDBD', borderRadius: 12, padding: 14, fontSize: 17, color: '#25473B', backgroundColor: '#FFFCF7', marginBottom: 22 },
+  previous: { color: '#405447', fontSize: 14, lineHeight: 21, marginBottom: 20 }, note: { color: '#405447', fontSize: 13, lineHeight: 20, marginBottom: 18 },
+  button: { padding: 18, backgroundColor: '#315B4B', borderRadius: 14 }, buttonText: { color: '#FFFCF7', fontWeight: '800', textAlign: 'center', fontSize: 16 }, dim: { opacity: .45 },
+  error: { color: '#9A3D2C', lineHeight: 22, marginBottom: 16 }, link: { paddingVertical: 14, alignItems: 'center' }, linkText: { color: '#8A422F', fontWeight: '700' },
 });

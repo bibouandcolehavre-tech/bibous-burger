@@ -24,7 +24,7 @@ function head({ title, description = info.description, url, detail = false }) {
   return `<title>${escape(title)}</title>
     <meta name="description" content="${escape(description)}">
     <meta name="robots" content="index, follow, max-image-preview:large">
-    <meta name="theme-color" content="#E95122">
+    <meta name="theme-color" content="#315B4B">
     <meta name="google-site-verification" content="LfixJmMoMMRd9_8dmXcTHi4VoK4ggCXinCB_r6kcjYU">
     <link rel="canonical" href="${escape(url)}">
     <meta property="og:type" content="website">

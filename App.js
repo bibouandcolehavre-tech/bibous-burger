@@ -408,7 +408,7 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
 function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy }) {
   const { height } = useWindowDimensions();
   const compactWelcome = height < 750;
-  const animatedWelcome = Platform.OS === "web" || Platform.OS === "android";
+  const animatedWelcome = true;
   return <SafeAreaView style={styles.safeArea}>
     <StatusBar barStyle="dark-content" />
     <ScrollView contentContainerStyle={styles.nativeWelcome} showsVerticalScrollIndicator={false}>
@@ -1002,7 +1002,7 @@ export default function App() {
     const preview = Platform.OS === "web" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("apercu") === "chargement";
     launchTimer.current = setTimeout(() => setShowLaunch(false), preview ? 6000 : Platform.OS === "web" ? 1400 : 1500);
   };
-  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={[styles.safeArea, showLaunch && styles.launchSafeArea]}><View style={{ flex: 1 }}>{reviewMode && <View style={{ backgroundColor: "#172b48", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}<View style={{ flex: 1 }} importantForAccessibility={showLaunch ? "no-hide-descendants" : "auto"}><AppContent onReviewModeChange={setReviewMode} /></View>{showLaunch && <View style={styles.launchOverlay} accessible accessibilityLabel="Bibou’s Burgers. Click and Collect, livraison et réservation de table. Ouverture de l’application."><Image source={require("./assets/android-launch-05h.png")} style={styles.launchImage} resizeMode={Platform.OS === "web" ? "contain" : "stretch"} onLoad={onLaunchImageLoaded} onError={() => setShowLaunch(false)} /></View>}</View></DeviceSafeAreaView></SafeAreaProvider>;
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={[styles.safeArea, showLaunch && styles.launchSafeArea]}><View style={{ flex: 1 }}>{reviewMode && <View style={{ backgroundColor: "#315B4B", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}<View style={{ flex: 1 }} importantForAccessibility={showLaunch ? "no-hide-descendants" : "auto"}><AppContent onReviewModeChange={setReviewMode} /></View>{showLaunch && <View style={styles.launchOverlay} accessible accessibilityLabel="Bibou’s Burgers. Click and Collect, livraison et réservation de table. Ouverture de l’application."><Image source={require("./assets/android-launch-05h.png")} style={styles.launchImage} resizeMode={Platform.OS === "web" ? "contain" : "stretch"} onLoad={onLaunchImageLoaded} onError={() => setShowLaunch(false)} /></View>}</View></DeviceSafeAreaView></SafeAreaProvider>;
 }
 
 function AppContent({ onReviewModeChange }) {
@@ -1582,9 +1582,8 @@ const APP_PALETTE = {
   "#C7E1BF": "#D8C3B7"
 };
 
-// Native apps share the approved palette; the web can still compare ?theme=ancien.
-const DUO_THEME = Platform.OS === "android" || Platform.OS === "ios" || (Platform.OS === "web" && typeof window !== "undefined" &&
-  new URLSearchParams(window.location.search).get("theme") !== "ancien");
+// The approved palette is the only client theme on web, Android and iOS.
+const DUO_THEME = true;
 
 const DUO_PALETTE = {
   "#E54832": "#FBF3E6", // warm cream background

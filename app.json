@@ -12,9 +12,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "bibousburgers",
-    "icon": "./assets/icon.png",
-    "backgroundColor": "#E95122",
-    "primaryColor": "#E95122",
+    "icon": "./assets/android-icon-gradient.png",
+    "backgroundColor": "#FBF3E6",
+    "primaryColor": "#315B4B",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.bibouandco.bibousburgers",
@@ -31,29 +31,29 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-adaptive-foreground-gradient.png",
         "backgroundImage": "./assets/android-adaptive-background-gradient.png",
-        "backgroundColor": "#CC8066"
+        "backgroundColor": "#315B4B"
       }
     },
     "web": {
-      "favicon": "./assets/icon.png"
+      "favicon": "./assets/android-icon-gradient.png"
     },
     "plugins": [
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#E95122",
-          "image": "./assets/adaptive-icon.png",
+          "backgroundColor": "#315B4B",
+          "image": "./assets/bibous-official-wordmark-preview.png",
           "imageWidth": 220,
           "resizeMode": "contain",
           "android": {
-            "backgroundColor": "#CC8066",
+            "backgroundColor": "#315B4B",
             "image": "./assets/bibous-official-wordmark-preview.png",
             "imageWidth": 220
           }
         }
       ],
       "expo-secure-store",
-      ["expo-notifications", { "color": "#E95122", "defaultChannel": "commandes" }]
+      ["expo-notifications", { "color": "#315B4B", "defaultChannel": "commandes" }]
     ]
   }
 }

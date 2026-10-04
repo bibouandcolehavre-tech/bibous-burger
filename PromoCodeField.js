@@ -37,10 +37,10 @@ export default function PromoCodeField({ promotion, onChange, onPendingChange, o
   </View>;
 }
 const s = StyleSheet.create({
-  card: { backgroundColor: '#FFF7EB', borderColor: '#E2C394', borderWidth: 1, borderRadius: 16, padding: 16, marginTop: 18, gap: 10 },
-  title: { color: '#2A211C', fontSize: 16, fontWeight: '800' },
-  input: { backgroundColor: '#FFF', color: '#241C18', borderColor: '#C4AA90', borderWidth: 1, padding: 14, borderRadius: 10, fontSize: 16 },
-  button: { backgroundColor: '#241C18', borderRadius: 10, padding: 13, alignItems: 'center' },
+  card: { backgroundColor: '#D6EEE3', borderColor: '#B7DDD0', borderWidth: 1, borderRadius: 16, padding: 16, marginTop: 18, gap: 10 },
+  title: { color: '#25473B', fontSize: 16, fontWeight: '800' },
+  input: { backgroundColor: '#FFFCF7', color: '#25473B', borderColor: '#A9CDBD', borderWidth: 1, padding: 14, borderRadius: 10, fontSize: 16 },
+  button: { backgroundColor: '#315B4B', borderRadius: 10, padding: 13, alignItems: 'center' },
   buttonText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   disabled: { opacity: .5 }, error: { color: '#9A2015', fontSize: 14 }, success: { color: '#235335', fontSize: 14, lineHeight: 21, fontWeight: '600' },
 });
