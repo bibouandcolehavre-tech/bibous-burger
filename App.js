@@ -116,16 +116,11 @@ const initialScreenFromUrl = () => {
 const nativeAccountFirst = Platform.OS === "android" || Platform.OS === "ios";
 const webWelcomePreview = Platform.OS === "web" && typeof window !== "undefined" &&
   new URLSearchParams(window.location.search).get("welcome") === "preview";
-const webWelcomeFirstVisit = Platform.OS === "web" && typeof window !== "undefined" &&
-  !webWelcomePreview && initialScreenFromUrl() === "menu" && (() => {
-    try { return window.localStorage.getItem("bibou_welcome_carousel_v1") !== "seen"; }
-    catch { return true; }
-  })();
-const welcomeEnabled = nativeAccountFirst || webWelcomePreview || webWelcomeFirstVisit;
-const rememberWebWelcome = () => {
-  if (Platform.OS !== "web" || webWelcomePreview || typeof window === "undefined") return;
-  try { window.localStorage.setItem("bibou_welcome_carousel_v1", "seen"); } catch {}
-};
+// Show the animated entrance on every web app opening, including returning accounts.
+// Keep direct legal and contest links on their requested screen.
+const webWelcomeOnOpen = Platform.OS === "web" && typeof window !== "undefined" &&
+  initialScreenFromUrl() === "menu";
+const welcomeEnabled = nativeAccountFirst || webWelcomePreview || webWelcomeOnOpen;
 const webCustomBurgerPreview = Platform.OS === "web";
 
 const PRODUCTS = [
@@ -405,7 +400,7 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.legalContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.deleteAccountIcon}><Text style={styles.deleteAccountIconText}>×</Text></View><Text style={styles.title}>Supprimer mon compte</Text><Text style={styles.legalIntro}>Cette action efface tes coordonnées, ton solde et tes avantages. Tes réservations actives seront annulées. Les anciennes commandes seront anonymisées lorsqu’elles doivent être conservées pour la comptabilité.</Text>{!authToken ? <><View style={styles.legalSection}><Text style={styles.legalSectionTitle}>Vérification nécessaire</Text><Text style={styles.legalSectionText}>Connecte-toi par SMS avec le numéro du compte à supprimer.</Text></View><Pressable onPress={onLogin} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Me connecter par SMS</Text></Pressable></> : !confirmed ? <Pressable onPress={() => setConfirmed(true)} style={styles.deleteAccountOutline}><Text style={styles.deleteAccountOutlineText}>Continuer</Text></Pressable> : <View style={styles.deleteConfirmCard}><Text style={styles.deleteConfirmTitle}>Dernière confirmation</Text><Text style={styles.deleteConfirmText}>La suppression est définitive et ne peut pas être annulée.</Text><Pressable disabled={loading} onPress={onDelete} style={[styles.deleteAccountButton, loading && styles.primaryButtonDisabled]}><Text style={styles.deleteAccountButtonText}>{loading ? "Suppression…" : "Supprimer définitivement"}</Text></Pressable><Pressable disabled={loading} onPress={() => setConfirmed(false)} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Annuler</Text></Pressable></View>}</ScrollView></SafeAreaView>;
 }
 
-function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy }) {
+function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy, signedIn = false }) {
   const { height } = useWindowDimensions();
   const compactWelcome = height < 750;
   const animatedWelcome = true;
@@ -421,10 +416,15 @@ function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy 
         </>}
       </View>
       <View style={[styles.nativeWelcomeActions, compactWelcome && styles.nativeWelcomeActionsCompact]}>
-        <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Se connecter</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>S’inscrire</Text></Pressable>
-        <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWelcome && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
-        <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWelcome && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
+        {signedIn ? <>
+          <Pressable accessibilityRole="button" onPress={onViewMenu} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Entrer dans l’application</Text></Pressable>
+          <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWelcome && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
+        </> : <>
+          <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Se connecter</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>S’inscrire</Text></Pressable>
+          <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWelcome && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWelcome && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
+        </>}
       </View>
     </ScrollView>
   </SafeAreaView>;
@@ -1143,7 +1143,6 @@ function AppContent({ onReviewModeChange }) {
   const authenticate = async ({ token, customer: savedCustomer, isNewCustomer = false }) => {
     setLoginFromWelcome(false);
     setLoginStartedFromWelcome(false);
-    rememberWebWelcome();
     sessionEpoch.current += 1;
     sessionTokenRef.current = token;
     setAuthToken(token);
@@ -1518,7 +1517,7 @@ function AppContent({ onReviewModeChange }) {
     }
   };
   if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
-  if (welcomeEnabled && !authToken && showNativeWelcome && screen === 'menu') return <NativeWelcomeChoice onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => { rememberWebWelcome(); setShowNativeWelcome(false); }} onPrivacy={() => setScreen('privacy')} />;
+  if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={addToCart} onBack={() => setScreen("menu")} />;
