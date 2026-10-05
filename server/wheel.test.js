@@ -27,6 +27,32 @@ test('tour seulement après paiement confirmé, sans attendre la remise', () => 
   ]) assert.equal(eligibleOrderTurns(order(20, changes), wheel), 0);
 });
 
+test('CHORUS donne un seul tour de test par compte, sans ouvrir les autres commandes offertes', () => {
+  const db = fixture();
+  db.orders = [order(28, { id: 'chorus-1', discount: 28, total: 0, paidTotal: 0,
+    promotion: { code: 'CHORUS' }, payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } }),
+    order(50, { id: 'chorus-2', discount: 50, total: 0, paidTotal: 0,
+      promotion: { code: 'CHORUS' }, payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } }),
+    order(20, { id: 'gifted', promotion: { code: 'GROSLARD' },
+      payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } })];
+  assert.equal(eligibleOrderTurns(db.orders[0], wheel), 1);
+  assert.equal(eligibleOrderTurns(db.orders[2], wheel), 0);
+  assert.equal(customerWheelState(db, 'c1', now).earnedFromOrders, 1);
+  assert.deepEqual(customerWheelState(db, 'c1', now).orderTurns.map(item => item.orderId), ['chorus-1']);
+  assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'gifted', requestId: 'gifted-wheel-01' }), /Aucun tour/);
+  const result = spinWheel(db, 'c1', { now, orderId: 'chorus-1', requestId: 'chorus-wheel-01', randomInt: () => 98 });
+  assert.equal(result.spin.tier, 'small');
+  assert.equal(result.spin.prizeId, 'fries');
+  assert.doesNotThrow(() => merchant.assertAvailable(db, db.merchantPromotions[0], 'c1', now.getTime()));
+  assert.equal(customerWheelState(db, 'c1', now).available, 1); // le parrainage de la fixture reste disponible
+  assert.deepEqual(customerWheelState(db, 'c1', now).orderTurns, []);
+  assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'chorus-2', requestId: 'chorus-wheel-02' }), /Aucun tour/);
+  assert.equal(spinWheel(db, 'c1', { now, orderId: 'chorus-1', requestId: 'chorus-wheel-01' }).replayed, true);
+  db.orders[0].status = 'cancelled';
+  assert.equal(reconcileWheelRewards(db, now), true);
+  assert.equal(db.wheelSpins[0].redemptionStatus, 'revoked');
+});
+
 test('remboursement enregistré : réduction des tours, sans création de solde négatif', () => {
   const db = fixture();
   db.orders[0] = order(30, { paidTotal: 30, total: 20, refund: { status: 'recorded', amount: 10 } });

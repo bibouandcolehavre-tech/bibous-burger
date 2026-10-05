@@ -16,7 +16,10 @@ test('roue web : uniquement après paiement, deux tours maximum et demande rejou
   const paid = { id: 'paid-1', customerId: owner.id, subtotal: 20, discount: 0, total: 20, status: 'confirmed',
     payment: { status: 'PAID', provider: 'sumup', paidAt: now.toISOString() } };
   const unpaid = { ...paid, id: 'unpaid-1', payment: { status: 'PENDING', provider: 'sumup' } };
-  await fs.writeFile(file, JSON.stringify({ customers: [owner], orders: [paid, unpaid], nextOrderNumber: 2,
+  const chorus = { ...paid, id: 'chorus-1', discount: 20, total: 0, paidTotal: 0,
+    promotion: { code: 'CHORUS' }, payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } };
+  const gifted = { ...chorus, id: 'gifted-1', promotion: { code: 'GROSLARD' } };
+  await fs.writeFile(file, JSON.stringify({ customers: [owner], orders: [paid, unpaid, chorus, gifted], nextOrderNumber: 2,
     wheel: { status: 'published', startDate: parisDateKey(new Date(now.getTime() - 86400000)),
       endDate: parisDateKey(new Date(now.getTime() + 86400000)), officialRules: 'Règlement de test local.', eurosPerTurn: 10 } }));
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
@@ -47,4 +50,11 @@ test('roue web : uniquement après paiement, deux tours maximum et demande rejou
   assert.equal((await request('/customer/wheel/spin', 'POST', { orderId: 'paid-1', requestId: 'wheel-http-attempt-02' })).status, 200);
   assert.equal((await request('/customer/wheel/spin', 'POST', { orderId: 'paid-1', requestId: 'wheel-http-attempt-03' })).status, 409);
   assert.equal((JSON.parse(await fs.readFile(file, 'utf8'))).wheelSpins.length, 2);
+  assert.equal((await request('/customer/wheel/spin', 'POST', { orderId: 'gifted-1', requestId: 'wheel-http-gifted-01' })).status, 409);
+  const testSpin = await request('/customer/wheel/spin', 'POST', { orderId: 'chorus-1', requestId: 'wheel-http-chorus-01' });
+  assert.equal(testSpin.status, 200, JSON.stringify(testSpin.data));
+  assert.equal(testSpin.data.spin.tier, 'small');
+  assert.equal((await request('/customer/wheel')).data.orderTurns.some(turn => turn.orderId === 'chorus-1'), false);
+  assert.equal((await request('/customer/wheel/spin', 'POST', { orderId: 'chorus-1', requestId: 'wheel-http-chorus-02' })).status, 409);
+  assert.equal((JSON.parse(await fs.readFile(file, 'utf8'))).wheelSpins.length, 3);
 });

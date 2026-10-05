@@ -30,7 +30,7 @@ export default function WheelAfterPayment({ api, token, order }) {
     setState(null);
     setResult(null);
     if (Platform.OS !== 'web' || !token || !order?.id || order?.payment?.status !== 'PAID' ||
-      order?.payment?.provider === 'promotion' || order?.reviewMode) return;
+      (order?.payment?.provider === 'promotion' && order?.promotion?.code !== 'CHORUS') || order?.reviewMode) return;
     const controller = new AbortController();
     fetch(`${api}/customer/wheel`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: 'no-store' })
       .then(response => response.ok ? response.json() : null)
@@ -78,7 +78,7 @@ export default function WheelAfterPayment({ api, token, order }) {
   return <View style={styles.card}>
     <Text style={styles.eyebrow}>APRÈS TA COMMANDE</Text>
     <Text style={styles.title}>{canSpin ? 'Tourne la roue' : 'Tes gains de la roue'}</Text>
-    {canSpin ? <><Text style={styles.description}>{turns} tour{turns > 1 ? 's' : ''} disponible{turns > 1 ? 's' : ''} grâce à ta commande payée ou à un parrainage validé.</Text>
+    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à ta commande payée ou à un parrainage validé.`}</Text>
       <View style={styles.wheelFrame}><Text style={styles.pointer}>▼</Text><Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'], extrapolate: 'extend' }) }] }}><Svg width={220} height={220} viewBox="0 0 220 220">{segments.map(([id, weight], index) => {
         const start = segments.slice(0, index).reduce((sum, item) => sum + item[1], 0) * 3.6;
         const end = start + weight * 3.6;
@@ -87,7 +87,7 @@ export default function WheelAfterPayment({ api, token, order }) {
       })}<Circle cx={110} cy={110} r={39} fill="#FFF7EA" stroke="#315B4B" strokeWidth={5} /><SvgText x={110} y={116} textAnchor="middle" fill="#315B4B" fontSize={28}>✦</SvgText></Svg></Animated.View></View>
       <Pressable accessibilityRole="button" disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue'}</Text></Pressable></> : null}
     {result ? <Text accessibilityLiveRegion="polite" style={styles.result}>{result.label}</Text> : null}
-    {activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir comme code promo sur une prochaine commande.</Text></View>)}
+    {activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir sur une prochaine commande d’au moins 10 € de produits, avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique et non cumulable avec un autre code. Si tu as gagné une boisson ou des frites, ajoute-les au panier. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
     {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
     <Text style={styles.rules}>{state.rules}</Text>
   </View>;
