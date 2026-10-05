@@ -28,6 +28,7 @@ const { applyProductStock, cartStockProblem, availableOptionGroups } = require("
 const { slotAlreadyStarted } = require('./client-slots');
 const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
+const { shouldShowPartnerLaunch } = require('./partner-launch-policy');
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
@@ -989,9 +990,33 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
   );
 }
 
+function PartnerLaunch({ onReady, onError }) {
+  const { height } = useWindowDimensions();
+  const compact = height < 700;
+  return <View style={styles.partnerLaunch} accessible accessibilityLabel="Bibou’s Burgers, partenaire officiel du STB Le Havre. Ouverture de l’application.">
+    <StatusBar barStyle="light-content" backgroundColor="#204F42" />
+    <View style={[styles.partnerLaunchHero, compact && styles.partnerLaunchHeroCompact]}>
+      <Image source={officialWordmarkPreview} resizeMode="contain" style={[styles.partnerLaunchWordmark, compact && styles.partnerLaunchWordmarkCompact]} />
+    </View>
+    <View style={styles.partnerLaunchBody}>
+      <Text style={styles.partnerLaunchEyebrow}>PARTENAIRE OFFICIEL DU</Text>
+      <View style={[styles.partnerLaunchLogoFrame, compact && styles.partnerLaunchLogoFrameCompact]}>
+        <Image source={require('./assets/stb-le-havre-logo.jpg')} resizeMode="contain" style={styles.partnerLaunchLogo} onLoad={onReady} onError={onError} />
+      </View>
+      <Text style={styles.partnerLaunchTitle}>STB Le Havre</Text>
+      <Text style={styles.partnerLaunchTagline}>Deux passions havraises, une même énergie.</Text>
+      <View style={styles.partnerLaunchSpacer} />
+      <View style={styles.partnerLaunchProgress}><View style={styles.partnerLaunchProgressFill} /></View>
+      <Text style={styles.partnerLaunchLoading}>Votre expérience Bibou se prépare…</Text>
+    </View>
+  </View>;
+}
+
+const partnerLaunchEnabled = shouldShowPartnerLaunch(Platform.OS, initialScreenFromUrl());
+
 export default function App() {
   const [reviewMode, setReviewMode] = useState(false);
-  const [showLaunch, setShowLaunch] = useState(() => Platform.OS === "android" || Platform.OS === "ios");
+  const [showLaunch, setShowLaunch] = useState(() => partnerLaunchEnabled || Platform.OS === "ios");
   const launchTimer = useRef(null);
   useEffect(() => {
     if (!showLaunch) return;
@@ -1000,10 +1025,19 @@ export default function App() {
   }, [showLaunch]);
   const onLaunchImageLoaded = () => {
     if (launchTimer.current) return;
-    const preview = Platform.OS === "web" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("apercu") === "chargement";
-    launchTimer.current = setTimeout(() => setShowLaunch(false), preview ? 6000 : Platform.OS === "web" ? 1400 : 1500);
+    launchTimer.current = setTimeout(() => setShowLaunch(false), partnerLaunchEnabled ? 2200 : 1500);
   };
-  return <SafeAreaProvider initialMetrics={initialWindowMetrics}><DeviceSafeAreaView style={[styles.safeArea, showLaunch && styles.launchSafeArea]}><View style={{ flex: 1 }}>{reviewMode && <View style={{ backgroundColor: "#315B4B", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}<View style={{ flex: 1 }} importantForAccessibility={showLaunch ? "no-hide-descendants" : "auto"}><AppContent onReviewModeChange={setReviewMode} /></View>{showLaunch && <View style={styles.launchOverlay} accessible accessibilityLabel="Bibou’s Burgers. Click and Collect, livraison et réservation de table. Ouverture de l’application."><Image source={require("./assets/android-launch-05h.png")} style={styles.launchImage} resizeMode={Platform.OS === "web" ? "contain" : "stretch"} onLoad={onLaunchImageLoaded} onError={() => setShowLaunch(false)} /></View>}</View></DeviceSafeAreaView></SafeAreaProvider>;
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+    <DeviceSafeAreaView style={[styles.safeArea, showLaunch && styles.launchSafeArea]}>
+      <View style={{ flex: 1 }}>
+        {reviewMode && <View style={{ backgroundColor: "#315B4B", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}
+        <View style={{ flex: 1 }} importantForAccessibility={showLaunch ? "no-hide-descendants" : "auto"}><AppContent onReviewModeChange={setReviewMode} /></View>
+        {showLaunch && (partnerLaunchEnabled
+          ? <PartnerLaunch onReady={onLaunchImageLoaded} onError={() => setShowLaunch(false)} />
+          : <View style={styles.launchOverlay} accessible accessibilityLabel="Bibou’s Burgers. Click and Collect, livraison et réservation de table. Ouverture de l’application."><Image source={require("./assets/android-launch-05h.png")} style={styles.launchImage} resizeMode="stretch" onLoad={onLaunchImageLoaded} onError={() => setShowLaunch(false)} /></View>)}
+      </View>
+    </DeviceSafeAreaView>
+  </SafeAreaProvider>;
 }
 
 function AppContent({ onReviewModeChange }) {
@@ -1647,6 +1681,22 @@ const styles = StyleSheet.create(applyAppPalette({
   launchSafeArea: { backgroundColor: "#CC8066" },
   launchOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "#CC8066" },
   launchImage: { width: "100%", height: "100%" },
+  partnerLaunch: { ...StyleSheet.absoluteFillObject, backgroundColor: '#FBF5E9' },
+  partnerLaunchHero: { height: 235, backgroundColor: '#204F42', borderBottomLeftRadius: 70, borderBottomRightRadius: 70, alignItems: 'center', justifyContent: 'center' },
+  partnerLaunchHeroCompact: { height: 188 },
+  partnerLaunchWordmark: { width: 252, height: 126 },
+  partnerLaunchWordmarkCompact: { width: 208, height: 104 },
+  partnerLaunchBody: { flex: 1, width: '100%', maxWidth: 430, alignSelf: 'center', alignItems: 'center', paddingHorizontal: 22, paddingTop: 23, paddingBottom: 26 },
+  partnerLaunchEyebrow: { color: '#204F42', fontSize: 13, fontWeight: '800', letterSpacing: 2.1, textAlign: 'center' },
+  partnerLaunchLogoFrame: { width: 208, height: 208, padding: 11, borderRadius: 104, backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: '#C5795D', alignItems: 'center', justifyContent: 'center', marginTop: 18, shadowColor: '#204F42', shadowOpacity: 0.14, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  partnerLaunchLogoFrameCompact: { width: 166, height: 166, borderRadius: 83, marginTop: 12 },
+  partnerLaunchLogo: { width: '100%', height: '100%', borderRadius: 100 },
+  partnerLaunchTitle: { color: '#204F42', fontSize: 27, lineHeight: 33, fontWeight: '900', textAlign: 'center', marginTop: 17 },
+  partnerLaunchTagline: { color: '#7C5C4D', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 5 },
+  partnerLaunchSpacer: { flex: 1, minHeight: 12 },
+  partnerLaunchProgress: { width: 118, height: 5, borderRadius: 5, backgroundColor: '#DFEBE5', overflow: 'hidden' },
+  partnerLaunchProgressFill: { width: '52%', height: '100%', backgroundColor: '#C5795D' },
+  partnerLaunchLoading: { color: '#496B5B', fontSize: 12, textAlign: 'center', marginTop: 12 },
   paymentRecoveryText: { color: '#25120B' },
   paymentRecoveryPrimary: { backgroundColor: '#191919', width: '100%' },
   paymentRecoverySecondary: { borderColor: '#25120B', backgroundColor: '#FFEBDC', width: '100%' },
