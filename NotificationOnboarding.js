@@ -4,7 +4,8 @@ import { pushRequest } from './push-api';
 import { syncPushDevice } from './push-client';
 const { isReviewToken } = require('./review-client');
 
-export default function NotificationOnboarding({ api, authToken, onDone }) {
+export default function NotificationOnboarding({ api, authToken, onDone, initialService = false, initialMarketing = false }) {
+  const [service, setService] = useState(false);
   const [marketing, setMarketing] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -17,11 +18,12 @@ export default function NotificationOnboarding({ api, authToken, onDone }) {
     alive.current = true;
     void pushRequest(api, authToken).then(result => {
       if (!alive.current) return;
-      setMarketing(!!result.preferences.marketing);
+      setService(!!result.preferences.service || initialService);
+      setMarketing(!!result.preferences.marketing || initialMarketing);
       setLoaded(true);
     }).catch(error => { if (alive.current) setMessage(error.message || 'Impossible de charger les notifications.'); });
     return () => { alive.current = false; };
-  }, [api, authToken]);
+  }, [api, authToken, initialService, initialMarketing]);
 
   const save = async () => {
     if (!loaded || working.current) return;
@@ -30,7 +32,7 @@ export default function NotificationOnboarding({ api, authToken, onDone }) {
     setMessage('');
     let preferencesSaved = false;
     try {
-      await pushRequest(api, authToken, '', 'PATCH', { service: true, marketing });
+      await pushRequest(api, authToken, '', 'PATCH', { service, marketing });
       preferencesSaved = true;
       if (!isReviewToken(authToken)) {
         const device = await syncPushDevice(api, authToken, { ask: true });
@@ -58,20 +60,20 @@ export default function NotificationOnboarding({ api, authToken, onDone }) {
 
   return <SafeAreaView style={s.page}><ScrollView contentContainerStyle={s.content}>
     <Text style={s.eyebrow}>TON COMPTE EST PRÊT</Text>
-    <Text style={s.title}>Reste au courant de tes commandes</Text>
-    <Text style={s.intro}>Reçois une alerte quand ta commande avance ou que ta table est confirmée. Tu peux changer d’avis à tout moment.</Text>
+    <Text style={s.title}>Les nouvelles de Bibou sur ton téléphone</Text>
+    <Text style={s.intro}>Choisis le suivi de tes commandes, les promotions, les deux ou aucun. Tu peux changer d’avis à tout moment.</Text>
     <View style={s.card}>
-      <Text style={s.cardTitle}>Commandes et réservations</Text>
-      <Text style={s.copy}>Commande acceptée, prête ou en livraison ; confirmation de ta réservation.</Text>
+      <View style={s.row}><Text style={s.cardTitle}>Suivi des commandes et réservations</Text><Switch accessibilityLabel="Recevoir le suivi des commandes et réservations" disabled={!loaded || busy || saved} value={service} onValueChange={setService} trackColor={{ false: '#CDBFB3', true: '#315B4B' }} /></View>
+      <Text style={s.copy}>Une alerte quand ta commande est acceptée, prête ou en livraison, ou quand ta table est confirmée.</Text>
     </View>
-    <View style={s.promotion}>
-      <View style={s.row}><Text style={s.promotionTitle}>Je veux aussi les promotions</Text><Switch accessibilityLabel="Recevoir aussi les promotions et actualités" disabled={!loaded || busy || saved} value={marketing} onValueChange={setMarketing} trackColor={{ false: '#CDBFB3', true: '#315B4B' }} /></View>
-      <Text style={s.promotionCopy}>Facultatif et désactivé par défaut. Ton choix n’empêche pas le suivi de tes commandes.</Text>
+    <View style={s.card}>
+      <View style={s.row}><Text style={s.cardTitle}>Promotions et actualités</Text><Switch accessibilityLabel="Recevoir les promotions et actualités" disabled={!loaded || busy || saved} value={marketing} onValueChange={setMarketing} trackColor={{ false: '#CDBFB3', true: '#315B4B' }} /></View>
+      <Text style={s.copy}>Offres, nouveaux burgers et nouvelles de Bibou sur ton téléphone. Facultatif, même si tu actives le suivi des commandes.</Text>
     </View>
-    <Pressable accessibilityRole="button" disabled={!loaded || busy} onPress={saved ? onDone : save} style={[s.button, (!loaded || busy) && s.dim]}><Text style={s.buttonText}>{busy ? 'Activation…' : saved ? 'Continuer' : 'Activer les notifications'}</Text></Pressable>
+    <Pressable accessibilityRole="button" disabled={!loaded || busy || (!saved && !service && !marketing)} onPress={saved ? onDone : save} style={[s.button, (!loaded || busy || (!saved && !service && !marketing)) && s.dim]}><Text style={s.buttonText}>{busy ? 'Activation…' : saved ? 'Continuer' : 'Confirmer et autoriser les notifications'}</Text></Pressable>
     <Pressable accessibilityRole="button" disabled={busy} onPress={onDone} style={s.skip}><Text style={s.skipText}>{saved ? 'Continuer vers l’application' : 'Continuer sans notifications'}</Text></Pressable>
     {!!message && <Text accessibilityLiveRegion="polite" style={s.feedback}>{message}</Text>}
-    <Text style={s.footer}>L’autorisation du téléphone sera demandée seulement si tu appuies sur « Activer les notifications ». Tu peux toujours utiliser l’application sans notifications.</Text>
+    <Text style={s.footer}>Les deux choix sont indépendants. L’autorisation du téléphone sera demandée seulement si tu confirmes au moins un choix. Tu peux commander sans notifications et changer d’avis dans Mon compte.</Text>
   </ScrollView></SafeAreaView>;
 }
 

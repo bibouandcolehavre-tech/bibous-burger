@@ -402,7 +402,14 @@ function DeleteAccountScreen({ authToken, loading, onBack, onLogin, onDelete }) 
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.legalContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.deleteAccountIcon}><Text style={styles.deleteAccountIconText}>×</Text></View><Text style={styles.title}>Supprimer mon compte</Text><Text style={styles.legalIntro}>Cette action efface tes coordonnées, ton solde et tes avantages. Tes réservations actives seront annulées. Les anciennes commandes seront anonymisées lorsqu’elles doivent être conservées pour la comptabilité.</Text>{!authToken ? <><View style={styles.legalSection}><Text style={styles.legalSectionTitle}>Vérification nécessaire</Text><Text style={styles.legalSectionText}>Connecte-toi par SMS avec le numéro du compte à supprimer.</Text></View><Pressable onPress={onLogin} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Me connecter par SMS</Text></Pressable></> : !confirmed ? <Pressable onPress={() => setConfirmed(true)} style={styles.deleteAccountOutline}><Text style={styles.deleteAccountOutlineText}>Continuer</Text></Pressable> : <View style={styles.deleteConfirmCard}><Text style={styles.deleteConfirmTitle}>Dernière confirmation</Text><Text style={styles.deleteConfirmText}>La suppression est définitive et ne peut pas être annulée.</Text><Pressable disabled={loading} onPress={onDelete} style={[styles.deleteAccountButton, loading && styles.primaryButtonDisabled]}><Text style={styles.deleteAccountButtonText}>{loading ? "Suppression…" : "Supprimer définitivement"}</Text></Pressable><Pressable disabled={loading} onPress={() => setConfirmed(false)} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Annuler</Text></Pressable></View>}</ScrollView></SafeAreaView>;
 }
 
-function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy, signedIn = false }) {
+function WelcomeConsentChoice({ checked, onToggle, title, detail }) {
+  return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} aria-checked={checked} onPress={onToggle} style={styles.nativeWelcomeConsentRow}>
+    <View style={[styles.nativeWelcomeCheckbox, checked && styles.nativeWelcomeCheckboxChecked]}>{checked && <Text style={styles.nativeWelcomeCheckmark}>✓</Text>}</View>
+    <View style={styles.nativeWelcomeConsentCopy}><Text style={styles.nativeWelcomeConsentTitle}>{title}</Text><Text style={styles.nativeWelcomeConsentDetail}>{detail}</Text></View>
+  </Pressable>;
+}
+
+function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy, signedIn = false, personalizedOffers, onPersonalizedOffersChange, orderNotifications, onOrderNotificationsChange, marketingNotifications, onMarketingNotificationsChange }) {
   const { height } = useWindowDimensions();
   const compactWelcome = height < 750;
   const animatedWelcome = true;
@@ -422,10 +429,16 @@ function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy,
           <Pressable accessibilityRole="button" onPress={onViewMenu} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Entrer dans l’application</Text></Pressable>
           <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWelcome && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
         </> : <>
-          <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Se connecter</Text></Pressable>
-          <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>S’inscrire</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={onCreateAccount} style={styles.nativeWelcomePrimary}><Text style={styles.nativeWelcomePrimaryText}>Créer mon compte</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={onSignIn} style={styles.nativeWelcomeSignIn}><Text style={styles.nativeWelcomeSignInText}>Me connecter</Text></Pressable>
+          <View style={styles.nativeWelcomeConsentCard}><Text style={styles.nativeWelcomeConsentHeading}>Choisis tes offres et notifications</Text>
+            <WelcomeConsentChoice checked={personalizedOffers} onToggle={() => onPersonalizedOffersChange(!personalizedOffers)} title="J’accepte les offres personnalisées" detail="Bibou peut utiliser mes achats et, si je le donne, mon anniversaire pour préparer des bons personnels dans mon compte." />
+            {Platform.OS !== 'web' && <><WelcomeConsentChoice checked={orderNotifications} onToggle={() => onOrderNotificationsChange(!orderNotifications)} title="Recevoir le suivi de mes commandes" detail="Alertes sur les commandes et les réservations de table." />
+              <WelcomeConsentChoice checked={marketingNotifications} onToggle={() => onMarketingNotificationsChange(!marketingNotifications)} title="Recevoir les promos de Bibou" detail="Notifications pour les offres et les actualités du restaurant." /></>}
+            <Text style={styles.nativeWelcomeConsentFootnote}>Ces choix sont facultatifs, non cochés au départ et modifiables dans Mon compte. Tu les confirmeras après connexion.</Text>
+          </View>
           <Pressable accessibilityRole="link" onPress={onPrivacy} style={[styles.nativeWelcomePrivacy, compactWelcome && styles.nativeWelcomePrivacyCompact]}><Text style={styles.nativeWelcomePrivacyText}>Confidentialité et données personnelles</Text></Pressable>
-          <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWelcome && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>S’inscrire plus tard</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={onViewMenu} style={[styles.nativeWelcomeGuest, compactWelcome && styles.nativeWelcomeGuestCompact]}><Text style={styles.nativeWelcomeGuestText}>Continuer en invité</Text></Pressable>
         </>}
       </View>
     </ScrollView>
@@ -1071,6 +1084,9 @@ function AppContent({ onReviewModeChange }) {
   const [showNativeWelcome, setShowNativeWelcome] = useState(welcomeEnabled);
   const [loginFromWelcome, setLoginFromWelcome] = useState(false);
   const [loginStartedFromWelcome, setLoginStartedFromWelcome] = useState(false);
+  const [welcomePersonalizedOffers, setWelcomePersonalizedOffers] = useState(false);
+  const [welcomeOrderNotifications, setWelcomeOrderNotifications] = useState(false);
+  const [welcomeMarketingNotifications, setWelcomeMarketingNotifications] = useState(false);
   const [crmWelcomeDestination, setCrmWelcomeDestination] = useState('account');
   const [activeProduct, setActiveProduct] = useState(null);
   const [cart, setCart] = useState(null);
@@ -1197,7 +1213,8 @@ function AppContent({ onReviewModeChange }) {
     void loadCustomerReservations({ token });
     void loadCustomerRewards({ token });
     setCrmWelcomeDestination(loginDestination);
-    setScreen(isNewCustomer ? (nativeAccountFirst ? 'notifications-welcome' : 'crm-welcome') : loginDestination);
+    const preferencesChosen = loginStartedFromWelcome && (welcomePersonalizedOffers || welcomeOrderNotifications || welcomeMarketingNotifications);
+    setScreen(isNewCustomer || preferencesChosen ? (nativeAccountFirst ? 'notifications-welcome' : 'crm-welcome') : loginDestination);
     setLoginDestination("account");
     void recoverPayment(token, savedCustomer.id).catch(() => setStockFeedback('Impossible de lire le suivi du paiement sur cet appareil.'));
   };
@@ -1552,7 +1569,7 @@ function AppContent({ onReviewModeChange }) {
     }
   };
   if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
-  if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
+  if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={addToCart} onBack={() => setScreen("menu")} />;
@@ -1569,8 +1586,8 @@ function AppContent({ onReviewModeChange }) {
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;
   if (screen === "bibou-plus-pending") return <PaymentPendingScreen kind="bibou-plus" record={pendingBibouPlus} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
   if (screen === "notifications") return <NotificationSettings key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onBack={() => setScreen("account")} />;
-  if (screen === "notifications-welcome") return <NotificationOnboarding key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onDone={() => setScreen('crm-welcome')} />;
-  if (['offers','crm-welcome'].includes(screen)) return <CustomerOffers key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onboarding={screen === 'crm-welcome'} onBack={() => setScreen(screen === 'crm-welcome' ? crmWelcomeDestination : 'account')} onUpdated={result => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers, crmPreferences: result.preferences })); }} />;
+  if (screen === "notifications-welcome") return <NotificationOnboarding key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} initialService={welcomeOrderNotifications} initialMarketing={welcomeMarketingNotifications} onDone={() => setScreen('crm-welcome')} />;
+  if (['offers','crm-welcome'].includes(screen)) return <CustomerOffers key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onboarding={screen === 'crm-welcome'} initialConsent={welcomePersonalizedOffers} onBack={() => setScreen(screen === 'crm-welcome' ? crmWelcomeDestination : 'account')} onUpdated={result => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers, crmPreferences: result.preferences })); }} />;
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
   if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} onBack={() => setScreen("menu")} onCreated={(reservation) => setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)])} onOpenReservations={() => setScreen("reservations")} />;
@@ -1757,6 +1774,16 @@ const styles = StyleSheet.create(applyAppPalette({
   nativeWelcomePrimaryText: { color: "#FFFCF7", fontSize: 18, fontWeight: "900" },
   nativeWelcomeSignIn: { minHeight: 58, borderWidth: 2, borderColor: "#315B4B", borderRadius: 16, paddingHorizontal: 20, justifyContent: "center", alignItems: "center", marginTop: 12 },
   nativeWelcomeSignInText: { color: "#315B4B", fontSize: 18, fontWeight: "900" },
+  nativeWelcomeConsentCard: { marginTop: 16, padding: 15, borderRadius: 18, backgroundColor: '#FFFCF7', borderWidth: 1, borderColor: '#B7DDD0' },
+  nativeWelcomeConsentHeading: { color: '#25473B', fontSize: 16, fontWeight: '900', marginBottom: 7 },
+  nativeWelcomeConsentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 10, minHeight: 48 },
+  nativeWelcomeCheckbox: { width: 25, height: 25, borderRadius: 6, borderWidth: 2, borderColor: '#315B4B', backgroundColor: '#FFFCF7', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  nativeWelcomeCheckboxChecked: { backgroundColor: '#315B4B' },
+  nativeWelcomeCheckmark: { color: '#FFFCF7', fontSize: 17, fontWeight: '900' },
+  nativeWelcomeConsentCopy: { flex: 1 },
+  nativeWelcomeConsentTitle: { color: '#25473B', fontSize: 15, fontWeight: '800' },
+  nativeWelcomeConsentDetail: { color: '#405447', fontSize: 12, lineHeight: 18, marginTop: 3 },
+  nativeWelcomeConsentFootnote: { color: '#5E6F62', fontSize: 12, lineHeight: 18, marginTop: 6 },
   nativeWelcomePrivacy: { alignItems: "center", paddingVertical: 9 },
   nativeWelcomePrivacyCompact: { paddingVertical: 6 },
   nativeWelcomePrivacyText: { color: "#75665B", fontSize: 12 },
