@@ -3,15 +3,30 @@
 const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 
+const MAX_WHEEL_DISCOUNT_PERCENT = 5;
 const WHEEL_PRIZES = Object.freeze([
-  { id: 'points-5', label: '5 points Club Bibou', weight: 50, type: 'points', points: 5 },
-  { id: 'points-10', label: '10 points Club Bibou', weight: 30, type: 'points', points: 10 },
-  { id: 'points-20', label: '20 points Club Bibou', weight: 15, type: 'points', points: 20 },
-  { id: 'discount-5', label: '−5 % sur une prochaine commande', weight: 4, type: 'voucher', discountPercent: 5, maxDiscountEuros: 3, minimumProductsEuros: 10, validDays: 30 },
-  { id: 'drink', label: 'Une boisson offerte sur une prochaine commande', weight: 1, type: 'voucher', maxDrinkEuros: 1.8, minimumProductsEuros: 10, validDays: 30 },
+  { id: 'points-10', label: '10 points Club Bibou', weight: 50, type: 'points', points: 10 },
+  { id: 'points-20', label: '20 points Club Bibou', weight: 30, type: 'points', points: 20 },
+  { id: 'points-40', label: '40 points Club Bibou', weight: 10, type: 'points', points: 40 },
+  { id: 'discount-1', label: '−1 % sur une prochaine commande', weight: 1, type: 'voucher', discountPercent: 1, minimumProductsEuros: 10, validDays: 30 },
+  { id: 'discount-2', label: '−2 % sur une prochaine commande', weight: 1, type: 'voucher', discountPercent: 2, minimumProductsEuros: 10, validDays: 30 },
+  { id: 'discount-5', label: '−5 % sur une prochaine commande', weight: 1, type: 'voucher', discountPercent: 5, minimumProductsEuros: 10, validDays: 30 },
+  { id: 'drink', label: 'Une boisson offerte sur une prochaine commande', weight: 5, type: 'voucher', maxDrinkEuros: 1.8, minimumProductsEuros: 10, validDays: 30 },
+  { id: 'fries', label: 'Une portion de frites maison offerte sur une prochaine commande', weight: 1, type: 'voucher', minimumProductsEuros: 10, validDays: 30 },
+  { id: 'dessert', label: 'Un dessert offert sur une prochaine commande', weight: 1, type: 'voucher', minimumProductsEuros: 10, validDays: 30 },
 ]);
 const TOTAL_WEIGHT = WHEEL_PRIZES.reduce((sum, prize) => sum + prize.weight, 0);
 if (TOTAL_WEIGHT !== 100) throw new Error('La roue doit totaliser 100 %.');
+if (WHEEL_PRIZES.some(prize => prize.discountPercent > MAX_WHEEL_DISCOUNT_PERCENT))
+  throw new Error('Une remise de la roue dépasse le plafond autorisé.');
+
+// A future checkout must choose one wheel percentage voucher, never add them.
+// This preview policy is not a coupon-redemption endpoint.
+function wheelDiscountPercentForOrder(prizeIds = []) {
+  const percentages = WHEEL_PRIZES.filter(prize => prize.discountPercent && prizeIds.includes(prize.id))
+    .map(prize => prize.discountPercent);
+  return Math.min(MAX_WHEEL_DISCOUNT_PERCENT, Math.max(0, ...percentages));
+}
 
 const defaultWheel = () => ({
   status: 'draft',
@@ -109,4 +124,4 @@ function spinWheel(database, customerId, { now = new Date(), requestId, randomIn
   return { spin, state: customerWheelState(database, customerId, now) };
 }
 
-module.exports = { WHEEL_PRIZES, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, prizeForNumber, spinWheel };
+module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, prizeForNumber, spinWheel, wheelDiscountPercentForOrder };

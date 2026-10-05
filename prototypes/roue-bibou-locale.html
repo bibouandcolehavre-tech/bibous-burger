@@ -21,7 +21,7 @@
     .wallet strong { display: block; font-size: 24px; line-height: 1.1; }
     .spin-area { position: relative; width: min(100%, 302px); margin: 23px auto 11px; aspect-ratio: 1; }
     .pointer { position: absolute; z-index: 2; top: -8px; left: calc(50% - 13px); width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-top: 27px solid var(--green); filter: drop-shadow(0 2px 1px #0003); }
-    .wheel { width: 100%; height: 100%; border-radius: 50%; border: 10px solid var(--green); box-shadow: 0 7px 0 #18392f, 0 15px 20px #17382d22; background: conic-gradient(from 0deg, var(--sea) 0% 50%, #abd5c5 50% 80%, #e7aa8c 80% 95%, #f3ca88 95% 99%, #fff1ba 99% 100%); transition: transform 2.8s cubic-bezier(.15,.65,.12,1); }
+    .wheel { width: 100%; height: 100%; border-radius: 50%; border: 10px solid var(--green); box-shadow: 0 7px 0 #18392f, 0 15px 20px #17382d22; background: conic-gradient(from 0deg, var(--sea) 0% 50%, #abd5c5 50% 80%, #e7aa8c 80% 90%, #e9bb83 90% 93%, #b7d7d1 93% 98%, #edc59f 98% 99%, #f7dfad 99% 100%); transition: transform 2.8s cubic-bezier(.15,.65,.12,1); }
     .wheel::before { content: ""; position: absolute; inset: 13px; border-radius: 50%; border: 2px dashed #ffffffc0; }
     .wheel-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 134px; height: 134px; border: 7px solid var(--green); border-radius: 50%; background: var(--cream); display: grid; place-items: center; text-align: center; box-shadow: 0 4px 12px #18392f30; }
     .wheel-center span { font-size: 33px; line-height: 1; display: block; }
@@ -30,11 +30,12 @@
     .turn-button:disabled { opacity: .48; }
     .result { min-height: 53px; text-align: center; padding: 10px 4px; font-weight: 750; color: var(--green); }
     .result strong { display: block; font-size: 20px; }
+    .discount-status { margin: 0 0 16px; text-align: center; color: var(--green); font-size: 13px; font-weight: 750; }
     .scenario { padding: 17px; border-radius: 18px; background: #e5f0e8; }
     .scenario h2 { font-size: 17px; margin: 0 0 5px; }
     .scenario p { font-size: 13px; line-height: 1.35; margin: 0 0 12px; }
-    .amount-row { display: flex; gap: 7px; margin-bottom: 10px; }
-    .amount-row button { flex: 1; min-height: 42px; border: 1.5px solid #97b5a6; background: var(--cream); border-radius: 11px; color: var(--green); font-size: 15px; font-weight: 750; }
+    .amount-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
+    .amount-row button { flex: 1 1 58px; min-height: 42px; border: 1.5px solid #97b5a6; background: var(--cream); border-radius: 11px; color: var(--green); font-size: 15px; font-weight: 750; }
     .amount-row button[aria-pressed="true"] { background: var(--green); color: white; border-color: var(--green); }
     .add-button { background: var(--green); font-size: 14px; }
     .rules { margin-top: 14px; font-size: 12px; line-height: 1.4; color: #486359; }
@@ -55,13 +56,14 @@
       <h1>Tourne la roue, repars gagnant</h1>
       <p class="intro">Chaque tranche complète de 10 € de produits payés te donne un tour après remise ou livraison. Un parrainage validé donne aussi un tour.</p>
       <div class="wallet"><span>TES TOURS DISPONIBLES</span><strong id="turns" aria-live="polite">0</strong></div>
-      <div class="spin-area" role="img" aria-label="Roue Bibou : tous les tours donnent un gain, avec 95 % de points et 5 % de bons à utiliser plus tard.">
+      <div class="spin-area" role="img" aria-label="Roue Bibou : chaque tour gagne, avec 90 % de points, 5 % de chances de gagner une boisson et 3 % de chances de gagner une remise.">
         <div class="pointer"></div>
         <div class="wheel" id="wheel"></div>
         <div class="wheel-center"><div><span aria-hidden="true">✦</span><b>100 %<br>gagnant</b></div></div>
       </div>
       <button class="turn-button" id="spin" type="button" disabled>Tourner la roue</button>
       <div class="result" id="result" role="status" aria-live="polite">Simule une commande pour essayer.</div>
+      <p class="discount-status" id="discount-status" aria-live="polite">Remise roue sur la prochaine commande : 0 % · maximum 5 %</p>
       <div class="scenario">
         <h2>Essayer sans payer</h2>
         <p>Choisis un panier fictif, considéré ici comme payé et remis. Rien n'est commandé, débité ou offert pour de vrai.</p>
@@ -69,25 +71,32 @@
           <button type="button" data-amount="10" aria-pressed="true">10 €</button>
           <button type="button" data-amount="20" aria-pressed="false">20 €</button>
           <button type="button" data-amount="30" aria-pressed="false">30 €</button>
+          <button type="button" data-amount="100" aria-pressed="false">100 €</button>
+          <button type="button" data-amount="300" aria-pressed="false">300 €</button>
         </div>
         <button class="add-button" id="credit" type="button">Simuler la commande remise</button>
       </div>
-      <div class="rules"><strong>Projet de gains :</strong> 50 % · 5 points, 30 % · 10 points, 15 % · 20 points, 4 % · bon de −5 % plafonné à 3 €, 1 % · boisson offerte. Les bons seraient valables 30 jours sur une prochaine commande, sous conditions à confirmer. La roue ne change pas le classement du concours.</div>
+      <div class="rules"><strong>Projet de gains :</strong> 50 % · 10 points, 30 % · 20 points, 10 % · 40 points, 5 % · boisson, 3 % · remise (−1 %, −2 % ou −5 %), 1 % · frites, 1 % · dessert. Même après 10 ou 30 tours, les remises de la roue ne s'additionnent pas : un seul gain de la roue par prochaine commande, au choix, et jamais plus de −5 %. Les bons seraient valables 30 jours sur une prochaine commande, sous conditions à confirmer. La roue ne change pas le classement du concours.</div>
     </main>
   </div>
   <script>
     (() => {
       const prizes = [
-        { id: 'points-5', label: '+5 points Club Bibou', weight: 50, center: 25 },
-        { id: 'points-10', label: '+10 points Club Bibou', weight: 30, center: 65 },
-        { id: 'points-20', label: '+20 points Club Bibou', weight: 15, center: 87.5 },
-        { id: 'discount-5', label: '−5 % sur ta prochaine commande', weight: 4, center: 97 },
-        { id: 'drink', label: 'Une boisson offerte sur ta prochaine commande', weight: 1, center: 99.5 },
+        { id: 'points-10', label: '+10 points Club Bibou', weight: 50, center: 25 },
+        { id: 'points-20', label: '+20 points Club Bibou', weight: 30, center: 65 },
+        { id: 'points-40', label: '+40 points Club Bibou', weight: 10, center: 85 },
+        { id: 'discount-1', label: '−1 % sur ta prochaine commande', weight: 1, center: 90.5, discountPercent: 1 },
+        { id: 'discount-2', label: '−2 % sur ta prochaine commande', weight: 1, center: 91.5, discountPercent: 2 },
+        { id: 'discount-5', label: '−5 % sur ta prochaine commande', weight: 1, center: 92.5, discountPercent: 5 },
+        { id: 'drink', label: 'Une boisson offerte sur ta prochaine commande', weight: 5, center: 95.5 },
+        { id: 'fries', label: 'Une portion de frites maison offerte sur ta prochaine commande', weight: 1, center: 98.5 },
+        { id: 'dessert', label: 'Un dessert offert sur ta prochaine commande', weight: 1, center: 99.5 },
       ];
-      let amount = 10, turns = 0, rotation = 0, spinning = false;
+      let amount = 10, turns = 0, rotation = 0, spinning = false, bestDiscountPercent = 0;
       const spinButton = document.getElementById('spin');
       const result = document.getElementById('result');
       const wheel = document.getElementById('wheel');
+      const discountStatus = document.getElementById('discount-status');
       function render() { document.getElementById('turns').textContent = String(turns); spinButton.disabled = turns < 1 || spinning; }
       document.querySelectorAll('[data-amount]').forEach(button => button.addEventListener('click', () => {
         amount = Number(button.dataset.amount);
@@ -108,7 +117,13 @@
         const target = (360 - prize.center * 3.6) % 360;
         rotation += 1800 + ((target - current + 360) % 360);
         wheel.style.transform = `rotate(${rotation}deg)`;
-        window.setTimeout(() => { spinning = false; result.innerHTML = `<strong>Bravo !</strong>${prize.label} · gain fictif`; render(); }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 20 : 2900);
+        window.setTimeout(() => {
+          spinning = false;
+          bestDiscountPercent = Math.min(5, Math.max(bestDiscountPercent, prize.discountPercent || 0));
+          discountStatus.textContent = `Remise roue sur la prochaine commande : ${bestDiscountPercent} % · maximum 5 %`;
+          result.innerHTML = `<strong>Bravo !</strong>${prize.label} · gain fictif`;
+          render();
+        }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 20 : 2900);
       });
     })();
   </script>
