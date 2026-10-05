@@ -12,7 +12,7 @@ const item = (productId, options = selections) => ({ productId, quantity: 1, sel
 
 test("le restaurant peut rouvrir une rupture initiale sans changer le prix", () => {
   assert.equal(availabilityCatalog().products.find((p) => p.id === "atlas-menu").available, false);
-  const atlasSelections = [selections[0], selections[1], { groupId: "sauces", id: "fixed-atlas" }];
+  const atlasSelections = [selections[0], selections[1], { groupId: "sauces", id: "fixed-atlas" }, { groupId: "drink", id: "coca" }];
   assert.equal(validateAndPriceOrderItems([item("atlas-menu", atlasSelections)], { "atlas-menu": true }).subtotal, 18.9);
   assert.throws(() => validateAndPriceOrderItems([item("classique")], { classique: false }), /indisponible/);
   assert.throws(() => validateAndPriceOrderItems([item("__proto__")]), /n’existe plus/);
@@ -31,7 +31,7 @@ test("une boisson en rupture est bloquée seule, en menu et dans les deux choix 
 
 test("les accompagnements en rupture bloquent leurs options et les menus qui les incluent", () => {
   const stock = { "frites-maison": false, "frites-cheddar-bacon": false, "tenders-xl-3": false };
-  assert.throws(() => validateAndPriceOrderItems([item("taurus")], stock), /Frites maison/);
+  assert.throws(() => validateAndPriceOrderItems([item("taurus", [...selections, { groupId: "drink", id: "coca" }])], stock), /Frites maison/);
   for (const id of ["frites", "frites-cheddar", "tenders"]) assert.throws(() => validateAndPriceOrderItems([item("classique", [...selections, { groupId: "sides", id }])], stock), /plus disponible/);
   assert.equal(availabilityCatalog(stock).products.find((p) => p.id === "menu-duo-tenders").available, false);
   assert.equal(availabilityCatalog(stock).products.find((p) => p.id === "taurus").enabled, true);

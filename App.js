@@ -236,7 +236,7 @@ const MENU_DRINK_OPTIONS = [
   { id: "tropico", label: "Tropico", price: 0 },
   { id: "eau", label: "Cristaline 50 cl", price: 0 },
 ].map((option) => ({ ...option, image: DRINK_VISUALS[option.id] || null }));
-const DRINKS = { id: "drink", title: "BOISSONS", max: 1, options: MENU_DRINK_OPTIONS };
+const DRINKS = { id: "drink", title: "CHOISIS TA BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
 const DUO_DRINK_ONE = { id: "duo-drink-one", title: "PREMIÈRE BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
 const DUO_DRINK_TWO = { id: "duo-drink-two", title: "DEUXIÈME BOISSON", required: true, min: 1, max: 1, options: MENU_DRINK_OPTIONS };
 const MENU_OPTION_GROUPS = [PROTEIN, MEAT_TYPE, MENU_FRIES, SALAD, SAUCES, DRINKS, SUPPLEMENTS, MENU_SIDES, MENU_DESSERTS];
@@ -573,7 +573,7 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
       {optionGroups.map(group => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} onToggleChoice={option => toggleChoice(group, option)} />)}
     </ScrollView>
     <View style={styles.stickyAction}>
-      {stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>Choisis les options marquées « requis » pour continuer.</Text>}
+      {stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>{product.isMenu && !choices.drink?.length ? "Choisis la boisson incluse dans ton menu pour continuer." : "Choisis les options marquées « requis » pour continuer."}</Text>}
       <Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: selectedOptions.map(option => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable>
     </View>
   </SafeAreaView>;
@@ -604,6 +604,7 @@ function CartScreen({ cart, customer, catalog, onBack, onCheckout, onAddMore, on
   const hasExactFee = cart?.delivery.fee !== undefined || pricing.bibouPlus;
   const productIds = new Set(cart?.items?.map((item) => item.product.id) || []);
   const stockProblem = cartStockProblem(cart?.items, catalog);
+  const missingMenuDrink = cart?.items?.some(item => item.product.isMenu && !item.selections?.some(choice => choice.groupId === "drink"));
   const hasMenu = cart?.items?.some(item => item.product.isMenu || item.product.id === 'taurus');
   const hasDessert = cart?.items?.some(item => item.product.id.startsWith('dessert-') || item.selections?.some(choice => ['desserts', 'menu-desserts'].includes(choice.groupId)));
   const hasDrink = cart?.items?.some(item => item.product.id.startsWith('drink-'));
@@ -633,7 +634,7 @@ function CartScreen({ cart, customer, catalog, onBack, onCheckout, onAddMore, on
         <Text style={styles.eta}>● Choisis ton créneau avant le paiement</Text>
       </>}
     </ScrollView>
-    {cart && <View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem} Retire cet article puis choisis un remplacement.</Text> : null}<Pressable disabled={!!stockProblem} style={[styles.primaryButton, !!stockProblem && styles.primaryButtonDisabled]} onPress={onCheckout}><Text style={styles.primaryButtonText}>Choisir mon créneau · {hasExactFee ? "" : "dès "}{money(pricing.total)}</Text></Pressable></View>}
+    {cart && <View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem} Retire cet article puis choisis un remplacement.</Text> : missingMenuDrink ? <Text style={styles.requiredHint}>Un menu n’a pas de boisson. Retire-le et ajoute-le à nouveau en choisissant ta boisson.</Text> : null}<Pressable disabled={!!stockProblem || !!missingMenuDrink} style={[styles.primaryButton, (stockProblem || missingMenuDrink) && styles.primaryButtonDisabled]} onPress={onCheckout}><Text style={styles.primaryButtonText}>Choisir mon créneau · {hasExactFee ? "" : "dès "}{money(pricing.total)}</Text></Pressable></View>}
   </SafeAreaView>;
 }
 

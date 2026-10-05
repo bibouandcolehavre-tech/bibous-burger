@@ -133,7 +133,7 @@ const GROUP_RULES = {
   'meat-type': { max: 1 },
   salad: { min: 1, max: 5 },
   sauces: { min: 1, max: 1 },
-  drink: { max: 1 },
+  drink: { min: 1, max: 1 },
   "duo-drink-one": { min: 1, max: 1 },
   "duo-drink-two": { min: 1, max: 1 },
   extras: {},
@@ -229,7 +229,7 @@ const validatedSelections = (product, selections, productId) => {
   for (const groupId of allowedGroups) {
     const rule = GROUP_RULES[groupId];
     const count = byGroup[groupId].length;
-    if (rule.min && count < rule.min) throw orderInputError("Complète les choix requis avant de commander.");
+    if (rule.min && count < rule.min) throw orderInputError(groupId === "drink" ? "Choisis une boisson dans chaque menu avant de commander." : "Complète les choix requis avant de commander.");
     if (rule.max && count > rule.max) throw orderInputError(`Tu peux sélectionner au maximum ${rule.max} choix dans cette catégorie.`);
     if (count > 1 && byGroup[groupId].some((entry) => entry.exclusive)) throw orderInputError("Deux choix incompatibles ont été sélectionnés.");
   }

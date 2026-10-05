@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {validateAndPriceOrderItems,PRODUCT_CATALOG}=require('./catalog');
 const {containsPork}=require('../dietary-policy');
-const item=(id='classique',meat='halal',protein='viande',extra=[])=>({productId:id,quantity:1,selections:[{groupId:'protein',id:protein},{groupId:'salad',id:'sans-crudites'},{groupId:'sauces',id:PRODUCT_CATALOG[id].fixedSauce||'mayo'},...(meat?[{groupId:'meat-type',id:meat}]:[]),...extra]});
+const item=(id='classique',meat='halal',protein='viande',extra=[])=>({productId:id,quantity:1,selections:[{groupId:'protein',id:protein},{groupId:'salad',id:'sans-crudites'},{groupId:'sauces',id:PRODUCT_CATALOG[id].fixedSauce||'mayo'},...(PRODUCT_CATALOG[id].menu?[{groupId:'drink',id:'coca'}]:[]),...(meat?[{groupId:'meat-type',id:meat}]:[]),...extra]});
 test('choix explicite gratuit, non falsifiable et enregistré dans le ticket',()=>{
   for(const choice of ['halal','non-halal']) {
     const cart=validateAndPriceOrderItems([item('classique',choice)]);

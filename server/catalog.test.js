@@ -8,6 +8,8 @@ const requiredSelections = [
   { groupId: "salad", id: "roquette" },
   { groupId: "sauces", id: "mayo" }
 ];
+const menuDrink = { groupId: "drink", id: "coca" };
+const withMenuDrink = (productId, selections) => productId.endsWith("-menu") ? [...selections, menuDrink] : selections;
 
 test('burger à composer : mêmes prix de départ que les burgers seuls, jamais sous le menu équivalent', () => {
   for (const protein of PROTEINS.filter((choice) => choice.reference)) {
@@ -82,15 +84,15 @@ test("records the imposed sauce and rejects a replacement sauce", () => {
     for (const productId of [burgerId, `${burgerId}-menu`]) {
       const saladId = ['duck', 'hambagu', 'pork'].includes(burgerId) ? 'concombre' : 'roquette';
       const fixedSelections = [requiredSelections[0], { groupId: 'salad', id: saladId }, { groupId: "sauces", id: sauceId }];
-      const result = validateAndPriceOrderItems([{ productId, quantity: 1, selections: fixedSelections }], { "atlas-menu": true });
+      const result = validateAndPriceOrderItems([{ productId, quantity: 1, selections: withMenuDrink(productId, fixedSelections) }], { "atlas-menu": true });
       assert.equal(result.items[0].options[2].label, label);
-      assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: requiredSelections }], { "atlas-menu": true }), /sauce de ce burger est imposée/);
+      assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: withMenuDrink(productId, requiredSelections) }], { "atlas-menu": true }), /sauce de ce burger est imposée/);
     }
   }
 });
 
 test("rejects unavailable products and incompatible exclusive choices", () => {
-  const atlasSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: "fixed-atlas" }];
+  const atlasSelections = [requiredSelections[0], requiredSelections[1], { groupId: "sauces", id: "fixed-atlas" }, menuDrink];
   assert.throws(() => validateAndPriceOrderItems([{ productId: "atlas-menu", quantity: 1, selections: atlasSelections }]), /indisponible/);
   assert.throws(() => validateAndPriceOrderItems([{ productId: "classique", quantity: 1, selections: [requiredSelections[0], { groupId: "salad", id: "roquette" }, { groupId: "salad", id: "sans-crudites" }, requiredSelections[2]] }]), /incompatibles/);
 });
@@ -131,46 +133,46 @@ test('les quatre recettes acceptent plusieurs nouvelles crudités et les anciens
   const sauces = { duck: 'fixed-duck', hambagu: 'fixed-hambagu', pork: 'fixed-pork', dynamite: 'fixed-dynamite' };
   for (const [burger, ids] of Object.entries(recipes)) for (const productId of [burger, `${burger}-menu`]) {
     const selections = [{ groupId: 'protein', id: 'viande' }, ...ids.slice(0, 2).map(id => ({ groupId: 'salad', id })), { groupId: 'sauces', id: sauces[burger] }];
-    assert.equal(validateAndPriceOrderItems([{ productId, quantity: 1, selections }]).items[0].options.filter(option => option.groupId === 'salad').length, 2);
+    assert.equal(validateAndPriceOrderItems([{ productId, quantity: 1, selections: withMenuDrink(productId, selections) }]).items[0].options.filter(option => option.groupId === 'salad').length, 2);
     const legacy = burger === 'dynamite' ? 'oignons' : 'roquette';
     const oldAndroidSelections = [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: legacy }, { groupId: 'sauces', id: sauces[burger] }];
-    assert.equal(validateAndPriceOrderItems([{ productId, quantity: 1, selections: oldAndroidSelections }]).items[0].options.find(option => option.groupId === 'salad').id, legacy);
+    assert.equal(validateAndPriceOrderItems([{ productId, quantity: 1, selections: withMenuDrink(productId, oldAndroidSelections) }]).items[0].options.find(option => option.groupId === 'salad').id, legacy);
   }
 });
 
 test('dessert à 2 € dans un menu et 3,90 € à la carte, prix imposés par le serveur', () => {
   const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [
-    ...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }
+    ...requiredSelections, menuDrink, { groupId: 'menu-desserts', id: 'oreo' }
   ] }]);
   assert.equal(menu.subtotal, 16.9);
   assert.equal(menu.items[0].options.find(option => option.groupId === 'menu-desserts').price, 2);
   assert.equal(validateAndPriceOrderItems([{ productId: 'dessert-oreo', quantity: 1, selections: [] }]).subtotal, 3.9);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }] }]), /option/);
-  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }, { groupId: 'menu-desserts', id: 'cookie' }] }]), /maximum 1 choix/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, { groupId: 'menu-desserts', id: 'oreo' }, { groupId: 'menu-desserts', id: 'cookie' }] }]), /maximum 1 choix/);
 });
 
 test('frites cheddar bacon : remplacement du menu à 2,50 €, portion seule à 6,90 €', () => {
   const included = { groupId: 'menu-fries', id: 'maison' };
-  const regularMenu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, included] }]);
+  const regularMenu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, included] }]);
   assert.equal(regularMenu.subtotal, 14.9);
   assert.deepEqual(regularMenu.items[0].options.find(option => option.groupId === 'menu-fries'), {
     ...included, label: 'Frites maison incluses dans le menu', price: 0
   });
   const upgrade = { groupId: 'menu-fries', id: 'cheddar-bacon' };
-  const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, upgrade] }]);
+  const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, upgrade] }]);
   assert.equal(menu.subtotal, 17.4);
   assert.deepEqual(menu.items[0].options.find(option => option.groupId === 'menu-fries'), {
     ...upgrade, label: 'Frites du menu remplacées par des frites cheddar bacon', price: 2.5
   });
-  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: requiredSelections }]).subtotal, 14.9);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink] }]).subtotal, 14.9);
   assert.equal(validateAndPriceOrderItems([{ productId: 'frites-cheddar-bacon', quantity: 1, selections: [] }]).subtotal, 6.9);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, upgrade] }]), /option/);
-  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, included, upgrade] }]), /maximum 1 choix/);
-  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, upgrade] }], { 'frites-cheddar-bacon': false }), /plus disponible/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, included, upgrade] }]), /maximum 1 choix/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, upgrade] }], { 'frites-cheddar-bacon': false }), /plus disponible/);
 });
 
 test('le serveur refuse le bacon de porc avec viande halal, même en portion supplémentaire', () => {
-  const halal = [...requiredSelections, { groupId: 'meat-type', id: 'halal' }];
+  const halal = [...requiredSelections, menuDrink, { groupId: 'meat-type', id: 'halal' }];
   for (const selection of [
     { groupId: 'menu-fries', id: 'cheddar-bacon' },
     { groupId: 'sides', id: 'frites-cheddar' }
@@ -181,5 +183,13 @@ test('le serveur refuse le bacon de porc avec viande halal, même en portion sup
     );
   }
   assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: halal }]).subtotal, 14.9);
-  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, { groupId: 'meat-type', id: 'non-halal' }, { groupId: 'menu-fries', id: 'cheddar-bacon' }] }]).subtotal, 17.4);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, { groupId: 'meat-type', id: 'non-halal' }, { groupId: 'menu-fries', id: 'cheddar-bacon' }] }]).subtotal, 17.4);
+});
+
+test('chaque menu impose une boisson choisie, contrairement au burger seul', () => {
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: requiredSelections }]), /Choisis une boisson dans chaque menu/);
+  const menu = validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink] }]);
+  assert.equal(menu.items[0].options.find(option => option.groupId === 'drink').label, 'Coca 33 cl');
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, { groupId: 'drink', id: 'eau' }] }]), /maximum 1 choix/);
+  assert.doesNotThrow(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: requiredSelections }]));
 });
