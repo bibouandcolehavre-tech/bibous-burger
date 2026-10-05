@@ -62,6 +62,15 @@ test('push : table confirmée ou annulée sans promesse prématurée', () => {
   assert.equal(db.pushNotifications.jobs[0].title, 'Table confirmée');
 });
 
+test('push : accepter le suivi des commandes ne donne pas accès aux campagnes promotionnelles', () => {
+  const { db } = setup(database(), 'service');
+  const preview = push.prepareCampaign(db, campaign(), config, now);
+  assert.equal(preview.customers, 0);
+  assert.equal(preview.devices, 0);
+  assert.throws(() => push.sendCampaign(db, preview.id, { confirm: true }, config, now), /Aucun appareil autorisé/);
+  assert.equal(db.pushNotifications.jobs.filter(job => job.kind === 'marketing').length, 0);
+});
+
 test('push : aperçu sans envoi, confirmation nécessaire, idempotence après coupure', () => {
   const { db } = setup(database(), 'marketing'), input = campaign();
   const preview = push.prepareCampaign(db, input, config, now);

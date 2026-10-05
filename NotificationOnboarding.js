@@ -63,12 +63,12 @@ export default function NotificationOnboarding({ api, authToken, onDone, initial
     <Text style={s.title}>Les nouvelles de Bibou sur ton téléphone</Text>
     <Text style={s.intro}>Choisis le suivi de tes commandes, les promotions, les deux ou aucun. Tu peux changer d’avis à tout moment.</Text>
     <View style={s.card}>
-      <View style={s.row}><Text style={s.cardTitle}>Suivi des commandes et réservations</Text><Switch accessibilityLabel="Recevoir le suivi des commandes et réservations" disabled={!loaded || busy || saved} value={service} onValueChange={setService} trackColor={{ false: '#CDBFB3', true: '#315B4B' }} /></View>
-      <Text style={s.copy}>Une alerte quand ta commande est acceptée, prête ou en livraison, ou quand ta table est confirmée.</Text>
+      <View style={s.row}><Text style={s.cardTitle}>Oui, je veux suivre ma commande</Text><Switch accessibilityLabel="Recevoir les notifications de suivi des commandes et réservations" disabled={!loaded || busy || saved} value={service} onValueChange={setService} trackColor={{ false: '#CDBFB3', true: '#315B4B' }} /></View>
+      <Text style={s.copy}>Tu recevras une notification quand Bibou accepte ta commande, quand elle est prête au retrait ou confiée au livreur, et quand ta réservation est confirmée.</Text>
     </View>
     <View style={s.card}>
       <View style={s.row}><Text style={s.cardTitle}>Promotions et actualités</Text><Switch accessibilityLabel="Recevoir les promotions et actualités" disabled={!loaded || busy || saved} value={marketing} onValueChange={setMarketing} trackColor={{ false: '#CDBFB3', true: '#315B4B' }} /></View>
-      <Text style={s.copy}>Offres, nouveaux burgers et nouvelles de Bibou sur ton téléphone. Facultatif, même si tu actives le suivi des commandes.</Text>
+      <Text style={s.copy}>Offres, nouveaux burgers et nouvelles de Bibou sur ton téléphone. Ce choix est facultatif et distinct du suivi des commandes.</Text>
     </View>
     <Pressable accessibilityRole="button" disabled={!loaded || busy || (!saved && !service && !marketing)} onPress={saved ? onDone : save} style={[s.button, (!loaded || busy || (!saved && !service && !marketing)) && s.dim]}><Text style={s.buttonText}>{busy ? 'Activation…' : saved ? 'Continuer' : 'Confirmer et autoriser les notifications'}</Text></Pressable>
     <Pressable accessibilityRole="button" disabled={busy} onPress={onDone} style={s.skip}><Text style={s.skipText}>{saved ? 'Continuer vers l’application' : 'Continuer sans notifications'}</Text></Pressable>
