@@ -17,15 +17,19 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState(false);
+  const [reload, setReload] = useState(0);
   const pendingId = useRef(null);
   const rotation = useRef(new Animated.Value(0)).current;
   const rotationDegrees = useRef(0);
+  const checkoutEligible = Platform.OS === 'web' && !!token && !!order?.id && order?.payment?.status === 'PAID' &&
+    !order?.reviewMode && (order?.payment?.provider !== 'promotion' || order?.promotion?.code === 'CHORUS');
   // A new CHORUS checkout must still show an unused test turn earned on an
   // earlier CHORUS order; it must not create another turn for the same account.
   const orderTurns = order?.id
-    ? state?.orderTurns?.find(item => item.orderId === order.id) || (order?.promotion?.code === 'CHORUS' ? state?.orderTurns?.[0] : null)
+    ? state?.orderTurns?.find(item => item.orderId === order.id) || state?.orderTurns?.[0]
     : state?.orderTurns?.[0];
-  const turns = (orderTurns?.available || 0) + (state?.availableFromReferrals || 0);
+  const turns = Math.min(state?.available || 0, (orderTurns?.available || 0) + (state?.availableFromReferrals || 0));
   const segments = state?.segments?.[orderTurns?.tier || 'small'] || [];
   const activePrizes = (state?.prizes || []).filter(prize => prize.code && prize.redemptionStatus === 'active' && Date.parse(prize.expiresAt) > Date.now());
   const canSpin = state?.status === 'active' && turns > 0;
@@ -33,17 +37,25 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   useEffect(() => {
     setState(null);
     setResult(null);
-    if (Platform.OS !== 'web' || !token || (!accountMode && (!order?.id || order?.payment?.status !== 'PAID' ||
-      (order?.payment?.provider === 'promotion' && order?.promotion?.code !== 'CHORUS') || order?.reviewMode))) return;
+    setLoadError(false);
+    if (Platform.OS !== 'web' || !token || (!accountMode && !checkoutEligible)) return;
     const controller = new AbortController();
+    let active = true;
     fetch(`${api}/customer/wheel`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
-      .then(value => { if (!controller.signal.aborted) setState(value); })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [api, token, accountMode, order?.id, order?.payment?.status, order?.payment?.provider, order?.reviewMode]);
+      .then(response => { if (!response.ok) throw new Error('Roue indisponible'); return response.json(); })
+      .then(value => { if (active) setState(value); })
+      .catch(() => { if (active) setLoadError(true); });
+    return () => { active = false; controller.abort(); };
+  }, [api, token, accountMode, checkoutEligible, order?.id, reload]);
 
-  if (Platform.OS !== 'web' || (!canSpin && (hidePrizes || !activePrizes.length) && !result)) return null;
+  if (Platform.OS !== 'web' || (!accountMode && !checkoutEligible)) return null;
+  if (!state) return <View style={styles.card}>
+    <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'APRÈS TA COMMANDE'}</Text>
+    <Text style={styles.title}>{loadError ? 'Tes tours sont à retrouver' : 'Vérification de tes tours…'}</Text>
+    <Text style={styles.description}>{loadError ? 'Ta commande est bien confirmée. La roue ne s’affiche pas pour le moment ; tu peux réessayer sans refaire de commande.' : 'Nous vérifions si un tour de roue est disponible pour toi.'}</Text>
+    {loadError && <Pressable accessibilityRole="button" onPress={() => setReload(value => value + 1)} style={styles.button}><Text style={styles.buttonText}>Réessayer d’afficher la roue</Text></Pressable>}
+  </View>;
+  if (!canSpin && (hidePrizes || !activePrizes.length) && !result) return null;
 
   const spin = async () => {
     if (busy) return;
@@ -81,16 +93,16 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   };
 
   return <View style={styles.card}>
-    <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'APRÈS TA COMMANDE'}</Text>
-    <Text style={styles.title}>{canSpin ? 'Tourne la roue' : 'Tes gains de la roue'}</Text>
+    <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'TA COMMANDE EST CONFIRMÉE'}</Text>
+    <Text style={styles.title}>{canSpin ? accountMode ? 'Tourne la roue' : 'Ton tour de roue est prêt !' : 'Tes gains de la roue'}</Text>
     {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? orderTurns.orderId === order.id ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : 'Un tour gagné sur une commande précédente est encore disponible ici, sans nouvelle commande.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue maintenant'}</Text></Pressable>
       <View style={styles.wheelFrame}><Text style={styles.pointer}>▼</Text><Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'], extrapolate: 'extend' }) }] }}><Svg width={220} height={220} viewBox="0 0 220 220">{segments.map(([id, weight], index) => {
         const start = segments.slice(0, index).reduce((sum, item) => sum + item[1], 0) * 3.6;
         const end = start + weight * 3.6;
         const point = polar((start + end) / 2, 74);
         return <G key={`${id}-${index}`}><Path d={sector(start, end)} fill={colors[id] || '#A8D3C4'} stroke="#FFF7EA" strokeWidth={2} />{weight >= 5 && <SvgText x={point.x} y={point.y + 5} textAnchor="middle" fill="#203E33" fontSize={weight >= 10 ? 20 : 13}>{label(id)}</SvgText>}</G>;
-      })}<Circle cx={110} cy={110} r={39} fill="#FFF7EA" stroke="#315B4B" strokeWidth={5} /><SvgText x={110} y={116} textAnchor="middle" fill="#315B4B" fontSize={28}>✦</SvgText></Svg></Animated.View></View>
-      <Pressable accessibilityRole="button" disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue'}</Text></Pressable></> : null}
+      })}<Circle cx={110} cy={110} r={39} fill="#FFF7EA" stroke="#315B4B" strokeWidth={5} /><SvgText x={110} y={116} textAnchor="middle" fill="#315B4B" fontSize={28}>✦</SvgText></Svg></Animated.View></View></> : null}
     {result ? <Text accessibilityLiveRegion="polite" style={styles.result}>{result.label}</Text> : null}
     {!hidePrizes && activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir sur une prochaine commande d’au moins 10 € de produits, avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique et non cumulable avec un autre code. Si tu as gagné une boisson ou des frites, ajoute-les au panier. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
     {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
