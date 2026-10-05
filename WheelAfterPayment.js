@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: .5 },
   result: { color: '#203E33', fontSize: 17, fontWeight: '800', textAlign: 'center', marginTop: 12 },
   error: { color: '#A63D29', marginTop: 12, textAlign: 'center' },
-  rules: { color: '#315B4B', fontSize: 11, textAlign: 'center', marginTop: 16 },
+  rules: { color: '#315B4B', fontSize: 13, lineHeight: 19, textAlign: 'left', marginTop: 16 },
   prize: { backgroundColor: '#FFF7EA', borderRadius: 12, padding: 12, width: '100%', marginTop: 12, alignItems: 'center' },
   prizeLabel: { color: '#203E33', fontWeight: '800', textAlign: 'center' },
   prizeCode: { color: '#C37559', fontSize: 18, fontWeight: '900', marginTop: 6 },

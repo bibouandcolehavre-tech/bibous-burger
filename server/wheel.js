@@ -1,5 +1,5 @@
-// Local prototype only. Do not expose this module through public routes until
-// the prize-redemption flow, published rules and launch controls are approved.
+// The wheel is separate from the referral contest and is enabled only during
+// its published window. All outcomes and eligibility are enforced server-side.
 const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 
@@ -35,10 +35,10 @@ function wheelDiscountPercentForOrder(prizeIds = []) {
 }
 
 const defaultWheel = () => ({
-  status: 'draft',
-  startDate: null,
+  status: 'published',
+  startDate: '2026-10-05',
   endDate: '2026-12-31',
-  officialRules: '',
+  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Après paiement confirmé, 1 tour par tranche complète de 10 € de produits effectivement payés, hors frais de livraison ; 1 tour supplémentaire par parrainage validé. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les commandes jusqu’à 30 €, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de plus de 30 € à 50 € : 10 % et 7 % ; au-delà de 50 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
   eurosPerTurn: 10,
   referralTurn: true,
 });

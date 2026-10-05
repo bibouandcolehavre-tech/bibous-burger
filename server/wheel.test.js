@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, WHEEL_TIERS, activeWheel, customerWheelState, eligibleOrderTurns, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
+const { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, customerWheelState, eligibleOrderTurns, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
 const merchant = require('./merchant-promotions');
 const { applyPromotion } = require('./promo-codes');
 
@@ -130,7 +130,9 @@ test('dix tours ne cumulent jamais les remises en pourcentage sur une commande',
   assert.equal(wheelDiscountPercentForOrder(['drink', 'fries', 'dessert']), 0);
 });
 
-test('inactive par défaut ; ouverture seulement avec dates et règlement approuvés', () => {
+test('publication limitée aux dates et aux règles validées', () => {
+  assert.equal(activeWheel(defaultWheel(), new Date('2026-10-05T12:00:00Z')), true);
+  assert.equal(activeWheel(defaultWheel(), new Date('2027-01-01T12:00:00Z')), false);
   assert.equal(activeWheel({}, now), false);
   assert.equal(activeWheel({ ...wheel, status: 'draft' }, now), false);
   assert.equal(activeWheel({ ...wheel, officialRules: '' }, now), false);
