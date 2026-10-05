@@ -6,6 +6,7 @@ const { parisDateKey } = require('./availability');
 const MAX_WHEEL_DISCOUNT_PERCENT = 5;
 const LEGACY_EUROS_PER_TURN = 10;
 const EUROS_PER_TURN = 15;
+const CHORUS_TEST_TURN_LIMIT = 2;
 const WHEEL_PRIZES = Object.freeze([
   { id: 'none', label: 'Pas de gain cette fois', type: 'none' },
   { id: 'points-20', label: '20 points Club Bibou', type: 'points', points: 20 },
@@ -40,7 +41,7 @@ const defaultWheel = () => ({
   status: 'published',
   startDate: '2026-10-05',
   endDate: '2026-12-31',
-  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Pour les nouvelles commandes, après paiement confirmé, 1 tour par tranche complète de 15 € de produits effectivement payés, hors frais de livraison ; les tours acquis sous l’ancien barème restent conservés. Un tour supplémentaire est accordé par parrainage validé. Exception pour les commandes intégralement offertes avec un code de test spécial : 1 seul tour de test par compte, sans achat payé. Les autres commandes offertes ne donnent pas de tour. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les nouvelles commandes de 15 € à moins de 30 € de produits payés, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de 30 € à moins de 60 € : 10 % et 7 % ; à partir de 60 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
+  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Pour les nouvelles commandes, après paiement confirmé, 1 tour par tranche complète de 15 € de produits effectivement payés, hors frais de livraison ; les tours acquis sous l’ancien barème restent conservés. Un tour supplémentaire est accordé par parrainage validé. Exception pour les commandes intégralement offertes avec le code de test CHORUS : 2 tours de test au maximum par compte, sur deux commandes distinctes, sans achat payé. Les autres commandes offertes ne donnent pas de tour. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les nouvelles commandes de 15 € à moins de 30 € de produits payés, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de 30 € à moins de 60 € : 10 % et 7 % ; à partir de 60 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
   eurosPerTurn: EUROS_PER_TURN,
   referralTurn: true,
 });
@@ -66,8 +67,8 @@ function eligibleOrderTurns(order, wheel) {
   if (!wheel?.startDate || !wheel.endDate || !order || order.payment?.status !== 'PAID' ||
       order.status === 'cancelled' ||
       order.refund?.status === 'due' || !withinWindow(wheel, order.payment.paidAt)) return 0;
-  // CHORUS is an owner test exception, not a paid purchase. Limit it to one
-  // spin per account below; all other gifted orders stay ineligible.
+  // CHORUS is an owner test exception, not a paid purchase. Limit it to two
+  // spins per account below; all other gifted orders stay ineligible.
   if (order.payment.provider === 'promotion') return order.promotion?.code === 'CHORUS' ? 1 : 0;
   // Delivery fees never buy turns. A recorded refund can only reduce earnings.
   const productsPaid = Math.max(0, cents(order.subtotal) - cents(order.discount));
@@ -92,9 +93,15 @@ function customerWheelState(database, customerId, now = new Date()) {
   const earnedFromReferrals = referralTurns(database, customerId, wheel);
   const spins = (database.wheelSpins || []).filter(spin => spin.customerId === customerId);
   const chorusOrders = orders.filter(order => order.payment?.provider === 'promotion' && order.promotion?.code === 'CHORUS' && eligibleOrderTurns(order, wheel));
-  const chorusSpin = spins.find(spin => orders.some(order => order.id === spin.orderId && order.payment?.provider === 'promotion' && order.promotion?.code === 'CHORUS'));
-  const chorusOrder = chorusSpin ? chorusOrders.find(order => order.id === chorusSpin.orderId) : chorusOrders[0];
-  const earnedFromOrders = orders.reduce((sum, order) => sum + (order.payment?.provider === 'promotion' ? 0 : eligibleOrderTurns(order, wheel)), 0) + Number(chorusOrders.length > 0);
+  const playedChorusIds = new Set(spins.filter(spin => chorusOrders.some(order => order.id === spin.orderId)).map(spin => spin.orderId));
+  // Preserve the already-played order, then give the next available test turn
+  // to the most recent distinct CHORUS order.
+  const eligibleChorusOrders = [
+    ...chorusOrders.filter(order => playedChorusIds.has(order.id)),
+    ...chorusOrders.filter(order => !playedChorusIds.has(order.id)),
+  ].slice(0, CHORUS_TEST_TURN_LIMIT);
+  const eligibleChorusIds = new Set(eligibleChorusOrders.map(order => order.id));
+  const earnedFromOrders = orders.reduce((sum, order) => sum + (order.payment?.provider === 'promotion' ? 0 : eligibleOrderTurns(order, wheel)), 0) + eligibleChorusOrders.length;
   const earned = earnedFromOrders + earnedFromReferrals;
   return {
     status: activeWheel(wheel, now) ? 'active' : 'inactive',
@@ -107,7 +114,7 @@ function customerWheelState(database, customerId, now = new Date()) {
     // If a post-spin refund reduces eligibility, future turns first clear this gap.
     adjustmentDue: Math.max(0, spins.length - earned),
     orderTurns: orders.map(order => ({ orderId: order.id,
-      available: Math.max(0, (order.payment?.provider === 'promotion' ? Number(order.id === chorusOrder?.id) : eligibleOrderTurns(order, wheel)) - spins.filter(spin => spin.orderId === order.id).length),
+      available: Math.max(0, (order.payment?.provider === 'promotion' ? Number(eligibleChorusIds.has(order.id)) : eligibleOrderTurns(order, wheel)) - spins.filter(spin => spin.orderId === order.id).length),
       tier: order.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(order.subtotal) - Number(order.discount || 0)), orderEurosPerTurn(order)),
     })).filter(item => item.available > 0),
     segments: WHEEL_TIERS,
@@ -147,10 +154,10 @@ function spinWheel(database, customerId, { now = new Date(), requestId, orderId,
   const sourceOrder = orderId && (database.orders || []).find(order => order.id === orderId && order.customerId === customerId);
   const earnedForOrder = eligibleOrderTurns(sourceOrder, wheel);
   const playedForOrder = (database.wheelSpins || []).filter(spin => spin.customerId === customerId && spin.orderId === orderId).length;
-  const chorusAlreadyPlayed = sourceOrder?.payment?.provider === 'promotion' && sourceOrder?.promotion?.code === 'CHORUS' &&
-    (database.wheelSpins || []).some(spin => spin.customerId === customerId && (database.orders || []).some(order => order.id === spin.orderId && order.payment?.provider === 'promotion' && order.promotion?.code === 'CHORUS'));
+  const chorusLimitReached = sourceOrder?.payment?.provider === 'promotion' && sourceOrder?.promotion?.code === 'CHORUS' &&
+    (database.wheelSpins || []).filter(spin => spin.customerId === customerId && (database.orders || []).some(order => order.id === spin.orderId && order.payment?.provider === 'promotion' && order.promotion?.code === 'CHORUS')).length >= CHORUS_TEST_TURN_LIMIT;
   const referral = !orderId && eligibleReferrals(database, customerId, wheel).find(item => !(database.wheelSpins || []).some(spin => spin.customerId === customerId && spin.referralCustomerId === item.id));
-  if (!referral && (!earnedForOrder || playedForOrder >= earnedForOrder || chorusAlreadyPlayed))
+  if (!referral && (!earnedForOrder || playedForOrder >= earnedForOrder || chorusLimitReached))
     throw Object.assign(new Error('Aucun tour disponible pour cette commande payée ou ce parrainage.'), { statusCode: 409 });
   const tier = referral || sourceOrder.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(sourceOrder.subtotal) - Number(sourceOrder.discount || 0)), orderEurosPerTurn(sourceOrder));
   let prize = prizeForNumber(randomInt(100), tier);
@@ -225,4 +232,4 @@ function reconcileWheelRewards(database, now = new Date()) {
   return changed;
 }
 
-module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder };
+module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, CHORUS_TEST_TURN_LIMIT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder };

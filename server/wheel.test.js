@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, customerWheelState, eligibleOrderTurns, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
+const { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, CHORUS_TEST_TURN_LIMIT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, customerWheelState, eligibleOrderTurns, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
 const merchant = require('./merchant-promotions');
 const { applyPromotion } = require('./promo-codes');
 
@@ -46,26 +46,32 @@ test('tour seulement après paiement confirmé, sans attendre la remise', () => 
   ]) assert.equal(eligibleOrderTurns(order(20, changes), wheel), 0);
 });
 
-test('CHORUS donne un seul tour de test par compte, sans ouvrir les autres commandes offertes', () => {
+test('CHORUS donne au plus deux tours de test sur deux commandes distinctes', () => {
   const db = fixture();
+  assert.equal(CHORUS_TEST_TURN_LIMIT, 2);
   db.orders = [order(28, { id: 'chorus-1', discount: 28, total: 0, paidTotal: 0,
     promotion: { code: 'CHORUS' }, payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } }),
     order(50, { id: 'chorus-2', discount: 50, total: 0, paidTotal: 0,
       promotion: { code: 'CHORUS' }, payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } }),
+    order(50, { id: 'chorus-3', discount: 50, total: 0, paidTotal: 0,
+      promotion: { code: 'CHORUS' }, payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } }),
     order(20, { id: 'gifted', promotion: { code: 'GROSLARD' },
       payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } })];
   assert.equal(eligibleOrderTurns(db.orders[0], wheel), 1);
-  assert.equal(eligibleOrderTurns(db.orders[2], wheel), 0);
-  assert.equal(customerWheelState(db, 'c1', now).earnedFromOrders, 1);
-  assert.deepEqual(customerWheelState(db, 'c1', now).orderTurns.map(item => item.orderId), ['chorus-1']);
+  assert.equal(eligibleOrderTurns(db.orders[3], wheel), 0);
+  assert.equal(customerWheelState(db, 'c1', now).earnedFromOrders, 2);
+  assert.deepEqual(customerWheelState(db, 'c1', now).orderTurns.map(item => item.orderId), ['chorus-1', 'chorus-2']);
   assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'gifted', requestId: 'gifted-wheel-01' }), /Aucun tour/);
   const result = spinWheel(db, 'c1', { now, orderId: 'chorus-1', requestId: 'chorus-wheel-01', randomInt: () => 98 });
   assert.equal(result.spin.tier, 'small');
   assert.equal(result.spin.prizeId, 'fries');
   assert.doesNotThrow(() => merchant.assertAvailable(db, db.merchantPromotions[0], 'c1', now.getTime()));
-  assert.equal(customerWheelState(db, 'c1', now).available, 1); // le parrainage de la fixture reste disponible
+  assert.equal(customerWheelState(db, 'c1', now).available, 2); // second essai et parrainage
+  assert.deepEqual(customerWheelState(db, 'c1', now).orderTurns.map(item => item.orderId), ['chorus-2']);
+  assert.equal(spinWheel(db, 'c1', { now, orderId: 'chorus-2', requestId: 'chorus-wheel-02', randomInt: () => 0 }).spin.prizeId, 'none');
+  assert.equal(customerWheelState(db, 'c1', now).available, 1); // le parrainage reste disponible
   assert.deepEqual(customerWheelState(db, 'c1', now).orderTurns, []);
-  assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'chorus-2', requestId: 'chorus-wheel-02' }), /Aucun tour/);
+  assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'chorus-3', requestId: 'chorus-wheel-03' }), /Aucun tour/);
   assert.equal(spinWheel(db, 'c1', { now, orderId: 'chorus-1', requestId: 'chorus-wheel-01' }).replayed, true);
   db.orders[0].status = 'cancelled';
   assert.equal(reconcileWheelRewards(db, now), true);

@@ -33,6 +33,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const segments = state?.segments?.[orderTurns?.tier || 'small'] || [];
   const activePrizes = (state?.prizes || []).filter(prize => prize.code && prize.redemptionStatus === 'active' && Date.parse(prize.expiresAt) > Date.now());
   const canSpin = state?.status === 'active' && turns > 0;
+  const chorusCheckout = !accountMode && order?.promotion?.code === 'CHORUS';
 
   useEffect(() => {
     setState(null);
@@ -55,7 +56,9 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     <Text style={styles.description}>{loadError ? 'Ta commande est bien confirmée. La roue ne s’affiche pas pour le moment ; tu peux réessayer sans refaire de commande.' : 'Nous vérifions si un tour de roue est disponible pour toi.'}</Text>
     {loadError && <Pressable accessibilityRole="button" onPress={() => setReload(value => value + 1)} style={styles.button}><Text style={styles.buttonText}>Réessayer d’afficher la roue</Text></Pressable>}
   </View>;
-  if (!canSpin && (hidePrizes || !activePrizes.length) && !result) return null;
+  // A CHORUS checkout must never silently hide the game: explain when the
+  // limited test turns have already been played instead of looking broken.
+  if (!canSpin && (hidePrizes || !activePrizes.length) && !result && !chorusCheckout) return null;
 
   const spin = async () => {
     if (busy) return;
@@ -94,8 +97,9 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
 
   return <View style={styles.card}>
     <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'TA COMMANDE EST CONFIRMÉE'}</Text>
-    <Text style={styles.title}>{canSpin ? accountMode ? 'Tourne la roue' : 'Ton tour de roue est prêt !' : 'Tes gains de la roue'}</Text>
-    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? orderTurns.orderId === order.id ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : 'Un tour gagné sur une commande précédente est encore disponible ici, sans nouvelle commande.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
+    <Text style={styles.title}>{canSpin ? accountMode ? 'Tourne la roue' : 'Ton tour de roue est prêt !' : chorusCheckout ? 'Ton essai CHORUS est terminé' : 'Tes gains de la roue'}</Text>
+    {chorusCheckout && !canSpin ? <Text style={styles.description}>{state.status === 'active' ? 'Les deux tours d’essai CHORUS de ce compte ont déjà été joués. Tes gains restent dans Mon compte → Mes offres ; aucune nouvelle commande n’est nécessaire.' : 'La roue n’est pas ouverte actuellement. Ta commande reste confirmée.'}</Text> : null}
+    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? orderTurns.orderId === order.id ? 'Un tour de test offert avec cette commande CHORUS, dans la limite de deux tours par compte.' : 'Un tour gagné sur une commande précédente est encore disponible ici, sans nouvelle commande.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
       <Pressable accessibilityRole="button" disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue maintenant'}</Text></Pressable>
       <View style={styles.wheelFrame}><Text style={styles.pointer}>▼</Text><Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'], extrapolate: 'extend' }) }] }}><Svg width={220} height={220} viewBox="0 0 220 220">{segments.map(([id, weight], index) => {
         const start = segments.slice(0, index).reduce((sum, item) => sum + item[1], 0) * 3.6;
