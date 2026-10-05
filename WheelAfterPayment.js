@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 
 const polar = (angle, radius = 105) => ({ x: 110 + radius * Math.cos((angle - 90) * Math.PI / 180), y: 110 + radius * Math.sin((angle - 90) * Math.PI / 180) });
@@ -10,6 +10,21 @@ const sector = (start, end) => {
 const colors = { none: '#E5C7B5', 'points-20': '#A8D3C4', 'points-30': '#A8D3C4', 'points-40': '#86BDA9', 'points-60': '#6AA58D', drink: '#C37559', fries: '#E7A87D', 'discount-1': '#668F80', 'discount-2': '#4F7D69', 'discount-5': '#315B4B' };
 const label = id => id === 'none' ? '•' : id.startsWith('points') ? '★' : id === 'drink' ? '🥤' : id === 'fries' ? '🍟' : '%';
 
+function WheelRules({ rules, open, onOpen, onClose }) {
+  if (!rules) return null;
+  return <>
+    <Pressable accessibilityRole="button" onPress={onOpen} style={styles.rulesLink}><Text style={styles.rulesLinkText}>Voir les règles de la roue ›</Text></Pressable>
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.rulesBackdrop}>
+        <View style={styles.rulesDialog}>
+          <View style={styles.rulesHeader}><Text style={styles.rulesTitle}>Règles de la roue Bibou</Text><Pressable accessibilityRole="button" accessibilityLabel="Fermer les règles" onPress={onClose} style={styles.rulesClose}><Text style={styles.rulesCloseText}>✕</Text></Pressable></View>
+          <ScrollView style={styles.rulesScroll} contentContainerStyle={styles.rulesContent}><Text style={styles.rulesText}>{rules}</Text></ScrollView>
+        </View>
+      </View>
+    </Modal>
+  </>;
+}
+
 // The game is offered only by the web checkout, after the server has confirmed
 // the payment. The server can keep it closed independently of a web release.
 export default function WheelAfterPayment({ api, token, order, accountMode = false, hidePrizes = false, onUpdate }) {
@@ -19,6 +34,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState(false);
   const [reload, setReload] = useState(0);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const pendingId = useRef(null);
   const rotation = useRef(new Animated.Value(0)).current;
   const rotationDegrees = useRef(0);
@@ -58,7 +74,9 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   </View>;
   // A CHORUS checkout must never silently hide the game: explain when the
   // limited test turns have already been played instead of looking broken.
-  if (!canSpin && (hidePrizes || !activePrizes.length) && !result && !chorusCheckout) return null;
+  if (!canSpin && (hidePrizes || !activePrizes.length) && !result && !chorusCheckout) {
+    return accountMode && state.rules ? <View style={styles.rulesOnlyCard}><Text style={styles.rulesOnlyText}>La roue Bibou : un jeu distinct du concours de classement.</Text><WheelRules rules={state.rules} open={rulesOpen} onOpen={() => setRulesOpen(true)} onClose={() => setRulesOpen(false)} /></View> : null;
+  }
 
   const spin = async () => {
     if (busy) return;
@@ -110,7 +128,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     {result ? <Text accessibilityLiveRegion="polite" style={styles.result}>{result.label}</Text> : null}
     {!hidePrizes && activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir sur une prochaine commande d’au moins 10 € de produits, avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique et non cumulable avec un autre code. Si tu as gagné une boisson ou des frites, ajoute-les au panier. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
     {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
-    <Text style={styles.rules}>{state.rules}</Text>
+    <WheelRules rules={state.rules} open={rulesOpen} onOpen={() => setRulesOpen(true)} onClose={() => setRulesOpen(false)} />
   </View>;
 }
 
@@ -126,7 +144,19 @@ const styles = StyleSheet.create({
   disabled: { opacity: .5 },
   result: { color: '#203E33', fontSize: 17, fontWeight: '800', textAlign: 'center', marginTop: 12 },
   error: { color: '#A63D29', marginTop: 12, textAlign: 'center' },
-  rules: { color: '#315B4B', fontSize: 13, lineHeight: 19, textAlign: 'left', marginTop: 16 },
+  rulesOnlyCard: { width: '100%', padding: 16, borderRadius: 18, backgroundColor: '#D9EEE5', marginVertical: 14, alignItems: 'center' },
+  rulesOnlyText: { color: '#315B4B', fontSize: 14, textAlign: 'center' },
+  rulesLink: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 12 },
+  rulesLinkText: { color: '#315B4B', fontSize: 15, fontWeight: '800', textDecorationLine: 'underline', textAlign: 'center' },
+  rulesBackdrop: { flex: 1, backgroundColor: 'rgba(19, 39, 31, 0.72)', justifyContent: 'center', padding: 18 },
+  rulesDialog: { width: '100%', maxWidth: 640, maxHeight: '84%', alignSelf: 'center', backgroundColor: '#FFF9EF', borderRadius: 20, padding: 20 },
+  rulesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  rulesTitle: { color: '#203E33', fontSize: 22, fontWeight: '900', flexShrink: 1 },
+  rulesClose: { padding: 8, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  rulesCloseText: { color: '#315B4B', fontSize: 23, fontWeight: '800' },
+  rulesScroll: { flexShrink: 1 },
+  rulesContent: { paddingBottom: 12 },
+  rulesText: { color: '#315B4B', fontSize: 15, lineHeight: 23 },
   prize: { backgroundColor: '#FFF7EA', borderRadius: 12, padding: 12, width: '100%', marginTop: 12, alignItems: 'center' },
   prizeLabel: { color: '#203E33', fontWeight: '800', textAlign: 'center' },
   prizeCode: { color: '#C37559', fontSize: 18, fontWeight: '900', marginTop: 6 },
