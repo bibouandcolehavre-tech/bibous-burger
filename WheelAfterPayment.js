@@ -27,14 +27,17 @@ export default function WheelAfterPayment({ api, token, order }) {
   const canSpin = state?.status === 'active' && turns > 0;
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || !token || !order?.id || order?.payment?.status !== 'PAID' || order?.reviewMode) return;
+    setState(null);
+    setResult(null);
+    if (Platform.OS !== 'web' || !token || !order?.id || order?.payment?.status !== 'PAID' ||
+      order?.payment?.provider === 'promotion' || order?.reviewMode) return;
     const controller = new AbortController();
     fetch(`${api}/customer/wheel`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: 'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(value => { if (!controller.signal.aborted) setState(value); })
       .catch(() => {});
     return () => controller.abort();
-  }, [api, token, order?.id, order?.payment?.status, order?.reviewMode]);
+  }, [api, token, order?.id, order?.payment?.status, order?.payment?.provider, order?.reviewMode]);
 
   if (Platform.OS !== 'web' || (!canSpin && !activePrizes.length && !result)) return null;
 
