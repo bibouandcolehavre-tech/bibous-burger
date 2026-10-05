@@ -43,6 +43,7 @@ const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 const { destinationForLegacyPath } = require('./domain-forwarding');
+const wheelGame = require('./wheel');
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -290,6 +291,15 @@ const finalizePaidOrder = (order, database) => {
 
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
+  const wheelPromotion = (database.merchantPromotions || []).find(item => item.id === order.promotion?.id && item.sourceWheelSpinId);
+  if (wheelPromotion) {
+    const spin = (database.wheelSpins || []).find(item => item.id === wheelPromotion.sourceWheelSpinId && item.customerId === customer.id);
+    if (spin && spin.redemptionStatus === 'active') {
+      spin.redemptionStatus = 'used';
+      spin.usedOnOrderId = order.id;
+      spin.usedAt = now;
+    }
+  }
   // A gifted order is fulfilled normally, but is not a paid purchase for loyalty
   // or referral rewards. It must not multiply points on earlier paid orders.
   if (order.payment.provider === 'promotion') return { customer, pointsAdded: 0, referralPointsAdded: 0 };
@@ -704,7 +714,8 @@ const server = http.createServer(async (request, response) => {
     const rewardStoreChanged = ensureRewardStore(database);
     const contestPurged = purgeExpiredContestEntries(database);
     const supportCreditsChanged = applySupportCredits(database);
-    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged) await writeDatabase(database);
+    const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
+    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged) await writeDatabase(database);
 
     if (url.pathname === '/api/customer/push' || url.pathname.startsWith('/api/customer/push/')) {
       const customer = authenticatedCustomer(request, database);
@@ -724,6 +735,18 @@ const server = http.createServer(async (request, response) => {
       if (request.method === 'PATCH') { crm.updateCustomerPreferences(database,customer,await readBody(request)); await writeDatabase(database); }
       else if (request.method !== 'GET') return send(response, 405, { error:'Action non disponible.' });
       return send(response, 200, crm.customerState(database,customer));
+    }
+
+    if (url.pathname === '/api/customer/wheel' || url.pathname === '/api/customer/wheel/spin') {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Connecte-toi pour retrouver tes tours.' });
+      if (request.method === 'GET' && url.pathname === '/api/customer/wheel')
+        return send(response, 200, wheelGame.customerWheelState(database, customer.id));
+      if (request.method !== 'POST' || url.pathname !== '/api/customer/wheel/spin')
+        return send(response, 405, { error: 'Action non disponible.' });
+      const result = wheelGame.spinWheel(database, customer.id, await readBody(request));
+      if (!result.replayed) await writeDatabase(database);
+      return send(response, 200, result);
     }
 
     if (url.pathname === '/api/dashboard/push' || url.pathname.startsWith('/api/dashboard/push/')) {

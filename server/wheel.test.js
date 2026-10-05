@@ -1,6 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, activeWheel, customerWheelState, eligibleOrderTurns, prizeForNumber, spinWheel, wheelDiscountPercentForOrder } = require('./wheel');
+const { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, WHEEL_TIERS, activeWheel, customerWheelState, eligibleOrderTurns, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
+const merchant = require('./merchant-promotions');
+const { applyPromotion } = require('./promo-codes');
 
 const now = new Date('2026-11-12T12:00:00Z');
 const wheel = { status: 'published', startDate: '2026-11-01', endDate: '2026-12-31', officialRules: 'Règlement fictif réservé aux tests.', eurosPerTurn: 10, referralTurn: true };
@@ -14,9 +16,10 @@ test('un tour par tranche complète de 10 € de produits payés, par commande',
   assert.equal(eligibleOrderTurns(order(22, { discount: 3, total: 25.99, deliveryFee: 5.99 }), wheel), 1);
 });
 
-test('aucun tour sur commande impayée, offerte, annulée, non remise ou antérieure', () => {
+test('tour seulement après paiement confirmé, sans attendre la remise', () => {
+  assert.equal(eligibleOrderTurns(order(20, { status: 'confirmed' }), wheel), 2);
   for (const changes of [
-    { status: 'confirmed' }, { status: 'cancelled' },
+    { status: 'cancelled' },
     { payment: { status: 'PENDING', paidAt: now.toISOString() } },
     { payment: { status: 'PAID', provider: 'promotion', paidAt: now.toISOString() } },
     { payment: { status: 'PAID', provider: 'sumup', paidAt: '2026-10-31T22:59:59Z' } },
@@ -36,39 +39,87 @@ test('remboursement enregistré : réduction des tours, sans création de solde 
 test('parrainage vérifié : un seul tour, sans ajout au classement du concours', () => {
   const db = fixture();
   assert.equal(customerWheelState(db, 'c1', now).earnedFromReferrals, 1);
+  const result = spinWheel(db, 'c1', { now, requestId: 'referral-wheel-01', randomInt: () => 95 });
+  assert.equal(result.spin.referralCustomerId, 'c2');
+  assert.equal(result.state.availableFromReferrals, 0);
+  assert.doesNotThrow(() => merchant.assertAvailable(db, db.merchantPromotions[0], 'c1', now.getTime()));
+  assert.throws(() => spinWheel(db, 'c1', { now, requestId: 'referral-wheel-02', randomInt: () => 95 }), /Aucun tour/);
   db.customers[1].referralRewardRevokedAt = now.toISOString();
   assert.equal(customerWheelState(db, 'c1', now).earnedFromReferrals, 0);
   assert.equal(db.referralContest, undefined);
 });
 
-test('100 % des cases gagnent, surtout des points, avec plus de boissons que de remises', () => {
-  assert.equal(WHEEL_PRIZES.reduce((sum, prize) => sum + prize.weight, 0), 100);
-  assert.equal(WHEEL_PRIZES.filter(prize => prize.type === 'points').reduce((sum, prize) => sum + prize.weight, 0), 90);
-  assert.equal(WHEEL_PRIZES.filter(prize => prize.discountPercent).reduce((sum, prize) => sum + prize.weight, 0), 3);
-  assert.equal(WHEEL_PRIZES.find(prize => prize.id === 'drink').weight, 5);
+test('une chance sur deux sans gain, paliers progressifs et remises plafonnées', () => {
+  for (const tier of Object.values(WHEEL_TIERS)) {
+    assert.equal(tier.reduce((sum, [, weight]) => sum + weight, 0), 100);
+    assert.deepEqual(tier[0], ['none', 50]);
+  }
+  assert.equal(prizeForNumber(97, 'small').id, 'drink');
+  assert.equal(prizeForNumber(99, 'small').id, 'fries');
+  assert.equal(prizeForNumber(99, 'medium').id, 'discount-5');
+  assert.equal(prizeForNumber(99, 'large').id, 'discount-5');
   assert.equal(WHEEL_PRIZES.every(prize => !prize.discountPercent || prize.discountPercent <= MAX_WHEEL_DISCOUNT_PERCENT), true);
   for (let number = 0; number < 100; number++) assert.ok(prizeForNumber(number).label);
   assert.throws(() => prizeForNumber(100), RangeError);
   const db = fixture();
-  const result = spinWheel(db, 'c1', { now, requestId: 'spin-request-1', randomInt: () => 0 });
-  assert.equal(result.spin.pointsAdded, 10);
-  assert.equal(db.customers[0].points, 110);
+  const result = spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'spin-request-1', randomInt: () => 50 });
+  assert.equal(result.spin.pointsAdded, 20);
+  assert.equal(db.customers[0].points, 120);
   assert.equal(result.state.available, 2);
-  const retry = spinWheel(db, 'c1', { now, requestId: 'spin-request-1', randomInt: () => 99 });
+  const retry = spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'spin-request-1', randomInt: () => 99 });
   assert.equal(retry.replayed, true);
   assert.equal(retry.spin.id, result.spin.id);
-  assert.equal(db.customers[0].points, 110);
+  assert.equal(db.customers[0].points, 120);
   assert.equal(db.wheelSpins.length, 1);
   assert.equal(db.referralContest, undefined);
 });
 
-test('les bons sont enregistrés sans prétendre être utilisables avant intégration', () => {
+test('un gain crée un code personnel utilisable une seule fois', () => {
   const db = fixture();
-  const result = spinWheel(db, 'c1', { now, requestId: 'spin-request-2', randomInt: () => 95 });
-  assert.equal(result.spin.prizeId, 'drink');
-  assert.equal(result.spin.redemptionStatus, 'pending-integration');
+  const result = spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'spin-request-2', randomInt: () => 98 });
+  assert.equal(result.spin.prizeId, 'fries');
+  assert.equal(result.spin.redemptionStatus, 'active');
+  assert.match(result.spin.code, /^ROUE-[A-F0-9]{10}$/);
+  assert.equal(db.merchantPromotions[0].ownerCustomerId, 'c1');
+  assert.equal(db.merchantPromotions[0].type, 'free_fries');
+  assert.equal(db.merchantPromotions[0].usageLimit, 1);
+  assert.doesNotThrow(() => merchant.assertAvailable(db, db.merchantPromotions[0], 'c1', now.getTime()));
+  assert.throws(() => merchant.assertAvailable(db, db.merchantPromotions[0], 'c2', now.getTime()), /autre compte/);
+  assert.equal(merchant.discountFor(db.merchantPromotions[0], [{ productId: 'frites-maison', quantity: 1, price: 3.9 }], 12).products, 3.9);
+  assert.throws(() => merchant.discountFor(db.merchantPromotions[0], [{ productId: 'classique', quantity: 1, price: 9.9 }], 12), /frites/);
+  const promo = merchant.publicView(db.merchantPromotions[0]);
+  const priced = applyPromotion({ subtotal: 13.8, deliveryFee: 0, discountRate: 0, total: 13.8 }, promo, 'pickup', [
+    { productId: 'classique', quantity: 1, price: 9.9 }, { productId: 'frites-maison', quantity: 1, price: 3.9 },
+  ]);
+  assert.equal(priced.total, 9.9);
+  db.orders[0].refund = { status: 'recorded', amount: 20 };
+  assert.throws(() => merchant.assertAvailable(db, promo, 'c1', now.getTime()), /plus utilisable/);
+  delete db.orders[0].refund;
+  db.orders.push({ id: 'redeemed', customerId: 'c1', promotion: promo, status: 'confirmed', payment: { status: 'PAID' } });
+  assert.throws(() => merchant.assertAvailable(db, promo, 'c1', now.getTime()), /limite/);
   assert.equal(result.spin.expiresAt, '2026-12-12T12:00:00.000Z');
   assert.equal(db.customers[0].points, 100);
+});
+
+test('aucun tour gratuit en rechargeant la page et aucun tour pour une commande tierce', () => {
+  const db = fixture();
+  assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'other', requestId: 'spin-request-4' }), /Aucun tour/);
+  spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'spin-request-5', randomInt: () => 0 });
+  spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'spin-request-6', randomInt: () => 0 });
+  assert.throws(() => spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'spin-request-7' }), /Aucun tour/);
+  assert.equal(db.wheelSpins.length, 2);
+});
+
+test('un remboursement reprend les points de tours devenus injustifiés une seule fois', () => {
+  const db = fixture();
+  db.customers[0].points = 0;
+  spinWheel(db, 'c1', { now, orderId: 'order-1', requestId: 'refund-wheel-spin-01', randomInt: () => 50 });
+  assert.equal(db.customers[0].points, 20);
+  db.orders[0].refund = { status: 'recorded', amount: 20 };
+  assert.equal(reconcileWheelRewards(db, now), true);
+  assert.equal(db.customers[0].points, 0);
+  assert.ok(db.wheelSpins[0].revokedAt);
+  assert.equal(reconcileWheelRewards(db, now), false);
 });
 
 test('dix tours ne cumulent jamais les remises en pourcentage sur une commande', () => {

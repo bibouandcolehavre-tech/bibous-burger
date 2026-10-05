@@ -57,6 +57,13 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     rewardClaimsAnonymized += 1;
   });
 
+  // Wheel turns and personal codes are account benefits, not accounting records.
+  // Remove them with the account so an old code cannot be reused or traced back.
+  if (Array.isArray(database.wheelSpins))
+    database.wheelSpins = database.wheelSpins.filter(spin => spin.customerId !== customerId);
+  if (Array.isArray(database.merchantPromotions))
+    database.merchantPromotions = database.merchantPromotions.filter(promotion => promotion.ownerCustomerId !== customerId);
+
   (database.customers || []).forEach((otherCustomer) => {
     if (otherCustomer.referredByCustomerId === customerId) delete otherCustomer.referredByCustomerId;
   });

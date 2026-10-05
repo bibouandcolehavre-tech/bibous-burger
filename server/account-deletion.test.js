@@ -10,6 +10,8 @@ test("supprime le compte et anonymise les données opérationnelles", () => {
     reservations: [{ id: "reservation-1", customerId: customer.id, customerName: "Camille", phone: customer.phone, note: "Anniversaire", status: "confirmed" }],
     bibouPlusPurchases: [{ id: "plus-1", customerId: customer.id }],
     rewardClaims: [{ id: "reward-1", customerId: customer.id, customerName: "Camille", status: "active" }],
+    wheelSpins: [{ id: 'spin-1', customerId: customer.id, code: 'ROUE-EXEMPLE' }],
+    merchantPromotions: [{ id: 'promo-1', ownerCustomerId: customer.id, code: 'ROUE-EXEMPLE' }],
   };
 
   const result = anonymizeCustomerAccount(database, customer, new Date("2026-09-18T10:00:00.000Z"));
@@ -31,4 +33,6 @@ test("supprime le compte et anonymise les données opérationnelles", () => {
   assert.equal(database.rewardClaims[0].customerName, "Client supprimé");
   assert.equal(database.rewardClaims[0].status, "cancelled");
   assert.equal(result.rewardClaimsAnonymized, 1);
+  assert.deepEqual(database.wheelSpins, []);
+  assert.deepEqual(database.merchantPromotions, []);
 });

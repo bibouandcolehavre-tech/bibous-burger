@@ -13,6 +13,7 @@ import CustomBurgerPreview from "./CustomBurgerPreview";
 import CustomerOffers from "./CustomerOffers";
 import StoreReviewLogin from "./StoreReviewLogin";
 import CustomerIdentityScreen from './CustomerIdentityScreen';
+import WheelAfterPayment from './WheelAfterPayment';
 const { hasCompleteIdentity } = require('./customer-identity');
 const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
 import RestaurantInfo from "./RestaurantInfo";
@@ -876,9 +877,9 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
   </ScrollView></SafeAreaView>;
 }
 
-function SuccessScreen({ order, onHome, onReview, onTrack }) {
+function SuccessScreen({ order, token, api, onHome, onReview, onTrack }) {
   const label = order?.method === "delivery" ? "Livraison" : "Retrait";
-  return <SafeAreaView style={styles.safeArea}><View style={styles.successContent}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion && !order.promotion.id ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={{ alignItems: 'center', justifyContent: 'center', padding: 28, flexGrow: 1 }}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion && !order.promotion.id ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><WheelAfterPayment api={api} token={token} order={order} /><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
 function ReviewScreen({ onBack }) {
@@ -1528,7 +1529,7 @@ function AppContent({ onReviewModeChange }) {
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} authToken={authToken} onChange={setCustomer} onCommentChange={(comment) => setCart((current) => ({ ...current, comment }))} onBack={() => setScreen("delivery")} onContinue={continueWithCustomer} onEditIdentity={() => setScreen("identity")} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} onBack={() => setScreen("details")} onPay={pay} onValidatePromo={validatePromo} />;
   if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
-  if (screen === "success") return <SuccessScreen order={pendingOrder} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
+  if (screen === "success") return <SuccessScreen order={pendingOrder} token={authToken} api={API_BASE_URL} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;

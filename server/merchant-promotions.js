@@ -1,12 +1,13 @@
 const crypto = require('node:crypto');
 const { PRODUCT_CATALOG } = require('./catalog');
+const { eligibleOrderTurns } = require('./wheel');
 
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 const money = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const burgerIds = Object.keys(PRODUCT_CATALOG).filter(id => !PRODUCT_CATALOG[id].menu && !PRODUCT_CATALOG[id].kind);
 const burgerPriceForPromotion = item => item.productId === 'custom-burger' ? item.price : PRODUCT_CATALOG[item.productId].price;
-const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery'];
+const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery', 'free_drink', 'free_fries'];
 const normalizeCode = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
 const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filter(order => {
   if (order.promotion?.id !== promotion.id) return false;
@@ -80,6 +81,19 @@ function assertAvailable(db, promotion, customerId, now = Date.now()) {
   if (!promotion?.id) return;
   const current = (db.merchantPromotions || []).find(item => item.id === promotion.id && item.code === promotion.code);
   if (!current) fail('Ce code promo n’est plus disponible.', 409);
+  if (current.ownerCustomerId && current.ownerCustomerId !== customerId) fail('Ce gain est réservé à un autre compte.', 403);
+  if (current.sourceWheelSpinId) {
+    const spin = (db.wheelSpins || []).find(item => item.id === current.sourceWheelSpinId);
+    const source = (db.orders || []).find(item => item.id === spin?.orderId);
+    const referral = (db.customers || []).find(item => item.id === spin?.referralCustomerId);
+    const sourceSpins = (db.wheelSpins || []).filter(item => item.orderId === source?.id && item.customerId === customerId);
+    const position = sourceSpins.findIndex(item => item.id === spin?.id);
+    const retainedTurns = source ? eligibleOrderTurns(source, { startDate: '1900-01-01', endDate: '2999-12-31', eurosPerTurn: 10 }) : 0;
+    const validOrder = source && source.customerId === customerId && position >= 0 && position < retainedTurns;
+    const validReferral = referral && referral.referredByCustomerId === customerId && referral.referralRewardGrantedAt && !referral.referralRewardRevokedAt;
+    if (!spin || spin.revokedAt || !(validOrder || validReferral))
+      fail('Ce gain n’est plus utilisable.', 409);
+  }
   findByCode(db, current.code, now);
   const used = activeOrders(db, current, now);
   if (current.usageLimit !== null && used.length >= current.usageLimit) fail('Ce code promo a atteint sa limite d’utilisations.', 409);
@@ -113,6 +127,16 @@ function discountFor(promotion, items, subtotal, deliveryFee = 0) {
     if (!deliveryFee) fail('Ce code est réservé aux commandes en livraison avec des frais à payer.');
     delivery = deliveryFee;
   }
+  if (promotion.type === 'free_drink') {
+    const drink = items.filter(item => item.productId?.startsWith('drink-'))
+      .map(item => item.price).sort((left, right) => left - right)[0];
+    if (drink === undefined) fail('Ajoute une boisson à ta commande pour profiter de ce gain.');
+    products = Math.min(1.8, drink);
+  }
+  if (promotion.type === 'free_fries') {
+    if (!items.some(item => item.productId === 'frites-maison')) fail('Ajoute une portion de frites maison à ta commande pour profiter de ce gain.');
+    products = PRODUCT_CATALOG['frites-maison'].price;
+  }
   return { products, delivery };
 }
 
@@ -129,7 +153,7 @@ function apply(pricing, promotion, items) {
 }
 
 function dashboard(db) {
-  const promotions = db.merchantPromotions || [];
+  const promotions = (db.merchantPromotions || []).filter(item => !item.sourceWheelSpinId);
   return { promotions: promotions.map(item => ({ ...item, used: activeOrders(db, item).filter(order => order.payment?.status === 'PAID').length })),
     burgers: burgerIds.map(id => ({ id, name: PRODUCT_CATALOG[id].name, price: id === 'custom-burger' ? 9.9 : PRODUCT_CATALOG[id].price })) };
 }
