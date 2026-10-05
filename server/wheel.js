@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 
 const MAX_WHEEL_DISCOUNT_PERCENT = 5;
+const LEGACY_EUROS_PER_TURN = 10;
+const EUROS_PER_TURN = 15;
 const WHEEL_PRIZES = Object.freeze([
   { id: 'none', label: 'Pas de gain cette fois', type: 'none' },
   { id: 'points-20', label: '20 points Club Bibou', type: 'points', points: 20 },
@@ -38,8 +40,8 @@ const defaultWheel = () => ({
   status: 'published',
   startDate: '2026-10-05',
   endDate: '2026-12-31',
-  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Après paiement confirmé, 1 tour par tranche complète de 10 € de produits effectivement payés, hors frais de livraison ; 1 tour supplémentaire par parrainage validé. Exception pour les commandes intégralement offertes avec un code de test spécial : 1 seul tour de test par compte, sans achat payé. Les autres commandes offertes ne donnent pas de tour. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les commandes jusqu’à 30 €, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de plus de 30 € à 50 € : 10 % et 7 % ; au-delà de 50 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
-  eurosPerTurn: 10,
+  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Pour les nouvelles commandes, après paiement confirmé, 1 tour par tranche complète de 15 € de produits effectivement payés, hors frais de livraison ; les tours acquis sous l’ancien barème restent conservés. Un tour supplémentaire est accordé par parrainage validé. Exception pour les commandes intégralement offertes avec un code de test spécial : 1 seul tour de test par compte, sans achat payé. Les autres commandes offertes ne donnent pas de tour. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les nouvelles commandes de 15 € à moins de 30 € de produits payés, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de 30 € à moins de 60 € : 10 % et 7 % ; à partir de 60 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
+  eurosPerTurn: EUROS_PER_TURN,
   referralTurn: true,
 });
 
@@ -51,6 +53,9 @@ const activeWheel = (wheel, now = new Date()) => Boolean(
 );
 
 const cents = value => Number.isFinite(Number(value)) ? Math.max(0, Math.round(Number(value) * 100)) : 0;
+// The rate belongs to the order, not the current settings: changing the game
+// must never remove turns that a customer earned under the previous rules.
+const orderEurosPerTurn = order => Number(order?.wheelEurosPerTurn) === EUROS_PER_TURN ? EUROS_PER_TURN : LEGACY_EUROS_PER_TURN;
 const withinWindow = (wheel, value) => {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) &&
@@ -69,7 +74,7 @@ function eligibleOrderTurns(order, wheel) {
   const originalPaid = cents(order.paidTotal ?? order.total);
   const refunded = order.refund?.status === 'recorded' ? cents(order.refund.amount) : 0;
   const retained = Math.max(0, originalPaid - refunded);
-  return Math.floor(Math.min(productsPaid, retained) / (wheel.eurosPerTurn * 100));
+  return Math.floor(Math.min(productsPaid, retained) / (orderEurosPerTurn(order) * 100));
 }
 
 function eligibleReferrals(database, sponsorId, wheel) {
@@ -103,7 +108,7 @@ function customerWheelState(database, customerId, now = new Date()) {
     adjustmentDue: Math.max(0, spins.length - earned),
     orderTurns: orders.map(order => ({ orderId: order.id,
       available: Math.max(0, (order.payment?.provider === 'promotion' ? Number(order.id === chorusOrder?.id) : eligibleOrderTurns(order, wheel)) - spins.filter(spin => spin.orderId === order.id).length),
-      tier: order.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(order.subtotal) - Number(order.discount || 0))),
+      tier: order.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(order.subtotal) - Number(order.discount || 0)), orderEurosPerTurn(order)),
     })).filter(item => item.available > 0),
     segments: WHEEL_TIERS,
     rules: activeWheel(wheel, now) ? wheel.officialRules : null,
@@ -112,9 +117,14 @@ function customerWheelState(database, customerId, now = new Date()) {
   };
 }
 
-function wheelTierForAmount(amount) {
-  if (amount <= 30) return 'small';
-  if (amount <= 50) return 'medium';
+function wheelTierForAmount(amount, eurosPerTurn = EUROS_PER_TURN) {
+  if (eurosPerTurn === LEGACY_EUROS_PER_TURN) {
+    if (amount <= 30) return 'small';
+    if (amount <= 50) return 'medium';
+    return 'large';
+  }
+  if (amount < 30) return 'small';
+  if (amount < 60) return 'medium';
   return 'large';
 }
 
@@ -142,7 +152,7 @@ function spinWheel(database, customerId, { now = new Date(), requestId, orderId,
   const referral = !orderId && eligibleReferrals(database, customerId, wheel).find(item => !(database.wheelSpins || []).some(spin => spin.customerId === customerId && spin.referralCustomerId === item.id));
   if (!referral && (!earnedForOrder || playedForOrder >= earnedForOrder || chorusAlreadyPlayed))
     throw Object.assign(new Error('Aucun tour disponible pour cette commande payée ou ce parrainage.'), { statusCode: 409 });
-  const tier = referral || sourceOrder.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(sourceOrder.subtotal) - Number(sourceOrder.discount || 0)));
+  const tier = referral || sourceOrder.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(sourceOrder.subtotal) - Number(sourceOrder.discount || 0)), orderEurosPerTurn(sourceOrder));
   let prize = prizeForNumber(randomInt(100), tier);
   const prior = (database.wheelSpins || []).filter(spin => spin.customerId === customerId && spin.prizeId && !spin.revokedAt && spin.redemptionStatus !== 'used' && (!spin.expiresAt || Date.parse(spin.expiresAt) > now.getTime()));
   const matchingCount = prior.filter(spin => spin.prizeId === prize.id).length;
@@ -178,7 +188,7 @@ function spinWheel(database, customerId, { now = new Date(), requestId, orderId,
 
 function reconcileWheelRewards(database, now = new Date()) {
   let changed = false;
-  const wideWindow = { startDate: '1900-01-01', endDate: '2999-12-31', eurosPerTurn: 10 };
+  const wideWindow = { startDate: '1900-01-01', endDate: '2999-12-31' };
   const spins = database.wheelSpins || [];
   const revoke = spin => {
     if (spin.revokedAt) return;
@@ -215,4 +225,4 @@ function reconcileWheelRewards(database, now = new Date()) {
   return changed;
 }
 
-module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder };
+module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder };

@@ -88,7 +88,7 @@ function assertAvailable(db, promotion, customerId, now = Date.now()) {
     const referral = (db.customers || []).find(item => item.id === spin?.referralCustomerId);
     const sourceSpins = (db.wheelSpins || []).filter(item => item.orderId === source?.id && item.customerId === customerId);
     const position = sourceSpins.findIndex(item => item.id === spin?.id);
-    const retainedTurns = source ? eligibleOrderTurns(source, { startDate: '1900-01-01', endDate: '2999-12-31', eurosPerTurn: 10 }) : 0;
+    const retainedTurns = source ? eligibleOrderTurns(source, { startDate: '1900-01-01', endDate: '2999-12-31' }) : 0;
     const validOrder = source && source.customerId === customerId && position >= 0 && position < retainedTurns;
     const validReferral = referral && referral.referredByCustomerId === customerId && referral.referralRewardGrantedAt && !referral.referralRewardRevokedAt;
     if (!spin || spin.revokedAt || !(validOrder || validReferral))

@@ -39,6 +39,7 @@ test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et 
   const order = results[0].data.order;
   assert.equal(order.id, results[1].data.order.id); assert.equal(order.total, 0); assert.equal(order.discount, order.subtotal);
   assert.equal(order.status, 'confirmed'); assert.equal(order.payment.provider, 'promotion'); assert.equal(order.payment.amount, 0);
+  assert.equal(order.wheelEurosPerTurn, 15);
   assert.equal(order.welcomeRewardApplied, false); assert.equal(order.crmOfferId, undefined);
   const saved = await db();
   assert.equal(saved.orders.length, 1); assert.equal(saved.customers[0].welcomeReward.status, 'available');

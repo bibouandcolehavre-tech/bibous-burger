@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { MAX_WHEEL_DISCOUNT_PERCENT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, customerWheelState, eligibleOrderTurns, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
+const { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, customerWheelState, eligibleOrderTurns, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder } = require('./wheel');
 const merchant = require('./merchant-promotions');
 const { applyPromotion } = require('./promo-codes');
 
@@ -14,6 +14,25 @@ test('un tour par tranche complète de 10 € de produits payés, par commande',
     assert.equal(eligibleOrderTurns(order(amount), wheel), expected);
   assert.equal(eligibleOrderTurns(order(9.99, { total: 15.98, deliveryFee: 5.99 }), wheel), 0);
   assert.equal(eligibleOrderTurns(order(22, { discount: 3, total: 25.99, deliveryFee: 5.99 }), wheel), 1);
+});
+
+test('nouvelles commandes : un tour par 15 € payés ; anciens tours et anciens paliers conservés', () => {
+  assert.equal(EUROS_PER_TURN, 15);
+  assert.equal(defaultWheel().eurosPerTurn, 15);
+  for (const [amount, expected] of [[0, 0], [14.99, 0], [15, 1], [29.99, 1], [30, 2], [33.80, 2], [44.99, 2], [45, 3], [60, 4]]) {
+    assert.equal(eligibleOrderTurns(order(amount, { wheelEurosPerTurn: 15 }), wheel), expected, `${amount} €`);
+  }
+  assert.equal(eligibleOrderTurns(order(33.80, { wheelEurosPerTurn: 15, total: 39.79, deliveryFee: 5.99 }), wheel), 2);
+  assert.equal(eligibleOrderTurns(order(33.80, { wheelEurosPerTurn: 15, discount: 4, total: 35.79, deliveryFee: 5.99 }), wheel), 1);
+  assert.equal(eligibleOrderTurns(order(33.80), wheel), 3, 'Une ancienne commande garde ses tours déjà acquis.');
+  for (const [amount, expected] of [[29.99, 'small'], [30, 'medium'], [59.99, 'medium'], [60, 'large']])
+    assert.equal(wheelTierForAmount(amount), expected);
+  assert.equal(wheelTierForAmount(30, 10), 'small');
+  assert.equal(wheelTierForAmount(55, 10), 'large');
+  const db = fixture();
+  db.orders[0] = order(33.80, { wheelEurosPerTurn: 15 });
+  assert.equal(customerWheelState(db, 'c1', now).orderTurns[0].available, 2);
+  assert.equal(customerWheelState(db, 'c1', now).orderTurns[0].tier, 'medium');
 });
 
 test('tour seulement après paiement confirmé, sans attendre la remise', () => {

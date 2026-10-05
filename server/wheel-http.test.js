@@ -13,7 +13,7 @@ test('roue web : uniquement après paiement, deux tours maximum et demande rejou
   const file = path.join(dir, 'data.json');
   const now = new Date();
   const owner = { id: 'customer-1', name: 'Camille Test', firstName: 'Camille', lastName: 'Test', phone: '+33600000000', points: 0 };
-  const paid = { id: 'paid-1', customerId: owner.id, subtotal: 20, discount: 0, total: 20, status: 'confirmed',
+  const paid = { id: 'paid-1', customerId: owner.id, subtotal: 33.80, discount: 0, total: 33.80, wheelEurosPerTurn: 15, status: 'confirmed',
     payment: { status: 'PAID', provider: 'sumup', paidAt: now.toISOString() } };
   const unpaid = { ...paid, id: 'unpaid-1', payment: { status: 'PENDING', provider: 'sumup' } };
   const chorus = { ...paid, id: 'chorus-1', discount: 20, total: 0, paidTotal: 0,
@@ -21,7 +21,7 @@ test('roue web : uniquement après paiement, deux tours maximum et demande rejou
   const gifted = { ...chorus, id: 'gifted-1', promotion: { code: 'GROSLARD' } };
   await fs.writeFile(file, JSON.stringify({ customers: [owner], orders: [paid, unpaid, chorus, gifted], nextOrderNumber: 2,
     wheel: { status: 'published', startDate: parisDateKey(new Date(now.getTime() - 86400000)),
-      endDate: parisDateKey(new Date(now.getTime() + 86400000)), officialRules: 'Règlement de test local.', eurosPerTurn: 10 } }));
+      endDate: parisDateKey(new Date(now.getTime() + 86400000)), officialRules: 'Règlement de test local.', eurosPerTurn: 15 } }));
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
     cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: file, SESSION_SECRET: 'wheel-test-secret' },
     stdio: ['ignore', 'pipe', 'pipe'],
