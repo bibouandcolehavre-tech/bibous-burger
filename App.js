@@ -16,6 +16,7 @@ import CustomerIdentityScreen from './CustomerIdentityScreen';
 import WheelAfterPayment from './WheelAfterPayment';
 const { hasCompleteIdentity } = require('./customer-identity');
 const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
+const { readAuthResponse } = require("./auth-response");
 import RestaurantInfo from "./RestaurantInfo";
 const { bestClientOffer } = require('./crm-client');
 const { observeBrowserFocus } = require('./browser-focus');
@@ -463,7 +464,7 @@ function SmsLoginScreen({ onBack, onAuthenticated, accountFirst = false, onPriva
     setFeedback("");
     try {
       const response = await customerFetch(`${API_BASE_URL}/auth/sms/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: normalizedPhone }) });
-      const payload = await response.json();
+      const payload = await readAuthResponse(response);
       if (!response.ok) throw new Error(payload.error || "Impossible d’envoyer le code.");
       setPhone(normalizedPhone);
       setStep("code");
@@ -479,7 +480,7 @@ function SmsLoginScreen({ onBack, onAuthenticated, accountFirst = false, onPriva
     setLoading(true);
     try {
       const response = await customerFetch(`${API_BASE_URL}/auth/sms/check`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, code, registrationVersion: 2 }) });
-      const payload = await response.json();
+      const payload = await readAuthResponse(response);
       if (!response.ok) throw new Error(payload.error || "Le code est invalide.");
       if (payload.registrationRequired && payload.registrationToken) setRegistrationToken(payload.registrationToken);
       else await onAuthenticated(payload);
