@@ -12,7 +12,7 @@ const label = id => id === 'none' ? '•' : id.startsWith('points') ? '★' : id
 
 // The game is offered only by the web checkout, after the server has confirmed
 // the payment. The server can keep it closed independently of a web release.
-export default function WheelAfterPayment({ api, token, order }) {
+export default function WheelAfterPayment({ api, token, order, accountMode = false, hidePrizes = false, onUpdate }) {
   const [state, setState] = useState(null);
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,7 @@ export default function WheelAfterPayment({ api, token, order }) {
   const pendingId = useRef(null);
   const rotation = useRef(new Animated.Value(0)).current;
   const rotationDegrees = useRef(0);
-  const orderTurns = state?.orderTurns?.find(item => item.orderId === order?.id);
+  const orderTurns = order?.id ? state?.orderTurns?.find(item => item.orderId === order.id) : state?.orderTurns?.[0];
   const turns = (orderTurns?.available || 0) + (state?.availableFromReferrals || 0);
   const segments = state?.segments?.[orderTurns?.tier || 'small'] || [];
   const activePrizes = (state?.prizes || []).filter(prize => prize.code && prize.redemptionStatus === 'active' && Date.parse(prize.expiresAt) > Date.now());
@@ -29,17 +29,17 @@ export default function WheelAfterPayment({ api, token, order }) {
   useEffect(() => {
     setState(null);
     setResult(null);
-    if (Platform.OS !== 'web' || !token || !order?.id || order?.payment?.status !== 'PAID' ||
-      (order?.payment?.provider === 'promotion' && order?.promotion?.code !== 'CHORUS') || order?.reviewMode) return;
+    if (Platform.OS !== 'web' || !token || (!accountMode && (!order?.id || order?.payment?.status !== 'PAID' ||
+      (order?.payment?.provider === 'promotion' && order?.promotion?.code !== 'CHORUS') || order?.reviewMode))) return;
     const controller = new AbortController();
     fetch(`${api}/customer/wheel`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: 'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(value => { if (!controller.signal.aborted) setState(value); })
       .catch(() => {});
     return () => controller.abort();
-  }, [api, token, order?.id, order?.payment?.status, order?.payment?.provider, order?.reviewMode]);
+  }, [api, token, accountMode, order?.id, order?.payment?.status, order?.payment?.provider, order?.reviewMode]);
 
-  if (Platform.OS !== 'web' || (!canSpin && !activePrizes.length && !result)) return null;
+  if (Platform.OS !== 'web' || (!canSpin && (hidePrizes || !activePrizes.length) && !result)) return null;
 
   const spin = async () => {
     if (busy) return;
@@ -51,7 +51,7 @@ export default function WheelAfterPayment({ api, token, order }) {
       const response = await fetch(`${api}/customer/wheel/spin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...(orderTurns?.available ? { orderId: order.id } : {}), requestId: pendingId.current }),
+        body: JSON.stringify({ ...(orderTurns?.available ? { orderId: orderTurns.orderId } : {}), requestId: pendingId.current }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Le tour est momentanément indisponible.');
@@ -70,15 +70,16 @@ export default function WheelAfterPayment({ api, token, order }) {
         rotation.setValue(target);
         setResult(payload.spin);
         setState(payload.state);
+        onUpdate?.(payload.state);
         setBusy(false);
       });
     } catch (cause) { setError(cause.message || 'Réessaie dans un instant.'); setBusy(false); }
   };
 
   return <View style={styles.card}>
-    <Text style={styles.eyebrow}>APRÈS TA COMMANDE</Text>
+    <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'APRÈS TA COMMANDE'}</Text>
     <Text style={styles.title}>{canSpin ? 'Tourne la roue' : 'Tes gains de la roue'}</Text>
-    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à ta commande payée ou à un parrainage validé.`}</Text>
+    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
       <View style={styles.wheelFrame}><Text style={styles.pointer}>▼</Text><Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'], extrapolate: 'extend' }) }] }}><Svg width={220} height={220} viewBox="0 0 220 220">{segments.map(([id, weight], index) => {
         const start = segments.slice(0, index).reduce((sum, item) => sum + item[1], 0) * 3.6;
         const end = start + weight * 3.6;
@@ -87,7 +88,7 @@ export default function WheelAfterPayment({ api, token, order }) {
       })}<Circle cx={110} cy={110} r={39} fill="#FFF7EA" stroke="#315B4B" strokeWidth={5} /><SvgText x={110} y={116} textAnchor="middle" fill="#315B4B" fontSize={28}>✦</SvgText></Svg></Animated.View></View>
       <Pressable accessibilityRole="button" disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue'}</Text></Pressable></> : null}
     {result ? <Text accessibilityLiveRegion="polite" style={styles.result}>{result.label}</Text> : null}
-    {activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir sur une prochaine commande d’au moins 10 € de produits, avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique et non cumulable avec un autre code. Si tu as gagné une boisson ou des frites, ajoute-les au panier. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
+    {!hidePrizes && activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir sur une prochaine commande d’au moins 10 € de produits, avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique et non cumulable avec un autre code. Si tu as gagné une boisson ou des frites, ajoute-les au panier. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
     {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
     <Text style={styles.rules}>{state.rules}</Text>
   </View>;
