@@ -20,7 +20,11 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const pendingId = useRef(null);
   const rotation = useRef(new Animated.Value(0)).current;
   const rotationDegrees = useRef(0);
-  const orderTurns = order?.id ? state?.orderTurns?.find(item => item.orderId === order.id) : state?.orderTurns?.[0];
+  // A new CHORUS checkout must still show an unused test turn earned on an
+  // earlier CHORUS order; it must not create another turn for the same account.
+  const orderTurns = order?.id
+    ? state?.orderTurns?.find(item => item.orderId === order.id) || (order?.promotion?.code === 'CHORUS' ? state?.orderTurns?.[0] : null)
+    : state?.orderTurns?.[0];
   const turns = (orderTurns?.available || 0) + (state?.availableFromReferrals || 0);
   const segments = state?.segments?.[orderTurns?.tier || 'small'] || [];
   const activePrizes = (state?.prizes || []).filter(prize => prize.code && prize.redemptionStatus === 'active' && Date.parse(prize.expiresAt) > Date.now());
@@ -79,7 +83,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   return <View style={styles.card}>
     <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'APRÈS TA COMMANDE'}</Text>
     <Text style={styles.title}>{canSpin ? 'Tourne la roue' : 'Tes gains de la roue'}</Text>
-    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
+    {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? orderTurns.orderId === order.id ? 'Un tour de test offert avec cette commande CHORUS, une seule fois par compte.' : 'Un tour gagné sur une commande précédente est encore disponible ici, sans nouvelle commande.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
       <View style={styles.wheelFrame}><Text style={styles.pointer}>▼</Text><Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'], extrapolate: 'extend' }) }] }}><Svg width={220} height={220} viewBox="0 0 220 220">{segments.map(([id, weight], index) => {
         const start = segments.slice(0, index).reduce((sum, item) => sum + item[1], 0) * 3.6;
         const end = start + weight * 3.6;
