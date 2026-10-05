@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roue Bibou · aperçu local</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --green: #224e41; --sea: #d9ede4; --terra: #bc745d; --cream: #fbf2e4; --ink: #243d35; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 24px 12px; background: #e5ebe6; color: var(--ink); }
+    .phone { width: min(100%, 430px); margin: auto; border: 7px solid #203a32; border-radius: 34px; background: var(--cream); box-shadow: 0 20px 55px #17382d28; overflow: hidden; }
+    header { padding: 17px 22px 13px; display: flex; align-items: center; justify-content: space-between; }
+    header img { display: block; width: 151px; height: 71px; object-fit: contain; filter: brightness(0) saturate(100%) invert(25%) sepia(16%) saturate(1384%) hue-rotate(107deg) brightness(90%); }
+    .demo-pill { background: var(--sea); color: var(--green); border-radius: 999px; padding: 7px 10px; font-size: 11px; font-weight: 800; }
+    main { padding: 0 20px 28px; }
+    .eyebrow { color: var(--terra); font-size: 12px; font-weight: 850; letter-spacing: 1.6px; text-transform: uppercase; }
+    h1 { font-size: clamp(29px, 7vw, 36px); line-height: 1.05; margin: 8px 0 8px; letter-spacing: -.7px; }
+    .intro { line-height: 1.45; font-size: 15px; margin: 0 0 15px; }
+    .wallet { display: flex; gap: 9px; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 18px; color: white; background: var(--green); }
+    .wallet span { font-size: 13px; }
+    .wallet strong { display: block; font-size: 24px; line-height: 1.1; }
+    .spin-area { position: relative; width: min(100%, 302px); margin: 23px auto 11px; aspect-ratio: 1; }
+    .pointer { position: absolute; z-index: 2; top: -8px; left: calc(50% - 13px); width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-top: 27px solid var(--green); filter: drop-shadow(0 2px 1px #0003); }
+    .wheel { width: 100%; height: 100%; border-radius: 50%; border: 10px solid var(--green); box-shadow: 0 7px 0 #18392f, 0 15px 20px #17382d22; background: conic-gradient(from 0deg, var(--sea) 0% 50%, #abd5c5 50% 80%, #e7aa8c 80% 95%, #f3ca88 95% 99%, #fff1ba 99% 100%); transition: transform 2.8s cubic-bezier(.15,.65,.12,1); }
+    .wheel::before { content: ""; position: absolute; inset: 13px; border-radius: 50%; border: 2px dashed #ffffffc0; }
+    .wheel-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 134px; height: 134px; border: 7px solid var(--green); border-radius: 50%; background: var(--cream); display: grid; place-items: center; text-align: center; box-shadow: 0 4px 12px #18392f30; }
+    .wheel-center span { font-size: 33px; line-height: 1; display: block; }
+    .wheel-center b { display: block; font-size: 15px; line-height: 1.08; margin-top: 2px; }
+    .turn-button, .add-button { width: 100%; min-height: 51px; border: 0; border-radius: 14px; color: #fff; font-size: 17px; font-weight: 850; background: var(--terra); }
+    .turn-button:disabled { opacity: .48; }
+    .result { min-height: 53px; text-align: center; padding: 10px 4px; font-weight: 750; color: var(--green); }
+    .result strong { display: block; font-size: 20px; }
+    .scenario { padding: 17px; border-radius: 18px; background: #e5f0e8; }
+    .scenario h2 { font-size: 17px; margin: 0 0 5px; }
+    .scenario p { font-size: 13px; line-height: 1.35; margin: 0 0 12px; }
+    .amount-row { display: flex; gap: 7px; margin-bottom: 10px; }
+    .amount-row button { flex: 1; min-height: 42px; border: 1.5px solid #97b5a6; background: var(--cream); border-radius: 11px; color: var(--green); font-size: 15px; font-weight: 750; }
+    .amount-row button[aria-pressed="true"] { background: var(--green); color: white; border-color: var(--green); }
+    .add-button { background: var(--green); font-size: 14px; }
+    .rules { margin-top: 14px; font-size: 12px; line-height: 1.4; color: #486359; }
+    .rules strong { color: var(--green); }
+    button { cursor: pointer; }
+    button:focus-visible { outline: 3px solid #e5a56e; outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) { .wheel { transition-duration: .01ms; } }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <header>
+      <img src="../assets/bibous-official-wordmark.png" alt="Bibou's Burgers">
+      <span class="demo-pill">APERÇU LOCAL</span>
+    </header>
+    <main>
+      <div class="eyebrow">Club Bibou</div>
+      <h1>Tourne la roue, repars gagnant</h1>
+      <p class="intro">Chaque tranche complète de 10 € de produits payés te donne un tour après remise ou livraison. Un parrainage validé donne aussi un tour.</p>
+      <div class="wallet"><span>TES TOURS DISPONIBLES</span><strong id="turns" aria-live="polite">0</strong></div>
+      <div class="spin-area" role="img" aria-label="Roue Bibou : tous les tours donnent un gain, avec 95 % de points et 5 % de bons à utiliser plus tard.">
+        <div class="pointer"></div>
+        <div class="wheel" id="wheel"></div>
+        <div class="wheel-center"><div><span aria-hidden="true">✦</span><b>100 %<br>gagnant</b></div></div>
+      </div>
+      <button class="turn-button" id="spin" type="button" disabled>Tourner la roue</button>
+      <div class="result" id="result" role="status" aria-live="polite">Simule une commande pour essayer.</div>
+      <div class="scenario">
+        <h2>Essayer sans payer</h2>
+        <p>Choisis un panier fictif, considéré ici comme payé et remis. Rien n'est commandé, débité ou offert pour de vrai.</p>
+        <div class="amount-row" role="group" aria-label="Montant fictif des produits">
+          <button type="button" data-amount="10" aria-pressed="true">10 €</button>
+          <button type="button" data-amount="20" aria-pressed="false">20 €</button>
+          <button type="button" data-amount="30" aria-pressed="false">30 €</button>
+        </div>
+        <button class="add-button" id="credit" type="button">Simuler la commande remise</button>
+      </div>
+      <div class="rules"><strong>Projet de gains :</strong> 50 % · 5 points, 30 % · 10 points, 15 % · 20 points, 4 % · bon de −5 % plafonné à 3 €, 1 % · boisson offerte. Les bons seraient valables 30 jours sur une prochaine commande, sous conditions à confirmer. La roue ne change pas le classement du concours.</div>
+    </main>
+  </div>
+  <script>
+    (() => {
+      const prizes = [
+        { id: 'points-5', label: '+5 points Club Bibou', weight: 50, center: 25 },
+        { id: 'points-10', label: '+10 points Club Bibou', weight: 30, center: 65 },
+        { id: 'points-20', label: '+20 points Club Bibou', weight: 15, center: 87.5 },
+        { id: 'discount-5', label: '−5 % sur ta prochaine commande', weight: 4, center: 97 },
+        { id: 'drink', label: 'Une boisson offerte sur ta prochaine commande', weight: 1, center: 99.5 },
+      ];
+      let amount = 10, turns = 0, rotation = 0, spinning = false;
+      const spinButton = document.getElementById('spin');
+      const result = document.getElementById('result');
+      const wheel = document.getElementById('wheel');
+      function render() { document.getElementById('turns').textContent = String(turns); spinButton.disabled = turns < 1 || spinning; }
+      document.querySelectorAll('[data-amount]').forEach(button => button.addEventListener('click', () => {
+        amount = Number(button.dataset.amount);
+        document.querySelectorAll('[data-amount]').forEach(peer => peer.setAttribute('aria-pressed', String(peer === button)));
+      }));
+      document.getElementById('credit').addEventListener('click', () => {
+        turns += Math.floor(amount / 10);
+        result.textContent = `${Math.floor(amount / 10)} tour${amount > 10 ? 's' : ''} ajouté${amount > 10 ? 's' : ''} pour ce panier fictif.`;
+        render();
+      });
+      spinButton.addEventListener('click', () => {
+        if (turns < 1 || spinning) return;
+        spinning = true; turns--; render(); result.textContent = 'La roue tourne…';
+        const value = Math.floor(Math.random() * 100);
+        let edge = 0;
+        const prize = prizes.find(item => value < (edge += item.weight));
+        const current = ((rotation % 360) + 360) % 360;
+        const target = (360 - prize.center * 3.6) % 360;
+        rotation += 1800 + ((target - current + 360) % 360);
+        wheel.style.transform = `rotate(${rotation}deg)`;
+        window.setTimeout(() => { spinning = false; result.innerHTML = `<strong>Bravo !</strong>${prize.label} · gain fictif`; render(); }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 20 : 2900);
+      });
+    })();
+  </script>
+</body>
+</html>
