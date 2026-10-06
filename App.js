@@ -620,6 +620,7 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
       <Header onBack={onBack} />
+      {reservationDraft && <Text style={styles.deliveryLabel}>RÉSERVER UNE TABLE · ÉTAPE 3 SUR 3</Text>}
       <Text style={styles.title}>{reservationDraft ? 'Repas pour ta table' : 'Ton panier'}</Text>
       {reservationDraft && <Text style={styles.deliveryIntro}>{reservationDraft.dayLabel} · {reservationDraft.slot} · {reservationDraft.guests} personne{reservationDraft.guests > 1 ? 's' : ''}. Le restaurant recevra tes choix pour les préparer à ton arrivée, après paiement confirmé.</Text>}
       {!cart ? <View style={styles.emptyState}><Text style={styles.emptyIcon}>🛍</Text><Text style={styles.emptyTitle}>Ton panier est vide</Text><Text style={styles.emptyText}>Ajoute un burger qui te fait envie.</Text></View> : <>
@@ -642,13 +643,13 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
 
 function ChoiceChip({ label, selected, onPress }) { return <Pressable onPress={onPress} style={[styles.choiceChip, selected && styles.choiceChipSelected]}><Text style={[styles.choiceChipText, selected && styles.choiceChipTextSelected]}>{label}</Text></Pressable>; }
 
-function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReservations, onChooseMeal }) {
-  const [day, setDay] = useState(DEFAULT_DELIVERY_DAY);
-  const [slot, setSlot] = useState(null);
-  const [guests, setGuests] = useState(2);
-  const [name, setName] = useState(customer.name || "");
-  const [phone, setPhone] = useState(customer.phone || "");
-  const [note, setNote] = useState("");
+function ReservationScreen({ customer, authToken, initialDraft, onBack, onCreated, onOpenReservations, onChooseMeal }) {
+  const [day, setDay] = useState(() => UPCOMING_DELIVERY_DAYS.find(item => item.date === initialDraft?.serviceDate) || DEFAULT_DELIVERY_DAY);
+  const [slot, setSlot] = useState(initialDraft?.slot || null);
+  const [guests, setGuests] = useState(initialDraft?.guests || 2);
+  const [name, setName] = useState(initialDraft?.name || customer.name || "");
+  const [phone, setPhone] = useState(initialDraft?.phone || customer.phone || "");
+  const [note, setNote] = useState(initialDraft?.note || "");
   const [reservationMode, setReservationMode] = useState(Platform.OS === 'web' ? 'meal' : 'table');
   const [availability, setAvailability] = useState({});
   const [loadingSlots, setLoadingSlots] = useState(true);
@@ -727,6 +728,53 @@ function ReservationScreen({ customer, authToken, onBack, onCreated, onOpenReser
     const selected = slot === item && !disabled;
     return <Pressable key={item} disabled={disabled} onPress={() => setSlot(item)} style={[styles.slot, selected && styles.slotSelected, disabled && styles.slotDisabled]}><View style={styles.slotRow}><Text style={[styles.slotText, selected && styles.slotTextSelected, (unavailable || full || started) && styles.slotTextFull]}>{item}</Text><View style={styles.slotStatus}><Text style={[styles.slotAvailability, selected && styles.slotAvailabilitySelected, (unavailable || full || started) && styles.slotAvailabilityFull]}>{selected ? "Sélectionné" : status}</Text><View style={[styles.slotCheck, selected && styles.slotCheckSelected]}>{selected && <Text style={styles.slotCheckmark}>✓</Text>}</View></View></View></Pressable>;
   })}</View>{Platform.OS === "web" && <><Text style={styles.deliveryLabel}>TON CHOIX</Text><Pressable accessibilityRole="button" onPress={() => setReservationMode('meal')} style={[styles.reservationInfo, { borderWidth: reservationMode === 'meal' ? 2 : 1, borderColor: reservationMode === 'meal' ? '#315B4B' : '#C7DCCF', backgroundColor: reservationMode === 'meal' ? '#D9EEE5' : '#FFFDF8' }]}><Text style={styles.reservationInfoTitle}>🍔 Je choisis mon repas maintenant</Text><Text style={styles.reservationInfoText}>Choisis dans toute la carte, paie avec SumUp, puis retrouve ta table et ton repas à l’heure réservée.</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setReservationMode('table')} style={[styles.reservationInfo, { borderWidth: reservationMode === 'table' ? 2 : 1, borderColor: reservationMode === 'table' ? '#315B4B' : '#C7DCCF', backgroundColor: reservationMode === 'table' ? '#D9EEE5' : '#FFFDF8' }]}><Text style={styles.reservationInfoTitle}>🍽 Je réserve seulement la table</Text><Text style={styles.reservationInfoText}>Choisis tes plats sur place. La table reste soumise à la confirmation du restaurant, sans empreinte bancaire pour le moment.</Text></Pressable></>}<Text style={styles.deliveryLabel}>TES COORDONNÉES</Text><TextInput value={name} onChangeText={setName} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoComplete="name" /><TextInput value={phone} onChangeText={setPhone} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" /><Text style={styles.deliveryLabel}>UNE PRÉCISION ? (FACULTATIF)</Text><TextInput value={note} onChangeText={setNote} placeholder="Chaise bébé, accessibilité, anniversaire…" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} /><View style={styles.reservationInfo}><Text style={styles.reservationInfoTitle}>{reservationMode === 'meal' ? 'Table + repas' : 'Demande sans paiement'}</Text><Text style={styles.reservationInfoText}>{reservationMode === 'meal' ? 'Aucune réservation ni commande ne sera envoyée avant la validation du paiement. Les plats seront préparés pour ton arrivée.' : 'Ta demande sera transmise au restaurant ; il devra confirmer la table. Aucun paiement ni blocage bancaire à ce stade.'}</Text></View><Pressable disabled={!complete || submitting} onPress={submit} style={[styles.primaryButton, styles.reservationSubmit, (!complete || submitting) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{submitting ? "Envoi en cours…" : reservationMode === "meal" ? "Choisir mon repas" : "Envoyer ma demande"}</Text></Pressable></ScrollView></SafeAreaView>;
+}
+
+function ReservationMealScreen({ draft, cart, customer, catalog, stockMessage, onBack, onProduct, onQuickAdd, onCustomBurger, onCart }) {
+  const [openCategory, setOpenCategory] = useState('menus');
+  const menus = PRODUCTS.filter(product => product.isMenu).map(product => applyProductStock(product, catalog));
+  const burgers = PRODUCTS.filter(product => !product.isMenu).map(product => applyProductStock(product, catalog));
+  const categories = [
+    { id: 'menus', title: 'Nos menus', description: 'Burger + frites + boisson', products: menus },
+    { id: 'burgers', title: 'Nos burgers', description: 'Burgers seuls', products: burgers },
+    { id: 'snacks', title: 'Petites faims', products: SNACK_PRODUCTS.filter(product => !product.id.startsWith('dessert-')).map(product => applyProductStock(product, catalog)) },
+    { id: 'desserts', title: 'Nos desserts', products: DESSERT_PRODUCTS.map(product => applyProductStock(product, catalog)) },
+    { id: 'drinks', title: 'Boissons', products: DRINK_PRODUCTS.map(product => applyProductStock(product, catalog)) },
+  ];
+  const itemCount = cart?.items?.length || 0;
+  const price = cart ? customerOrderPricing(cart.total, 0, customer, false).total : 0;
+  return <SafeAreaView style={styles.safeArea}>
+    <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+      <Header onBack={onBack} />
+      <Text style={styles.deliveryLabel}>RÉSERVER UNE TABLE · ÉTAPE 2 SUR 3</Text>
+      <Text style={styles.title}>Choisis ton repas</Text>
+      <View style={styles.reservationInfo}>
+        <Text style={styles.reservationInfoTitle}>🍽 Ta table</Text>
+        <Text style={styles.reservationInfoText}>{draft.dayLabel} à {draft.slot} · {draft.guests} personne{draft.guests > 1 ? 's' : ''}</Text>
+        <Pressable accessibilityRole="button" onPress={onBack}><Text style={styles.cartRemove}>Modifier la table ou l’heure</Text></Pressable>
+      </View>
+      <Text style={styles.deliveryIntro}>Ouvre une rubrique, choisis tes plats et personnalise-les. Tu restes dans ta réservation ; elle sera confirmée seulement après le paiement.</Text>
+      {stockMessage ? <Text style={styles.stockNotice}>{stockMessage}</Text> : null}
+      {onCustomBurger && <Pressable accessibilityRole="button" onPress={onCustomBurger} style={styles.reservationInfo}>
+        <Text style={styles.reservationInfoTitle}>🍔 Compose ton burger</Text>
+        <Text style={styles.reservationInfoText}>Pain, viande, fromage, sauce et suppléments au choix · dès 9,90 € ›</Text>
+      </Pressable>}
+      {categories.map(category => <View key={category.id} style={{ marginTop: 12 }}>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: openCategory === category.id }} onPress={() => setOpenCategory(current => current === category.id ? null : category.id)} style={[styles.reservationInfo, { backgroundColor: openCategory === category.id ? '#D9EEE5' : '#FFFDF8', borderColor: '#B9D7C8', borderWidth: 1 }] }>
+          <Text style={styles.reservationInfoTitle}>{category.title} {openCategory === category.id ? '⌃' : '⌄'}</Text>
+          {category.description ? <Text style={styles.reservationInfoText}>{category.description}</Text> : null}
+        </Pressable>
+        {openCategory === category.id && <View>{category.products.map(product => product.isMenu || category.id === 'burgers'
+          ? <ProductCard key={product.id} product={product} onPress={onProduct} />
+          : <AccessoryCard key={product.id} product={product} onPress={product.kind === 'duo' ? onProduct : onQuickAdd} />)}</View>}
+      </View>)}
+    </ScrollView>
+    <View style={styles.stickyAction}>
+      <Pressable accessibilityRole="button" disabled={!itemCount} onPress={onCart} style={[styles.primaryButton, !itemCount && styles.primaryButtonDisabled]}>
+        <Text style={styles.primaryButtonText}>{itemCount ? `Voir mon repas · ${itemCount} article${itemCount > 1 ? 's' : ''} · ${money(price)}` : 'Choisis un plat pour continuer'}</Text>
+      </Pressable>
+    </View>
+  </SafeAreaView>;
 }
 
 function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBibouPlus }) {
@@ -1290,7 +1338,7 @@ function AppContent({ onReviewModeChange }) {
     if (current.soldOut) { setStockFeedback(current.stockReason || "Ce produit est momentanément indisponible."); return; }
     setStockFeedback(""); setActiveProduct(current); setScreen("product");
   };
-  const addToCart = (item) => {
+  const addToCart = (item, destination = 'cart') => {
     const problem = cartStockProblem([item], catalog);
     if (problem) { setStockFeedback(problem); return; }
     setStockFeedback("");
@@ -1298,9 +1346,9 @@ function AppContent({ onReviewModeChange }) {
       const items = [...(current?.items || []), { ...item, lineId: `${Date.now()}-${Math.random().toString(36).slice(2)}` }];
       return { items, total: Math.round(items.reduce((sum, entry) => sum + entry.total, 0) * 100) / 100, comment: current?.comment || "", delivery: current?.delivery || (reservationDraft ? { method: 'pickup', fee: 0, day: reservationDraft.serviceDate, date: reservationDraft.serviceDate, dayLabel: reservationDraft.dayLabel, slot: reservationDraft.slot } : { method: preferredMethod, fee: preferredMethod === "pickup" ? 0 : undefined, day: DEFAULT_DELIVERY_DAY.id, date: DEFAULT_DELIVERY_DAY.date, dayLabel: DEFAULT_DELIVERY_DAY.dayLabel, slot: null }) };
     });
-    setScreen("cart");
+    setScreen(destination);
   };
-  const addSimpleToCart = (product) => addToCart({ product, total: product.price, options: [], selections: [] });
+  const addSimpleToCart = (product, destination = 'cart') => addToCart({ product, total: product.price, options: [], selections: [] }, destination);
   const removeFromCart = (lineId) => setCart((current) => {
     const items = current.items.filter((item) => item.lineId !== lineId);
     return items.length ? { ...current, items, total: Math.round(items.reduce((sum, item) => sum + item.total, 0) * 100) / 100 } : null;
@@ -1503,12 +1551,13 @@ function AppContent({ onReviewModeChange }) {
       Alert.alert('Réservation momentanément indisponible', 'Le restaurant ne peut pas encore associer un repas à la table. Réessaie dans un instant ou réserve seulement la table.');
       return;
     }
-    if (cart?.items?.length && typeof window !== 'undefined' && !window.confirm('Ton panier actuel sera remplacé par la précommande de table. Continuer ?')) return;
-    setCart(null);
+    const sameTable = reservationDraft && reservationDraft.serviceDate === draft.serviceDate && reservationDraft.slot === draft.slot && reservationDraft.guests === draft.guests;
+    if (!sameTable && cart?.items?.length && typeof window !== 'undefined' && !window.confirm('Ton panier actuel sera remplacé par la précommande de table. Continuer ?')) return;
+    if (!sameTable) setCart(null);
     setReservationDraft(draft);
     setCustomer((current) => ({ ...current, name: draft.name, phone: draft.phone }));
     setPreferredMethod('pickup');
-    setScreen('menu');
+    setScreen('reservation-meal');
   };
   const startBibouPlus = async () => {
     if (!authToken) { setLoginDestination('bibou-plus'); setScreen('login'); return; }
@@ -1611,14 +1660,15 @@ function AppContent({ onReviewModeChange }) {
   if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
-  if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={addToCart} onBack={() => setScreen("menu")} />;
-  if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen("menu")} onAdd={addToCart} />;
-  if (screen === "cart") return <CartScreen catalog={catalog} cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen("menu")} onAddMore={() => setScreen("menu")} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onCheckout={() => setScreen(reservationDraft ? (authToken ? "details" : "login") : "delivery")} />;
+  if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={(item) => addToCart(item, reservationDraft ? 'reservation-meal' : 'cart')} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} />;
+  if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} onAdd={(item) => addToCart(item, reservationDraft ? 'reservation-meal' : 'cart')} />;
+  if (screen === 'reservation-meal' && reservationDraft) return <ReservationMealScreen draft={reservationDraft} cart={cart} customer={customer} catalog={catalog} stockMessage={stockFeedback || stockMessage} onBack={() => setScreen('reservation')} onProduct={openProduct} onQuickAdd={(product) => addSimpleToCart(product, 'reservation-meal')} onCustomBurger={webCustomBurgerPreview ? () => setScreen('custom-burger-preview') : null} onCart={() => setScreen('cart')} />;
+  if (screen === "cart") return <CartScreen catalog={catalog} cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} onAddMore={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onCheckout={() => setScreen(reservationDraft ? (authToken ? "details" : "login") : "delivery")} />;
   if (screen === "delivery") return <DeliveryScreen cart={cart} customer={customer} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => { if (authToken) setScreen("details"); else { setLoginDestination("details"); setScreen("login"); } }} onOpenBibouPlus={() => { setBibouPlusReturnScreen("delivery"); setScreen("bibou-plus"); }} />;
   if (screen === "identity" && authToken && !isReviewToken(authToken)) return <CustomerIdentityScreen api={API_BASE_URL} authToken={authToken} customer={customer} editing onExit={() => setScreen("details")} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) { setCustomer(current => ({ ...current, ...saved })); setScreen("details"); } }} />;
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} dineIn={Boolean(reservationDraft)} authToken={authToken} onChange={setCustomer} onCommentChange={(comment) => setCart((current) => ({ ...current, comment }))} onBack={() => setScreen(reservationDraft ? "cart" : "delivery")} onContinue={continueWithCustomer} onEditIdentity={() => setScreen("identity")} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen("details")} onPay={pay} onValidatePromo={validatePromo} />;
-  if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
+  if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} />;
   if (screen === "success") return <SuccessScreen order={pendingOrder} token={authToken} api={API_BASE_URL} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
@@ -1629,7 +1679,7 @@ function AppContent({ onReviewModeChange }) {
   if (['offers','crm-welcome'].includes(screen)) return <CustomerOffers key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onboarding={screen === 'crm-welcome'} initialConsent={welcomePersonalizedOffers} onBack={() => setScreen(screen === 'crm-welcome' ? crmWelcomeDestination : 'account')} onUpdated={result => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers, crmPreferences: result.preferences })); }} />;
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
-  if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} onBack={() => setScreen("menu")} onCreated={(reservation) => setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)])} onOpenReservations={() => setScreen("reservations")} onChooseMeal={chooseReservationMeal} />;
+  if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} initialDraft={reservationDraft} onBack={() => { if (reservationDraft) { setReservationDraft(null); setCart(null); } setScreen("menu"); }} onCreated={(reservation) => { setReservationDraft(null); setCart(null); setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)]); }} onOpenReservations={() => setScreen("reservations")} onChooseMeal={chooseReservationMeal} />;
   if (screen === "login") return <SmsLoginScreen accountFirst={loginFromWelcome} onBack={() => { if (loginStartedFromWelcome) { setLoginStartedFromWelcome(false); setLoginFromWelcome(false); setShowNativeWelcome(true); setScreen('menu'); } else setScreen(loginDestination === "account" ? "menu" : loginDestination); }} onAuthenticated={authenticate} />;
   if (screen === "account") return authToken ? <AccountScreen onOpenOffers={() => setScreen("offers")} onOpenNotifications={() => setScreen("notifications")} onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "orders") return <OrdersScreen orders={orders} onDecide={decideAmendment} busy={amendmentBusy} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
