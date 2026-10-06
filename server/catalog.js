@@ -22,6 +22,7 @@ const PRODUCT_CATALOG = {
   pork: { name: "Le Pork", price: 11.9, fixedSauce: "fixed-pork" },
   "custom-burger": { name: "Burger à composer", price: BASE_CENTS / 100, custom: true, category: "burgers" },
   "frites-maison": { name: "Frites maison", price: 3.9, kind: "simple" },
+  "frites-cheddar": { name: "Frites cheddar (sans bacon)", price: 4.9, kind: "simple" },
   "frites-cheddar-bacon": { name: "Frites cheddar bacon", price: 6.9, kind: "simple" },
   "tenders-xl-3": { name: "Tenders XL par 3", price: 6.9, kind: "simple" },
   "menu-solo-tenders": { name: "Menu Solo", price: 9.9, kind: "solo" },
@@ -90,15 +91,20 @@ const OPTIONS = [
   option("extras", "lard", "Lard fumé", 1.5),
   option("extras", "bacon", "Bacon", 1),
   option("sides", "frites", "Portion de frites maison ajoutée", 3.9),
+  option("sides", "frites-cheddar-sans-bacon", "Frites cheddar sans bacon ajoutées", 4.9),
   option("sides", "frites-cheddar", "Frites cheddar bacon ajoutées", 6.9),
   option("sides", "tenders", "3 Tenders ajoutés", 6.9),
   option("menu-fries", "maison", "Frites maison incluses dans le menu", 0),
+  option("menu-fries", "cheddar", "Frites du menu remplacées par des frites cheddar sans bacon", 1),
   option("menu-fries", "cheddar-bacon", "Frites du menu remplacées par des frites cheddar bacon", 2.5),
   option("solo-fries", "maison", "Menu Solo : frites maison incluses", 0),
+  option("solo-fries", "cheddar", "Menu Solo : frites cheddar sans bacon en remplacement", 1),
   option("solo-fries", "cheddar-bacon", "Menu Solo : frites cheddar bacon en remplacement", 2.5),
   option("duo-fries-one", "maison", "Menu Duo · personne 1 : frites maison incluses", 0),
+  option("duo-fries-one", "cheddar", "Menu Duo · personne 1 : frites cheddar sans bacon en remplacement", 1),
   option("duo-fries-one", "cheddar-bacon", "Menu Duo · personne 1 : frites cheddar bacon en remplacement", 2.5),
   option("duo-fries-two", "maison", "Menu Duo · personne 2 : frites maison incluses", 0),
+  option("duo-fries-two", "cheddar", "Menu Duo · personne 2 : frites cheddar sans bacon en remplacement", 1),
   option("duo-fries-two", "cheddar-bacon", "Menu Duo · personne 2 : frites cheddar bacon en remplacement", 2.5),
   option("desserts", "oreo", "Tiramisu Oreo", 3.9),
   option("desserts", "cookie", "Tiramisu cookie", 3.9),
@@ -172,8 +178,8 @@ const optionProductId = ({ groupId, id }) => {
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
   if (groupId === "desserts" || groupId === "menu-desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
-  if (FRIES_CHOICE_GROUPS.has(groupId)) return { maison: "frites-maison", "cheddar-bacon": "frites-cheddar-bacon" }[id];
-  if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
+  if (FRIES_CHOICE_GROUPS.has(groupId)) return { maison: "frites-maison", cheddar: "frites-cheddar", "cheddar-bacon": "frites-cheddar-bacon" }[id];
+  if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar-sans-bacon": "frites-cheddar", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;
     return Object.hasOwn(PRODUCT_CATALOG, productId) ? productId : null;
@@ -255,7 +261,7 @@ const validatedSelections = (product, selections, productId) => {
     // Android v4 has no meat-type selector. An absent choice stays absent: never
     // infer halal/non-halal. Still validate explicit choices from cached clients.
     if (vegetarian && meatType) throw orderInputError('Retire le choix de viande pour la version végétarienne.');
-    if (vegetarian && byGroup['menu-fries']?.length) throw orderInputError('Les frites cheddar bacon ne conviennent pas à la version végétarienne.');
+    if (vegetarian && resolved.some(porkOption)) throw orderInputError('Le bacon de porc ne convient pas à la version végétarienne.');
     if (meatType === 'halal' && (byGroup['menu-fries']?.some(option => option.id === 'cheddar-bacon') || byGroup.sides.some(option => option.id === 'frites-cheddar'))) throw orderInputError('Les frites cheddar bacon contiennent du bacon de porc, non halal. Cette option est indisponible avec une viande halal.');
     if (meatType === 'halal' && (containsPork(productId) || resolved.some(porkOption))) throw orderInputError('Cette recette ou un supplément contient du porc et ne peut pas être commandé en version halal.');
   }

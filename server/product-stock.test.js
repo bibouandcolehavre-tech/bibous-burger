@@ -53,6 +53,20 @@ test("l’option cheddar bacon des menus Solo et Duo suit la rupture commune", (
   assert.equal(catalog.products.find(product => product.id === "menu-duo-tenders").available, true);
 });
 
+test("les frites cheddar sans bacon ont un stock distinct des frites cheddar bacon", () => {
+  const catalog = availabilityCatalog({ "frites-cheddar": false });
+  assert.equal(catalog.products.find(product => product.id === "frites-cheddar").available, false);
+  assert.equal(catalog.products.find(product => product.id === "frites-cheddar-bacon").available, true);
+  assert.equal(catalog.options["sides:frites-cheddar-sans-bacon"], false);
+  assert.equal(catalog.options["sides:frites-cheddar"], true);
+  for (const groupId of ["menu-fries", "solo-fries", "duo-fries-one", "duo-fries-two"]) {
+    assert.equal(catalog.options[`${groupId}:cheddar`], false);
+    assert.equal(catalog.options[`${groupId}:cheddar-bacon`], true);
+  }
+  assert.equal(catalog.products.find(product => product.id === "menu-solo-tenders").available, true);
+  assert.equal(catalog.products.find(product => product.id === "menu-duo-tenders").available, true);
+});
+
 test("les suppléments ont leur propre stock et la galette végétarienne partage le même réglage", () => {
   const stock = { "ingredient-raclette": false, "ingredient-potato-patty": false };
   const catalog = availabilityCatalog(stock);

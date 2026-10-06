@@ -126,7 +126,9 @@ function actionMarkup(order) {
 function orderItemMarkup(item) {
   const categories = [
     ["protein", "Protéine"], ["meat-type", "Choix de viande"], ["salad", "Crudités"], ["sauces", "Sauces"],
-    ["extras", "Suppléments"], ["menu-fries", "Frites du menu"], ["sides", "Accompagnements"], ["drink", "Boisson"],
+    ["extras", "Suppléments"], ["menu-fries", "Frites du menu"], ["solo-fries", "Frites du Menu Solo"],
+    ["duo-fries-one", "Frites · personne 1"], ["duo-fries-two", "Frites · personne 2"],
+    ["sides", "Accompagnements"], ["drink", "Boisson"],
     ["duo-drink-one", "Boisson 1"], ["duo-drink-two", "Boisson 2"], ["desserts", "Desserts"],
     ["other", "Autres choix"]
   ];
