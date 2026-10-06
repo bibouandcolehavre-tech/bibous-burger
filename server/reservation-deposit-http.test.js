@@ -1,0 +1,78 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { once } = require('node:events');
+const { createCustomerSession } = require('./customer-session');
+const { parisDateKey } = require('./availability');
+
+test('réservation sans repas : 10 € par personne, vérification SumUp, remboursement uniquement manuel', { timeout: 20000 }, async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-table-deposit-'));
+  const databaseFile = path.join(directory, 'data.json');
+  const providerFile = path.join(directory, 'sumup.json');
+  const customer = { id: 'customer-deposit', name: 'Camille Test', phone: '+33600000000', points: 0 };
+  await fs.writeFile(databaseFile, JSON.stringify({ customers: [customer], orders: [], reservations: [], nextOrderNumber: 1, nextReservationNumber: 1 }));
+  await fs.writeFile(providerFile, JSON.stringify({ checkouts: {} }));
+  const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/sumup-provider.cjs'), path.join(__dirname, 'server.js')], {
+    cwd: directory,
+    env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', LISTEN_HOST: '127.0.0.1', DATA_FILE_PATH: databaseFile, FAKE_SUMUP_FILE: providerFile, RESTAURANT_DASHBOARD_PASSWORD: 'test-only', SESSION_SECRET: 'test-secret', GOOGLE_MAPS_API_KEY: 'FAKE', SUMUP_API_KEY: 'FAKE', SUMUP_MERCHANT_CODE: 'TEST', SUMUP_RETURN_URL: 'https://example.invalid/return', SUMUP_REDIRECT_URL: 'https://example.invalid/app' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(directory, { recursive: true, force: true }); });
+  const base = await new Promise((resolve, reject) => {
+    let output = '', errors = '';
+    child.stderr.on('data', data => { errors += data; });
+    child.stdout.on('data', data => { output += data; const match = output.match(/http:\/\/localhost:(\d+)/); if (match) resolve(`${match[0]}/api`); });
+    child.on('error', reject);
+    child.on('exit', code => reject(new Error(`Test API exit ${code}: ${errors}`)));
+  });
+  const token = createCustomerSession(customer.id, 'test-secret');
+  const request = async (route, { body, method = 'GET', auth = token } = {}) => {
+    const response = await fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    return { status: response.status, data: response.status === 204 ? {} : await response.json() };
+  };
+  const admin = (await request('/dashboard/auth/login', { method: 'POST', body: { password: 'test-only' } })).data.token;
+  const serviceDate = parisDateKey(new Date(Date.now() + 86400000));
+  const body = { requestId: 'reservation-deposit-test-0001', name: 'Camille Test', phone: '0600000000', guests: 2, serviceDate, slot: '19:00', slotGrid: 20, note: '' };
+  assert.equal((await request('/health')).data.capabilities.reservationDeposits, 1);
+  const created = await request('/reservations/deposit-checkout', { method: 'POST', body });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  assert.equal(created.data.reservation.amount, 20);
+  assert.equal(created.data.reservation.status, 'awaiting_payment');
+  assert.equal((await request('/reservations/deposit-checkout', { method: 'POST', body })).data.reservation.id, created.data.reservation.id);
+  assert.equal((await request('/reservations/deposit-checkout', { method: 'POST', body: { ...body, guests: 4 } })).status, 409);
+  assert.equal((await request('/customer/reservations')).data.reservations.length, 0);
+  assert.equal((await request('/dashboard/reservations', { auth: admin })).data.reservations.length, 0);
+  const provider = JSON.parse(await fs.readFile(providerFile, 'utf8'));
+  const [checkoutId] = Object.keys(provider.checkouts);
+  assert.equal(provider.checkouts[checkoutId].amount, 20);
+  assert.equal((await request('/payments/sumup-return', { method: 'POST', auth: '', body: { id: checkoutId, status: 'PAID' } })).status, 204);
+  assert.equal((await request('/customer/reservations')).data.reservations.length, 0);
+  provider.checkouts[checkoutId].status = 'PAID';
+  await fs.writeFile(providerFile, JSON.stringify(provider));
+  const verified = await request(`/reservations/deposit-checkout/${created.data.reservation.id}`);
+  assert.equal(verified.status, 200, JSON.stringify(verified.data));
+  assert.equal(verified.data.reservation.status, 'pending');
+  assert.equal((await request('/dashboard/reservations', { auth: admin })).data.reservations[0].deposit.amount, 20);
+  assert.equal((await request('/customer/reservations')).data.reservations[0].id, created.data.reservation.id);
+  assert.equal((await request('/dashboard/orders', { auth: admin })).data.orders.length, 0);
+  assert.equal((await request(`/dashboard/reservations/${created.data.reservation.id}/deposit-refund-record`, { method: 'POST', auth: '', body: { confirmedInSumUp: true } })).status, 401);
+  assert.equal((await request(`/dashboard/reservations/${created.data.reservation.id}/deposit-refund-record`, { method: 'POST', auth: admin, body: { confirmedInSumUp: false } })).status, 400);
+  assert.equal((await request(`/dashboard/reservations/${created.data.reservation.id}/deposit-refund-record`, { method: 'POST', auth: admin, body: { confirmedInSumUp: true } })).status, 200);
+  const saved = JSON.parse(await fs.readFile(databaseFile, 'utf8'));
+  assert.equal(saved.reservations[0].deposit.refundStatus, 'recorded');
+  assert.equal(saved.customers[0].points, 0);
+  assert.equal(saved.orders.length, 0);
+  const another = await request('/reservations/deposit-checkout', { method: 'POST', body: { ...body, requestId: 'reservation-deposit-test-0002', slot: '19:20', guests: 1, amount: 0.01 } });
+  assert.equal(another.status, 201, JSON.stringify(another.data));
+  assert.equal(another.data.reservation.amount, 10);
+  const providerAfter = JSON.parse(await fs.readFile(providerFile, 'utf8'));
+  const secondCheckoutId = Object.keys(providerAfter.checkouts).at(-1);
+  providerAfter.checkouts[secondCheckoutId].amount = 0.01;
+  providerAfter.checkouts[secondCheckoutId].status = 'PAID';
+  await fs.writeFile(providerFile, JSON.stringify(providerAfter));
+  assert.equal((await request(`/reservations/deposit-checkout/${another.data.reservation.id}`)).status, 502);
+  assert.equal((await request('/dashboard/reservations', { auth: admin })).data.reservations.length, 1);
+});

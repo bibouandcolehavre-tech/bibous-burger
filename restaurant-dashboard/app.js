@@ -105,7 +105,7 @@ function orderFromApi(order) {
 }
 
 function reservationFromApi(reservation) {
-  return { id: reservation.number, apiId: reservation.id, orderNumber: reservation.orderNumber, customer: reservation.customerName, phone: reservation.phone, guests: reservation.guests, serviceDate: reservation.serviceDate, date: serviceDateLabel(reservation.serviceDate), slot: reservation.slot, note: reservation.note || "", status: reservation.status, receivedAt: receivedTimeLabel(reservation.createdAt) };
+  return { id: reservation.number, apiId: reservation.id, orderNumber: reservation.orderNumber, customer: reservation.customerName, phone: reservation.phone, guests: reservation.guests, serviceDate: reservation.serviceDate, date: serviceDateLabel(reservation.serviceDate), slot: reservation.slot, note: reservation.note || "", status: reservation.status, receivedAt: receivedTimeLabel(reservation.createdAt), deposit: reservation.deposit || null, depositPaymentStatus: reservation.payment?.status || null, depositReference: reservation.payment?.checkoutReference || null };
 }
 
 function rewardClaimFromApi(claim) {
@@ -431,12 +431,20 @@ function reservationActions(reservation) {
   return "";
 }
 
+function reservationDepositInfo(reservation) {
+  if (!reservation.deposit || reservation.depositPaymentStatus !== 'PAID') return '';
+  const paid = `<p class="reservation-note">Paiement SumUp encaissé : <strong>${euro(reservation.deposit.amount)}</strong> · Référence ${escapeHtml(reservation.depositReference || 'à retrouver dans SumUp')}. Ce n’est pas une empreinte bancaire.</p>`;
+  if (reservation.deposit.refundStatus === 'recorded') return `${paid}<p class="reservation-note">Remboursement manuel signalé comme effectué.</p>`;
+  return `${paid}<p class="reservation-note">Remboursement manuel à effectuer dans SumUp après la venue ou selon la décision du restaurant. L’annulation de la table ne rembourse pas automatiquement.</p><div class="actions"><button class="confirm-reservation" data-deposit-refund-id="${escapeHtml(reservation.apiId)}">J’ai remboursé dans SumUp</button></div>`;
+}
+
 function renderReservations() {
   const today = todayDateKey();
   const visible = reservations.filter((reservation) => reservationFilter === "all" || (reservationFilter === "today" ? reservation.serviceDate === today : reservation.serviceDate >= today && reservation.status !== "cancelled"));
   const sorted = [...visible].sort((a, b) => ((a.status === "pending" ? -1 : 1) - (b.status === "pending" ? -1 : 1)) || `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
-  document.querySelector("#reservations-list").innerHTML = sorted.length ? sorted.map((reservation) => `<article class="reservation-card ${escapeHtml(reservation.status)}"><div class="reservation-grid"><div><div class="reservation-name">Réservation #${reservation.id} · ${escapeHtml(reservation.customer)}</div><div class="reservation-phone">☎ ${escapeHtml(reservation.phone)}${reservation.receivedAt ? ` · Reçue à ${escapeHtml(reservation.receivedAt)}` : ""}</div></div><div><div class="reservation-when">${escapeHtml(reservation.date)} · ${escapeHtml(reservation.slot)}</div><div class="reservation-guests">${reservation.guests} personne${reservation.guests > 1 ? "s" : ""}</div></div><div><span class="status ${escapeHtml(reservation.status)}">${reservationStatusLabel[reservation.status] || "À confirmer"}</span></div></div>${reservation.note ? `<p class="reservation-note">Note : ${escapeHtml(reservation.note)}</p>` : ""}${reservationActions(reservation)}</article>`).join("") : `<div class="empty">🍽<strong>Aucune réservation</strong>Les demandes de table apparaîtront ici.</div>`;
+  document.querySelector("#reservations-list").innerHTML = sorted.length ? sorted.map((reservation) => `<article class="reservation-card ${escapeHtml(reservation.status)}"><div class="reservation-grid"><div><div class="reservation-name">Réservation #${reservation.id} · ${escapeHtml(reservation.customer)}</div><div class="reservation-phone">☎ ${escapeHtml(reservation.phone)}${reservation.receivedAt ? ` · Reçue à ${escapeHtml(reservation.receivedAt)}` : ""}</div></div><div><div class="reservation-when">${escapeHtml(reservation.date)} · ${escapeHtml(reservation.slot)}</div><div class="reservation-guests">${reservation.guests} personne${reservation.guests > 1 ? "s" : ""}</div></div><div><span class="status ${escapeHtml(reservation.status)}">${reservationStatusLabel[reservation.status] || "À confirmer"}</span></div></div>${reservation.note ? `<p class="reservation-note">Note : ${escapeHtml(reservation.note)}</p>` : ""}${reservationDepositInfo(reservation)}${reservationActions(reservation)}</article>`).join("") : `<div class="empty">🍽<strong>Aucune réservation</strong>Les demandes de table apparaîtront ici.</div>`;
   document.querySelectorAll("[data-reservation-action]").forEach((button) => button.addEventListener("click", () => changeReservation(button.dataset.id, button.dataset.reservationAction)));
+  document.querySelectorAll('[data-deposit-refund-id]').forEach(button => button.addEventListener('click', () => recordDepositRefund(button.dataset.depositRefundId)));
 }
 
 function renderRewardClaims() {
@@ -528,7 +536,7 @@ async function changeOrder(id, status) {
 async function changeReservation(id, status) {
   const reservation = reservations.find((item) => item.apiId === id);
   if (!reservation) return;
-  if (status === "cancelled" && !window.confirm("Confirmez-vous le refus ou l’annulation de cette réservation ?")) return;
+  if (status === "cancelled" && !window.confirm(reservation.deposit && reservation.depositPaymentStatus === 'PAID' ? "Confirmez-vous l’annulation ? Le paiement de réservation reste encaissé : traitez séparément son remboursement dans SumUp." : "Confirmez-vous le refus ou l’annulation de cette réservation ?")) return;
   const previousStatus = reservation.status;
   reservation.status = status;
   refreshMetrics();
@@ -544,6 +552,20 @@ async function changeReservation(id, status) {
     renderReservations();
     showToast("La mise à jour n’a pas été enregistrée.");
   }
+}
+
+async function recordDepositRefund(id) {
+  const reservation = reservations.find(item => item.apiId === id);
+  if (!reservation?.deposit || reservation.deposit.refundStatus === 'recorded') return;
+  if (!window.confirm(`As-tu déjà remboursé ${euro(reservation.deposit.amount)} dans SumUp ? Ce bouton l’enregistre seulement dans le back-office ; il ne déclenche pas le remboursement.`)) return;
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/reservations/${encodeURIComponent(id)}/deposit-refund-record`, { method: 'POST', headers: dashboardHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ confirmedInSumUp: true }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Enregistrement impossible.');
+    reservation.deposit = payload.reservation.deposit;
+    renderReservations();
+    showToast('Remboursement manuel enregistré.');
+  } catch { showToast('Enregistrement impossible. Vérifiez dans SumUp avant de réessayer.'); }
 }
 
 async function changeRewardClaim(id, status) {

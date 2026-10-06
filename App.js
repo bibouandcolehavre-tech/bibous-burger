@@ -30,6 +30,7 @@ const { slotAlreadyStarted } = require('./client-slots');
 const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
 const { shouldShowPartnerLaunch } = require('./partner-launch-policy');
+const { supportsNewCustomerJourneys, supportsRankingContest } = require('./customer-experience-policy');
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
@@ -124,7 +125,7 @@ const webWelcomePreview = Platform.OS === "web" && typeof window !== "undefined"
 const webWelcomeOnOpen = Platform.OS === "web" && typeof window !== "undefined" &&
   initialScreenFromUrl() === "menu";
 const welcomeEnabled = nativeAccountFirst || webWelcomePreview || webWelcomeOnOpen;
-const webCustomBurgerPreview = Platform.OS === "web";
+const webCustomBurgerPreview = supportsNewCustomerJourneys(Platform.OS);
 
 const PRODUCTS = [
   { id: "taurus", name: "Le Taurus", price: 16.9, isMenu: true, image: taurusPhoto, description: "Pain brioché maison au charbon végétal, pesto rosso, jambon de Parme, mozzarella fondante, roquette, tomates fraîches, oignons caramélisés et cornichons.", detail: "Un pain brioché maison au charbon végétal, garni de pesto rosso, jambon de Parme, mozzarella fondante, roquette, tomates fraîches, oignons caramélisés et cornichons : une création méditerranéenne généreuse et pleine de caractère." },
@@ -513,7 +514,7 @@ function ReservationsScreen({ reservations, onBack, onRefresh }) {
   const history = reservations.filter((reservation) => !upcoming.includes(reservation));
   const card = (reservation) => {
     const status = reservationStatus[reservation.status] || reservationStatus.pending;
-    return <View key={reservation.id} style={styles.customerReservationCard}><View style={[styles.customerReservationIcon, { backgroundColor: status.background }]}><Text style={[styles.customerReservationIconText, { color: status.color }]}>{status.icon}</Text></View><View style={styles.customerReservationCopy}><Text style={styles.customerReservationTitle}>{reservation.dateLabel} · {reservation.slot.slice(0, 5)}</Text><Text style={styles.customerReservationMeta}>{reservation.guests} personne{reservation.guests > 1 ? "s" : ""} · Réservation n°{reservation.number}</Text><Text style={[styles.customerReservationStatus, { color: status.color }]}>{status.label} · {status.message}</Text></View></View>;
+    return <View key={reservation.id} style={styles.customerReservationCard}><View style={[styles.customerReservationIcon, { backgroundColor: status.background }]}><Text style={[styles.customerReservationIconText, { color: status.color }]}>{status.icon}</Text></View><View style={styles.customerReservationCopy}><Text style={styles.customerReservationTitle}>{reservation.dateLabel} · {reservation.slot.slice(0, 5)}</Text><Text style={styles.customerReservationMeta}>{reservation.guests} personne{reservation.guests > 1 ? "s" : ""} · Réservation n°{reservation.number}</Text><Text style={[styles.customerReservationStatus, { color: status.color }]}>{status.label} · {status.message}</Text>{reservation.deposit && <Text style={styles.customerReservationMeta}>{money(reservation.deposit.amount)} payés · {reservation.deposit.refundStatus === 'recorded' ? 'Le restaurant indique avoir remboursé dans SumUp' : 'Remboursement manuel par le restaurant'}</Text>}</View></View>;
   };
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes réservations</Text><Text style={styles.deliveryIntro}>Retrouve ici les demandes associées à ton numéro de téléphone. Leur statut s’actualise automatiquement.</Text><Pressable onPress={() => onRefresh(false)} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser maintenant</Text><Text style={styles.simulateHint}>Mise à jour automatique toutes les 10 secondes</Text></Pressable><Text style={styles.sectionTitle}>À venir</Text>{upcoming.length ? upcoming.map(card) : <View style={styles.emptyReservationState}><Text style={styles.emptyIcon}>🍽</Text><Text style={styles.emptyTitle}>Aucune table à venir</Text><Text style={styles.emptyText}>Tu peux réserver depuis l’accueil.</Text></View>}{history.length > 0 && <><Text style={styles.sectionTitle}>Historique</Text>{history.map(card)}</>}</ScrollView></SafeAreaView>;
 }
@@ -643,14 +644,14 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
 
 function ChoiceChip({ label, selected, onPress }) { return <Pressable onPress={onPress} style={[styles.choiceChip, selected && styles.choiceChipSelected]}><Text style={[styles.choiceChipText, selected && styles.choiceChipTextSelected]}>{label}</Text></Pressable>; }
 
-function ReservationScreen({ customer, authToken, initialDraft, onBack, onCreated, onOpenReservations, onChooseMeal }) {
+function ReservationScreen({ customer, authToken, initialDraft, onBack, onCreated, onOpenReservations, onChooseMeal, onPayDeposit }) {
   const [day, setDay] = useState(() => UPCOMING_DELIVERY_DAYS.find(item => item.date === initialDraft?.serviceDate) || DEFAULT_DELIVERY_DAY);
   const [slot, setSlot] = useState(initialDraft?.slot || null);
   const [guests, setGuests] = useState(initialDraft?.guests || 2);
   const [name, setName] = useState(initialDraft?.name || customer.name || "");
   const [phone, setPhone] = useState(initialDraft?.phone || customer.phone || "");
   const [note, setNote] = useState(initialDraft?.note || "");
-  const [reservationMode, setReservationMode] = useState(Platform.OS === 'web' ? 'meal' : 'table');
+  const [reservationMode, setReservationMode] = useState(supportsNewCustomerJourneys(Platform.OS) ? 'meal' : 'table');
   const [availability, setAvailability] = useState({});
   const [loadingSlots, setLoadingSlots] = useState(true);
   const [slotError, setSlotError] = useState(false);
@@ -701,6 +702,12 @@ function ReservationScreen({ customer, authToken, initialDraft, onBack, onCreate
       finally { setSubmitting(false); }
       return;
     }
+    if (supportsNewCustomerJourneys(Platform.OS)) {
+      setSubmitting(true);
+      try { await onPayDeposit({ customerId: customer.id, name: name.trim(), phone: phone.trim(), guests, serviceDate: day.date, slot, note: note.trim(), slotGrid: 20 }); }
+      finally { setSubmitting(false); }
+      return;
+    }
     setSubmitting(true);
     try {
       const headers = { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) };
@@ -718,7 +725,7 @@ function ReservationScreen({ customer, authToken, initialDraft, onBack, onCreate
 
   const slotsReady = !loadingSlots && !slotError && slotsDate === day.date;
   const complete = name.trim().length > 1 && phone.trim().length >= 10 && Boolean(slot) && slotsReady && Boolean(availability[slot]) && !availability[slot].unavailable && !availability[slot].full && !slotAlreadyStarted(day.date, slot, clockNow);
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 20 minutes. Merci d’arriver à l’heure réservée. {Platform.OS === "web" ? "Tu peux choisir ton repas avant de venir ou réserver seulement la table." : "Le restaurant confirmera ta demande de table."}</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par créneau de 20 minutes. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : day.slots).map((item) => {
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><Text style={styles.title}>Réserver une table</Text><Text style={styles.deliveryIntro}>Choisis une heure d’arrivée précise, toutes les 20 minutes. Merci d’arriver à l’heure réservée. {supportsNewCustomerJourneys(Platform.OS) ? "Tu peux choisir ton repas avant de venir ou réserver seulement la table." : "Le restaurant confirmera ta demande de table."}</Text><Text style={styles.deliveryLabel}>NOMBRE DE PERSONNES · 4 MAXIMUM</Text><View style={styles.guestCounter}><Pressable disabled={guests <= 1} onPress={() => setGuests((value) => value - 1)} style={[styles.guestButton, guests <= 1 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>−</Text></Pressable><View style={styles.guestCount}><Text style={styles.guestCountNumber}>{guests}</Text><Text style={styles.guestCountLabel}>personne{guests > 1 ? "s" : ""}</Text></View><Pressable disabled={guests >= 4} onPress={() => setGuests((value) => value + 1)} style={[styles.guestButton, guests >= 4 && styles.guestButtonDisabled]}><Text style={styles.guestButtonText}>+</Text></Pressable></View><Text style={styles.deliveryLabel}>JOUR</Text><View style={styles.dayRow}>{UPCOMING_DELIVERY_DAYS.map((item) => <ChoiceChip key={item.date} label={item.label} selected={day.date === item.date} onPress={() => { autoAdvance.current = false; setDay(item); setSlot(null); }} />)}</View><Text style={styles.deliveryLabel}>HEURE D’ARRIVÉE · {day.dayLabel.toUpperCase()}</Text><Text style={styles.deliveryIntro}>Deux réservations maximum par créneau de 20 minutes. Jusqu’à quatre personnes par réservation.</Text>{slotError && <Pressable onPress={() => setSlotRetry(value => value + 1)}><Text style={styles.availabilityError}>Horaires indisponibles. Appuie ici pour réessayer.</Text></Pressable>}<View style={styles.slots}>{(slotsReady ? Object.keys(availability).sort() : day.slots).map((item) => {
     const slotInfo = availability[item];
     const unavailable = Boolean(slotInfo?.unavailable);
     const full = Boolean(slotInfo?.full);
@@ -727,7 +734,7 @@ function ReservationScreen({ customer, authToken, initialDraft, onBack, onCreate
     const status = !slotsReady ? "À vérifier" : slotInfo?.closed ? "Fermé" : unavailable || started ? "Passé" : full ? "Complet" : slotInfo ? `${slotInfo.remaining} réservation${slotInfo.remaining > 1 ? "s" : ""} possible${slotInfo.remaining > 1 ? "s" : ""}` : "Indisponible";
     const selected = slot === item && !disabled;
     return <Pressable key={item} disabled={disabled} onPress={() => setSlot(item)} style={[styles.slot, selected && styles.slotSelected, disabled && styles.slotDisabled]}><View style={styles.slotRow}><Text style={[styles.slotText, selected && styles.slotTextSelected, (unavailable || full || started) && styles.slotTextFull]}>{item}</Text><View style={styles.slotStatus}><Text style={[styles.slotAvailability, selected && styles.slotAvailabilitySelected, (unavailable || full || started) && styles.slotAvailabilityFull]}>{selected ? "Sélectionné" : status}</Text><View style={[styles.slotCheck, selected && styles.slotCheckSelected]}>{selected && <Text style={styles.slotCheckmark}>✓</Text>}</View></View></View></Pressable>;
-  })}</View>{Platform.OS === "web" && <><Text style={styles.deliveryLabel}>TON CHOIX</Text><Pressable accessibilityRole="button" onPress={() => setReservationMode('meal')} style={[styles.reservationInfo, { borderWidth: reservationMode === 'meal' ? 2 : 1, borderColor: reservationMode === 'meal' ? '#315B4B' : '#C7DCCF', backgroundColor: reservationMode === 'meal' ? '#D9EEE5' : '#FFFDF8' }]}><Text style={styles.reservationInfoTitle}>🍔 Je choisis mon repas maintenant</Text><Text style={styles.reservationInfoText}>Choisis dans toute la carte, paie avec SumUp, puis retrouve ta table et ton repas à l’heure réservée.</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setReservationMode('table')} style={[styles.reservationInfo, { borderWidth: reservationMode === 'table' ? 2 : 1, borderColor: reservationMode === 'table' ? '#315B4B' : '#C7DCCF', backgroundColor: reservationMode === 'table' ? '#D9EEE5' : '#FFFDF8' }]}><Text style={styles.reservationInfoTitle}>🍽 Je réserve seulement la table</Text><Text style={styles.reservationInfoText}>Choisis tes plats sur place. La table reste soumise à la confirmation du restaurant, sans empreinte bancaire pour le moment.</Text></Pressable></>}<Text style={styles.deliveryLabel}>TES COORDONNÉES</Text><TextInput value={name} onChangeText={setName} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoComplete="name" /><TextInput value={phone} onChangeText={setPhone} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" /><Text style={styles.deliveryLabel}>UNE PRÉCISION ? (FACULTATIF)</Text><TextInput value={note} onChangeText={setNote} placeholder="Chaise bébé, accessibilité, anniversaire…" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} /><View style={styles.reservationInfo}><Text style={styles.reservationInfoTitle}>{reservationMode === 'meal' ? 'Table + repas' : 'Demande sans paiement'}</Text><Text style={styles.reservationInfoText}>{reservationMode === 'meal' ? 'Aucune réservation ni commande ne sera envoyée avant la validation du paiement. Les plats seront préparés pour ton arrivée.' : 'Ta demande sera transmise au restaurant ; il devra confirmer la table. Aucun paiement ni blocage bancaire à ce stade.'}</Text></View><Pressable disabled={!complete || submitting} onPress={submit} style={[styles.primaryButton, styles.reservationSubmit, (!complete || submitting) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{submitting ? "Envoi en cours…" : reservationMode === "meal" ? "Choisir mon repas" : "Envoyer ma demande"}</Text></Pressable></ScrollView></SafeAreaView>;
+  })}</View>{supportsNewCustomerJourneys(Platform.OS) && <><Text style={styles.deliveryLabel}>TON CHOIX</Text><Pressable accessibilityRole="button" onPress={() => setReservationMode('meal')} style={[styles.reservationInfo, { borderWidth: reservationMode === 'meal' ? 2 : 1, borderColor: reservationMode === 'meal' ? '#315B4B' : '#C7DCCF', backgroundColor: reservationMode === 'meal' ? '#D9EEE5' : '#FFFDF8' }]}><Text style={styles.reservationInfoTitle}>🍔 Je choisis mon repas maintenant</Text><Text style={styles.reservationInfoText}>Choisis dans toute la carte, paie avec SumUp, puis retrouve ta table et ton repas à l’heure réservée.</Text></Pressable><Pressable accessibilityRole="button" onPress={() => setReservationMode('table')} style={[styles.reservationInfo, { borderWidth: reservationMode === 'table' ? 2 : 1, borderColor: reservationMode === 'table' ? '#315B4B' : '#C7DCCF', backgroundColor: reservationMode === 'table' ? '#D9EEE5' : '#FFFDF8' }]}><Text style={styles.reservationInfoTitle}>🍽 Je réserve seulement la table</Text><Text style={styles.reservationInfoText}>Paie 10 € par personne avec SumUp pour envoyer ta demande. Ce paiement sera remboursé manuellement par le restaurant ; ce n’est pas une empreinte bancaire.</Text></Pressable></>}<Text style={styles.deliveryLabel}>TES COORDONNÉES</Text><TextInput value={name} onChangeText={setName} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoComplete="name" /><TextInput value={phone} onChangeText={setPhone} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" /><Text style={styles.deliveryLabel}>UNE PRÉCISION ? (FACULTATIF)</Text><TextInput value={note} onChangeText={setNote} placeholder="Chaise bébé, accessibilité, anniversaire…" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} /><View style={styles.reservationInfo}><Text style={styles.reservationInfoTitle}>{reservationMode === 'meal' ? 'Table + repas' : supportsNewCustomerJourneys(Platform.OS) ? 'Paiement de réservation' : 'Demande sans paiement'}</Text><Text style={styles.reservationInfoText}>{reservationMode === 'meal' ? 'Aucune réservation ni commande ne sera envoyée avant la validation du paiement. Les plats seront préparés pour ton arrivée.' : supportsNewCustomerJourneys(Platform.OS) ? `Tu paies 10 € par personne maintenant, soit ${money(guests * 10)}. La demande de table n’est envoyée qu’après confirmation de SumUp. Le remboursement sera effectué manuellement par le restaurant ; contacte-le si tu annules.` : 'Ta demande sera transmise au restaurant ; il devra confirmer la table. Aucun paiement ni blocage bancaire à ce stade.'}</Text></View><Pressable disabled={!complete || submitting} onPress={submit} style={[styles.primaryButton, styles.reservationSubmit, (!complete || submitting) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{submitting ? "Envoi en cours…" : reservationMode === "meal" ? "Choisir mon repas" : supportsNewCustomerJourneys(Platform.OS) ? `Payer ${money(guests * 10)} et demander la table` : 'Envoyer ma demande'}</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
 function ReservationMealScreen({ draft, cart, customer, catalog, stockMessage, onBack, onProduct, onQuickAdd, onCustomBurger, onCart }) {
@@ -941,8 +948,8 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
   const terminal = ['paid', 'cancelled', 'expired'].includes(state);
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.successContent}>
     <Text style={styles.successEmoji}>🔒</Text>
-    <Text style={styles.successTitle}>{kind === 'bibou-plus' ? 'Ton paiement Bibou +' : 'Ton paiement sécurisé'}</Text>
-    {record && <Text style={[styles.successText, styles.paymentRecoveryText]}>{kind === 'order' ? `Commande #${record.number} · ${money(record.total)}` : `Bibou + · ${money(record.amount)}`}</Text>}
+    <Text style={styles.successTitle}>{kind === 'bibou-plus' ? 'Ton paiement Bibou +' : kind === 'reservation' ? 'Paiement de ta table' : 'Ton paiement sécurisé'}</Text>
+    {record && <Text style={[styles.successText, styles.paymentRecoveryText]}>{kind === 'order' ? `Commande #${record.number} · ${money(record.total)}` : kind === 'reservation' ? `Réservation #${record.number} · ${money(record.amount)}` : `Bibou + · ${money(record.amount)}`}</Text>}
     <Text style={[styles.successText, styles.paymentRecoveryText]}>{terminal ? 'Statut retrouvé pour cette tentative.' : 'Ta tentative est sauvegardée. Reviens ici après SumUp, même si tu as fermé l’application.'}</Text>
     <View style={styles.statusCard}><Text style={styles.statusTitle}>{busy ? 'Vérification en cours…' : 'Suivi du paiement'}</Text><Text accessibilityLiveRegion="polite" style={styles.statusDescription}>{message || 'Aucun paiement n’est confirmé sans vérification auprès de SumUp.'}</Text></View>
     {!terminal && <><Pressable accessibilityRole="button" disabled={busy} style={[styles.primaryButton, styles.paymentRecoveryPrimary, busy && styles.primaryButtonDisabled]} onPress={onResume}><Text style={styles.primaryButtonText}>Reprendre le paiement SumUp</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} style={[styles.trackOrderButton, styles.paymentRecoverySecondary]} onPress={onCheckPayment}><Text style={[styles.trackOrderButtonText, styles.paymentRecoveryText]}>Vérifier mon paiement</Text></Pressable></>}
@@ -953,6 +960,21 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
 function SuccessScreen({ order, token, api, onHome, onReview, onTrack }) {
   const label = order?.dineIn ? "Table et repas" : order?.method === "delivery" ? "Livraison" : "Retrait";
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={{ alignItems: 'center', justifyContent: 'flex-start', padding: 28, flexGrow: 1 }}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion && !order.promotion.id ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><WheelAfterPayment api={api} token={token} order={order} /><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></ScrollView></SafeAreaView>;
+}
+
+function ReservationDepositSuccessScreen({ reservation, onHome, onTrack }) {
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.successContent}>
+    <Text style={styles.successEmoji}>🍽</Text>
+    <Text style={styles.successTitle}>Paiement confirmé</Text>
+    <Text style={styles.successText}>Ta demande de table a été transmise au restaurant. Il doit encore confirmer la réservation.</Text>
+    <View style={styles.statusCard}>
+      <Text style={styles.statusTitle}>Réservation #{reservation?.number} · {reservation?.guests} personne{reservation?.guests > 1 ? 's' : ''}</Text>
+      <Text style={styles.statusDescription}>{reservation?.serviceDate} à {reservation?.slot} · {money(reservation?.deposit?.amount || reservation?.amount || 0)} encaissés avec SumUp.</Text>
+      <Text style={styles.statusDescription}>Ce n’est pas une empreinte bancaire : le restaurant effectuera le remboursement manuellement. Si tu annules, contacte-le pour le remboursement.</Text>
+    </View>
+    <Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma réservation ›</Text></Pressable>
+    <Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable>
+  </ScrollView></SafeAreaView>;
 }
 
 function ReviewScreen({ onBack }) {
@@ -1167,6 +1189,7 @@ function AppContent({ onReviewModeChange }) {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [pendingBibouPlus, setPendingBibouPlus] = useState(null);
+  const [pendingDepositReservation, setPendingDepositReservation] = useState(null);
   const [bibouPlusLoading, setBibouPlusLoading] = useState(false);
   const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
   const [bibouPlusReturnScreen, setBibouPlusReturnScreen] = useState("menu");
@@ -1393,8 +1416,9 @@ function AppContent({ onReviewModeChange }) {
   };
   const showPaymentRecord = (attempt, record) => {
     if (attempt.kind === 'order') setPendingOrder(record);
+    else if (attempt.kind === 'reservation') setPendingDepositReservation(record);
     else setPendingBibouPlus(record);
-    setScreen(attempt.kind === 'order' ? 'payment-pending' : 'bibou-plus-pending');
+    setScreen(attempt.kind === 'order' ? 'payment-pending' : attempt.kind === 'reservation' ? 'reservation-payment-pending' : 'bibou-plus-pending');
   };
   const finishPayment = async (attempt, record, token) => {
     const state = paymentState(record, attempt.kind);
@@ -1415,6 +1439,10 @@ function AppContent({ onReviewModeChange }) {
         setCart(null);
         setReservationDraft(null);
         setScreen('success');
+      } else if (attempt.kind === 'reservation') {
+        setReservations(current => [reservationFromApi(record), ...current.filter(item => item.id !== record.id)]);
+        setPendingDepositReservation(record);
+        setScreen('reservation-deposit-success');
       } else {
         setPendingBibouPlus(null);
         setStockFeedback('Bibou + activé : livraison offerte, remise de 5 % et points doublés.');
@@ -1427,7 +1455,7 @@ function AppContent({ onReviewModeChange }) {
       paymentAttempt.current = null;
       if (attempt.kind === 'order') setReservationDraft(null);
       setPaymentMessage(state === 'cancelled'
-        ? 'Cette commande est annulée et ne donne pas de points. Si un débit a eu lieu, contacte le restaurant : l’annulation ne rembourse pas automatiquement le paiement.'
+        ? attempt.kind === 'reservation' ? 'Cette réservation est annulée. Si un débit a eu lieu, contacte le restaurant : le remboursement n’est pas automatique.' : 'Cette commande est annulée et ne donne pas de points. Si un débit a eu lieu, contacte le restaurant : l’annulation ne rembourse pas automatiquement le paiement.'
         : 'Ce paiement a expiré. Il ne sera pas rouvert. Reviens à l’accueil pour choisir un nouveau créneau.');
       return true;
     }
@@ -1444,10 +1472,10 @@ function AppContent({ onReviewModeChange }) {
     if (record && found.payload.kind !== attempt.kind) throw new Error('Cette tentative ne correspond pas au paiement attendu.');
     if (record && await finishPayment(attempt, record, token)) return;
     if (record?.payment?.checkoutReference) {
-      const route = attempt.kind === 'order' ? '/payments/sumup-checkout/' : '/bibou-plus/checkout/';
+      const route = attempt.kind === 'order' ? '/payments/sumup-checkout/' : attempt.kind === 'reservation' ? '/reservations/deposit-checkout/' : '/bibou-plus/checkout/';
       const checked = await apiRequest(route + encodeURIComponent(record.id), token);
       if (!checked.ok) throw new Error(checked.payload.error || 'Impossible de vérifier le paiement auprès de SumUp.');
-      record = checked.payload.order || checked.payload.purchase;
+      record = checked.payload.order || checked.payload.purchase || checked.payload.reservation;
       if (await finishPayment(attempt, record, token)) return;
     }
     if (!openCheckout) {
@@ -1473,9 +1501,11 @@ function AppContent({ onReviewModeChange }) {
     }
     const opened = attempt.kind === 'order'
       ? await apiRequest('/payments/sumup-checkout', token, { orderId: record.id })
-      : await apiRequest('/bibou-plus/checkout', token, { requestId: attempt.requestId });
+      : attempt.kind === 'reservation'
+        ? await apiRequest('/reservations/deposit-checkout', token, { ...attempt.input, requestId: attempt.requestId })
+        : await apiRequest('/bibou-plus/checkout', token, { requestId: attempt.requestId });
     if (!opened.ok) throw new Error(opened.payload.error || 'Impossible d’ouvrir SumUp. Ta tentative est conservée.');
-    record = opened.payload.order || opened.payload.purchase;
+    record = opened.payload.order || opened.payload.purchase || opened.payload.reservation;
     if (await finishPayment(attempt, record, token)) return;
     const checkoutUrl = opened.payload.checkoutUrl;
     setPaymentMessage('Finalise le paiement chez SumUp, puis reviens ici pour vérifier la confirmation.');
@@ -1505,6 +1535,18 @@ function AppContent({ onReviewModeChange }) {
     paymentStartRef.current = true;
     try {
       const existing = parseAttempt(await readAttempt(), customer.id);
+      if (existing && existing.kind !== kind) {
+        paymentAttempt.current = existing;
+        await runPayment(existing, authToken, false);
+        setPaymentMessage('Un autre paiement est déjà en cours. Vérifie son statut avant de commencer une nouvelle opération.');
+        return;
+      }
+      if (existing?.kind === 'reservation' && JSON.stringify(existing.input) !== JSON.stringify(input)) {
+        paymentAttempt.current = existing;
+        await runPayment(existing, authToken, false);
+        setPaymentMessage('Une autre réservation attend encore la vérification de son paiement. Termine ou vérifie cette tentative avant de choisir une nouvelle table.');
+        return;
+      }
       if (differentPendingPromo(existing, kind, input)) {
         paymentAttempt.current = existing;
         await runPayment(existing, authToken, false);
@@ -1546,13 +1588,32 @@ function AppContent({ onReviewModeChange }) {
     if (promoCode) input.promoCode = promoCode;
     await beginPayment('order', input);
   };
+  const payTableDeposit = async draft => {
+    if (!authToken || !customer.id) { setLoginDestination('reservation'); setScreen('login'); return; }
+    try {
+      const response = await customerFetch(`${API_BASE_URL}/health`, { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || payload.capabilities?.reservationDeposits !== 1) throw new Error('Le paiement des réservations n’est pas encore disponible. Aucun débit n’a été lancé.');
+      await beginPayment('reservation', draft);
+    } catch (error) {
+      Alert.alert('Réservation non payée', error.message || 'Réessaie dans un instant. Aucun nouveau paiement ne sera créé automatiquement.');
+    }
+  };
   const chooseReservationMeal = async (draft) => {
     if (!(await tablePreordersReady())) {
       Alert.alert('Réservation momentanément indisponible', 'Le restaurant ne peut pas encore associer un repas à la table. Réessaie dans un instant ou réserve seulement la table.');
       return;
     }
     const sameTable = reservationDraft && reservationDraft.serviceDate === draft.serviceDate && reservationDraft.slot === draft.slot && reservationDraft.guests === draft.guests;
-    if (!sameTable && cart?.items?.length && typeof window !== 'undefined' && !window.confirm('Ton panier actuel sera remplacé par la précommande de table. Continuer ?')) return;
+    if (!sameTable && cart?.items?.length) {
+      const replaceCart = Platform.OS === 'web'
+        ? window.confirm('Ton panier actuel sera remplacé par la précommande de table. Continuer ?')
+        : await new Promise(resolve => Alert.alert('Remplacer ton panier ?', 'Ton panier actuel sera remplacé par la précommande de table.', [
+          { text: 'Garder mon panier', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Continuer', onPress: () => resolve(true) },
+        ], { cancelable: false }));
+      if (!replaceCart) return;
+    }
     if (!sameTable) setCart(null);
     setReservationDraft(draft);
     setCustomer((current) => ({ ...current, name: draft.name, phone: draft.phone }));
@@ -1567,7 +1628,7 @@ function AppContent({ onReviewModeChange }) {
   const checkPayment = () => runPayment(paymentAttempt.current);
   const resumePayment = () => runPayment(paymentAttempt.current, authToken, true);
   useEffect(() => {
-    if (!authToken || !['payment-pending', 'bibou-plus-pending'].includes(screen)) return;
+    if (!authToken || !['payment-pending', 'bibou-plus-pending', 'reservation-payment-pending'].includes(screen)) return;
     const refresh = () => { void runPayment(paymentAttempt.current); };
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
     const stopBrowserFocus = observeBrowserFocus(Platform.OS, refresh);
@@ -1583,7 +1644,7 @@ function AppContent({ onReviewModeChange }) {
       setCustomer({ name: '', phone: '', address: '', postalCode: '', city: 'Le Havre', distance: '', sponsorCode: '' });
       setLoyalty({ points: 0, orders: 0 });
       setOrders([]); setReservations([]); setRewardClaims([]); setCart(null); setReservationDraft(null);
-      setPendingOrder(null); setPendingBibouPlus(null); paymentAttempt.current = null;
+      setPendingOrder(null); setPendingBibouPlus(null); setPendingDepositReservation(null); paymentAttempt.current = null;
       // Keep the non-secret payment journal: only the same authenticated account can resume it.
       setScreen('menu');
     } catch { Alert.alert('Déconnexion indisponible', 'Impossible de déconnecter cet appareil en toute sécurité. Vérifie Internet et réessaie pour arrêter aussi ses notifications.'); }
@@ -1658,8 +1719,8 @@ function AppContent({ onReviewModeChange }) {
   };
   if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
   if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
-  if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
-  if (screen === "contest") return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
+  if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending', 'reservation-payment-pending', 'reservation-deposit-success'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
+  if (screen === "contest" && supportsRankingContest(Platform.OS)) return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
   if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={(item) => addToCart(item, reservationDraft ? 'reservation-meal' : 'cart')} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} />;
   if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} onAdd={(item) => addToCart(item, reservationDraft ? 'reservation-meal' : 'cart')} />;
   if (screen === 'reservation-meal' && reservationDraft) return <ReservationMealScreen draft={reservationDraft} cart={cart} customer={customer} catalog={catalog} stockMessage={stockFeedback || stockMessage} onBack={() => setScreen('reservation')} onProduct={openProduct} onQuickAdd={(product) => addSimpleToCart(product, 'reservation-meal')} onCustomBurger={webCustomBurgerPreview ? () => setScreen('custom-burger-preview') : null} onCart={() => setScreen('cart')} />;
@@ -1669,6 +1730,8 @@ function AppContent({ onReviewModeChange }) {
   if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} dineIn={Boolean(reservationDraft)} authToken={authToken} onChange={setCustomer} onCommentChange={(comment) => setCart((current) => ({ ...current, comment }))} onBack={() => setScreen(reservationDraft ? "cart" : "delivery")} onContinue={continueWithCustomer} onEditIdentity={() => setScreen("identity")} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen("details")} onPay={pay} onValidatePromo={validatePromo} />;
   if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} />;
+  if (screen === 'reservation-payment-pending') return <PaymentPendingScreen kind="reservation" record={pendingDepositReservation} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen('menu')} />;
+  if (screen === 'reservation-deposit-success') return <ReservationDepositSuccessScreen reservation={pendingDepositReservation} onTrack={() => setScreen('reservations')} onHome={() => setScreen('menu')} />;
   if (screen === "success") return <SuccessScreen order={pendingOrder} token={authToken} api={API_BASE_URL} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
@@ -1679,7 +1742,7 @@ function AppContent({ onReviewModeChange }) {
   if (['offers','crm-welcome'].includes(screen)) return <CustomerOffers key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onboarding={screen === 'crm-welcome'} initialConsent={welcomePersonalizedOffers} onBack={() => setScreen(screen === 'crm-welcome' ? crmWelcomeDestination : 'account')} onUpdated={result => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, crmOffers: result.offers, crmPreferences: result.preferences })); }} />;
   if (screen === "privacy") return <PrivacyScreen onBack={() => setScreen("menu")} onDeleteAccount={() => setScreen("delete-account")} />;
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
-  if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} initialDraft={reservationDraft} onBack={() => { if (reservationDraft) { setReservationDraft(null); setCart(null); } setScreen("menu"); }} onCreated={(reservation) => { setReservationDraft(null); setCart(null); setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)]); }} onOpenReservations={() => setScreen("reservations")} onChooseMeal={chooseReservationMeal} />;
+  if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} initialDraft={reservationDraft} onBack={() => { if (reservationDraft) { setReservationDraft(null); setCart(null); } setScreen("menu"); }} onCreated={(reservation) => { setReservationDraft(null); setCart(null); setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)]); }} onOpenReservations={() => setScreen("reservations")} onChooseMeal={chooseReservationMeal} onPayDeposit={payTableDeposit} />;
   if (screen === "login") return <SmsLoginScreen accountFirst={loginFromWelcome} onBack={() => { if (loginStartedFromWelcome) { setLoginStartedFromWelcome(false); setLoginFromWelcome(false); setShowNativeWelcome(true); setScreen('menu'); } else setScreen(loginDestination === "account" ? "menu" : loginDestination); }} onAuthenticated={authenticate} />;
   if (screen === "account") return authToken ? <AccountScreen onOpenOffers={() => setScreen("offers")} onOpenNotifications={() => setScreen("notifications")} onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
   if (screen === "orders") return <OrdersScreen orders={orders} onDecide={decideAmendment} busy={amendmentBusy} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;

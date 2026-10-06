@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import SocialLinks from './SocialLinks';
 const { DEFAULT_NEWS, safePublicUrl } = require('./news-config');
+const { supportsRankingContest } = require('./customer-experience-policy');
+const newsForPlatform = (items, platform) => supportsRankingContest(platform) ? items : items.filter(item => item.kind !== 'contest');
 const duoPreview = Platform.OS === 'android' || (Platform.OS === 'web' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') !== 'ancien');
 
 export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
-  const [items, setItems] = useState(DEFAULT_NEWS);
+  const [items, setItems] = useState(() => newsForPlatform(DEFAULT_NEWS, Platform.OS));
   const [index, setIndex] = useState(0);
   const scroll = useRef(null);
-  const selectedId = useRef(DEFAULT_NEWS[0].id);
+  const selectedId = useRef(newsForPlatform(DEFAULT_NEWS, Platform.OS)[0]?.id);
   const { width } = useWindowDimensions();
   const available = Math.min(Math.max(280, width - 40), 1140);
   const cardWidth = width >= 900 ? Math.min(760, available * .72) : available;
@@ -26,7 +28,7 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
       try {
         const response = await fetch(`${apiBaseUrl}/news?contestApi=2`, { signal: requestController.signal, cache: 'no-store' });
         const data = await response.json();
-        if (alive && response.ok && Array.isArray(data.items)) setItems(data.items);
+        if (alive && response.ok && Array.isArray(data.items)) setItems(newsForPlatform(data.items, Platform.OS));
       } catch { /* Keep the last successful cards; never block ordering. */ }
       finally { loading = false; clearTimeout(timeout); controller.signal.removeEventListener('abort', cancel); }
     };

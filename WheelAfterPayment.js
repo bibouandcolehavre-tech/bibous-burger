@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
+const { supportsNewCustomerJourneys } = require('./customer-experience-policy');
+const { fullWheelRules } = require('./wheel-rules-client');
 
 const polar = (angle, radius = 105) => ({ x: 110 + radius * Math.cos((angle - 90) * Math.PI / 180), y: 110 + radius * Math.sin((angle - 90) * Math.PI / 180) });
 const sector = (start, end) => {
@@ -25,8 +27,8 @@ function WheelRules({ rules, open, onOpen, onClose }) {
   </>;
 }
 
-// The game is offered only by the web checkout, after the server has confirmed
-// the payment. The server can keep it closed independently of a web release.
+// The game is offered after the server has confirmed payment. The server can
+// keep it closed independently of a web or Android release.
 export default function WheelAfterPayment({ api, token, order, accountMode = false, hidePrizes = false, onUpdate }) {
   const [state, setState] = useState(null);
   const [result, setResult] = useState(null);
@@ -38,7 +40,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const pendingId = useRef(null);
   const rotation = useRef(new Animated.Value(0)).current;
   const rotationDegrees = useRef(0);
-  const checkoutEligible = Platform.OS === 'web' && !!token && !!order?.id && order?.payment?.status === 'PAID' &&
+  const checkoutEligible = supportsNewCustomerJourneys(Platform.OS) && !!token && !!order?.id && order?.payment?.status === 'PAID' &&
     !order?.reviewMode && (order?.payment?.provider !== 'promotion' || order?.promotion?.code === 'CHORUS');
   // A new CHORUS checkout must still show an unused test turn earned on an
   // earlier CHORUS order; it must not create another turn for the same account.
@@ -55,7 +57,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     setState(null);
     setResult(null);
     setLoadError(false);
-    if (Platform.OS !== 'web' || !token || (!accountMode && !checkoutEligible)) return;
+    if (!supportsNewCustomerJourneys(Platform.OS) || !token || (!accountMode && !checkoutEligible)) return;
     const controller = new AbortController();
     let active = true;
     fetch(`${api}/customer/wheel`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, cache: 'no-store' })
@@ -65,7 +67,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     return () => { active = false; controller.abort(); };
   }, [api, token, accountMode, checkoutEligible, order?.id, reload]);
 
-  if (Platform.OS !== 'web' || (!accountMode && !checkoutEligible)) return null;
+  if (!supportsNewCustomerJourneys(Platform.OS) || (!accountMode && !checkoutEligible)) return null;
   if (!state) return <View style={styles.card}>
     <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'APRÈS TA COMMANDE'}</Text>
     <Text style={styles.title}>{loadError ? 'Tes tours sont à retrouver' : 'Vérification de tes tours…'}</Text>
@@ -75,7 +77,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   // A CHORUS checkout must never silently hide the game: explain when the
   // limited test turns have already been played instead of looking broken.
   if (!canSpin && (hidePrizes || !activePrizes.length) && !result && !chorusCheckout) {
-    return accountMode && state.rules ? <View style={styles.rulesOnlyCard}><Text style={styles.rulesOnlyText}>La roue Bibou : un jeu distinct du concours de classement.</Text><WheelRules rules={state.rules} open={rulesOpen} onOpen={() => setRulesOpen(true)} onClose={() => setRulesOpen(false)} /></View> : null;
+    return accountMode && state.rules ? <View style={styles.rulesOnlyCard}><Text style={styles.rulesOnlyText}>La roue Bibou : un jeu distinct du concours de classement.</Text><WheelRules rules={fullWheelRules(state.rules, state.segments)} open={rulesOpen} onOpen={() => setRulesOpen(true)} onClose={() => setRulesOpen(false)} /></View> : null;
   }
 
   const spin = async () => {
@@ -128,7 +130,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     {result ? <Text accessibilityLiveRegion="polite" style={styles.result}>{result.label}</Text> : null}
     {!hidePrizes && activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>À saisir sur une prochaine commande d’au moins 10 € de produits, avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique et non cumulable avec un autre code. Si tu as gagné une boisson ou des frites, ajoute-les au panier. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
     {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
-    <WheelRules rules={state.rules} open={rulesOpen} onOpen={() => setRulesOpen(true)} onClose={() => setRulesOpen(false)} />
+    <WheelRules rules={fullWheelRules(state.rules, state.segments)} open={rulesOpen} onOpen={() => setRulesOpen(true)} onClose={() => setRulesOpen(false)} />
   </View>;
 }
 

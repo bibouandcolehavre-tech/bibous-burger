@@ -1,0 +1,19 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { DEPOSIT_PER_GUEST_EUROS, depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation } = require('./reservation-deposit');
+
+test('a table-only booking charges exactly 10 euros per guest, never an order reward', () => {
+  assert.equal(DEPOSIT_PER_GUEST_EUROS, 10);
+  const input = { name: 'Camille Test', phone: '06 00 00 00 00', guests: 3, serviceDate: '2026-10-20', slot: '19:00', note: '' };
+  const reservation = prepareDepositReservation({ guests: 3, status: 'pending' }, 'attempt-table-test-0001', input);
+  assert.equal(reservation.amount, 30);
+  assert.equal(reservation.deposit.amount, 30);
+  assert.equal(reservation.status, 'awaiting_payment');
+  assert.equal(reservation.requestFingerprint, depositFingerprint(input));
+  assert.equal(finalizePaidDepositReservation(reservation), false);
+  reservation.payment = { status: 'PAID', paidAt: '2026-10-06T12:00:00.000Z' };
+  assert.equal(finalizePaidDepositReservation(reservation), true);
+  assert.equal(reservation.status, 'pending');
+  assert.equal(reservation.deposit.refundStatus, 'not_refunded');
+  assert.equal(finalizePaidDepositReservation(reservation), false);
+});

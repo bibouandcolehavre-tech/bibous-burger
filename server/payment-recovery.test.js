@@ -29,6 +29,8 @@ test('une modification du commentaire distingue les tentatives de commande', () 
 test('une expiration locale ne vaut pas refus bancaire et une annulation reste prioritaire', () => {
   const old = new Date(Date.now() - 3600000).toISOString();
   assert.equal(paymentState({ createdAt: old }, 'order'), 'expired');
+  assert.equal(paymentState({ createdAt: old }, 'reservation'), 'expired');
+  assert.equal(paymentState({ createdAt: old, payment: { checkoutReference: 'ref', status: 'PENDING' } }, 'reservation'), 'pending');
   assert.equal(paymentState({ createdAt: old, payment: { checkoutReference: 'ref', status: 'PENDING' } }, 'order'), 'pending');
   assert.equal(paymentState({ status: 'cancelled', payment: { status: 'PAID' } }, 'order'), 'cancelled');
   assert.equal(paymentState({ payment: { status: 'PAID' } }, 'order'), 'paid');
@@ -36,6 +38,13 @@ test('une expiration locale ne vaut pas refus bancaire et une annulation reste p
   assert.equal(paymentState({ payment: { status: 'EXPIRED' } }, 'order'), 'expired');
   assert.equal(paymentState({ payment: { status: 'FAILED' } }, 'order'), 'failed');
   assert.equal(paymentState(null, 'order'), 'not-created');
+});
+
+test('la réservation payante peut être reprise seulement par son propriétaire', () => {
+  const attempt = createAttempt('alice', 'reservation', { customerId: 'alice', guests: 2, serviceDate: '2026-10-20', slot: '19:00' });
+  assert.deepEqual(parseAttempt(JSON.stringify(attempt), 'alice'), attempt);
+  assert.equal(parseAttempt(JSON.stringify(attempt), 'bob'), null);
+  assert.equal(parseAttempt(JSON.stringify({ ...attempt, input: { ...attempt.input, guests: 5 } }), 'alice'), null);
 });
 
 test('reprise : seuls les liens HTTPS SumUp sont ouverts', () => {

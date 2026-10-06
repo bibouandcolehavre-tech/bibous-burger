@@ -31,6 +31,7 @@ const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrd
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
+const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation } = require('./reservation-deposit');
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
@@ -268,6 +269,11 @@ const getSumUpMerchantCode = async () => {
 };
 
 const paidOrders = (database) => database.orders.filter((order) => order.payment?.status === "PAID");
+const finalizePaidTableDeposit = (reservation, database) => {
+  if (!finalizePaidDepositReservation(reservation)) return false;
+  push.queueServiceNotification(database, reservation, 'reservation', 'awaiting_payment', pushConfig);
+  return true;
+};
 const loyaltyPointsForItems = (items) => items.reduce((total, item) => total + (menuProductIds.has(item.productId) ? MENU_POINTS : burgerProductIds.has(item.productId) ? BURGER_POINTS : 0) * Math.max(1, Number(item.quantity) || 1), 0);
 const finalizePaidOrder = (order, database) => {
   if (order.payment?.status !== "PAID") return null;
@@ -407,6 +413,17 @@ const reconcileTablePreorders = async (database, now = new Date()) => {
   let changed = false;
   for (const table of database.reservations || []) {
     if (table.status !== 'awaiting_payment' || Date.parse(table.createdAt) + PENDING_RESERVATION_MS > now.getTime()) continue;
+    if (table.deposit) {
+      if (table.payment?.checkoutReference && table.payment.status !== 'PAID' && table.payment.status !== 'EXPIRED') {
+        try { await refreshPayment(table); changed = true; }
+        catch { continue; }
+      }
+      if (table.payment?.status === 'PAID') { finalizePaidTableDeposit(table, database); changed = true; }
+      else if (!table.payment?.checkoutReference || table.payment?.status === 'EXPIRED') {
+        table.status = 'cancelled'; table.updatedAt = now.toISOString(); changed = true;
+      }
+      continue;
+    }
     const order = database.orders.find((item) => item.id === table.orderId);
     if (!order || order.status === 'cancelled') {
       table.status = 'cancelled'; table.updatedAt = now.toISOString(); changed = true; continue;
@@ -491,7 +508,7 @@ const server = http.createServer(async (request, response) => {
       try { return send(response, 200, orderSms.status(await readDatabase(), orderSmsConfig)); }
       finally { release(); }
     }
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1 } });
 
     if (url.pathname === '/api/dashboard/promotions') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -869,6 +886,60 @@ const server = http.createServer(async (request, response) => {
       }
     }
 
+    if (request.method === 'POST' && url.pathname === '/api/reservations/deposit-checkout') {
+      await reconcileTablePreorders(database);
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Connecte-toi par SMS avant de réserver.' });
+      if (!(await serviceModuleStore.read()).modules.tables) return send(response, 409, { error: 'Les réservations de table sont momentanément indisponibles.' });
+      const input = await readBody(request);
+      const requestId = validateRequestId(input.requestId);
+      if (!requestId) return send(response, 400, { error: 'Référence de paiement requise.' });
+      const canonical = { ...input, phone: customer.phone };
+      const fingerprint = depositFingerprint(canonical);
+      let reservation = database.reservations?.find(item => item.customerId === customer.id && item.requestId === requestId);
+      if (reservation && reservation.requestFingerprint !== fingerprint) return send(response, 409, { error: 'Cette tentative correspond à une autre réservation. Vérifie son paiement avant de recommencer.' });
+      if (reservation?.status === 'cancelled') return send(response, 409, { error: 'Cette tentative de réservation a expiré ou a été annulée. Choisis un nouveau créneau.' });
+      const merchantCode = await getSumUpMerchantCode();
+      if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: 'Le paiement des réservations par SumUp est momentanément indisponible.' });
+      if (!reservation) {
+        reservation = createReservation(database, { ...canonical, customerId: customer.id, slotGrid: 20 });
+        prepareDepositReservation(reservation, requestId, canonical);
+        await writeDatabase(database);
+      }
+      if (reservation.payment?.status === 'PAID') {
+        finalizePaidTableDeposit(reservation, database);
+        await writeDatabase(database);
+        return send(response, 200, { reservation });
+      }
+      const expiresAt = new Date(Date.parse(reservation.createdAt) + PENDING_RESERVATION_MS);
+      if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+        if (reservation.payment?.checkoutReference) {
+          await refreshPayment(reservation);
+          if (reservation.payment.status === 'PAID') {
+            finalizePaidTableDeposit(reservation, database);
+            await writeDatabase(database);
+            return send(response, 200, { reservation });
+          }
+        }
+        return send(response, 409, { error: 'Le délai de paiement de cette table est dépassé. Vérifie le paiement avant de recommencer.' });
+      }
+      await openPayment(reservation, database, { merchantCode, expiresAt, description: `Réservation Bibou's Burgers #${reservation.number} · paiement remboursable`, prefix: 'bibous-table' });
+      finalizePaidTableDeposit(reservation, database);
+      await writeDatabase(database);
+      return send(response, 201, { reservation, checkoutUrl: reservation.payment.checkoutUrl || null });
+    }
+
+    if (request.method === 'GET' && /^\/api\/reservations\/deposit-checkout\/[^/]+$/.test(url.pathname)) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Reconnecte-toi pour vérifier ce paiement.' });
+      const reservation = database.reservations?.find(item => item.id === url.pathname.split('/').pop() && item.customerId === customer.id && item.deposit);
+      if (!reservation?.payment?.checkoutReference) return send(response, 404, { error: 'Paiement de réservation introuvable.' });
+      await refreshPayment(reservation);
+      finalizePaidTableDeposit(reservation, database);
+      await writeDatabase(database);
+      return send(response, 200, { reservation, payment: reservation.payment });
+    }
+
     if (request.method === "POST" && url.pathname === "/api/auth/sms/start") {
       const { phone } = await readBody(request);
       const normalizedPhone = normalizeFrenchPhone(phone);
@@ -1042,8 +1113,9 @@ const server = http.createServer(async (request, response) => {
       const requestId = validateRequestId(url.pathname.split("/").pop());
       const order = database.orders.find(item => item.customerId === customer.id && item.requestId === requestId);
       const purchase = database.bibouPlusPurchases.find(item => item.customerId === customer.id && (item.requestId === requestId || item.requestAliases?.includes(requestId)));
-      if (!order && !purchase) return send(response, 404, { error: "Aucune commande associée à cette tentative." });
-      return send(response, 200, { kind: order ? "order" : "bibou-plus", record: order || purchase });
+      const reservation = database.reservations?.find(item => item.customerId === customer.id && item.deposit && item.requestId === requestId);
+      if (!order && !purchase && !reservation) return send(response, 404, { error: "Aucun paiement associé à cette tentative." });
+      return send(response, 200, { kind: order ? "order" : purchase ? "bibou-plus" : "reservation", record: order || purchase || reservation });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/dashboard/amendment-catalog') {
@@ -1169,6 +1241,20 @@ const server = http.createServer(async (request, response) => {
       ensureReservationStore(database);
       const reservations = database.reservations.filter((item) => item.status !== 'awaiting_payment').sort((a, b) => `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
       return send(response, 200, { reservations });
+    }
+
+    if (request.method === 'POST' && /^\/api\/dashboard\/reservations\/[^/]+\/deposit-refund-record$/.test(url.pathname)) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const id = url.pathname.split('/')[4];
+      const reservation = database.reservations?.find(item => item.id === id);
+      if (!reservation?.deposit || reservation.payment?.status !== 'PAID') return send(response, 409, { error: 'Aucun paiement de réservation vérifié à rembourser.' });
+      if (reservation.deposit.refundStatus === 'recorded') return send(response, 200, { reservation });
+      const input = await readBody(request);
+      if (input.confirmedInSumUp !== true) return send(response, 400, { error: 'Confirme d’abord le remboursement effectué dans SumUp.' });
+      reservation.deposit.refundStatus = 'recorded';
+      reservation.deposit.refundRecordedAt = new Date().toISOString();
+      await writeDatabase(database);
+      return send(response, 200, { reservation });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/reservations/")) {
@@ -1401,12 +1487,14 @@ const server = http.createServer(async (request, response) => {
       if (typeof checkoutId !== "string" || !checkoutId) return send(response, 400, { error: "Identifiant de paiement requis." });
       let order = database.orders.find((item) => item.payment?.checkoutId === checkoutId);
       let bibouPlusPurchase = database.bibouPlusPurchases.find((item) => item.payment?.checkoutId === checkoutId);
-      if (!order && !bibouPlusPurchase) {
+      let depositReservation = database.reservations?.find(item => item.deposit && item.payment?.checkoutId === checkoutId);
+      if (!order && !bibouPlusPurchase && !depositReservation) {
         const checkout = await sumupRequest(`checkouts/${encodeURIComponent(checkoutId)}`);
         const matches = item => !item.payment?.checkoutId && item.payment?.checkoutReference && item.payment.checkoutReference === checkout.checkout_reference;
         order = database.orders.find(matches);
         bibouPlusPurchase = database.bibouPlusPurchases.find(matches);
-        const record = order || bibouPlusPurchase;
+        depositReservation = database.reservations?.find(item => item.deposit && matches(item));
+        const record = order || bibouPlusPurchase || depositReservation;
         if (record) applyVerifiedCheckout(record, checkout, record.payment.merchantCode || await getSumUpMerchantCode());
       }
       if (order) {
@@ -1419,8 +1507,13 @@ const server = http.createServer(async (request, response) => {
         finalizePaidBibouPlusPurchase(bibouPlusPurchase, database);
         await writeDatabase(database);
       }
+      if (depositReservation) {
+        await refreshPayment(depositReservation);
+        finalizePaidTableDeposit(depositReservation, database);
+        await writeDatabase(database);
+      }
       // Unknown IDs can be retried after a checkout creation response is lost.
-      if (!order && !bibouPlusPurchase) return send(response, 503, { error: "Paiement pas encore associé." });
+      if (!order && !bibouPlusPurchase && !depositReservation) return send(response, 503, { error: "Paiement pas encore associé." });
       return send(response, 204, {});
     }
 

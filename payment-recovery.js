@@ -8,9 +8,10 @@ function parseAttempt(value, customerId, now = Date.now()) {
   try {
     if (typeof value !== 'string' || value.length > 65536) return null;
     const attempt = JSON.parse(value);
-    if (attempt.version !== 1 || attempt.customerId !== customerId || !['order', 'bibou-plus'].includes(attempt.kind)) return null;
+    if (attempt.version !== 1 || attempt.customerId !== customerId || !['order', 'bibou-plus', 'reservation'].includes(attempt.kind)) return null;
     if (!/^[a-zA-Z0-9_-]{16,96}$/.test(attempt.requestId) || !Number.isFinite(attempt.createdAt) || now - attempt.createdAt > MAX_AGE || attempt.createdAt > now + 60000) return null;
     if (attempt.kind === 'order' && (attempt.input?.customerId !== customerId || !Array.isArray(attempt.input?.items))) return null;
+    if (attempt.kind === 'reservation' && (attempt.input?.customerId !== customerId || !Number.isInteger(attempt.input?.guests) || attempt.input.guests < 1 || attempt.input.guests > 4)) return null;
     return attempt;
   } catch { return null; }
 }
@@ -22,7 +23,7 @@ function paymentState(record, kind, now = Date.now()) {
   // A locally elapsed hold does NOT prove that a bank payment failed. Verify with
   // SumUp before allowing this attempt to be forgotten and a new one to be made.
   if (record.payment?.status === 'EXPIRED') return 'expired';
-  if (!record.payment?.checkoutReference && kind === 'order' && now - Date.parse(record.createdAt) >= 15 * 60000) return 'expired';
+  if (!record.payment?.checkoutReference && ['order', 'reservation'].includes(kind) && now - Date.parse(record.createdAt) >= 15 * 60000) return 'expired';
   if (record.payment?.status === 'FAILED') return 'failed';
   return 'pending';
 }
