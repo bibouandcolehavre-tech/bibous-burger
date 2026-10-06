@@ -123,6 +123,19 @@ test("requires and prices both drinks in the Duo menu", () => {
   assert.equal(result.items[0].options.length, 2);
 });
 
+test("Menu Solo : 3 tenders, frites et une boisson obligatoire pour 9,90 €", () => {
+  const productId = "menu-solo-tenders";
+  assert.equal(PRODUCT_CATALOG[productId].price, 9.9);
+  assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: [] }]), /Choisis une boisson/);
+  const result = validateAndPriceOrderItems([{ productId, quantity: 2, price: 0.01, selections: [{ groupId: "drink", id: "oasis-tropical" }] }]);
+  assert.equal(result.subtotal, 19.8);
+  assert.equal(result.items[0].price, 9.9);
+  assert.equal(result.items[0].name, "Menu Solo");
+  assert.equal(result.items[0].options[0].label, "Oasis tropical");
+  assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: [{ groupId: "drink", id: "coca" }, { groupId: "drink", id: "eau" }] }]), /maximum 1 choix/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: [{ groupId: "drink", id: "coca" }, { groupId: "extras", id: "bacon" }] }]), /option.*invalide/);
+});
+
 test('les quatre recettes acceptent plusieurs nouvelles crudités et les anciens choix Android', () => {
   const recipes = {
     duck: ['concombre', 'chou-rouge', 'salade-thai', 'tomate'],

@@ -22,6 +22,7 @@ test("une boisson en rupture est bloquée seule, en menu et dans les deux choix 
   const stock = { "drink-coca": false, "drink-lipton-peche": false };
   assert.throws(() => validateAndPriceOrderItems([item("drink-coca", [])], stock), /indisponible/);
   for (const drinkId of ["coca", "lipton", "lipton-peche"]) assert.throws(() => validateAndPriceOrderItems([item("taurus", [...selections, { groupId: "drink", id: drinkId }])], stock), /plus disponible/);
+  assert.throws(() => validateAndPriceOrderItems([item("menu-solo-tenders", [{ groupId: "drink", id: "coca" }])], stock), /plus disponible/);
   for (const groupId of ["duo-drink-one", "duo-drink-two"]) {
     assert.throws(() => assertStoredOrderAvailable([{ productId: "menu-duo-tenders", options: [{ groupId, id: "coca" }] }], stock), /plus disponible/);
   }
@@ -34,9 +35,11 @@ test("les accompagnements en rupture bloquent leurs options et les menus qui les
   assert.throws(() => validateAndPriceOrderItems([item("taurus", [...selections, { groupId: "drink", id: "coca" }])], stock), /Frites maison/);
   for (const id of ["frites", "frites-cheddar", "tenders"]) assert.throws(() => validateAndPriceOrderItems([item("classique", [...selections, { groupId: "sides", id }])], stock), /plus disponible/);
   assert.equal(availabilityCatalog(stock).products.find((p) => p.id === "menu-duo-tenders").available, false);
+  assert.equal(availabilityCatalog(stock).products.find((p) => p.id === "menu-solo-tenders").available, false);
   assert.equal(availabilityCatalog(stock).products.find((p) => p.id === "taurus").enabled, true);
   assert.equal(validateAndPriceOrderItems([item("classique")], stock).subtotal, 9.9);
   assert.equal(availabilityCatalog({ "tenders-xl-3": false }).products.find((p) => p.id === "menu-duo-tenders").available, false);
+  assert.equal(availabilityCatalog({ "tenders-xl-3": false }).products.find((p) => p.id === "menu-solo-tenders").available, false);
 });
 
 test("les suppléments ont leur propre stock et la galette végétarienne partage le même réglage", () => {

@@ -24,6 +24,7 @@ const PRODUCT_CATALOG = {
   "frites-maison": { name: "Frites maison", price: 3.9, kind: "simple" },
   "frites-cheddar-bacon": { name: "Frites cheddar bacon", price: 6.9, kind: "simple" },
   "tenders-xl-3": { name: "Tenders XL par 3", price: 6.9, kind: "simple" },
+  "menu-solo-tenders": { name: "Menu Solo", price: 9.9, kind: "solo" },
   "menu-duo-tenders": { name: "Menu Duo · 10 tenders", price: 19.9, kind: "duo" },
   "drink-coca": { name: "Coca 33 cl", price: 1.8, kind: "simple" },
   "drink-coca-cherry": { name: "Coca Cherry 33 cl", price: 1.8, kind: "simple" },
@@ -145,6 +146,7 @@ const GROUP_RULES = {
 const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides", "menu-fries", "menu-desserts"]);
 const BURGER_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "extras", "sides", "desserts"]);
 const DUO_GROUPS = new Set(["duo-drink-one", "duo-drink-two"]);
+const SOLO_GROUPS = new Set(["drink"]);
 const SIMPLE_GROUPS = new Set();
 
 const cents = (value) => Math.round(Number(value) * 100);
@@ -174,7 +176,7 @@ const productStock = (id, overrides = {}) => {
   if (!product) return { available: false, enabled: false, reason: "Ce produit n’est plus à la carte." };
   const enabled = Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
   if (!enabled) return { available: false, enabled: false, reason: `${product.name} est momentanément indisponible.` };
-  const included = product.menu ? ["frites-maison"] : product.kind === "duo" ? ["frites-maison", "tenders-xl-3"] : [];
+  const included = product.menu ? ["frites-maison"] : ["duo", "solo"].includes(product.kind) ? ["frites-maison", "tenders-xl-3"] : [];
   for (const includedId of included) {
     if (!productStock(includedId, overrides).available) return { available: false, enabled: true, reason: `${product.name} : ${PRODUCT_CATALOG[includedId].name} indisponibles.` };
   }
@@ -216,7 +218,7 @@ const validatedSelections = (product, selections, productId) => {
     try { return pricedOptions(parseSelectionEntries(selections)); }
     catch (error) { throw orderInputError(error.message); }
   }
-  const allowedGroups = product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
+  const allowedGroups = product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.kind === "solo" ? SOLO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
   const seen = new Set();
   const resolved = selections.map((selection) => {
     const key = `${String(selection?.groupId || "")}:${String(selection?.id || "")}`;
@@ -276,7 +278,7 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
 
 const amendmentCatalog = (overrides = {}) => ({
   ...availabilityCatalog(overrides),
-  definitions: Object.fromEntries(Object.entries(PRODUCT_CATALOG).map(([id,p]) => [id, { ...p, groups: [...(p.kind === "simple" ? SIMPLE_GROUPS : p.kind === "duo" ? DUO_GROUPS : p.menu ? MENU_GROUPS : BURGER_GROUPS)] }])),
+  definitions: Object.fromEntries(Object.entries(PRODUCT_CATALOG).map(([id,p]) => [id, { ...p, groups: [...(p.kind === "simple" ? SIMPLE_GROUPS : p.kind === "duo" ? DUO_GROUPS : p.kind === "solo" ? SOLO_GROUPS : p.menu ? MENU_GROUPS : BURGER_GROUPS)] }])),
   choices: OPTIONS, rules: GROUP_RULES
 });
 
