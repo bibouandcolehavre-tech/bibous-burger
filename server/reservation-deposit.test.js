@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { DEPOSIT_PER_GUEST_EUROS, depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation } = require('./reservation-deposit');
+const { DEPOSIT_PER_GUEST_EUROS, DEPOSIT_TERMS_VERSION, depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance } = require('./reservation-deposit');
 
 test('a table-only booking charges exactly 10 euros per guest, never an order reward', () => {
   assert.equal(DEPOSIT_PER_GUEST_EUROS, 10);
@@ -8,6 +8,8 @@ test('a table-only booking charges exactly 10 euros per guest, never an order re
   const reservation = prepareDepositReservation({ guests: 3, status: 'pending' }, 'attempt-table-test-0001', input);
   assert.equal(reservation.amount, 30);
   assert.equal(reservation.deposit.amount, 30);
+  assert.equal(reservation.deposit.termsVersion, DEPOSIT_TERMS_VERSION);
+  assert.equal(reservation.deposit.attendanceStatus, 'unrecorded');
   assert.equal(reservation.status, 'awaiting_payment');
   assert.equal(reservation.requestFingerprint, depositFingerprint(input));
   assert.equal(finalizePaidDepositReservation(reservation), false);
@@ -15,5 +17,14 @@ test('a table-only booking charges exactly 10 euros per guest, never an order re
   assert.equal(finalizePaidDepositReservation(reservation), true);
   assert.equal(reservation.status, 'pending');
   assert.equal(reservation.deposit.refundStatus, 'not_refunded');
+  assert.throws(() => recordDepositAttendance(reservation, 'present'));
+  reservation.status = 'confirmed';
+  recordDepositAttendance(reservation, 'no_show');
+  assert.equal(reservation.deposit.attendanceStatus, 'no_show');
+  recordDepositAttendance(reservation, 'present');
+  assert.equal(reservation.deposit.attendanceStatus, 'present');
+  assert.deepEqual(reservation.deposit.attendanceHistory.map(entry => entry.status), ['no_show', 'present']);
+  reservation.deposit.refundStatus = 'recorded';
+  assert.throws(() => recordDepositAttendance(reservation, 'no_show'));
   assert.equal(finalizePaidDepositReservation(reservation), false);
 });

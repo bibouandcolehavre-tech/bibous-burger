@@ -435,16 +435,26 @@ function reservationDepositInfo(reservation) {
   if (!reservation.deposit || reservation.depositPaymentStatus !== 'PAID') return '';
   const paid = `<p class="reservation-note">Paiement SumUp encaissé : <strong>${euro(reservation.deposit.amount)}</strong> · Référence ${escapeHtml(reservation.depositReference || 'à retrouver dans SumUp')}. Ce n’est pas une empreinte bancaire.</p>`;
   if (reservation.deposit.refundStatus === 'recorded') return `${paid}<p class="reservation-note">Remboursement manuel signalé comme effectué.</p>`;
-  return `${paid}<p class="reservation-note">Remboursement manuel à effectuer dans SumUp après la venue ou selon la décision du restaurant. L’annulation de la table ne rembourse pas automatiquement.</p><div class="actions"><button class="confirm-reservation" data-deposit-refund-id="${escapeHtml(reservation.apiId)}">J’ai remboursé dans SumUp</button></div>`;
+  if (reservation.status === 'cancelled') return `${paid}<p class="reservation-note">Réservation annulée : le paiement reste encaissé. Vérifiez le traitement de cette somme dans SumUp ; rien n’est remboursé automatiquement.</p>`;
+  if (reservation.status === 'pending') return `${paid}<p class="reservation-note">Confirmez d’abord la table. Vous pourrez ensuite indiquer si le client est venu ou absent.</p>`;
+  if (reservation.deposit.attendanceStatus === 'no_show') return `${paid}<p class="reservation-note">Client absent : la somme est conservée selon la règle annoncée avant paiement.</p><div class="actions"><button class="confirm-reservation" data-deposit-attendance-id="${escapeHtml(reservation.apiId)}" data-deposit-attendance-status="present">Corriger : client venu</button></div>`;
+  if (reservation.deposit.attendanceStatus === 'present') return `${paid}<p class="reservation-note">Client venu : remboursez ${euro(reservation.deposit.amount)} sur la carte d’origine dans SumUp, puis confirmez ici.</p><div class="actions"><button class="confirm-reservation" data-deposit-refund-id="${escapeHtml(reservation.apiId)}">J’ai remboursé dans SumUp</button></div>`;
+  return `${paid}<p class="reservation-note">Après le créneau, indiquez si le client est venu. Venu : remboursement manuel. Absent : somme conservée.</p><div class="actions"><button class="confirm-reservation" data-deposit-attendance-id="${escapeHtml(reservation.apiId)}" data-deposit-attendance-status="present">Client venu</button><button class="cancel-reservation" data-deposit-attendance-id="${escapeHtml(reservation.apiId)}" data-deposit-attendance-status="no_show">Client absent</button></div>`;
 }
 
 function renderReservations() {
   const today = todayDateKey();
-  const visible = reservations.filter((reservation) => reservationFilter === "all" || (reservationFilter === "today" ? reservation.serviceDate === today : reservation.serviceDate >= today && reservation.status !== "cancelled"));
+  const visible = reservations.filter((reservation) => {
+    if (reservationFilter === 'all') return true;
+    if (reservationFilter === 'today') return reservation.serviceDate === today;
+    const depositNeedsAction = reservation.deposit && reservation.depositPaymentStatus === 'PAID' && reservation.deposit.attendanceStatus !== 'no_show' && reservation.deposit.refundStatus !== 'recorded';
+    return (reservation.serviceDate >= today && reservation.status !== 'cancelled') || depositNeedsAction;
+  });
   const sorted = [...visible].sort((a, b) => ((a.status === "pending" ? -1 : 1) - (b.status === "pending" ? -1 : 1)) || `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
   document.querySelector("#reservations-list").innerHTML = sorted.length ? sorted.map((reservation) => `<article class="reservation-card ${escapeHtml(reservation.status)}"><div class="reservation-grid"><div><div class="reservation-name">Réservation #${reservation.id} · ${escapeHtml(reservation.customer)}</div><div class="reservation-phone">☎ ${escapeHtml(reservation.phone)}${reservation.receivedAt ? ` · Reçue à ${escapeHtml(reservation.receivedAt)}` : ""}</div></div><div><div class="reservation-when">${escapeHtml(reservation.date)} · ${escapeHtml(reservation.slot)}</div><div class="reservation-guests">${reservation.guests} personne${reservation.guests > 1 ? "s" : ""}</div></div><div><span class="status ${escapeHtml(reservation.status)}">${reservationStatusLabel[reservation.status] || "À confirmer"}</span></div></div>${reservation.note ? `<p class="reservation-note">Note : ${escapeHtml(reservation.note)}</p>` : ""}${reservationDepositInfo(reservation)}${reservationActions(reservation)}</article>`).join("") : `<div class="empty">🍽<strong>Aucune réservation</strong>Les demandes de table apparaîtront ici.</div>`;
   document.querySelectorAll("[data-reservation-action]").forEach((button) => button.addEventListener("click", () => changeReservation(button.dataset.id, button.dataset.reservationAction)));
   document.querySelectorAll('[data-deposit-refund-id]').forEach(button => button.addEventListener('click', () => recordDepositRefund(button.dataset.depositRefundId)));
+  document.querySelectorAll('[data-deposit-attendance-id]').forEach(button => button.addEventListener('click', () => recordDepositAttendance(button.dataset.depositAttendanceId, button.dataset.depositAttendanceStatus)));
 }
 
 function renderRewardClaims() {
@@ -552,6 +562,23 @@ async function changeReservation(id, status) {
     renderReservations();
     showToast("La mise à jour n’a pas été enregistrée.");
   }
+}
+
+async function recordDepositAttendance(id, status) {
+  const reservation = reservations.find(item => item.apiId === id);
+  if (!reservation?.deposit || !['present', 'no_show'].includes(status)) return;
+  const message = status === 'present'
+    ? 'Confirmez-vous que le client est venu ? Vous devrez ensuite effectuer son remboursement dans SumUp.'
+    : 'Confirmez-vous que le client ne s’est pas présenté ? La somme restera encaissée. Cette décision peut être corrigée si nécessaire.';
+  if (!window.confirm(message)) return;
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/reservations/${encodeURIComponent(id)}/attendance`, { method: 'POST', headers: dashboardHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ status }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Présence non enregistrée.');
+    reservation.deposit = payload.reservation.deposit;
+    renderReservations();
+    showToast(status === 'present' ? 'Présence enregistrée. Remboursement à faire dans SumUp.' : 'Absence enregistrée. Paiement conservé.');
+  } catch { showToast('Présence non enregistrée. Actualisez puis réessayez.'); }
 }
 
 async function recordDepositRefund(id) {

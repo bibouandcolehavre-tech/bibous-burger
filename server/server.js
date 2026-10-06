@@ -31,7 +31,7 @@ const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrd
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
-const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation } = require('./reservation-deposit');
+const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance } = require('./reservation-deposit');
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
@@ -894,6 +894,7 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const requestId = validateRequestId(input.requestId);
       if (!requestId) return send(response, 400, { error: 'Référence de paiement requise.' });
+      if (input.depositTermsAccepted !== true) return send(response, 400, { error: 'Lis et accepte les conditions du paiement de réservation avant de continuer.' });
       const canonical = { ...input, phone: customer.phone };
       const fingerprint = depositFingerprint(canonical);
       let reservation = database.reservations?.find(item => item.customerId === customer.id && item.requestId === requestId);
@@ -923,7 +924,7 @@ const server = http.createServer(async (request, response) => {
         }
         return send(response, 409, { error: 'Le délai de paiement de cette table est dépassé. Vérifie le paiement avant de recommencer.' });
       }
-      await openPayment(reservation, database, { merchantCode, expiresAt, description: `Réservation Bibou's Burgers #${reservation.number} · paiement remboursable`, prefix: 'bibous-table' });
+      await openPayment(reservation, database, { merchantCode, expiresAt, description: `Réservation Bibou's #${reservation.number} · remboursée si venu, conservée si absent`, prefix: 'bibous-table' });
       finalizePaidTableDeposit(reservation, database);
       await writeDatabase(database);
       return send(response, 201, { reservation, checkoutUrl: reservation.payment.checkoutUrl || null });
@@ -1243,12 +1244,28 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { reservations });
     }
 
+    if (request.method === 'POST' && /^\/api\/dashboard\/reservations\/[^/]+\/attendance$/.test(url.pathname)) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const id = url.pathname.split('/')[4];
+      const reservation = database.reservations?.find(item => item.id === id);
+      if (!reservation) return send(response, 404, { error: 'Réservation introuvable.' });
+      try {
+        const input = await readBody(request);
+        recordDepositAttendance(reservation, input.status);
+        await writeDatabase(database);
+        return send(response, 200, { reservation });
+      } catch (error) {
+        return send(response, 409, { error: error.message || 'Présence non enregistrée.' });
+      }
+    }
+
     if (request.method === 'POST' && /^\/api\/dashboard\/reservations\/[^/]+\/deposit-refund-record$/.test(url.pathname)) {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
       const id = url.pathname.split('/')[4];
       const reservation = database.reservations?.find(item => item.id === id);
       if (!reservation?.deposit || reservation.payment?.status !== 'PAID') return send(response, 409, { error: 'Aucun paiement de réservation vérifié à rembourser.' });
       if (reservation.deposit.refundStatus === 'recorded') return send(response, 200, { reservation });
+      if (reservation.deposit.attendanceStatus !== 'present') return send(response, 409, { error: 'Indique d’abord que le client est venu avant d’enregistrer son remboursement.' });
       const input = await readBody(request);
       if (input.confirmedInSumUp !== true) return send(response, 400, { error: 'Confirme d’abord le remboursement effectué dans SumUp.' });
       reservation.deposit.refundStatus = 'recorded';
