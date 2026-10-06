@@ -1301,7 +1301,9 @@ const server = http.createServer(async (request, response) => {
           return send(response, 409, { error: 'Cette table est liée à une commande payée. Annulez d’abord la commande et traitez son remboursement.' });
         }
         if (linkedTable?.deposit && linkedTable.payment?.status === 'PAID' && input.status === 'cancelled') {
+          const previousStatus = linkedTable.status;
           cancelDepositReservation(linkedTable, input.cancelledBy === 'customer' ? 'customer' : 'restaurant');
+          if (previousStatus !== 'cancelled') push.queueServiceNotification(database, linkedTable, 'reservation', previousStatus, pushConfig);
           await writeDatabase(database);
           return send(response, 200, { reservation: linkedTable });
         }

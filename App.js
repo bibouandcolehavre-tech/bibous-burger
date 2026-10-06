@@ -1263,6 +1263,7 @@ function AppContent({ onReviewModeChange }) {
     }
   };
   const cancelCustomerTableReservation = async (reservation) => {
+    const notify = (title, message) => Platform.OS === 'web' ? window.alert(`${title}\n\n${message}`) : Alert.alert(title, message);
     const prompt = 'Annuler cette table ? Si tu annules au moins 1 h avant l’heure réservée, le restaurant te remboursera dans SumUp. Plus tard, la somme sera conservée. Aucun remboursement n’est automatique.';
     const confirmed = Platform.OS === 'web'
       ? window.confirm(prompt)
@@ -1277,11 +1278,11 @@ function AppContent({ onReviewModeChange }) {
       if (!response.ok) throw new Error(payload.error || 'Annulation impossible.');
       if (sessionTokenRef.current !== authToken) return;
       setReservations(current => current.map(item => item.id === reservation.id ? reservationFromApi(payload.reservation) : item));
-      Alert.alert('Table annulée', payload.reservation.deposit?.cancellation?.refundable
+      notify('Table annulée', payload.reservation.deposit?.cancellation?.refundable
         ? 'Ton paiement doit être remboursé par le restaurant sur ta carte. Le remboursement n’est pas automatique.'
         : 'L’annulation est à moins d’une heure du créneau : le paiement est conservé selon les conditions acceptées.');
     } catch (error) {
-      Alert.alert('Annulation indisponible', error.message || 'Réessaie dans un instant.');
+      notify('Annulation indisponible', error.message || 'Réessaie dans un instant.');
       await loadCustomerReservations({ silent: true });
     }
   };
