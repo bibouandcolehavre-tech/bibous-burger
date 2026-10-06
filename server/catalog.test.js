@@ -136,6 +136,35 @@ test("Menu Solo : 3 tenders, frites et une boisson obligatoire pour 9,90 €", (
   assert.throws(() => validateAndPriceOrderItems([{ productId, quantity: 1, selections: [{ groupId: "drink", id: "coca" }, { groupId: "extras", id: "bacon" }] }]), /option.*invalide/);
 });
 
+test("Menu Solo : cheddar bacon remplace les frites pour +2,50 €", () => {
+  const drink = { groupId: "drink", id: "coca" };
+  const maison = { groupId: "solo-fries", id: "maison" };
+  const cheddar = { groupId: "solo-fries", id: "cheddar-bacon" };
+  assert.equal(validateAndPriceOrderItems([{ productId: "menu-solo-tenders", quantity: 1, selections: [drink, maison] }]).subtotal, 9.9);
+  const upgraded = validateAndPriceOrderItems([{ productId: "menu-solo-tenders", quantity: 1, price: 9.9, selections: [drink, cheddar] }]);
+  assert.equal(upgraded.subtotal, 12.4);
+  assert.deepEqual(upgraded.items[0].options.find(option => option.groupId === "solo-fries"), { ...cheddar, label: "Menu Solo : frites cheddar bacon en remplacement", price: 2.5 });
+  assert.throws(() => validateAndPriceOrderItems([{ productId: "menu-solo-tenders", quantity: 1, selections: [drink, maison, cheddar] }]), /maximum 1 choix/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: "menu-solo-tenders", quantity: 1, selections: [drink, cheddar] }], { "frites-cheddar-bacon": false }), /plus disponible/);
+});
+
+test("Menu Duo : chacune des deux portions de frites peut être améliorée séparément", () => {
+  const drinks = [{ groupId: "duo-drink-one", id: "coca" }, { groupId: "duo-drink-two", id: "perrier" }];
+  const first = { groupId: "duo-fries-one", id: "cheddar-bacon" };
+  const second = { groupId: "duo-fries-two", id: "cheddar-bacon" };
+  const order = (fries) => validateAndPriceOrderItems([{ productId: "menu-duo-tenders", quantity: 1, price: 0, selections: [...drinks, ...fries] }]);
+  assert.equal(order([]).subtotal, 19.9); // Anciennes versions de l’application : deux frites maison implicites.
+  assert.equal(order([first]).subtotal, 22.4);
+  assert.equal(order([second]).subtotal, 22.4);
+  const both = order([first, second]);
+  assert.equal(both.subtotal, 24.9);
+  assert.match(both.items[0].options.find(option => option.groupId === "duo-fries-one").label, /personne 1/);
+  assert.match(both.items[0].options.find(option => option.groupId === "duo-fries-two").label, /personne 2/);
+  assert.throws(() => order([first, { groupId: "duo-fries-one", id: "maison" }]), /maximum 1 choix/);
+  assert.throws(() => order([{ groupId: "solo-fries", id: "cheddar-bacon" }]), /option.*invalide/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: "menu-duo-tenders", quantity: 1, selections: [...drinks, first, second] }], { "frites-cheddar-bacon": false }), /plus disponible/);
+});
+
 test('les quatre recettes acceptent plusieurs nouvelles crudités et les anciens choix Android', () => {
   const recipes = {
     duck: ['concombre', 'chou-rouge', 'salade-thai', 'tomate'],

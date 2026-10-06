@@ -94,6 +94,12 @@ const OPTIONS = [
   option("sides", "tenders", "3 Tenders ajoutés", 6.9),
   option("menu-fries", "maison", "Frites maison incluses dans le menu", 0),
   option("menu-fries", "cheddar-bacon", "Frites du menu remplacées par des frites cheddar bacon", 2.5),
+  option("solo-fries", "maison", "Menu Solo : frites maison incluses", 0),
+  option("solo-fries", "cheddar-bacon", "Menu Solo : frites cheddar bacon en remplacement", 2.5),
+  option("duo-fries-one", "maison", "Menu Duo · personne 1 : frites maison incluses", 0),
+  option("duo-fries-one", "cheddar-bacon", "Menu Duo · personne 1 : frites cheddar bacon en remplacement", 2.5),
+  option("duo-fries-two", "maison", "Menu Duo · personne 2 : frites maison incluses", 0),
+  option("duo-fries-two", "cheddar-bacon", "Menu Duo · personne 2 : frites cheddar bacon en remplacement", 2.5),
   option("desserts", "oreo", "Tiramisu Oreo", 3.9),
   option("desserts", "cookie", "Tiramisu cookie", 3.9),
   option("desserts", "framboise", "Tiramisu framboise pistache", 3.9),
@@ -137,6 +143,9 @@ const GROUP_RULES = {
   drink: { min: 1, max: 1 },
   "duo-drink-one": { min: 1, max: 1 },
   "duo-drink-two": { min: 1, max: 1 },
+  "solo-fries": { max: 1 },
+  "duo-fries-one": { max: 1 },
+  "duo-fries-two": { max: 1 },
   extras: {},
   sides: {},
   'menu-fries': { max: 1 },
@@ -145,8 +154,9 @@ const GROUP_RULES = {
 };
 const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides", "menu-fries", "menu-desserts"]);
 const BURGER_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "extras", "sides", "desserts"]);
-const DUO_GROUPS = new Set(["duo-drink-one", "duo-drink-two"]);
-const SOLO_GROUPS = new Set(["drink"]);
+const DUO_GROUPS = new Set(["duo-fries-one", "duo-fries-two", "duo-drink-one", "duo-drink-two"]);
+const SOLO_GROUPS = new Set(["solo-fries", "drink"]);
+const FRIES_CHOICE_GROUPS = new Set(["menu-fries", "solo-fries", "duo-fries-one", "duo-fries-two"]);
 const SIMPLE_GROUPS = new Set();
 
 const cents = (value) => Math.round(Number(value) * 100);
@@ -162,7 +172,7 @@ const optionProductId = ({ groupId, id }) => {
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
   if (groupId === "desserts" || groupId === "menu-desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
-  if (groupId === "menu-fries") return { maison: "frites-maison", "cheddar-bacon": "frites-cheddar-bacon" }[id];
+  if (FRIES_CHOICE_GROUPS.has(groupId)) return { maison: "frites-maison", "cheddar-bacon": "frites-cheddar-bacon" }[id];
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
     const productId = `drink-${({ lipton: "lipton-peche", oasis: "oasis-pomme" })[id] || id}`;

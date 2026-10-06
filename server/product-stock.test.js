@@ -42,6 +42,17 @@ test("les accompagnements en rupture bloquent leurs options et les menus qui les
   assert.equal(availabilityCatalog({ "tenders-xl-3": false }).products.find((p) => p.id === "menu-solo-tenders").available, false);
 });
 
+test("l’option cheddar bacon des menus Solo et Duo suit la rupture commune", () => {
+  const stock = { "frites-cheddar-bacon": false };
+  const catalog = availabilityCatalog(stock);
+  for (const groupId of ["solo-fries", "duo-fries-one", "duo-fries-two"]) {
+    assert.equal(catalog.options[`${groupId}:maison`], true);
+    assert.equal(catalog.options[`${groupId}:cheddar-bacon`], false);
+  }
+  assert.equal(catalog.products.find(product => product.id === "menu-solo-tenders").available, true);
+  assert.equal(catalog.products.find(product => product.id === "menu-duo-tenders").available, true);
+});
+
 test("les suppléments ont leur propre stock et la galette végétarienne partage le même réglage", () => {
   const stock = { "ingredient-raclette": false, "ingredient-potato-patty": false };
   const catalog = availabilityCatalog(stock);
