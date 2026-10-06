@@ -101,11 +101,11 @@ const showDashboard = () => { document.querySelector("#login-screen").hidden = t
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
   const minutes = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
-  return { raw: order, amendment: order.amendment, refund: order.refund, paidTotal: order.paidTotal, id: order.number, apiId: order.id, customer: order.customerName, phone: order.customerPhone || "", deliveryAddress: order.deliveryAddress, comment: order.comment || "", age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, subtotal: order.subtotal, discount: order.discount, discountLabel: order.discountLabel, discountRate: order.discountRate, welcomeRewardApplied: order.welcomeRewardApplied, bibouPlusApplied: order.bibouPlusApplied, standardDeliveryFee: order.standardDeliveryFee, deliveryFee: order.deliveryFee, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
+  return { raw: order, amendment: order.amendment, refund: order.refund, paidTotal: order.paidTotal, id: order.number, apiId: order.id, customer: order.customerName, phone: order.customerPhone || "", deliveryAddress: order.deliveryAddress, comment: order.comment || "", age: minutes < 1 ? "À l’instant" : `Il y a ${minutes} min`, type: order.dineIn ? `À table · ${Number(order.tableGuests) || '?'} pers.` : order.method === "delivery" ? "Livraison" : "Retrait", slot: `${serviceDateLabel(order.serviceDate)} · ${order.slot}`, subtotal: order.subtotal, discount: order.discount, discountLabel: order.discountLabel, discountRate: order.discountRate, welcomeRewardApplied: order.welcomeRewardApplied, bibouPlusApplied: order.bibouPlusApplied, standardDeliveryFee: order.standardDeliveryFee, deliveryFee: order.deliveryFee, total: order.total, items: order.items, status: statusLabel[order.status] || "Nouvelle" };
 }
 
 function reservationFromApi(reservation) {
-  return { id: reservation.number, apiId: reservation.id, customer: reservation.customerName, phone: reservation.phone, guests: reservation.guests, serviceDate: reservation.serviceDate, date: serviceDateLabel(reservation.serviceDate), slot: reservation.slot, note: reservation.note || "", status: reservation.status, receivedAt: receivedTimeLabel(reservation.createdAt) };
+  return { id: reservation.number, apiId: reservation.id, orderNumber: reservation.orderNumber, customer: reservation.customerName, phone: reservation.phone, guests: reservation.guests, serviceDate: reservation.serviceDate, date: serviceDateLabel(reservation.serviceDate), slot: reservation.slot, note: reservation.note || "", status: reservation.status, receivedAt: receivedTimeLabel(reservation.createdAt) };
 }
 
 function rewardClaimFromApi(claim) {
@@ -163,7 +163,7 @@ function orderPricingMarkup(order) {
   if (order.type === "Livraison" || order.method === "delivery") {
     if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>${promotion?.type === 'free_delivery' || (promotion && !promotion.id) ? 'Livraison offerte par code promo' : 'Économie livraison Bibou +'}</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
     rows.push(`<div><span>Livraison facturée</span><strong>${deliveryFee ? euro(deliveryFee) : "Offerte"}</strong></div>`);
-  } else rows.push(`<div><span>Retrait</span><strong>Gratuit</strong></div>`);
+  } else rows.push(`<div><span>${order.raw?.dineIn ? 'Sur place' : 'Retrait'}</span><strong>Gratuit</strong></div>`);
   rows.push(`<div class="order-pricing-total"><span>${promotion && !promotion.id ? 'Commande offerte · aucun débit bancaire' : 'Total débité par SumUp'}</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
   if (order.paidTotal !== undefined) rows.push(`<div><span>Total après modification</span><strong>${euro(order.total)}</strong></div>`);
   return `<div class="order-pricing">${rows.join("")}</div>`;
@@ -177,7 +177,7 @@ function amendmentMarkup(order) {
 }
 
 function customerOrderHistoryMarkup(order, historyStatuses) {
-  const type = order.method === "delivery" ? "Livraison" : "Retrait";
+  const type = order.dineIn ? 'Sur place' : order.method === "delivery" ? "Livraison" : "Retrait";
   const status = historyStatuses[order.status] || order.status;
   const service = [serviceDateLabel(order.serviceDate), order.slot].filter(Boolean).join(" · ");
   const points = Number(order.pointsAdded) > 0 ? `<div class="customer-order-points">+ ${customerNumber(order.pointsAdded)} points de fidélité</div>` : "";
@@ -425,6 +425,7 @@ function announceArrivals(kind, count) {
 }
 
 function reservationActions(reservation) {
+  if (reservation.orderNumber) return `<p class="reservation-note">Repas payé · commande #${Number(reservation.orderNumber)}. Toute annulation doit passer par la commande et son remboursement.</p>`;
   if (reservation.status === "pending") return `<div class="actions"><button class="cancel-reservation" data-reservation-action="cancelled" data-id="${escapeHtml(reservation.apiId)}">Refuser</button><button class="confirm-reservation" data-reservation-action="confirmed" data-id="${escapeHtml(reservation.apiId)}">Accepter la table</button></div>`;
   if (reservation.status === "confirmed") return `<div class="actions"><button class="cancel-reservation" data-reservation-action="cancelled" data-id="${escapeHtml(reservation.apiId)}">Annuler la réservation</button></div>`;
   return "";

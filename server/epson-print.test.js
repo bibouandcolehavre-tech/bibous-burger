@@ -25,6 +25,19 @@ test('ticket de préparation : commande payée, options échappées et aucun con
   assert.doesNotMatch(request, /<text>[^<]*<Classique>/);
 });
 
+test('repas réservé à table : le ticket affiche clairement l’heure d’arrivée et le nombre de personnes', () => {
+  const request = printer.preparationEnvelope({
+    id: 'order-table', number: 260, payment: { status: 'PAID' }, method: 'pickup', dineIn: true,
+    serviceDate: '2026-10-07', slot: '19:20', tableGuests: 3, tableNote: 'Chaise bébé',
+    customerName: 'Camille', items: [{ name: 'Burger classique', quantity: 1, options: [] }],
+  });
+  assert.match(request, /SUR PLACE - TABLE \+ REPAS/);
+  assert.match(request, /ARRIVEE A 19:20/);
+  assert.match(request, /TABLE DE 3 PERSONNE\(S\)/);
+  assert.match(request, /Table : Chaise bébé/);
+  assert.doesNotMatch(request, /<text>RETRAIT&#10;<\/text>/);
+});
+
 test('ticket refusé pour commande impayée ou compte de démonstration', () => {
   const order = { id: 'o', payment: { status: 'PAID' }, method: 'pickup', items: [] };
   assert.throws(() => printer.preparationEnvelope({ ...order, payment: { status: 'PENDING' } }));

@@ -19,6 +19,10 @@ function orderFingerprint(input) {
     })) : input.items,
   };
   if (typeof input.comment === 'string' && input.comment.trim()) canonical.comment = input.comment.trim();
+  if (input.tableReservation) canonical.tableReservation = {
+    guests: input.tableReservation.guests,
+    note: String(input.tableReservation.note || '').trim(),
+  };
   const promoCode = normalizePromoCode(input.promoCode);
   if (promoCode) canonical.promoCode = promoCode;
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');

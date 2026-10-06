@@ -1,6 +1,6 @@
 const { slotsForDate, validateServiceSlot, serviceClosureReason, bookingWindow, slotWindow, windowsOverlap } = require("./availability");
 
-const RESERVATION_STATUSES = ["pending", "confirmed", "cancelled"];
+const RESERVATION_STATUSES = ["awaiting_payment", "pending", "confirmed", "cancelled"];
 const RESERVATION_SLOT_CAPACITY = 2;
 
 const normalizeReservationPhone = (value) => {
@@ -37,7 +37,7 @@ const reservationAvailabilityForDate = (database, dateKey, now = new Date(), gri
 const reservationsForCustomer = (database, customer) => {
   ensureReservationStore(database);
   const customerPhone = normalizeReservationPhone(customer?.phone);
-  return database.reservations.filter((reservation) => reservation.customerId === customer?.id || (customerPhone && normalizeReservationPhone(reservation.phone) === customerPhone));
+  return database.reservations.filter((reservation) => reservation.status !== 'awaiting_payment' && (reservation.customerId === customer?.id || (customerPhone && normalizeReservationPhone(reservation.phone) === customerPhone)));
 };
 
 const createReservation = (database, input, now = new Date()) => {

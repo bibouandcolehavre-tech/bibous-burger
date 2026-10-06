@@ -288,6 +288,14 @@ const finalizePaidOrder = (order, database) => {
       console.error('Alertes commandes SMS : mise en attente impossible.');
     }
   }
+  if (order.tableReservationId) {
+    const table = database.reservations?.find((item) => item.id === order.tableReservationId);
+    if (table?.status === 'awaiting_payment') {
+      table.status = 'confirmed';
+      table.updatedAt = now;
+      push.queueServiceNotification(database, table, 'reservation', 'awaiting_payment', pushConfig);
+    }
+  }
 
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
@@ -317,12 +325,21 @@ const revokeLoyaltyForCancelledOrder = (order, database) => {
   const referralChanged = revokeReferralReward(order, database);
   return loyaltyChanged || welcomeRewardChanged || referralChanged;
 };
+const cancelLinkedTable = (order, database) => {
+  if (order.status !== 'cancelled' || !order.tableReservationId) return;
+  const table = database.reservations?.find(item => item.id === order.tableReservationId);
+  if (table && table.status !== 'cancelled') {
+    table.status = 'cancelled';
+    table.updatedAt = order.updatedAt || new Date().toISOString();
+  }
+};
 const reconcileCancelledLoyalty = (database) => database.orders.reduce((changed, order) => revokeLoyaltyForCancelledOrder(order, database) || changed, false);
 const expireAmendments = (database) => {
   let changed = false;
   for (const order of database.orders) {
     if (order.status === 'awaiting_customer' && order.amendment?.status === 'pending' && Date.parse(order.amendment.expiresAt) <= Date.now()) {
       amendments.cancel(order, 'expired');
+      cancelLinkedTable(order, database);
       revokeLoyaltyForCancelledOrder(order, database);
       push.queueAmendmentNotification(database, order, pushConfig);
       changed = true;
@@ -381,6 +398,30 @@ const refreshPayment = async (record) => {
     checkout = found[0];
   }
   applyVerifiedCheckout(record, checkout, merchantCode);
+};
+
+// Never release a table held during SumUp checkout without checking the payment.
+// An uncertain provider response keeps the hold: overbooking a paid table is worse
+// than temporarily showing one fewer available table.
+const reconcileTablePreorders = async (database, now = new Date()) => {
+  let changed = false;
+  for (const table of database.reservations || []) {
+    if (table.status !== 'awaiting_payment' || Date.parse(table.createdAt) + PENDING_RESERVATION_MS > now.getTime()) continue;
+    const order = database.orders.find((item) => item.id === table.orderId);
+    if (!order || order.status === 'cancelled') {
+      table.status = 'cancelled'; table.updatedAt = now.toISOString(); changed = true; continue;
+    }
+    if (order.payment?.checkoutReference && order.payment.status !== 'PAID' && order.payment.status !== 'EXPIRED') {
+      try { await refreshPayment(order); changed = true; }
+      catch { continue; }
+    }
+    if (order.payment?.status === 'PAID') { finalizePaidOrder(order, database); changed = true; }
+    else if (!order.payment?.checkoutReference || order.payment?.status === 'EXPIRED') {
+      table.status = 'cancelled'; table.updatedAt = now.toISOString();
+      order.status = 'cancelled'; order.updatedAt = now.toISOString(); changed = true;
+    }
+  }
+  if (changed) await writeDatabase(database);
 };
 
 const openPayment = async (record, database, { merchantCode, expiresAt, description, prefix }) => {
@@ -450,7 +491,7 @@ const server = http.createServer(async (request, response) => {
       try { return send(response, 200, orderSms.status(await readDatabase(), orderSmsConfig)); }
       finally { release(); }
     }
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1 } });
 
     if (url.pathname === '/api/dashboard/promotions') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -797,6 +838,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/reservation-availability") {
+      await reconcileTablePreorders(database);
       const serviceDate = url.searchParams.get("date");
       const grid = url.searchParams.get('grid') === '20' ? 20 : 15;
       const capacityWindowMinutes = grid === 20 ? 20 : 30;
@@ -808,6 +850,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/reservations") {
+      await reconcileTablePreorders(database);
       if (!(await serviceModuleStore.read()).modules.tables) return send(response, 409, { code: 'MODULE_DISABLED', error: 'Les nouvelles réservations de table sont momentanément indisponibles.' });
       const input = await readBody(request);
       try {
@@ -1027,6 +1070,7 @@ const server = http.createServer(async (request, response) => {
         const changed = amendments.decide(order, input, await productStockStore.read());
         if (changed) {
           if (order.amendment.status === 'accepted') adjustAmendedLoyalty(order, database);
+          cancelLinkedTable(order, database);
           revokeLoyaltyForCancelledOrder(order, database);
           push.queueAmendmentNotification(database, order, pushConfig);
         }
@@ -1123,7 +1167,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/dashboard/reservations") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       ensureReservationStore(database);
-      const reservations = [...database.reservations].sort((a, b) => `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
+      const reservations = database.reservations.filter((item) => item.status !== 'awaiting_payment').sort((a, b) => `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
       return send(response, 200, { reservations });
     }
 
@@ -1131,6 +1175,13 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       const input = await readBody(request);
       try {
+        const linkedTable = database.reservations?.find(item => item.id === url.pathname.split('/').pop());
+        if (input.status === 'awaiting_payment' || linkedTable?.status === 'awaiting_payment') {
+          return send(response, 409, { error: 'Cette table attend le paiement du repas et ne peut pas être modifiée ici.' });
+        }
+        if (linkedTable?.orderId && database.orders.some(item => item.id === linkedTable.orderId && item.payment?.status === 'PAID' && item.status !== 'cancelled') && input.status !== 'confirmed') {
+          return send(response, 409, { error: 'Cette table est liée à une commande payée. Annulez d’abord la commande et traitez son remboursement.' });
+        }
         const previousStatus = database.reservations?.find(item => item.id === url.pathname.split('/').pop())?.status;
         const reservation = updateReservationStatus(database, url.pathname.split("/").pop(), input.status);
         if (!reservation) return send(response, 404, { error: "Réservation introuvable." });
@@ -1154,6 +1205,7 @@ const server = http.createServer(async (request, response) => {
       if (input.status === "cancelled" && order.status !== "cancelled" && order.amendment) amendments.cancel(order, "cancelled");
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
+      cancelLinkedTable(order, database);
       revokeLoyaltyForCancelledOrder(order, database);
       push.queueServiceNotification(database, order, 'order', previousStatus, pushConfig);
       await writeDatabase(database);
@@ -1218,6 +1270,7 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "POST" && url.pathname === "/api/orders") {
+      await reconcileTablePreorders(database);
       const input = await readBody(request);
       const comment = input.comment === undefined ? "" : typeof input.comment === "string" ? input.comment.trim() : null;
       if (comment === null || comment.length > 500) return send(response, 400, { error: "Le commentaire doit contenir au maximum 500 caractères." });
@@ -1233,6 +1286,9 @@ const server = http.createServer(async (request, response) => {
       }
       if (['delivery', 'pickup'].includes(input.method) && !(await serviceModuleStore.read()).modules[input.method]) return send(response, 409, { code: 'MODULE_DISABLED', error: 'Ce mode de commande est momentanément indisponible.' });
       const promotion = promotionForCode(input.promoCode, database);
+      const tableRequest = input.tableReservation;
+      if (tableRequest !== undefined && (!tableRequest || typeof tableRequest !== 'object' || Array.isArray(tableRequest) || input.method !== 'pickup' || !Number.isInteger(tableRequest.guests) || tableRequest.guests < 1 || tableRequest.guests > 4 || typeof tableRequest.note !== 'string' || tableRequest.note.length > 500)) return send(response, 400, { error: 'Informations de table invalides.' });
+      if (tableRequest && !(await serviceModuleStore.read()).modules.tables) return send(response, 409, { error: 'Les réservations de table sont momentanément indisponibles.' });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
       assertPromotionMethod(promotion, input.method);
@@ -1241,6 +1297,10 @@ const server = http.createServer(async (request, response) => {
       const grid = input.slotGrid === 20 ? 20 : 15;
       const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database, subtotal, grid);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
+      if (tableRequest) {
+        const tableSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), 'reservation', database, undefined, 20);
+        if (tableSlotError) return send(response, 400, { error: tableSlotError });
+      }
       let distanceKm = 0;
       let deliveryFee = 0;
       if (input.method === "delivery") {
@@ -1258,6 +1318,7 @@ const server = http.createServer(async (request, response) => {
         if (!(await serviceModuleStore.read()).modules[input.method]) throw Object.assign(new Error('Ce mode de commande est momentanément indisponible.'), { statusCode: 409 });
         assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());
         const latestDatabase = await readDatabase();
+        if (tableRequest && !(await serviceModuleStore.read()).modules.tables) throw Object.assign(new Error('Les réservations de table sont momentanément indisponibles.'), { statusCode: 409 });
         const activePromotion = promotionForCode(input.promoCode, latestDatabase);
         assertPromotionAvailable(latestDatabase, activePromotion, input.customerId);
         assertPromotionMethod(activePromotion, input.method);
@@ -1276,6 +1337,18 @@ const server = http.createServer(async (request, response) => {
         const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, wheelEurosPerTurn: wheelGame.EUROS_PER_TURN, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
+        if (tableRequest) {
+          let table;
+          try { table = createReservation(latestDatabase, { customerId: latestCustomer.id, name: latestCustomer.name, phone: latestCustomer.phone, guests: tableRequest.guests, note: tableRequest.note, serviceDate: input.serviceDate, slot: input.slot, slotGrid: 20 }, new Date(createdOrder.createdAt)); }
+          catch (error) { throw Object.assign(error, { statusCode: 409 }); }
+          table.status = 'awaiting_payment';
+          table.orderId = createdOrder.id;
+          table.orderNumber = createdOrder.number;
+          createdOrder.tableReservationId = table.id;
+          createdOrder.tableGuests = table.guests;
+          createdOrder.tableNote = table.note;
+          createdOrder.dineIn = true;
+        }
         createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
         createdOrder.requestId = requestId;
         if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
@@ -1284,7 +1357,7 @@ const server = http.createServer(async (request, response) => {
         createdOrder.requestFingerprint = fingerprint;
         const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
-        createdOrder.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(createdOrder);
+        createdOrder.pickupAdvanceBonusApplied = !createdOrder.dineIn && qualifiesForAdvancePickup(createdOrder);
         latestDatabase.orders.unshift(createdOrder);
         if (settlePromotionalOrder(createdOrder)) finalizePaidOrder(createdOrder, latestDatabase);
         await writeDatabase(latestDatabase);
@@ -1374,6 +1447,7 @@ const server = http.createServer(async (request, response) => {
       if (input.status === "cancelled" && order.status !== "cancelled" && order.amendment) amendments.cancel(order, "cancelled");
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
+      cancelLinkedTable(order, database);
       revokeLoyaltyForCancelledOrder(order, database);
       push.queueServiceNotification(database, order, 'order', previousStatus, pushConfig);
       await writeDatabase(database);

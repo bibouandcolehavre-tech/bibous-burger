@@ -23,9 +23,10 @@
     return slot || 'HEURE A CONFIRMER';
   };
   const serviceHeading = order => {
-    const method = order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE A CONFIRMER';
+    const method = order.dineIn ? 'SUR PLACE - TABLE + REPAS' : order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE A CONFIRMER';
     return [method, `POUR LE ${serviceDay(order.serviceDate)}`,
-      order.method === 'pickup' ? `A ${serviceTime(order.slot)}` : `CRENEAU ${serviceTime(order.slot)}`];
+      order.dineIn ? `ARRIVEE A ${serviceTime(order.slot)}` : order.method === 'pickup' ? `A ${serviceTime(order.slot)}` : `CRENEAU ${serviceTime(order.slot)}`,
+      ...(order.dineIn ? [`TABLE DE ${Number(order.tableGuests) || '?'} PERSONNE(S)`] : [])];
   };
   const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
 
@@ -48,7 +49,7 @@
     }
     if (duplicateTest && order.status !== 'delivered') throw new Error('Le duplicata de test exige une commande terminée.');
     const number = Number.isSafeInteger(Number(order.number)) ? `#${Number(order.number)}` : clean(order.id);
-    const method = order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : null;
+    const method = order.dineIn ? 'SUR PLACE' : order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : null;
     if (!method) throw new Error('Mode de commande inconnu.');
     const parts = [
       '<text align="center" dw="true" dh="true" em="true"/>', line(`BIBOU'S BURGERS ${number}`),
@@ -62,6 +63,7 @@
       line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
     ];
     if (order.customerPhone) parts.push(line(`Tel : ${order.customerPhone}`));
+    if (order.dineIn && order.tableNote) parts.push(line(`Table : ${order.tableNote}`));
     if (method === 'LIVRAISON' && address(order.deliveryAddress)) parts.push(line(`Adresse : ${address(order.deliveryAddress)}`));
     parts.push(line('--------------------------------'));
     for (const item of order.items) {
