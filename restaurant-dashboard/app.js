@@ -1,7 +1,7 @@
 const API_BASE_URL = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname) ? "http://localhost:3001/api" : "https://bibous-burger.onrender.com/api";
 const statusLabel = { awaiting_customer: "Accord client attendu", confirmed: "Nouvelle", preparing: "Acceptée", ready: "Prête", out_for_delivery: "En livraison", delivered: "Terminée", cancelled: "Refusée" };
 const statusForLabel = Object.fromEntries(Object.entries(statusLabel).map(([key, value]) => [value, key]));
-const reservationStatusLabel = { pending: "À confirmer", confirmed: "Confirmée", cancelled: "Refusée" };
+const reservationStatusLabel = { pending: "À confirmer", confirmed: "Confirmée", cancelled: "Annulée" };
 const rewardStatusLabel = { active: "À remettre", used: "Utilisée", cancelled: "Annulée" };
 let orders = [];
 let revenue = { today: 0, week: 0, month: 0 };
@@ -426,8 +426,8 @@ function announceArrivals(kind, count) {
 
 function reservationActions(reservation) {
   if (reservation.orderNumber) return `<p class="reservation-note">Repas payé · commande #${Number(reservation.orderNumber)}. Toute annulation doit passer par la commande et son remboursement.</p>`;
-  if (reservation.status === "pending") return `<div class="actions"><button class="cancel-reservation" data-reservation-action="cancelled" data-id="${escapeHtml(reservation.apiId)}">Refuser</button><button class="confirm-reservation" data-reservation-action="confirmed" data-id="${escapeHtml(reservation.apiId)}">Accepter la table</button></div>`;
-  if (reservation.status === "confirmed") return `<div class="actions"><button class="cancel-reservation" data-reservation-action="cancelled" data-id="${escapeHtml(reservation.apiId)}">Annuler la réservation</button></div>`;
+  if (reservation.status === "pending") return `<div class="actions"><button class="cancel-reservation" data-reservation-action="cancelled" data-id="${escapeHtml(reservation.apiId)}">Refuser la table</button>${reservation.deposit ? `<button class="cancel-reservation" data-reservation-action="cancelled" data-cancelled-by="customer" data-id="${escapeHtml(reservation.apiId)}">Annulation du client</button>` : ''}<button class="confirm-reservation" data-reservation-action="confirmed" data-id="${escapeHtml(reservation.apiId)}">Accepter la table</button></div>`;
+  if (reservation.status === "confirmed") return `<div class="actions"><button class="cancel-reservation" data-reservation-action="cancelled" data-id="${escapeHtml(reservation.apiId)}">Restaurant : annuler</button>${reservation.deposit ? `<button class="cancel-reservation" data-reservation-action="cancelled" data-cancelled-by="customer" data-id="${escapeHtml(reservation.apiId)}">Annulation du client</button>` : ''}</div>`;
   return "";
 }
 
@@ -435,7 +435,9 @@ function reservationDepositInfo(reservation) {
   if (!reservation.deposit || reservation.depositPaymentStatus !== 'PAID') return '';
   const paid = `<p class="reservation-note">Paiement SumUp encaissé : <strong>${euro(reservation.deposit.amount)}</strong> · Référence ${escapeHtml(reservation.depositReference || 'à retrouver dans SumUp')}. Ce n’est pas une empreinte bancaire.</p>`;
   if (reservation.deposit.refundStatus === 'recorded') return `${paid}<p class="reservation-note">Remboursement manuel signalé comme effectué.</p>`;
-  if (reservation.status === 'cancelled') return `${paid}<p class="reservation-note">Réservation annulée : le paiement reste encaissé. Vérifiez le traitement de cette somme dans SumUp ; rien n’est remboursé automatiquement.</p>`;
+  if (reservation.status === 'cancelled') return reservation.deposit.cancellation?.refundable
+    ? `${paid}<p class="reservation-note">Annulation ouvrant droit au remboursement : remboursez ${euro(reservation.deposit.amount)} dans SumUp, puis confirmez ici. Rien n’est remboursé automatiquement.</p><div class="actions"><button class="confirm-reservation" data-deposit-refund-id="${escapeHtml(reservation.apiId)}">J’ai remboursé dans SumUp</button></div>`
+    : `${paid}<p class="reservation-note">${reservation.deposit.cancellation ? 'Annulation du client moins d’une heure avant : somme conservée.' : 'Annulation antérieure : vérifiez manuellement les conditions et le paiement dans SumUp.'}</p>`;
   if (reservation.status === 'pending') return `${paid}<p class="reservation-note">Confirmez d’abord la table. Vous pourrez ensuite indiquer si le client est venu ou absent.</p>`;
   if (reservation.deposit.attendanceStatus === 'no_show') return `${paid}<p class="reservation-note">Client absent : la somme est conservée selon la règle annoncée avant paiement.</p><div class="actions"><button class="confirm-reservation" data-deposit-attendance-id="${escapeHtml(reservation.apiId)}" data-deposit-attendance-status="present">Corriger : client venu</button></div>`;
   if (reservation.deposit.attendanceStatus === 'present') return `${paid}<p class="reservation-note">Client venu : remboursez ${euro(reservation.deposit.amount)} sur la carte d’origine dans SumUp, puis confirmez ici.</p><div class="actions"><button class="confirm-reservation" data-deposit-refund-id="${escapeHtml(reservation.apiId)}">J’ai remboursé dans SumUp</button></div>`;
@@ -447,12 +449,12 @@ function renderReservations() {
   const visible = reservations.filter((reservation) => {
     if (reservationFilter === 'all') return true;
     if (reservationFilter === 'today') return reservation.serviceDate === today;
-    const depositNeedsAction = reservation.deposit && reservation.depositPaymentStatus === 'PAID' && reservation.deposit.attendanceStatus !== 'no_show' && reservation.deposit.refundStatus !== 'recorded';
+    const depositNeedsAction = reservation.deposit && reservation.depositPaymentStatus === 'PAID' && reservation.deposit.refundStatus !== 'recorded' && (reservation.status === 'cancelled' ? reservation.deposit.cancellation?.refundable : reservation.deposit.attendanceStatus !== 'no_show');
     return (reservation.serviceDate >= today && reservation.status !== 'cancelled') || depositNeedsAction;
   });
   const sorted = [...visible].sort((a, b) => ((a.status === "pending" ? -1 : 1) - (b.status === "pending" ? -1 : 1)) || `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`));
   document.querySelector("#reservations-list").innerHTML = sorted.length ? sorted.map((reservation) => `<article class="reservation-card ${escapeHtml(reservation.status)}"><div class="reservation-grid"><div><div class="reservation-name">Réservation #${reservation.id} · ${escapeHtml(reservation.customer)}</div><div class="reservation-phone">☎ ${escapeHtml(reservation.phone)}${reservation.receivedAt ? ` · Reçue à ${escapeHtml(reservation.receivedAt)}` : ""}</div></div><div><div class="reservation-when">${escapeHtml(reservation.date)} · ${escapeHtml(reservation.slot)}</div><div class="reservation-guests">${reservation.guests} personne${reservation.guests > 1 ? "s" : ""}</div></div><div><span class="status ${escapeHtml(reservation.status)}">${reservationStatusLabel[reservation.status] || "À confirmer"}</span></div></div>${reservation.note ? `<p class="reservation-note">Note : ${escapeHtml(reservation.note)}</p>` : ""}${reservationDepositInfo(reservation)}${reservationActions(reservation)}</article>`).join("") : `<div class="empty">🍽<strong>Aucune réservation</strong>Les demandes de table apparaîtront ici.</div>`;
-  document.querySelectorAll("[data-reservation-action]").forEach((button) => button.addEventListener("click", () => changeReservation(button.dataset.id, button.dataset.reservationAction)));
+  document.querySelectorAll("[data-reservation-action]").forEach((button) => button.addEventListener("click", () => changeReservation(button.dataset.id, button.dataset.reservationAction, button.dataset.cancelledBy)));
   document.querySelectorAll('[data-deposit-refund-id]').forEach(button => button.addEventListener('click', () => recordDepositRefund(button.dataset.depositRefundId)));
   document.querySelectorAll('[data-deposit-attendance-id]').forEach(button => button.addEventListener('click', () => recordDepositAttendance(button.dataset.depositAttendanceId, button.dataset.depositAttendanceStatus)));
 }
@@ -543,19 +545,23 @@ async function changeOrder(id, status) {
   } finally { pendingOrderChanges.delete(id); if (token === dashboardToken) renderOrders(); }
 }
 
-async function changeReservation(id, status) {
+async function changeReservation(id, status, cancelledBy = 'restaurant') {
   const reservation = reservations.find((item) => item.apiId === id);
   if (!reservation) return;
-  if (status === "cancelled" && !window.confirm(reservation.deposit && reservation.depositPaymentStatus === 'PAID' ? "Confirmez-vous l’annulation ? Le paiement de réservation reste encaissé : traitez séparément son remboursement dans SumUp." : "Confirmez-vous le refus ou l’annulation de cette réservation ?")) return;
+  if (status === "cancelled" && !window.confirm(reservation.deposit && reservation.depositPaymentStatus === 'PAID'
+    ? cancelledBy === 'customer' ? 'Le client demande-t-il bien l’annulation maintenant ? Au moins une heure avant le créneau : remboursement manuel ; sinon : somme conservée. Enregistrez sa demande immédiatement.' : 'Le restaurant annule-t-il cette table ? Le client devra être remboursé manuellement dans SumUp.'
+    : "Confirmez-vous le refus ou l’annulation de cette réservation ?")) return;
   const previousStatus = reservation.status;
   reservation.status = status;
   refreshMetrics();
   renderReservations();
   try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/reservations/${encodeURIComponent(id)}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status }) });
+    const response = await fetch(`${API_BASE_URL}/dashboard/reservations/${encodeURIComponent(id)}`, { method: "PATCH", headers: dashboardHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ status, ...(status === 'cancelled' ? { cancelledBy } : {}) }) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Mise à jour impossible");
-    showToast(status === "confirmed" ? `Réservation #${reservation.id} confirmée.` : `Réservation #${reservation.id} annulée.`);
+    Object.assign(reservation, reservationFromApi(payload.reservation));
+    renderReservations();
+    showToast(status === "confirmed" ? `Réservation #${reservation.id} confirmée.` : reservation.deposit?.cancellation?.refundable ? `Réservation #${reservation.id} annulée. Remboursement à faire dans SumUp.` : `Réservation #${reservation.id} annulée.`);
   } catch {
     reservation.status = previousStatus;
     refreshMetrics();

@@ -1,6 +1,7 @@
 const { withdrawContest } = require('./referral-contest');
 const { deleteCustomerPush } = require('./push-notifications');
 const { deleteCustomer: deleteCustomerCrm } = require('./crm');
+const { cancelDepositReservation } = require('./reservation-deposit');
 const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   if (!database || !customer) return null;
   const deletedAt = value.toISOString();
@@ -35,7 +36,11 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     reservation.customerName = "Client supprimé";
     reservation.phone = "";
     reservation.note = "";
-    if (reservation.status !== "cancelled") reservation.status = "cancelled";
+    if (reservation.deposit && reservation.payment?.status === 'PAID' && !reservation.orderId && ['pending', 'confirmed'].includes(reservation.status) && reservation.deposit.attendanceStatus === 'unrecorded') {
+      cancelDepositReservation(reservation, 'customer', value);
+    } else if (reservation.status !== "cancelled" && (!reservation.deposit || reservation.payment?.status !== 'PAID')) {
+      reservation.status = "cancelled";
+    }
     reservation.accountDeletedAt = deletedAt;
     reservation.updatedAt = deletedAt;
     reservationsAnonymized += 1;

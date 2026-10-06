@@ -31,7 +31,7 @@ const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrd
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
 const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
-const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance } = require('./reservation-deposit');
+const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance, cancelDepositReservation } = require('./reservation-deposit');
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
 const { applySupportCredits } = require("./support-credits");
@@ -924,7 +924,7 @@ const server = http.createServer(async (request, response) => {
         }
         return send(response, 409, { error: 'Le délai de paiement de cette table est dépassé. Vérifie le paiement avant de recommencer.' });
       }
-      await openPayment(reservation, database, { merchantCode, expiresAt, description: `Réservation Bibou's #${reservation.number} · remboursée si venu, conservée si absent`, prefix: 'bibous-table' });
+      await openPayment(reservation, database, { merchantCode, expiresAt, description: `Réservation Bibou's #${reservation.number} · remboursement si venu ou annulation au moins 1 h avant`, prefix: 'bibous-table' });
       finalizePaidTableDeposit(reservation, database);
       await writeDatabase(database);
       return send(response, 201, { reservation, checkoutUrl: reservation.payment.checkoutUrl || null });
@@ -1165,6 +1165,21 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { reservations });
     }
 
+    if (request.method === 'POST' && /^\/api\/customer\/reservations\/[^/]+\/cancel$/.test(url.pathname)) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Reconnecte-toi pour annuler ta table.' });
+      const id = url.pathname.split('/')[4];
+      const reservation = database.reservations?.find(item => item.id === id && item.customerId === customer.id);
+      if (!reservation) return send(response, 404, { error: 'Réservation introuvable.' });
+      try {
+        cancelDepositReservation(reservation, 'customer');
+        await writeDatabase(database);
+        return send(response, 200, { reservation });
+      } catch (error) {
+        return send(response, 409, { error: error.message || 'Annulation impossible.' });
+      }
+    }
+
     if (request.method === "GET" && url.pathname === "/api/orders") {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       if (reconcileCancelledLoyalty(database)) await writeDatabase(database);
@@ -1265,7 +1280,7 @@ const server = http.createServer(async (request, response) => {
       const reservation = database.reservations?.find(item => item.id === id);
       if (!reservation?.deposit || reservation.payment?.status !== 'PAID') return send(response, 409, { error: 'Aucun paiement de réservation vérifié à rembourser.' });
       if (reservation.deposit.refundStatus === 'recorded') return send(response, 200, { reservation });
-      if (reservation.deposit.attendanceStatus !== 'present') return send(response, 409, { error: 'Indique d’abord que le client est venu avant d’enregistrer son remboursement.' });
+      if (reservation.deposit.attendanceStatus !== 'present' && !(reservation.status === 'cancelled' && reservation.deposit.cancellation?.refundable)) return send(response, 409, { error: 'Le remboursement ne peut être enregistré que si le client est venu ou si l’annulation donne droit au remboursement.' });
       const input = await readBody(request);
       if (input.confirmedInSumUp !== true) return send(response, 400, { error: 'Confirme d’abord le remboursement effectué dans SumUp.' });
       reservation.deposit.refundStatus = 'recorded';
@@ -1285,6 +1300,12 @@ const server = http.createServer(async (request, response) => {
         if (linkedTable?.orderId && database.orders.some(item => item.id === linkedTable.orderId && item.payment?.status === 'PAID' && item.status !== 'cancelled') && input.status !== 'confirmed') {
           return send(response, 409, { error: 'Cette table est liée à une commande payée. Annulez d’abord la commande et traitez son remboursement.' });
         }
+        if (linkedTable?.deposit && linkedTable.payment?.status === 'PAID' && input.status === 'cancelled') {
+          cancelDepositReservation(linkedTable, input.cancelledBy === 'customer' ? 'customer' : 'restaurant');
+          await writeDatabase(database);
+          return send(response, 200, { reservation: linkedTable });
+        }
+        if (linkedTable?.deposit?.cancellation && input.status !== 'cancelled') return send(response, 409, { error: 'Cette réservation payée a déjà été annulée et ne peut pas être réactivée.' });
         const previousStatus = database.reservations?.find(item => item.id === url.pathname.split('/').pop())?.status;
         const reservation = updateReservationStatus(database, url.pathname.split("/").pop(), input.status);
         if (!reservation) return send(response, 404, { error: "Réservation introuvable." });

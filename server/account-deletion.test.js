@@ -36,3 +36,15 @@ test("supprime le compte et anonymise les données opérationnelles", () => {
   assert.deepEqual(database.wheelSpins, []);
   assert.deepEqual(database.merchantPromotions, []);
 });
+
+test('la suppression du compte conserve la décision de remboursement d’une table payée', () => {
+  const customer = { id: 'customer-1', phone: '+33600000000' };
+  const database = {
+    customers: [customer], orders: [], rewardClaims: [],
+    reservations: [{ id: 'reservation-paid', customerId: customer.id, customerName: 'Camille', phone: customer.phone, guests: 2, serviceDate: '2026-10-20', slot: '19:00', status: 'confirmed', payment: { status: 'PAID' }, deposit: { amount: 20, attendanceStatus: 'unrecorded', refundStatus: 'not_refunded' } }],
+  };
+  anonymizeCustomerAccount(database, customer, new Date('2026-10-20T15:59:00Z'));
+  assert.equal(database.reservations[0].status, 'cancelled');
+  assert.equal(database.reservations[0].deposit.cancellation.refundable, true);
+  assert.equal(database.reservations[0].deposit.cancellation.by, 'customer');
+});

@@ -13,7 +13,7 @@ test('réservation sans repas : 10 € par personne, vérification SumUp, rembou
   const databaseFile = path.join(directory, 'data.json');
   const providerFile = path.join(directory, 'sumup.json');
   const customer = { id: 'customer-deposit', name: 'Camille Test', phone: '+33600000000', points: 0 };
-  await fs.writeFile(databaseFile, JSON.stringify({ customers: [customer], orders: [], reservations: [], nextOrderNumber: 1, nextReservationNumber: 1 }));
+  await fs.writeFile(databaseFile, JSON.stringify({ customers: [customer, { id: 'another-customer', name: 'Autre Test', phone: '+33600000001', points: 0 }], orders: [], reservations: [], nextOrderNumber: 1, nextReservationNumber: 1 }));
   await fs.writeFile(providerFile, JSON.stringify({ checkouts: {} }));
   const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/sumup-provider.cjs'), path.join(__dirname, 'server.js')], {
     cwd: directory,
@@ -35,6 +35,7 @@ test('réservation sans repas : 10 € par personne, vérification SumUp, rembou
   };
   const admin = (await request('/dashboard/auth/login', { method: 'POST', body: { password: 'test-only' } })).data.token;
   const serviceDate = parisDateKey(new Date(Date.now() + 86400000));
+  const distantServiceDate = parisDateKey(new Date(Date.now() + 2 * 86400000));
   const body = { requestId: 'reservation-deposit-test-0001', name: 'Camille Test', phone: '0600000000', guests: 2, serviceDate, slot: '19:00', slotGrid: 20, note: '', depositTermsAccepted: true };
   assert.equal((await request('/health')).data.capabilities.reservationDeposits, 1);
   assert.equal((await request('/reservations/deposit-checkout', { method: 'POST', body: { ...body, depositTermsAccepted: false } })).status, 400);
@@ -49,7 +50,7 @@ test('réservation sans repas : 10 € par personne, vérification SumUp, rembou
   const provider = JSON.parse(await fs.readFile(providerFile, 'utf8'));
   const [checkoutId] = Object.keys(provider.checkouts);
   assert.equal(provider.checkouts[checkoutId].amount, 20);
-  assert.match(provider.checkouts[checkoutId].description, /remboursée si venu, conservée si absent/);
+  assert.match(provider.checkouts[checkoutId].description, /remboursement si venu ou annulation au moins 1 h avant/);
   assert.equal((await request('/payments/sumup-return', { method: 'POST', auth: '', body: { id: checkoutId, status: 'PAID' } })).status, 204);
   assert.equal((await request('/customer/reservations')).data.reservations.length, 0);
   provider.checkouts[checkoutId].status = 'PAID';
@@ -94,4 +95,33 @@ test('réservation sans repas : 10 € par personne, vérification SumUp, rembou
   assert.equal(noShow.status, 200);
   assert.equal(noShow.data.reservation.deposit.attendanceStatus, 'no_show');
   assert.equal((await request(`/dashboard/reservations/${absent.data.reservation.id}/deposit-refund-record`, { method: 'POST', auth: admin, body: { confirmedInSumUp: true } })).status, 409);
+
+  const early = await request('/reservations/deposit-checkout', { method: 'POST', body: { ...body, requestId: 'reservation-deposit-test-0004', serviceDate: distantServiceDate, slot: '20:00', guests: 2 } });
+  assert.equal(early.status, 201, JSON.stringify(early.data));
+  const providerForEarly = JSON.parse(await fs.readFile(providerFile, 'utf8'));
+  providerForEarly.checkouts[Object.keys(providerForEarly.checkouts).at(-1)].status = 'PAID';
+  await fs.writeFile(providerFile, JSON.stringify(providerForEarly));
+  assert.equal((await request(`/reservations/deposit-checkout/${early.data.reservation.id}`)).status, 200);
+  assert.equal((await request(`/customer/reservations/${early.data.reservation.id}/cancel`, { method: 'POST', auth: '' })).status, 401);
+  const otherToken = createCustomerSession('another-customer', 'test-secret');
+  assert.equal((await request(`/customer/reservations/${early.data.reservation.id}/cancel`, { method: 'POST', auth: otherToken })).status, 404);
+  const cancelledEarly = await request(`/customer/reservations/${early.data.reservation.id}/cancel`, { method: 'POST' });
+  assert.equal(cancelledEarly.status, 200, JSON.stringify(cancelledEarly.data));
+  assert.equal(cancelledEarly.data.reservation.status, 'cancelled');
+  assert.equal(cancelledEarly.data.reservation.deposit.cancellation.by, 'customer');
+  assert.equal(cancelledEarly.data.reservation.deposit.cancellation.refundable, true);
+  assert.equal((await request(`/customer/reservations/${early.data.reservation.id}/cancel`, { method: 'POST' })).data.reservation.deposit.cancellation.cancelledAt, cancelledEarly.data.reservation.deposit.cancellation.cancelledAt);
+  assert.equal((await request(`/dashboard/reservations/${early.data.reservation.id}/deposit-refund-record`, { method: 'POST', auth: admin, body: { confirmedInSumUp: false } })).status, 400);
+  assert.equal((await request(`/dashboard/reservations/${early.data.reservation.id}/deposit-refund-record`, { method: 'POST', auth: admin, body: { confirmedInSumUp: true } })).status, 200);
+  assert.equal((await request(`/dashboard/reservations/${early.data.reservation.id}`, { method: 'PATCH', auth: admin, body: { status: 'confirmed' } })).status, 409);
+
+  const restaurantCancelled = await request('/reservations/deposit-checkout', { method: 'POST', body: { ...body, requestId: 'reservation-deposit-test-0005', serviceDate: distantServiceDate, slot: '20:20', guests: 1 } });
+  assert.equal(restaurantCancelled.status, 201, JSON.stringify(restaurantCancelled.data));
+  const providerForRestaurant = JSON.parse(await fs.readFile(providerFile, 'utf8'));
+  providerForRestaurant.checkouts[Object.keys(providerForRestaurant.checkouts).at(-1)].status = 'PAID';
+  await fs.writeFile(providerFile, JSON.stringify(providerForRestaurant));
+  assert.equal((await request(`/reservations/deposit-checkout/${restaurantCancelled.data.reservation.id}`)).status, 200);
+  const restaurantResponse = await request(`/dashboard/reservations/${restaurantCancelled.data.reservation.id}`, { method: 'PATCH', auth: admin, body: { status: 'cancelled', cancelledBy: 'restaurant' } });
+  assert.equal(restaurantResponse.status, 200, JSON.stringify(restaurantResponse.data));
+  assert.equal(restaurantResponse.data.reservation.deposit.cancellation.refundable, true);
 });
