@@ -8,6 +8,7 @@ const phone = value => {const d=String(value||'').replace(/\D/g,'');return /^0\d
 const address = ({address,postalCode,city}) => JSON.stringify({street_address:[address],city,zip_code:postalCode,country:'FR'});
 const safeTracking = value => {try{const u=new URL(value);return u.protocol==='https:' && !u.username && !u.password && ['uber.com','ubereats.com'].some(h=>u.hostname===h || u.hostname.endsWith('.'+h))?u.href:null;}catch{return null;}};
 function assertEligible(order,now=Date.now()) {
+ if(['accepted','picked_up','issue'].includes(order.kroklyDriver?.status) || (order.kroklyDriver?.status==='offered' && Date.parse(order.kroklyDriver.expiresAt)>now)) fail('Commande déjà attribuée à un livreur Krokly. Ne demandez pas aussi un coursier Uber.');
  if(order.method!=='delivery' || order.payment?.status!=='PAID' || !['preparing','ready'].includes(order.status) || order.amendment?.status==='pending') fail('Acceptez d’abord la commande en livraison et faites revalider tout changement de panier.');
  if(!order.customerId || !order.customerName || !phone(order.customerPhone) || !order.deliveryAddress?.address || !order.deliveryAddress.postalCode || !order.deliveryAddress.city) fail('Nom, téléphone et adresse complète du destinataire requis.');
  const slot=serviceSlotInstant(order.serviceDate,order.slot?.slice(0,5),'delivery');

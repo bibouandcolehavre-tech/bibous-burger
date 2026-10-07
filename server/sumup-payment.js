@@ -28,6 +28,7 @@ const applyVerifiedCheckout = (record, checkout, merchantCode, value = new Date(
   return payment;
 };
 const assertOrderTransition = (order, status) => {
+  if ((['accepted', 'picked_up', 'issue'].includes(order.kroklyDriver?.status) || (order.kroklyDriver?.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) > Date.now())) && status !== order.status && status !== 'cancelled') throw Object.assign(new Error('Livraison attribuée à Krokly Driver : les étapes de cette course se confirment dans l’espace livreur.'), { statusCode: 409 });
   const u = order.uberDirect;
   if (u && ["sending", "uncertain", "created"].includes(u.phase) && !["canceled", "returned", "delivered"].includes(u.status) && ["cancelled", "confirmed", "out_for_delivery", "delivered"].includes(status)) throw Object.assign(new Error("Livraison confiée à Uber : actualisez son suivi. Pour annuler, annulez d’abord la course dans Uber Direct."), {statusCode:409});
   if (order.status === "awaiting_customer" && status !== "cancelled") throw Object.assign(new Error("Le client doit revalider le panier avant toute préparation."), { statusCode: 409 });

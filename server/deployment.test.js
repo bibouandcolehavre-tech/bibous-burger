@@ -30,6 +30,11 @@ test('Le paquet Docker démarre avec tous les modules des actualités', { timeou
       for (const file of await fs.readdir(from)) {
         if (file.endsWith('.js') && !file.endsWith('.test.js')) await fs.copyFile(path.join(from, file), path.join(to, file));
       }
+    } else if (source === 'driver-app') {
+      const expected = ['app.js', 'icon.svg', 'index.html', 'manifest.webmanifest', 'style.css', 'sw.js'];
+      assert.deepEqual((await fs.readdir(from)).sort(), expected, 'Le paquet livreur ne doit contenir que les fichiers publics prévus.');
+      await fs.mkdir(to, { recursive: true });
+      for (const file of expected) await fs.copyFile(path.join(from, file), path.join(to, file));
     } else {
       assert.ok(source.endsWith('.js'), 'Unexpected runtime asset: extend this packaging test explicitly.');
       await fs.mkdir(path.dirname(to), { recursive: true });
@@ -53,6 +58,7 @@ test('Le paquet Docker démarre avec tous les modules des actualités', { timeou
   });
   const health = await fetch(base + '/api/health');
   assert.equal(health.status, 200);
+  assert.equal((await fetch(base + '/driver/')).status, 200);
   const news = await (await fetch(base + '/api/news')).json();
   assert.equal(news.items.length, 4);
   assert.deepEqual(news.items.map(item => item.id), ['contest', 'epicu', 'paris-normandie', 'social']);

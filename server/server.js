@@ -40,6 +40,8 @@ const amendments = require("./order-amendments");
 const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
 const orderSms = require('./order-sms');
+const kroklyDrivers = require('./krokly-drivers');
+const kroklyWebPush = require('./krokly-web-push');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
@@ -60,6 +62,7 @@ if (fsSync.existsSync(envPath)) {
 
 const port = Number(process.env.PORT || 3001);
 const pushConfig = push.configFromEnv(process.env);
+const kroklyPushConfig = kroklyWebPush.configFromEnv(process.env);
 const uberConfig = uber.configFromEnv(process.env);
 const uberClient = uber.createClient(uberConfig);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
@@ -88,8 +91,10 @@ const burgerProductIds = new Set(["atlas", "classique", "duck", "dynamite", "ham
 const smsAttemptLimiter = createSmsAttemptLimiter();
 const registrations = createRegistrationStore();
 const dashboardLoginLimiter = createAuthRateLimiter();
+const kroklyLoginLimiter = createAuthRateLimiter({ limit: 6, windowMs: 15 * 60000 });
 const smsCodeLimiter = createAuthRateLimiter({ limit: 8, windowMs: 15 * 60000 });
 const dashboardSessions = createDashboardSessionStore(path.join(path.dirname(databasePath), 'dashboard-sessions.json'), { secret: restaurantDashboardPassword || customerSessionSecret });
+const kroklyTokenSecret = crypto.createHmac('sha256', customerSessionSecret).update('krokly-drivers-v1').digest('hex');
 const reviewSandbox = createReviewSandbox({ enabled: process.env.STORE_REVIEW_ENABLED !== 'false' });
 const acquireDatabase = createDatabaseLock();
 const autoPrintStartedAt = new Date().toISOString();
@@ -474,6 +479,109 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
+    const kroklyFile = ({
+      '/driver/': ['index.html', 'text/html; charset=utf-8'],
+      '/driver/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+      '/driver/style.css': ['style.css', 'text/css; charset=utf-8'],
+      '/driver/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
+      '/driver/icon.svg': ['icon.svg', 'image/svg+xml'],
+      '/driver/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json']
+    })[url.pathname];
+    if (request.method === 'GET' && kroklyFile) {
+      const file = path.join(__dirname, '../driver-app', kroklyFile[0]);
+      const contents = await fs.readFile(file);
+      response.writeHead(200, {
+        'Content-Type': kroklyFile[1], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+      });
+      return response.end(contents);
+    }
+    if (url.pathname === '/driver') {
+      response.writeHead(308, { Location: '/driver/', 'Cache-Control': 'no-store' });
+      return response.end();
+    }
+    if (url.pathname.startsWith('/api/krokly-driver/') || url.pathname.startsWith('/api/dashboard/krokly-drivers')) {
+      try {
+        const admin = url.pathname.startsWith('/api/dashboard/');
+        if (admin && !authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+        const input = ['POST', 'PATCH'].includes(request.method) ? await readBody(request) : {};
+        if (!input || typeof input !== 'object' || Array.isArray(input)) return send(response, 400, { error: 'Données invalides.' });
+        if (url.pathname === '/api/krokly-driver/login' && request.method === 'POST') {
+          const key = `${request.socket.remoteAddress || 'unknown'}:${String(input.username || '').trim().toLowerCase().slice(0, 32)}`;
+          const limit = kroklyLoginLimiter.consume(key);
+          if (!limit.allowed) {
+            response.setHeader('Retry-After', String(limit.retryAfterSeconds));
+            return send(response, 429, { error: 'Trop de tentatives. Réessayez plus tard.' });
+          }
+          const database = await readDatabase();
+          const session = kroklyDrivers.sessionFor(database, input.username, input.password, kroklyTokenSecret);
+          kroklyLoginLimiter.reset(key);
+          return send(response, 200, session);
+        }
+        releaseDatabase = await acquireDatabase();
+        const database = await readDatabase();
+        if (!admin) {
+          const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+          const driver = kroklyDrivers.authenticate(database, token, kroklyTokenSecret);
+          if (!driver) return send(response, 401, { error: 'Session livreur expirée ou désactivée.' });
+          const expired = kroklyDrivers.expireOffers(database);
+          if (expired) await writeDatabase(database);
+          if (url.pathname === '/api/krokly-driver/state' && request.method === 'GET') {
+            return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, orders: kroklyDrivers.assigned(database, driver.id), push: { enabled: kroklyPushConfig.enabled, publicKey: kroklyPushConfig.publicKey, devices: (database.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length } });
+          }
+          if (url.pathname === '/api/krokly-driver/push/subscribe' && request.method === 'POST') {
+            if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokly ne sont pas encore configurées.' });
+            const result = kroklyWebPush.register(database, driver.id, input.endpoint);
+            await writeDatabase(database);
+            return send(response, 200, result);
+          }
+          if (url.pathname === '/api/krokly-driver/push/unsubscribe' && request.method === 'POST') {
+            const result = kroklyWebPush.unregister(database, driver.id, input.endpoint);
+            await writeDatabase(database);
+            return send(response, 200, result);
+          }
+          if (url.pathname === '/api/krokly-driver/push/test' && request.method === 'POST') {
+            if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokly ne sont pas encore configurées.' });
+            const result = kroklyWebPush.queueTest(database, driver.id);
+            await writeDatabase(database);
+            return send(response, 200, result);
+          }
+          const action = /^\/api\/krokly-driver\/orders\/([^/]+)\/(accept|decline|pickup|deliver)$/.exec(url.pathname);
+          if (action && request.method === 'POST') {
+            const order = kroklyDrivers.transition(database, decodeURIComponent(action[1]), driver.id, action[2]);
+            if (['pickup', 'deliver'].includes(action[2])) push.queueServiceNotification(database, order, 'order', action[2] === 'pickup' ? 'ready' : 'out_for_delivery', pushConfig);
+            await writeDatabase(database);
+            return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, orders: kroklyDrivers.assigned(database, driver.id) });
+          }
+          return send(response, 405, { error: 'Action livreur indisponible.' });
+        }
+        const expired = kroklyDrivers.expireOffers(database);
+        if (expired) await writeDatabase(database);
+        if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'GET') return send(response, 200, kroklyDrivers.dispatchState(database));
+        if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'POST') {
+          const created = kroklyDrivers.createDriver(database, input);
+          await writeDatabase(database);
+          return send(response, 201, created);
+        }
+        const account = /^\/api\/dashboard\/krokly-drivers\/([^/]+)\/(reset|active)$/.exec(url.pathname);
+        if (account && ['POST', 'PATCH'].includes(request.method)) {
+          const result = account[2] === 'reset' ? kroklyDrivers.resetPassword(database, account[1]) : kroklyDrivers.setActive(database, account[1], input.active);
+          await writeDatabase(database);
+          return send(response, 200, result);
+        }
+        const dispatch = /^\/api\/dashboard\/krokly-drivers\/orders\/([^/]+)\/assign$/.exec(url.pathname);
+        if (dispatch && request.method === 'POST') {
+          const assignment = kroklyDrivers.assign(database, decodeURIComponent(dispatch[1]), input.driverId);
+          if (kroklyPushConfig.enabled) kroklyWebPush.queue(database, input.driverId, decodeURIComponent(dispatch[1]), Date.now(), Date.parse(assignment.expiresAt));
+          await writeDatabase(database);
+          return send(response, 200, { assignment });
+        }
+        return send(response, 405, { error: 'Action de répartition indisponible.' });
+      } catch (error) {
+        return send(response, [400, 401, 403, 404, 409, 429].includes(error.statusCode) ? error.statusCode : 500, { error: error.statusCode ? error.message : 'Krokly Driver momentanément indisponible.' });
+      }
+    }
     if (url.pathname === '/api/keyyo/call') {
       if (request.method !== 'GET') return send(response, 405, { error: 'Méthode non autorisée.' });
       try {
@@ -1646,6 +1754,37 @@ const pushTimer = setInterval(tickPush, pushConfig.enabled ? 15000 : 60 * 60000)
 pushTimer.unref();
 server.once('listening', tickPush);
 server.on('close', () => clearInterval(pushTimer));
+let kroklyPushBusy = false;
+const tickKroklyPush = async () => {
+  if (!kroklyPushConfig.enabled || kroklyPushBusy) return;
+  kroklyPushBusy = true;
+  try {
+    let selected;
+    const release = await acquireDatabase();
+    try {
+      const database = await readDatabase();
+      const before = JSON.stringify(database.kroklyPushJobs || []);
+      selected = kroklyWebPush.claim(database);
+      if (JSON.stringify(database.kroklyPushJobs || []) !== before) await writeDatabase(database);
+    } finally { release(); }
+    for (const job of selected) {
+      const outcome = await kroklyWebPush.send(kroklyPushConfig, job.endpoint);
+      const unlock = await acquireDatabase();
+      try {
+        const database = await readDatabase();
+        kroklyWebPush.settle(database, job.id, outcome);
+        await writeDatabase(database);
+      } finally { unlock(); }
+    }
+  } catch { console.error('Alertes livreurs Krokly : traitement indisponible, nouvelle tentative automatique.'); }
+  finally { kroklyPushBusy = false; }
+};
+if (kroklyPushConfig.enabled) {
+  const kroklyPushTimer = setInterval(() => void tickKroklyPush(), 5000);
+  kroklyPushTimer.unref();
+  server.once('listening', () => void tickKroklyPush());
+  server.on('close', () => clearInterval(kroklyPushTimer));
+}
 // Staff SMS is persisted with payment confirmation. The provider is contacted
 // outside the order lock, so a slow SMS can never hold up a customer's checkout.
 const orderSmsWorker = orderSms.createWorker({ config: orderSmsConfig, transact: async task => {

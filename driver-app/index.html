@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#153d35">
+  <title>Krokly Driver</title>
+  <link rel="icon" href="/driver/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/driver/manifest.webmanifest">
+  <link rel="stylesheet" href="/driver/style.css">
+  <script defer src="/driver/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header><div class="logo"><span class="mark">K</span><span>Krokly <b>Driver</b></span></div><span class="pilot">PILOTE BIBOU</span></header>
+    <main>
+      <section class="hero"><p class="eyebrow">Bibou's Burgers · livraison interne</p><h1>La bonne course.<br><em>Au bon livreur.</em></h1><p>Un espace pour attribuer, accepter et suivre chaque livraison.</p></section>
+      <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+      <section id="login" class="login card">
+        <h2>Se connecter</h2>
+        <p>Chaque livreur utilise son propre compte. Le restaurant utilise son accès au back-office.</p>
+        <div class="tabs"><button type="button" data-mode="driver" class="selected">Je suis livreur</button><button type="button" data-mode="owner">Je répartis les courses</button></div>
+        <form id="login-form">
+          <label id="username-label">Identifiant<input id="username" autocomplete="username" required></label>
+          <label>Mot de passe<input id="password" type="password" autocomplete="current-password" required></label>
+          <button class="primary" type="submit">Entrer dans mon espace</button>
+        </form>
+      </section>
+      <section id="workspace" hidden>
+        <div class="workspace-head"><div><p class="eyebrow" id="role-label"></p><h2 id="welcome"></h2></div><button id="logout" class="quiet" type="button">Se déconnecter</button></div>
+        <div id="content"></div>
+      </section>
+    </main>
+    <footer>Krokly Driver · Accès réservé aux livreurs et à l’équipe Bibou.</footer>
+  </div>
+</body>
+</html>
