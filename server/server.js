@@ -564,6 +564,12 @@ const server = http.createServer(async (request, response) => {
           await writeDatabase(database);
           return send(response, 201, created);
         }
+        const rename = /^\/api\/dashboard\/krokly-drivers\/([^/]+)\/name$/.exec(url.pathname);
+        if (rename && request.method === 'PATCH') {
+          const result = kroklyDrivers.setName(database, decodeURIComponent(rename[1]), input.name);
+          await writeDatabase(database);
+          return send(response, 200, result);
+        }
         const account = /^\/api\/dashboard\/krokly-drivers\/([^/]+)\/(reset|active)$/.exec(url.pathname);
         if (account && ['POST', 'PATCH'].includes(request.method)) {
           const result = account[2] === 'reset' ? kroklyDrivers.resetPassword(database, account[1]) : kroklyDrivers.setActive(database, account[1], input.active);

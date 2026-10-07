@@ -31,6 +31,21 @@ test('separate courier accounts use hashed passwords and independent sessions', 
   assert.equal(K.authenticate(db, session.token, 'secret', now), null);
 });
 
+test('renaming a courier preserves credentials, sessions and other accounts', () => {
+  const { db, now } = fixture();
+  const mathieu = K.createDriver(db, { username: 'mathieu', name: 'Mathieu' }, now);
+  const lina = K.createDriver(db, { username: 'lina', name: 'Lina' }, now);
+  const session = K.sessionFor(db, 'mathieu', mathieu.password, 'secret', now);
+  const before = { ...db.kroklyDrivers[0] };
+  assert.equal(K.setName(db, mathieu.driver.id, ' Mathieu (surnom) ').name, 'Mathieu (surnom)');
+  assert.deepEqual(db.kroklyDrivers[0], { ...before, name: 'Mathieu (surnom)' });
+  assert.equal(K.authenticate(db, session.token, 'secret', now).name, 'Mathieu (surnom)');
+  assert.equal(K.sessionFor(db, 'mathieu', mathieu.password, 'secret', now).driver.username, 'mathieu');
+  assert.equal(K.drivers(db).find(driver => driver.id === lina.driver.id).name, 'Lina');
+  for (const name of ['', 'x', 'x'.repeat(61), null]) assert.throws(() => K.setName(db, mathieu.driver.id, name), error => error.statusCode === 400);
+  assert.throws(() => K.setName(db, 'missing', 'Valid name'), error => error.statusCode === 404);
+});
+
 test('only paid ready delivery orders without active Uber can be assigned', () => {
   const { db, now } = fixture();
   const lina = K.createDriver(db, { username: 'lina', name: 'Lina' }, now);

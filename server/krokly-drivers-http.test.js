@@ -55,6 +55,13 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
   const malikToken = (await request('/api/krokly-driver/login', '', 'POST', { username: 'malik', password: malik.data.password })).data.token;
   const firstState = (await request('/api/krokly-driver/state', linaToken)).data;
   assert.equal(firstState.orders.length, 0);
+  const renameRoute = '/api/dashboard/krokly-drivers/' + lina.data.driver.id + '/name';
+  assert.equal((await request(renameRoute, '', 'PATCH', { name: 'Lina (surnom)' })).status, 401);
+  assert.equal((await request(renameRoute, linaToken, 'PATCH', { name: 'Lina (surnom)' })).status, 401);
+  assert.equal((await request(renameRoute, owner, 'PATCH', { name: '' })).status, 400);
+  assert.equal((await request(renameRoute, owner, 'PATCH', { name: 'Lina (surnom)' })).status, 200);
+  assert.equal((await request('/api/krokly-driver/state', linaToken)).data.driver.name, 'Lina (surnom)');
+  assert.equal((await request('/api/krokly-driver/login', '', 'POST', { username: 'lina', password: lina.data.password })).status, 200);
   assert.equal(firstState.push.enabled, true);
   assert.equal(typeof firstState.push.publicKey, 'string');
   assert.equal((await request('/api/krokly-driver/push/subscribe', linaToken, 'POST', { endpoint: 'https://127.0.0.1/private' })).status, 400);

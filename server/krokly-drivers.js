@@ -73,6 +73,16 @@ function setActive(db, id, active) {
   return publicDriver(driver);
 }
 
+function setName(db, id, nameInput) {
+  const driver = (db.kroklyDrivers || []).find(item => item.id === id);
+  if (!driver) fail('Livreur introuvable.', 404);
+  if (typeof nameInput !== 'string') fail('Indiquez le nom du livreur (2 à 60 caractères).', 400);
+  const name = nameInput.trim();
+  if (name.length < 2 || name.length > 60) fail('Indiquez le nom du livreur (2 à 60 caractères).', 400);
+  driver.name = name;
+  return publicDriver(driver);
+}
+
 function sessionFor(db, usernameInput, password, secret, now = Date.now()) {
   const username = String(usernameInput || '').trim().toLowerCase();
   const driver = (db.kroklyDrivers || []).find(item => item.username === username);
@@ -186,4 +196,4 @@ function dispatchState(db, now = Date.now()) {
   };
 }
 
-module.exports = { drivers, createDriver, resetPassword, setActive, sessionFor, authenticate, uberActive, eligible, expireOffers, assign, transition, assigned, dispatchState, OFFER_MS };
+module.exports = { drivers, createDriver, resetPassword, setActive, setName, sessionFor, authenticate, uberActive, eligible, expireOffers, assign, transition, assigned, dispatchState, OFFER_MS };
