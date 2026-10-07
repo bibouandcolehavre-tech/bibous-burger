@@ -191,6 +191,30 @@ test('dessert à 2 € dans un menu et 3,90 € à la carte, prix imposés par l
   assert.equal(validateAndPriceOrderItems([{ productId: 'dessert-oreo', quantity: 1, selections: [] }]).subtotal, 3.9);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique', quantity: 1, selections: [...requiredSelections, { groupId: 'menu-desserts', id: 'oreo' }] }]), /option/);
   assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, { groupId: 'menu-desserts', id: 'oreo' }, { groupId: 'menu-desserts', id: 'cookie' }] }]), /maximum 1 choix/);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'dessert-speculoos', quantity: 1, selections: [] }]).subtotal, 3.9);
+  assert.equal(validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, { groupId: 'menu-desserts', id: 'speculoos' }] }]).subtotal, 16.9);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'dessert-framboise', quantity: 1, selections: [] }]), /n.existe plus/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'classique-menu', quantity: 1, selections: [...requiredSelections, menuDrink, { groupId: 'menu-desserts', id: 'framboise' }] }]), /option.*invalide/);
+});
+
+test('Menu Solo et Duo : chaque tiramisu est un supplément indépendant à 2 €', () => {
+  const solo = validateAndPriceOrderItems([{ productId: 'menu-solo-tenders', quantity: 1, selections: [
+    { groupId: 'drink', id: 'coca' }, { groupId: 'solo-dessert', id: 'speculoos' }
+  ] }]);
+  assert.equal(solo.subtotal, 11.9);
+  assert.equal(solo.items[0].options.find(option => option.groupId === 'solo-dessert').price, 2);
+  const duo = validateAndPriceOrderItems([{ productId: 'menu-duo-tenders', quantity: 1, selections: [
+    { groupId: 'duo-drink-one', id: 'coca' }, { groupId: 'duo-drink-two', id: 'perrier' },
+    { groupId: 'duo-dessert-one', id: 'speculoos' }, { groupId: 'duo-dessert-two', id: 'speculoos' }
+  ] }]);
+  assert.equal(duo.subtotal, 23.9);
+  assert.equal(duo.items[0].options.filter(option => option.id === 'speculoos').length, 2);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'menu-solo-tenders', quantity: 1, selections: [
+    { groupId: 'drink', id: 'coca' }, { groupId: 'solo-dessert', id: 'oreo' }, { groupId: 'solo-dessert', id: 'cookie' }
+  ] }]), /maximum 1 choix/);
+  assert.throws(() => validateAndPriceOrderItems([{ productId: 'menu-duo-tenders', quantity: 1, selections: [
+    { groupId: 'duo-drink-one', id: 'coca' }, { groupId: 'duo-drink-two', id: 'perrier' }, { groupId: 'duo-dessert-one', id: 'speculoos' }
+  ] }], { 'dessert-speculoos': false }), /plus disponible/);
 });
 
 test('frites cheddar bacon : remplacement du menu à 2,50 €, portion seule à 6,90 €', () => {

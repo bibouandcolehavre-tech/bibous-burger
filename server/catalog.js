@@ -38,7 +38,7 @@ const PRODUCT_CATALOG = {
   "drink-tropico": { name: "Tropico", price: 1.8, kind: "simple" },
   "dessert-oreo": { name: "Tiramisu Oreo", price: 3.9, kind: "simple", category: "desserts" },
   "dessert-cookie": { name: "Tiramisu cookie", price: 3.9, kind: "simple", category: "desserts" },
-  "dessert-framboise": { name: "Tiramisu framboise pistache", price: 3.9, kind: "simple", category: "desserts" }
+  "dessert-speculoos": { name: "Tiramisu spéculoos", price: 3.9, kind: "simple", category: "desserts" }
 };
 
 const STOCK_ONLY_CATALOG = {
@@ -49,7 +49,9 @@ const STOCK_ONLY_CATALOG = {
   "ingredient-mozzarella": { name: "Supplément · Mozzarella", price: 1, category: "supplements" },
   "ingredient-fourme": { name: "Supplément · Fourme d'Ambert", price: 1, category: "supplements" },
   "ingredient-lard": { name: "Supplément · Lard fumé", price: 1.5, category: "supplements" },
-  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" }
+  "ingredient-bacon": { name: "Supplément · Bacon", price: 1, category: "supplements" },
+  // Keep the historical stock key so existing stock files remain readable, but never sell it again.
+  "dessert-framboise": { name: "Tiramisu framboise pistache (retiré)", price: 3.9, category: "archives", retired: true }
 };
 const STOCK_CATALOG = { ...PRODUCT_CATALOG, ...STOCK_ONLY_CATALOG };
 
@@ -108,10 +110,15 @@ const OPTIONS = [
   option("duo-fries-two", "cheddar-bacon", "Menu Duo · personne 2 : frites cheddar bacon en remplacement", 2.5),
   option("desserts", "oreo", "Tiramisu Oreo", 3.9),
   option("desserts", "cookie", "Tiramisu cookie", 3.9),
-  option("desserts", "framboise", "Tiramisu framboise pistache", 3.9),
+  option("desserts", "speculoos", "Tiramisu spéculoos", 3.9),
   option("menu-desserts", "oreo", "Tiramisu Oreo", 2),
   option("menu-desserts", "cookie", "Tiramisu cookie", 2),
-  option("menu-desserts", "framboise", "Tiramisu framboise pistache", 2),
+  option("menu-desserts", "speculoos", "Tiramisu spéculoos", 2),
+  ...["solo-dessert", "duo-dessert-one", "duo-dessert-two"].flatMap((groupId) => [
+    option(groupId, "oreo", "Tiramisu Oreo", 2),
+    option(groupId, "cookie", "Tiramisu cookie", 2),
+    option(groupId, "speculoos", "Tiramisu spéculoos", 2)
+  ]),
   option("drink", "coca", "Coca 33 cl"),
   option("drink", "coca-zero", "Coca Zero"),
   option("drink", "coca-cherry", "Coca Cherry"),
@@ -156,13 +163,17 @@ const GROUP_RULES = {
   sides: {},
   'menu-fries': { max: 1 },
   desserts: { max: 1 },
-  'menu-desserts': { max: 1 }
+  'menu-desserts': { max: 1 },
+  'solo-dessert': { max: 1 },
+  'duo-dessert-one': { max: 1 },
+  'duo-dessert-two': { max: 1 }
 };
 const MENU_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "drink", "extras", "sides", "menu-fries", "menu-desserts"]);
 const BURGER_GROUPS = new Set(["protein", "meat-type", "salad", "sauces", "extras", "sides", "desserts"]);
-const DUO_GROUPS = new Set(["duo-fries-one", "duo-fries-two", "duo-drink-one", "duo-drink-two"]);
-const SOLO_GROUPS = new Set(["solo-fries", "drink"]);
+const DUO_GROUPS = new Set(["duo-fries-one", "duo-fries-two", "duo-drink-one", "duo-drink-two", "duo-dessert-one", "duo-dessert-two"]);
+const SOLO_GROUPS = new Set(["solo-fries", "drink", "solo-dessert"]);
 const FRIES_CHOICE_GROUPS = new Set(["menu-fries", "solo-fries", "duo-fries-one", "duo-fries-two"]);
+const DESSERT_CHOICE_GROUPS = new Set(["desserts", "menu-desserts", "solo-dessert", "duo-dessert-one", "duo-dessert-two"]);
 const SIMPLE_GROUPS = new Set();
 
 const cents = (value) => Math.round(Number(value) * 100);
@@ -177,7 +188,7 @@ const optionProductId = ({ groupId, id }) => {
     "second-steak": "ingredient-second-steak", "galette-plus": "ingredient-potato-patty", cheddar: "ingredient-cheddar",
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
   }[id];
-  if (groupId === "desserts" || groupId === "menu-desserts") return { oreo: "dessert-oreo", cookie: "dessert-cookie", framboise: "dessert-framboise" }[id];
+  if (DESSERT_CHOICE_GROUPS.has(groupId)) return { oreo: "dessert-oreo", cookie: "dessert-cookie", speculoos: "dessert-speculoos", framboise: "dessert-framboise" }[id];
   if (FRIES_CHOICE_GROUPS.has(groupId)) return { maison: "frites-maison", cheddar: "frites-cheddar", "cheddar-bacon": "frites-cheddar-bacon" }[id];
   if (groupId === "sides") return { frites: "frites-maison", "frites-cheddar-sans-bacon": "frites-cheddar", "frites-cheddar": "frites-cheddar-bacon", tenders: "tenders-xl-3" }[id];
   if (groupId === "drink" || groupId?.startsWith("duo-drink-")) {
@@ -190,7 +201,7 @@ const optionProductId = ({ groupId, id }) => {
 const productStock = (id, overrides = {}) => {
   const product = Object.hasOwn(STOCK_CATALOG, id) ? STOCK_CATALOG[id] : null;
   if (!product) return { available: false, enabled: false, reason: "Ce produit n’est plus à la carte." };
-  const enabled = Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
+  const enabled = product.retired ? false : Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
   if (!enabled) return { available: false, enabled: false, reason: `${product.name} est momentanément indisponible.` };
   const included = product.menu ? ["frites-maison"] : ["duo", "solo"].includes(product.kind) ? ["frites-maison", "tenders-xl-3"] : [];
   for (const includedId of included) {
@@ -203,12 +214,14 @@ const availabilityCatalog = (overrides = {}) => ({
   products: Object.entries(STOCK_CATALOG).map(([id, product]) => ({
     id, name: product.menu ? `Menu - ${product.name}` : product.name, price: product.price,
     category: product.category || (product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers"),
+    retired: Boolean(product.retired),
     ...productStock(id, overrides)
   })),
   options: Object.fromEntries([...OPTIONS,
     ...PROTEINS.map((choice) => ({ groupId: "custom-protein", id: choice.id })),
     ...CHEESES.map((choice) => ({ groupId: "custom-cheese", id: choice.id })),
-    ...EXTRAS.map((choice) => ({ groupId: "custom-extra", id: choice.id }))
+    ...EXTRAS.map((choice) => ({ groupId: "custom-extra", id: choice.id })),
+    ...["desserts", "menu-desserts"].map((groupId) => ({ groupId, id: "framboise" }))
   ].map((entry) => {
     const productId = optionProductId(entry);
     return [`${entry.groupId}:${entry.id}`, !productId || productStock(productId, overrides).available];

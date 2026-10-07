@@ -80,12 +80,17 @@ test("les suppléments ont leur propre stock et la galette végétarienne partag
 });
 
 test("chaque tiramisu peut être mis en rupture dans tous les choix dessert", () => {
-  const stock = { "dessert-oreo": false, "dessert-framboise": false };
+  const stock = { "dessert-oreo": false, "dessert-speculoos": false, "dessert-framboise": true };
   const catalog = availabilityCatalog(stock);
   assert.equal(catalog.products.filter((product) => product.category === "desserts").length, 3);
   assert.equal(catalog.options["desserts:oreo"], false);
   assert.equal(catalog.options["desserts:cookie"], true);
+  assert.equal(catalog.options["desserts:speculoos"], false);
   assert.equal(catalog.options["desserts:framboise"], false);
+  assert.equal(catalog.products.find((product) => product.id === "dessert-framboise").available, false);
+  assert.equal(catalog.options["solo-dessert:cookie"], true);
+  assert.equal(catalog.options["duo-dessert-one:speculoos"], false);
+  assert.equal(catalog.options["duo-dessert-two:speculoos"], false);
   assert.throws(() => validateAndPriceOrderItems([item("classique", [...selections, { groupId: "desserts", id: "oreo" }])], stock), /plus disponible/);
 });
 

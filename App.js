@@ -210,8 +210,11 @@ const DUO_FRIES_ONE = { ...MENU_FRIES, id: "duo-fries-one", title: "FRITES · PE
 const DUO_FRIES_TWO = { ...MENU_FRIES, id: "duo-fries-two", title: "FRITES · PERSONNE 2" };
 const FRIES_CHOICE_GROUPS = new Set(["menu-fries", "solo-fries", "duo-fries-one", "duo-fries-two"]);
 const MENU_SIDES = { id: "sides", title: "UN EXTRA EN PLUS DU MENU ?", options: [{ id: "frites", label: "Deuxième portion de frites maison", price: 3.9 }, { id: "frites-cheddar-sans-bacon", label: "Frites cheddar supplémentaires (sans bacon)", price: 4.9 }, { id: "frites-cheddar", label: "Frites cheddar bacon supplémentaires", price: 6.9 }, { id: "tenders", label: "3 Tenders supplémentaires", price: 6.9 }].map((option) => ({ ...option, image: SIDE_VISUALS[option.id] })) };
-const DESSERTS = { id: "desserts", title: "UN DESSERT ?", max: 1, options: [{ id: "oreo", label: "Tiramisu Oreo", price: 3.9 }, { id: "cookie", label: "Tiramisu cookie", price: 3.9 }, { id: "framboise", label: "Tiramisu framboise pistache", price: 3.9 }] };
+const DESSERTS = { id: "desserts", title: "UN DESSERT ?", max: 1, options: [{ id: "oreo", label: "Tiramisu Oreo", price: 3.9 }, { id: "cookie", label: "Tiramisu cookie", price: 3.9 }, { id: "speculoos", label: "Tiramisu spéculoos", price: 3.9 }] };
 const MENU_DESSERTS = { id: "menu-desserts", title: "UN DESSERT AVEC TON MENU ? · +2 €", max: 1, options: DESSERTS.options.map(option => ({ ...option, price: 2 })) };
+const SOLO_DESSERT = { ...MENU_DESSERTS, id: "solo-dessert", title: "UN DESSERT AVEC TON MENU SOLO ? · +2 €" };
+const DUO_DESSERT_ONE = { ...MENU_DESSERTS, id: "duo-dessert-one", title: "DESSERT · PERSONNE 1 · +2 €" };
+const DUO_DESSERT_TWO = { ...MENU_DESSERTS, id: "duo-dessert-two", title: "DESSERT · PERSONNE 2 · +2 €" };
 const DRINK_VISUALS = {
   coca: require("./assets/drinks/cutout/coca.png"),
   "coca-zero": require("./assets/drinks/cutout/coca.png"),
@@ -253,11 +256,11 @@ const SNACK_PRODUCTS = [
   { id: "frites-cheddar", name: "Frites cheddar (sans bacon)", price: 4.9, kind: "simple", emoji: "🍟", image: SIDE_VISUALS["frites-cheddar-sans-bacon"], description: "Frites maison et cheddar fondant, sans bacon." },
   { id: "frites-cheddar-bacon", name: "Frites cheddar bacon", price: 6.9, kind: "simple", emoji: "🍟", image: { uri: "https://images.sumup.com/img_24R58J2CVM80V8D65XB3DQXXC5/image.png" }, description: "Frites maison généreuses, cheddar fondant et bacon." },
   { id: "tenders-xl-3", name: "Tenders XL par 3", price: 6.9, kind: "simple", emoji: "🍗", image: { uri: "https://images.sumup.com/img_5JR68H81S19B4THE20E4Y21SMT/image.png" }, description: "Trois tenders XL faits maison, croustillants et épicés." },
-  { id: "menu-solo-tenders", name: "Menu Solo", price: 9.9, kind: "solo", emoji: "🍗", image: require("./assets/menu-solo-tenders-v2.jpg"), description: "3 tenders XL + frites maison + 1 boisson au choix.", detail: "Un repas complet pour une personne : trois tenders XL faits maison, une portion de frites et la boisson de ton choix. Frites cheddar sans bacon en remplacement pour +1 €, ou cheddar bacon pour +2,50 €.", optionGroups: [SOLO_FRIES, DRINKS] },
-  { id: "menu-duo-tenders", name: "Menu Duo · 10 tenders", price: 19.9, kind: "duo", emoji: "🍗", image: { uri: "https://images.sumup.com/img_5AHJN2GTG79EFV0AJN5KSZB1VW/image.png" }, description: "10 tenders spicy faits maison, 2 frites maison et 2 boissons.", detail: "Une box à partager avec 10 tenders spicy faits maison, deux portions de frites et deux boissons. Chaque portion peut être remplacée par des frites cheddar sans bacon pour +1 €, ou cheddar bacon pour +2,50 €.", optionGroups: [DUO_FRIES_ONE, DUO_FRIES_TWO, DUO_DRINK_ONE, DUO_DRINK_TWO] },
+  { id: "menu-solo-tenders", name: "Menu Solo", price: 9.9, kind: "solo", emoji: "🍗", image: require("./assets/menu-solo-tenders-v2.jpg"), description: "3 tenders XL + frites maison + 1 boisson au choix.", detail: "Un repas complet pour une personne : trois tenders XL faits maison, une portion de frites et la boisson de ton choix. Frites cheddar sans bacon en remplacement pour +1 €, ou cheddar bacon pour +2,50 €. Tiramisu au choix pour +2 €.", optionGroups: [SOLO_FRIES, DRINKS, SOLO_DESSERT] },
+  { id: "menu-duo-tenders", name: "Menu Duo · 10 tenders", price: 19.9, kind: "duo", emoji: "🍗", image: { uri: "https://images.sumup.com/img_5AHJN2GTG79EFV0AJN5KSZB1VW/image.png" }, description: "10 tenders spicy faits maison, 2 frites maison et 2 boissons.", detail: "Une box à partager avec 10 tenders spicy faits maison, deux portions de frites et deux boissons. Chaque portion peut être remplacée par des frites cheddar sans bacon pour +1 €, ou cheddar bacon pour +2,50 €. Chaque personne peut ajouter un tiramisu au choix pour +2 €.", optionGroups: [DUO_FRIES_ONE, DUO_FRIES_TWO, DUO_DRINK_ONE, DUO_DRINK_TWO, DUO_DESSERT_ONE, DUO_DESSERT_TWO] },
   { id: 'dessert-oreo', name: 'Tiramisu Oreo', price: 3.9, kind: 'simple', emoji: '🍰', description: 'Dessert à la carte · 3,90 €. Dans un menu : +2 €.' },
   { id: 'dessert-cookie', name: 'Tiramisu cookie', price: 3.9, kind: 'simple', emoji: '🍰', description: 'Dessert à la carte · 3,90 €. Dans un menu : +2 €.' },
-  { id: 'dessert-framboise', name: 'Tiramisu framboise pistache', price: 3.9, kind: 'simple', emoji: '🍰', description: 'Dessert à la carte · 3,90 €. Dans un menu : +2 €.' },
+  { id: 'dessert-speculoos', name: 'Tiramisu spéculoos', price: 3.9, kind: 'simple', emoji: '🍰', description: 'Dessert à la carte · 3,90 €. Dans un menu : +2 €.' },
 ];
 const DRINK_PRODUCTS = [
   { id: "drink-coca", name: "Coca 33 cl", price: 1.8, kind: "drink", emoji: "🥤", image: drinkCocaPhoto, description: "Canette 33 cl bien fraîche." },
@@ -617,7 +620,7 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
   const stockProblem = cartStockProblem(cart?.items, catalog);
   const missingMenuDrink = cart?.items?.some(item => (item.product.isMenu || item.product.kind === 'solo') && !item.selections?.some(choice => choice.groupId === "drink"));
   const hasMenu = cart?.items?.some(item => item.product.isMenu || item.product.kind === 'solo' || item.product.id === 'taurus');
-  const hasDessert = cart?.items?.some(item => item.product.id.startsWith('dessert-') || item.selections?.some(choice => ['desserts', 'menu-desserts'].includes(choice.groupId)));
+  const hasDessert = cart?.items?.some(item => item.product.id.startsWith('dessert-') || item.selections?.some(choice => ['desserts', 'menu-desserts', 'solo-dessert', 'duo-dessert-one', 'duo-dessert-two'].includes(choice.groupId)));
   const hasDrink = cart?.items?.some(item => item.product.id.startsWith('drink-'));
   const hasSide = cart?.items?.some(item => ['frites-maison', 'frites-cheddar', 'frites-cheddar-bacon', 'tenders-xl-3'].includes(item.product.id));
   const suggestions = [
