@@ -1,4 +1,4 @@
-const CACHE = 'krokly-driver-shell-v2';
+const CACHE = 'krokly-driver-shell-v3';
 const STATIC = ['/driver/', '/driver/app.js', '/driver/style.css', '/driver/icon.svg', '/driver/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)).then(() => self.skipWaiting()));

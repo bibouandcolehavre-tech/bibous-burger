@@ -28,6 +28,16 @@ function loginView() {
   for (const button of document.querySelectorAll('[data-mode]')) button.classList.toggle('selected', button.dataset.mode === mode);
 }
 
+function hidePassword() {
+  const toggle = document.querySelector('#show-password');
+  if (toggle) toggle.checked = false;
+  document.querySelector('#password').type = 'password';
+}
+
+document.querySelector('#show-password')?.addEventListener('change', event => {
+  document.querySelector('#password').type = event.target.checked ? 'text' : 'password';
+});
+
 function workspaceView() {
   login.hidden = true;
   workspace.hidden = false;
@@ -187,6 +197,8 @@ document.querySelectorAll('[data-mode]').forEach(button => button.addEventListen
   if (token) { await unregisterNotifications(); signOut(false); }
   mode = button.dataset.mode;
   localStorage.setItem('krokly-mode', mode);
+  document.querySelector('#password').value = '';
+  hidePassword();
   message('');
   loginView();
 }));
@@ -197,12 +209,14 @@ form.addEventListener('submit', async event => {
   busy = true;
   try {
     const username = document.querySelector('#username').value;
-    const password = document.querySelector('#password').value;
+    const rawPassword = document.querySelector('#password').value;
+    const password = mode === 'driver' ? rawPassword.trim() : rawPassword;
     const data = await api(mode === 'owner' ? 'dashboard/auth/login' : 'krokly-driver/login', { method: 'POST', body: JSON.stringify({ username, password }) });
     token = data.token;
     profile = data.driver || null;
     localStorage.setItem('krokly-token', token);
     document.querySelector('#password').value = '';
+    hidePassword();
     message('Connexion réussie.');
     busy = false;
     await refresh(true);

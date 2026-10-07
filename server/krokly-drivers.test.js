@@ -49,6 +49,16 @@ test('only paid ready delivery orders without active Uber can be assigned', () =
   assert.equal(K.assigned(db, lina.driver.id)[0].deliveryAddress, undefined, 'destination details stay hidden before acceptance');
 });
 
+test('copied courier credentials tolerate surrounding whitespace but not wrong password characters', () => {
+  const { db, now } = fixture();
+  const created = K.createDriver(db, { username: 'mathieu', name: 'Mathieu' }, now);
+  const session = K.sessionFor(db, '  MATHIEU\n', `\u00a0${created.password}\n `, 'secret', now);
+  assert.equal(K.authenticate(db, session.token, 'secret', now).id, created.driver.id);
+  const wrong = (created.password[0] === 'A' ? 'B' : 'A') + created.password.slice(1);
+  assert.throws(() => K.sessionFor(db, 'mathieu', ` ${wrong} `, 'secret', now), error => error.statusCode === 401);
+  assert.throws(() => K.sessionFor(db, 'mathieu', null, 'secret', now), error => error.statusCode === 401);
+});
+
 test('only assigned courier advances the real order through delivery steps', () => {
   const { db, now } = fixture();
   const lina = K.createDriver(db, { username: 'lina', name: 'Lina' }, now);

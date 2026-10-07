@@ -80,7 +80,9 @@ function sessionFor(db, usernameInput, password, secret, now = Date.now()) {
   const salt = driver?.salt || '0'.repeat(32);
   const expected = driver?.passwordHash || '0'.repeat(128);
   if (typeof password !== 'string' || password.length > 128) fail('Identifiant ou mot de passe incorrect.', 401);
-  const found = hashPassword(password, salt);
+  // Courier passwords are generated base64url strings, so surrounding whitespace
+  // can only come from copying/pasting. Preserve every actual password character.
+  const found = hashPassword(password.trim(), salt);
   if (!driver?.active || !equal(expected, found)) fail('Identifiant ou mot de passe incorrect.', 401);
   const payload = Buffer.from(JSON.stringify({ id: driver.id, v: driver.authVersion, exp: now + SESSION_MS })).toString('base64url');
   const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');

@@ -22,8 +22,9 @@
         <p>Chaque livreur utilise son propre compte. Le restaurant utilise son accès au back-office.</p>
         <div class="tabs"><button type="button" data-mode="driver" class="selected">Je suis livreur</button><button type="button" data-mode="owner">Je répartis les courses</button></div>
         <form id="login-form">
-          <label id="username-label">Identifiant<input id="username" autocomplete="username" required></label>
-          <label>Mot de passe<input id="password" type="password" autocomplete="current-password" required></label>
+          <label id="username-label">Identifiant<input id="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+          <label>Mot de passe<input id="password" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+          <label class="password-toggle"><input id="show-password" type="checkbox">Afficher le mot de passe</label>
           <button class="primary" type="submit">Entrer dans mon espace</button>
         </form>
       </section>

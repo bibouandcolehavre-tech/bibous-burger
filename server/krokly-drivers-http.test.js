@@ -49,7 +49,9 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
   const malik = await request('/api/dashboard/krokly-drivers', owner, 'POST', { username: 'malik', name: 'Malik' });
   assert.equal(lina.status, 201);
   assert.equal(malik.status, 201);
-  const linaToken = (await request('/api/krokly-driver/login', '', 'POST', { username: 'lina', password: lina.data.password })).data.token;
+  const copiedLogin = await request('/api/krokly-driver/login', '', 'POST', { username: ' LINA ', password: `\n${lina.data.password}\u00a0` });
+  assert.equal(copiedLogin.status, 200);
+  const linaToken = copiedLogin.data.token;
   const malikToken = (await request('/api/krokly-driver/login', '', 'POST', { username: 'malik', password: malik.data.password })).data.token;
   const firstState = (await request('/api/krokly-driver/state', linaToken)).data;
   assert.equal(firstState.orders.length, 0);
