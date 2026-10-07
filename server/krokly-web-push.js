@@ -9,7 +9,14 @@ function fail(message, statusCode = 400) {
 }
 
 function configFromEnv(env) {
-  const secret = String(env.KROKLY_VAPID_PRIVATE_KEY || '').trim();
+  const configured = String(env.KROKLY_VAPID_PRIVATE_KEY || '').trim();
+  const sessionSecret = String(env.SESSION_SECRET || '');
+  // A distinct key is derived from the already-persistent random session secret
+  // when no dedicated VAPID secret has been provisioned. Never derive from the
+  // server's ephemeral fallback or from the restaurant's human password.
+  const secret = configured || (Buffer.byteLength(sessionSecret) >= 32
+    ? Buffer.from(crypto.hkdfSync('sha256', Buffer.from(sessionSecret), Buffer.from('krokly-vapid-salt-v1'), Buffer.from('bibou-courier-web-push-v1'), 32)).toString('base64url')
+    : '');
   const subject = String(env.KROKLY_VAPID_SUBJECT || 'mailto:contact@bibousburgers.com').trim();
   if (!secret) return { enabled: false, publicKey: null };
   const privateBytes = Buffer.from(secret, 'base64url');

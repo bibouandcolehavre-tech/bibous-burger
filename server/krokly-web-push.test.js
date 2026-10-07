@@ -17,6 +17,11 @@ test('VAPID identity signs the audience without publishing the private key', () 
   const key = crypto.createPublicKey(config.privateKey);
   assert.equal(crypto.verify('sha256', Buffer.from(`${header}.${payload}`), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(signature, 'base64url')), true);
   assert.equal(push.configFromEnv({}).enabled, false);
+  const derived = push.configFromEnv({ SESSION_SECRET: 'a'.repeat(64) });
+  assert.equal(derived.enabled, true);
+  assert.equal(derived.publicKey, push.configFromEnv({ SESSION_SECRET: 'a'.repeat(64) }).publicKey);
+  assert.notEqual(derived.publicKey, push.configFromEnv({ SESSION_SECRET: 'b'.repeat(64) }).publicKey);
+  assert.equal(push.configFromEnv({ SESSION_SECRET: 'weak' }).enabled, false);
 });
 
 test('subscriptions refuse arbitrary external and private network targets', () => {
