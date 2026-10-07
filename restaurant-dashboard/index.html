@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="./service-schedule.css?v=workspace-1" />
     <link rel="stylesheet" href="./workspace.css?v=simple-slots-audio-20261001" />
     <link rel="stylesheet" href="./promotions.css?v=1" />
+    <link rel="stylesheet" href="./dispatch.css?v=1" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -31,6 +32,7 @@
         <nav aria-label="Navigation du restaurant">
           <button class="nav-item active" data-view="home"><span>⌂</span> Accueil</button>
           <button class="nav-item" data-view="orders"><span>▤</span> Commandes <b id="new-order-count">0</b></button>
+          <button class="nav-item" data-view="dispatch"><span>↗</span> Répartir les courses</button>
           <button class="nav-item" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count">0</b></button>
           <button class="nav-item" data-view="schedule"><span>◷</span> Créneaux</button>
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & produits</button>
@@ -74,6 +76,7 @@
         <nav class="mobile-view-switch" aria-label="Choisir la rubrique">
           <button class="nav-item mobile-view-button active" data-view="home">⌂ Accueil</button>
           <button class="nav-item mobile-view-button" data-view="orders"><span>▤</span> Commandes</button>
+          <button class="nav-item mobile-view-button" data-view="dispatch"><span>↗</span> Répartir les courses</button>
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
           <button class="nav-item mobile-view-button" data-view="customers"><span>♡</span> Clients <b id="new-reward-count-mobile">0</b></button>
@@ -90,6 +93,7 @@
           <div class="home-metrics"><article><span>Commandes en cours</span><strong id="home-active">—</strong><small>À préparer ou à remettre</small></article><article><span>Tables aujourd’hui</span><strong id="home-tables">—</strong><small>En attente et confirmées</small></article><article class="home-revenue"><label for="home-period">Chiffre d’affaires <select id="home-period"><option value="today">Aujourd’hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select></label><strong id="home-revenue">—</strong><small>Commandes de l’application</small></article></div>
           <div class="home-columns"><section class="workspace-panel"><div class="workspace-heading"><h2>En cuisine & en route</h2><button class="text-button" data-jump="orders">Tout voir →</button></div><div id="home-orders"></div></section><section class="workspace-panel"><div class="workspace-heading"><h2>Les prochaines tables</h2><button class="text-button" data-jump="reservations">Tout voir →</button></div><div id="home-reservations"></div></section></div>
           <h2 class="shortcuts-title">De quoi avez-vous besoin ?</h2><div class="home-shortcuts">
+            <button data-jump="dispatch"><span>↗</span><strong>Répartir les courses<small>Choisir un livreur et suivre la livraison</small></strong><b>→</b></button>
             <button data-jump="schedule"><span>◷</span><strong>Gérer mes créneaux<small>Ouvrir ou fermer une heure</small></strong><b>→</b></button>
             <button data-jump="menu"><span>☰</span><strong>Un produit épuisé ?<small>Mettre à jour la carte</small></strong><b>→</b></button>
             <button data-jump="customers"><span>♡</span><strong>Retrouver un client<small>Points, avantages, historique</small></strong><b>→</b></button>
@@ -104,6 +108,7 @@
         <section id="notifications-view" hidden></section>
         <section id="crm-view" hidden></section>
         <section id="schedule-view" hidden></section>
+        <section id="dispatch-view" hidden aria-label="Répartition des courses"></section>
         <section id="settings-view" hidden></section>
         <section id="orders-metrics" class="metrics orders-metrics" aria-label="Résumé des commandes et chiffre d’affaires">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
@@ -194,8 +199,9 @@
     <script src="./crm.js?v=crm-1"></script>
     <script src="./planner.js?v=simple-slots-audio-20261001"></script>
     <script src="./order-amendments.js?v=1"></script>
-    <script src="./uber-direct.js?v=1"></script>
+    <script src="./uber-direct.js?v=dispatch-20261007"></script>
+    <script src="./dispatch.js?v=1"></script>
     <script src="./epson-print.js?v=service-time-20261001"></script>
-    <script src="./app.js?v=printer-diagnostic-20261007"></script>
+    <script src="./app.js?v=dispatch-20261007"></script>
   </body>
 </html>

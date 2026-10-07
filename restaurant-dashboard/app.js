@@ -78,6 +78,7 @@ let promotionsPanel = null;
 let notificationsPanel = null;
 let crmPanel = null;
 let schedulePanel = null;
+let dispatchPanel = null;
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
 const serviceDateLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "Date non précisée";
 const receivedTimeLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
@@ -90,7 +91,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
@@ -113,6 +114,7 @@ function rewardClaimFromApi(claim) {
 }
 
 function actionMarkup(order) {
+  if (window.BibouDispatch?.activeStatuses.includes(order.raw?.kroklyDriver?.status) && ['Prête', 'En livraison'].includes(order.status)) return '<p>Le livreur confirme la récupération et la livraison depuis Krokly Driver.</p>';
   const u = order.raw?.uberDirect;
   if (u && ["sending", "uncertain", "created"].includes(u.phase) && !["canceled", "returned"].includes(u.status) && ["Prête", "En livraison"].includes(order.status)) return `<p>Le suivi de remise est synchronisé avec Uber Direct.</p>`;
   if (order.status === "Accord client attendu") return `<div class="actions"><button data-edit-order="${order.id}">Réviser la proposition</button><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler la commande</button></div>`;
@@ -300,7 +302,7 @@ function renderOrders() {
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
     const printControls = `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
-    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
     if (completedView || historyView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
@@ -846,13 +848,14 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
   document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
   document.querySelector("#schedule-view").hidden = view !== "schedule";
+  document.querySelector("#dispatch-view").hidden = view !== "dispatch";
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
   document.querySelector("#reservations-view").hidden = view !== "reservations";
@@ -865,13 +868,14 @@ function showView(view) {
   document.querySelector("#notifications-view").hidden = view !== "notifications";
   document.querySelector("#crm-view").hidden = view !== "crm";
   document.querySelector("#settings-view").hidden = view !== "settings";
-  document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
-  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
+  document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', dispatch: 'Répartir les courses', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
+  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',dispatch:'Choisissez votre livreur et suivez chaque livraison ici.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing',backups:'settings'}[view] || view;
   document.querySelectorAll('.sidebar nav .nav-item, .mobile-view-switch .nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === group));
   if (view === "schedule") void schedulePanel?.load();
+  if (view === "dispatch") void dispatchPanel?.load();
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
   if (view === "customers") void loadCustomers();
@@ -882,6 +886,7 @@ function showView(view) {
 }
 
 document.querySelectorAll('[data-jump]').forEach(button => button.addEventListener('click', () => showView(button.dataset.jump)));
+document.addEventListener('click', event => { if (event.target.closest('[data-open-dispatch]')) showView('dispatch'); });
 document.querySelector('#home-period').addEventListener('change', renderHome);
 document.querySelector('#home-priority').addEventListener('click', () => {
   if (orders.some(order => order.status === 'Nouvelle')) document.querySelector('#attention-orders').click();
@@ -948,6 +953,7 @@ document.querySelectorAll(".nav-item").forEach((button) => button.addEventListen
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
   if (["crm", "settings"].includes(currentView)) return crmPanel?.load();
   if (currentView === "schedule") return schedulePanel?.load();
+  if (currentView === "dispatch") return dispatchPanel?.load();
   if (currentView === "marketing") return marketingPanel?.load();
   if (currentView === "notifications") return notificationsPanel?.load();
   if (currentView === "customers") return loadCustomers();
@@ -977,6 +983,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     if (currentView === "schedule") return schedulePanel?.load();
   if (currentView === "marketing") marketingPanel?.load();
     if (currentView === "promotions") promotionsPanel?.load();
+    if (currentView === "dispatch") dispatchPanel?.load();
     if (currentView === "notifications") notificationsPanel?.load();
     if (["crm", "settings"].includes(currentView)) crmPanel?.load();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
@@ -988,6 +995,7 @@ if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMa
 if (typeof window.BibouPromotions === 'function') promotionsPanel = window.BibouPromotions({ root: document.querySelector('#promotions-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouNotifications === 'function') notificationsPanel = window.BibouNotifications({ root: document.querySelector('#notifications-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSchedule({root:document.querySelector('#schedule-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:showLogin});
+if (window.BibouDispatch?.create) dispatchPanel = window.BibouDispatch.create({root:document.querySelector('#dispatch-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onOrdersChanged:()=>loadOrders(),getOrder:id=>orders.find(order=>order.apiId===id)});
 if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });
 refreshMetrics();
 updateSoundControls();
@@ -1008,6 +1016,7 @@ const resumeUpdates = () => {
   if (currentView === "menu") void loadMenu();
   if (currentView === "backups" && !document.hidden) void loadBackups();
   if (currentView === "customers" && !document.hidden && Date.now() - customerLastUpdate >= 30000) void loadCustomers();
+  if (currentView === "dispatch" && !document.hidden) void dispatchPanel?.load();
 };
 window.setInterval(resumeUpdates, 10000);
 window.addEventListener("online", resumeUpdates);

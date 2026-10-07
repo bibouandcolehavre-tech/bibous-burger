@@ -7,6 +7,7 @@ window.BibouUber = (()=>{
  function clear(){dialog?.remove();dialog=null;}
  function markup(order){
   if(order.method!=='delivery')return '';
+  if(['offered','accepted','picked_up','issue'].includes(order.kroklyDriver?.status))return '';
   const u=order.uberDirect;
   if(!u && !['preparing','ready'].includes(order.status))return '';
   return `<div class="amendment-notice"><strong>Uber Direct</strong><p>${u?.phase==='created'?labels[u.status] || 'Suivi en cours':u && ['sending','uncertain'].includes(u.phase)?'Demande à vérifier dans Uber Direct. Ne commandez pas un second coursier.':'Choisissez de confier cette livraison à Uber, après vérification du devis.'}</p>${u?.dropoffEta?`<p>Arrivée estimée : ${time(u.dropoffEta)}</p>`:''}<button type="button" data-uber-order="${Number(order.number)}">${u && !['quoted','failed'].includes(u.phase)?'Suivi Uber Direct':'Obtenir un devis Uber Direct'}</button></div>`;

@@ -19,7 +19,20 @@ async function main() {
     items:[{productId:'classique-menu',name:'Le Classique',quantity:1,price:16.9,options:[{groupId:'protein',label:'Viande',price:0},{groupId:'salad',label:'Roquette',price:0},{groupId:'sides',label:'Frites maison',price:0},{groupId:'drink',label:'Coca-Cola',price:0}]}]
   }));
   const reservations=[{id:'qa-table',number:87,customerId:'qa-c1',customerName:'Camille · test',phone:'+33600000001',guests:2,serviceDate:date,slot:'19:30',status:'pending',createdAt:now.toISOString()}];
-  await fs.writeFile(path.join(dir,'data.json'),JSON.stringify({customers,orders,reservations,rewardClaims:[],nextOrderNumber:1045,nextCustomerId:3}),{mode:0o600});
+  const database = {customers,orders,reservations,rewardClaims:[],nextOrderNumber:1045,nextCustomerId:3};
+  if (process.env.KROKLY_DISPATCH_QA === '1') {
+    const K = require('../server/krokly-drivers');
+    const mathieu = K.createDriver(database, {username:'mathieu',name:'Mathieu · test local'});
+    K.createDriver(database, {username:'lina',name:'Lina · test local'});
+    for (const order of orders) {
+      order.method = 'delivery'; order.status = 'ready';
+      order.deliveryAddress = {address:'Adresse fictive de test',postalCode:'76600',city:'Le Havre'};
+    }
+    K.assign(database, orders[1].id, mathieu.driver.id);
+    K.transition(database, orders[1].id, mathieu.driver.id, 'accept');
+    orders[2].uberDirect = {phase:'sending'};
+  }
+  await fs.writeFile(path.join(dir,'data.json'),JSON.stringify(database),{mode:0o600});
   const child=spawn(process.execPath,[path.join(repo,'server/server.js')],{
     cwd:dir,env:{PATH:process.env.PATH,PORT:'0',NODE_ENV:'test',DATA_FILE_PATH:path.join(dir,'data.json'),SESSION_SECRET:'local-qa-only',RESTAURANT_DASHBOARD_PASSWORD:'local-qa-only'},stdio:['ignore','pipe','pipe']
   });
