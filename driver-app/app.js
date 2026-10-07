@@ -9,6 +9,10 @@ let profile = null;
 let currentState = null;
 let lastOrders = '';
 let busy = false;
+let loading = false;
+let fresh = false;
+let generation = 0;
+let issuedSecret = null;
 let serviceWorkerReady = null;
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -46,27 +50,69 @@ function workspaceView() {
 }
 
 async function api(route, options = {}) {
-  const response = await fetch(`/api/${route}`, {
-    ...options,
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    cache: 'no-store'
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 401 && !route.endsWith('/login')) signOut(false);
-    throw new Error(data.error || 'Connexion impossible.');
-  }
-  return data;
+  const auth = token, role = mode, current = generation;
+  const timeout = options.signal ? { signal: options.signal, cancel() {} } : requestTimeout(15000);
+  try {
+    const response = await fetch(`/api/${route}`, {
+      ...options, signal: timeout.signal,
+      headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(auth ? { Authorization: `Bearer ${auth}` } : {}) },
+      cache: 'no-store'
+    });
+    if (current !== generation || auth !== token || role !== mode) throw new Error('La connexion a changé.');
+    const data = await response.json().catch(() => null);
+    if (current !== generation || auth !== token || role !== mode) throw new Error('La connexion a changé.');
+    if (!response.ok) {
+      if (response.status === 401 && !route.endsWith('/login')) { signOut(false); message('Ta session a expiré. Reconnecte-toi.', true); }
+      throw new Error(data?.error || 'Le serveur est momentanément indisponible.');
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('La réponse du serveur est indisponible. Actualise pour vérifier.');
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') throw Error('Le serveur ne répond pas. Actualise pour vérifier.');
+    throw error;
+  } finally { timeout.cancel(); }
+}
+
+function requestTimeout(milliseconds) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), milliseconds);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
 }
 
 function signOut(showMessage = true) {
+  generation++;
+  busy = loading = fresh = false;
   token = '';
   profile = null;
   currentState = null;
+  issuedSecret = null;
   localStorage.removeItem('krokly-token');
   lastOrders = '';
+  content.innerHTML = '';
+  document.querySelector('#welcome').textContent = '';
+  document.querySelector('#role-label').textContent = '';
+  document.querySelector('#password').value = '';
+  hidePassword();
   loginView();
+  updateControls();
   if (showMessage) message('Tu es déconnecté.');
+}
+
+function updateControls() {
+  form.querySelectorAll('button,input').forEach(control => { control.disabled = busy; });
+  content.querySelectorAll('button,input,select').forEach(control => { control.disabled = busy || !fresh; });
+  const refreshButton = document.querySelector('#refresh');
+  if (refreshButton) refreshButton.disabled = busy || loading;
+}
+
+async function readyWorker() {
+  let timer;
+  try {
+    const registration = await Promise.race([serviceWorkerReady || navigator.serviceWorker.ready,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Les alertes ne répondent pas. Réessaie depuis l’icône Krokly.')), 5000); })]);
+    if (!registration) throw Error('Les alertes ne sont pas disponibles. Réessaie depuis l’icône Krokly.');
+    return registration;
+  } finally { clearTimeout(timer); }
 }
 
 function statusLabel(status) {
@@ -128,9 +174,11 @@ function renderOwner() {
     <h3 class="section-title">Comptes livreurs</h3><div class="card"><form id="create-form" class="create"><label>Nom du livreur<input name="name" required maxlength="60" placeholder="Ex. : Lina"></label><label>Identifiant<input name="username" required maxlength="32" placeholder="Ex. : lina"></label><button class="primary" type="submit">Créer le compte</button></form>
       <div id="secret"></div><div class="drivers">${currentState.drivers.map(ownerDriver).join('') || '<p class="muted">Aucun livreur créé pour le moment.</p>'}</div>
       <p class="muted">Le mot de passe généré n’apparaît qu’une fois. Transmets-le toi-même au livreur par un canal privé ; il ne donne pas accès au back-office.</p></div>`;
+  if (issuedSecret) showSecret(issuedSecret);
 }
 
 function showSecret(data) {
+  issuedSecret = data;
   const box = document.querySelector('#secret');
   if (!box) return;
   box.innerHTML = `<div class="secret"><strong>Identifiants à transmettre à ${escapeHtml(data.driver.name)}</strong>Identifiant : <code>${escapeHtml(data.driver.username)}</code><br>Mot de passe : <code>${escapeHtml(data.password)}</code><p>Copie ce mot de passe maintenant : il ne sera plus affiché ensuite.</p></div>`;
@@ -142,38 +190,55 @@ function applicationServerKey(value) {
 }
 
 async function enableNotifications() {
+  const current = generation, key = currentState?.push?.publicKey;
   if (!currentState?.push?.enabled || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) throw new Error('Les alertes ne sont pas disponibles sur ce téléphone ou ce navigateur.');
   if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) throw new Error('Sur iPhone, ouvre Krokly depuis son icône ajoutée à l’écran d’accueil, puis active les alertes ici.');
   const permission = await Notification.requestPermission();
+  if (current !== generation) return;
   if (permission !== 'granted') throw new Error('Notifications refusées sur ce téléphone. Active-les dans les réglages de l’iPhone puis réessaie.');
-  const registration = await (serviceWorkerReady || navigator.serviceWorker.ready);
+  const registration = await readyWorker();
+  if (current !== generation) return;
   let subscription = await registration.pushManager.getSubscription();
-  if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(currentState.push.publicKey) });
+  if (current !== generation) return;
+  if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(key) });
+  if (current !== generation) return;
   await api('krokly-driver/push/subscribe', { method: 'POST', body: JSON.stringify({ endpoint: subscription.endpoint }) });
+  if (current !== generation) return;
   message('Alertes activées sur ce téléphone. Lance maintenant le test et verrouille-le.');
 }
 
 async function testNotifications() {
+  const current = generation;
   const result = await api('krokly-driver/push/test', { method: 'POST', body: '{}' });
+  if (current !== generation) return;
   message(`Alerte de test programmée dans ${result.delaySeconds} secondes. Verrouille ton téléphone maintenant.`);
 }
 
 async function unregisterNotifications() {
   if (!token || mode !== 'driver' || !('serviceWorker' in navigator)) return;
+  const auth = token, current = generation;
   try {
-    const registration = await (serviceWorkerReady || navigator.serviceWorker.ready);
+    const registration = await readyWorker();
+    if (token || generation !== current + 1) return;
     const subscription = await registration.pushManager.getSubscription();
-    if (!subscription) return;
-    await api('krokly-driver/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: subscription.endpoint }) });
+    if (!subscription || token || generation !== current + 1) return;
     await subscription.unsubscribe();
-  } catch { /* Password reset or lost connectivity also revokes server-side access. */ }
+    const timeout = requestTimeout(10000);
+    try { await fetch('/api/krokly-driver/push/unsubscribe', { method: 'POST', cache: 'no-store', signal: timeout.signal, headers: { Authorization: `Bearer ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: subscription.endpoint }) }); }
+    finally { timeout.cancel(); }
+  } catch { /* Local sign-out never waits for a network or notification cleanup. */ }
 }
 
 async function refresh(force = false) {
-  if (!token || busy) return;
+  if (!token || busy || loading) return false;
+  const current = generation, role = mode;
+  loading = true; updateControls();
   try {
-    const data = await api(mode === 'owner' ? 'dashboard/krokly-drivers' : 'krokly-driver/state');
+    const data = await api(role === 'owner' ? 'dashboard/krokly-drivers' : 'krokly-driver/state');
+    if (current !== generation) return false;
+    if (!Array.isArray(data.orders) || (role === 'owner' ? !Array.isArray(data.drivers) : !data.driver?.id)) throw Error('La réponse du serveur est incomplète. Actualise pour vérifier.');
     currentState = data;
+    fresh = true;
     if (mode === 'driver') profile = data.driver;
     const digest = JSON.stringify(data);
     if (force || digest !== lastOrders) {
@@ -183,7 +248,13 @@ async function refresh(force = false) {
       workspaceView();
       if (mode === 'owner') renderOwner(); else renderDriver();
     }
-  } catch (error) { message(error.message, true); }
+    return true;
+  } catch (error) {
+    if (current !== generation) return false;
+    fresh = false;
+    message(`${error.name === 'TimeoutError' ? 'Le serveur ne répond pas.' : error.message} Actualise pour vérifier les courses avant toute action.`, true);
+    return false;
+  } finally { if (current === generation) { loading = false; updateControls(); } }
 }
 
 function updateTimers() {
@@ -194,24 +265,29 @@ function updateTimers() {
 }
 
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', async () => {
-  if (token) { await unregisterNotifications(); signOut(false); }
+  const cleanup = unregisterNotifications(); signOut(false);
   mode = button.dataset.mode;
   localStorage.setItem('krokly-mode', mode);
   document.querySelector('#password').value = '';
   hidePassword();
   message('');
   loginView();
+  await cleanup;
 }));
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
   if (busy) return;
+  const current = generation, role = mode;
   busy = true;
+  updateControls();
   try {
     const username = document.querySelector('#username').value;
     const rawPassword = document.querySelector('#password').value;
     const password = mode === 'driver' ? rawPassword.trim() : rawPassword;
-    const data = await api(mode === 'owner' ? 'dashboard/auth/login' : 'krokly-driver/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    const data = await api(role === 'owner' ? 'dashboard/auth/login' : 'krokly-driver/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    if (current !== generation) return;
+    if (typeof data.token !== 'string' || !data.token) throw Error('La connexion n’a pas pu être vérifiée. Réessaie.');
     token = data.token;
     profile = data.driver || null;
     localStorage.setItem('krokly-token', token);
@@ -220,40 +296,50 @@ form.addEventListener('submit', async event => {
     message('Connexion réussie.');
     busy = false;
     await refresh(true);
-  } catch (error) { message(error.message, true); }
-  finally { busy = false; }
+  } catch (error) { if (current === generation) message(error.message, true); }
+  finally { if (current === generation) { busy = false; updateControls(); } }
 });
 
-document.querySelector('#logout').addEventListener('click', async () => { await unregisterNotifications(); signOut(); });
+document.querySelector('#logout').addEventListener('click', () => { void unregisterNotifications(); signOut(); });
+document.querySelector('#refresh')?.addEventListener('click', () => { void refresh(true); });
+window.addEventListener('online', () => { void refresh(true); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(true); });
 
 document.addEventListener('submit', async event => {
   if (event.target.id !== 'create-form') return;
   event.preventDefault();
-  if (busy) return;
+  if (busy || loading || !fresh || mode !== 'owner') return;
+  const current = generation;
   const data = Object.fromEntries(new FormData(event.target));
   busy = true;
+  updateControls();
   try {
     const created = await api('dashboard/krokly-drivers', { method: 'POST', body: JSON.stringify(data) });
+    if (current !== generation) return;
     busy = false;
-    await refresh(true);
+    const refreshed = await refresh(true);
+    if (current !== generation) return;
     showSecret(created);
-    message(`Compte ${created.driver.name} créé.`);
-  } catch (error) { message(error.message, true); }
-  finally { busy = false; }
+    if (refreshed) message(`Compte ${created.driver.name} créé.`);
+  } catch (error) { if (current === generation) { fresh = false; message(`${error.message} Actualise pour vérifier si le compte a été créé avant de recommencer.`, true); } }
+  finally { if (current === generation) { busy = false; updateControls(); } }
 });
 
 document.addEventListener('click', async event => {
+  const current = generation;
   if (event.target.closest('[data-push-enable],[data-push-test]')) {
-    if (busy) return;
+    if (busy || !fresh || !token || mode !== 'driver') return;
     busy = true;
+    updateControls();
     try { if (event.target.closest('[data-push-enable]')) await enableNotifications(); else await testNotifications(); }
-    catch (error) { message(error.message, true); }
-    finally { busy = false; }
+    catch (error) { if (current === generation) message(error.message, true); }
+    finally { if (current === generation) { busy = false; updateControls(); } }
     return;
   }
   const button = event.target.closest('[data-action],[data-assign],[data-reset],[data-active]');
-  if (!button || busy) return;
+  if (!button || busy || loading || !fresh || !token) return;
   busy = true;
+  updateControls();
   try {
     let route, payload = {};
     if (button.dataset.action) route = `krokly-driver/orders/${encodeURIComponent(button.dataset.order)}/${button.dataset.action}`;
@@ -269,12 +355,14 @@ document.addEventListener('click', async event => {
       payload = { active: button.dataset.next === 'true' };
     }
     const changed = await api(route, { method: button.dataset.active ? 'PATCH' : 'POST', body: JSON.stringify(payload) });
+    if (current !== generation) return;
     busy = false;
-    await refresh(true);
+    const refreshed = await refresh(true);
+    if (current !== generation) return;
     if (changed.password) showSecret(changed);
-    message(button.dataset.assign ? 'Course proposée au livreur.' : 'Modification enregistrée.');
-  } catch (error) { message(error.message, true); }
-  finally { busy = false; }
+    if (refreshed) message(button.dataset.assign ? 'Course proposée au livreur.' : 'Modification enregistrée.');
+  } catch (error) { if (current === generation) { fresh = false; message(`${error.message} Actualise pour vérifier le résultat avant de recommencer.`, true); } }
+  finally { if (current === generation) { busy = false; updateControls(); } }
 });
 
 loginView();

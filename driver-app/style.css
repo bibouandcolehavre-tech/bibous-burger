@@ -2,3 +2,4 @@
 [hidden]{display:none!important}
 .push-card{margin-bottom:19px}.push-card h3{margin:0 0 8px}.push-card p{font-size:13px;line-height:1.5;margin:0}.push-card .muted{margin-top:10px}
 .login label.password-toggle{display:flex;align-items:center;gap:9px;min-height:44px;font-weight:600}.login .password-toggle input{width:20px;min-height:20px;margin:0;padding:0;accent-color:#173f36}
+.workspace-head{flex-wrap:wrap}.workspace-head>.actions{margin-top:0;max-width:100%}.workspace-head>.actions button{white-space:normal}.driver>div:first-child{min-width:0;overflow-wrap:anywhere}

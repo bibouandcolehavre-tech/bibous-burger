@@ -25,7 +25,7 @@ test('VAPID identity signs the audience without publishing the private key', () 
 });
 
 test('subscriptions refuse arbitrary external and private network targets', () => {
-  for (const endpoint of ['http://localhost:8080/x', 'https://127.0.0.1/x', 'https://push.apple.com.evil.test/x', 'https://user@web.push.apple.com/x']) assert.equal(push.validEndpoint(endpoint), false);
+  for (const endpoint of ['http://localhost:8080/x', 'https://127.0.0.1/x', 'https://push.apple.com.evil.test/x', 'https://user@web.push.apple.com/x', 'https://web.push.apple.com:8080/x']) assert.equal(push.validEndpoint(endpoint), false);
   assert.equal(push.validEndpoint(appleEndpoint), true);
   const db = { kroklyDrivers: [{ id: 'm', active: true }], orders: [] };
   assert.throws(() => push.register(db, 'm', 'https://127.0.0.1/x'), /non reconnu/);
@@ -37,7 +37,7 @@ test('subscriptions refuse arbitrary external and private network targets', () =
 
 test('one offer queues one generic push per device, invalid endpoints are removed', async () => {
   const now = Date.now();
-  const db = { kroklyDrivers: [{ id: 'm', active: true }], orders: [{ id: 'o', kroklyDriver: { driverId: 'm', status: 'offered', expiresAt: new Date(now + 60000).toISOString() } }] };
+  const db = { kroklyDrivers: [{ id: 'm', active: true }], orders: [{ id: 'o', method: 'delivery', payment: { status: 'PAID' }, status: 'ready', kroklyDriver: { driverId: 'm', status: 'offered', expiresAt: new Date(now + 60000).toISOString() } }] };
   push.register(db, 'm', appleEndpoint, now);
   assert.equal(push.queue(db, 'm', 'o', now, now + 60000), 1);
   assert.equal(push.claim(db, now).length, 1);
@@ -56,6 +56,18 @@ test('one offer queues one generic push per device, invalid endpoints are remove
   const retry = push.claim(db, now)[0];
   push.settle(db, retry.id, { ok: false, status: 410 }, now);
   assert.equal(db.kroklyPushSubscriptions.length, 0);
+});
+
+test('cancelled, refunded and no-longer-ready deliveries cannot send a queued alert', () => {
+  const now = Date.now();
+  for (const changed of [{ status: 'cancelled' }, { payment: { status: 'REFUNDED' } }, { method: 'pickup' }, { status: 'delivered' }]) {
+    const order = { id: 'o', method: 'delivery', payment: { status: 'PAID' }, status: 'ready', kroklyDriver: { driverId: 'm', status: 'offered', expiresAt: new Date(now + 60000).toISOString() } };
+    const db = { kroklyDrivers: [{ id: 'm', active: true }], orders: [order] };
+    push.register(db, 'm', appleEndpoint, now); push.queue(db, 'm', 'o', now, now + 60000);
+    Object.assign(order, changed);
+    assert.equal(push.claim(db, now).length, 0);
+    assert.equal(db.kroklyPushJobs[0].status, 'discarded');
+  }
 });
 
 test('test push waits 15 seconds, limits repeat tests, and revoked accounts lose subscriptions', () => {

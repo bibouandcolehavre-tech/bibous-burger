@@ -37,7 +37,7 @@ function validEndpoint(value) {
   if (typeof value !== 'string' || value.length > 2048) return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password && !url.hash &&
+    return url.protocol === 'https:' && !url.port && !url.username && !url.password && !url.hash &&
       (PUSH_HOSTS.has(url.hostname) || url.hostname.endsWith('.push.apple.com') || url.hostname.endsWith('.notify.windows.com'));
   } catch { return false; }
 }
@@ -98,7 +98,8 @@ function claim(db, now = Date.now(), limit = 5) {
     const driver = (db.kroklyDrivers || []).find(item => item.id === job.driverId && item.active);
     const subscription = subscriptions(db).find(item => item.id === job.subscriptionId && item.driverId === job.driverId);
     const order = job.orderId && (db.orders || []).find(item => item.id === job.orderId);
-    const validOrder = !job.orderId || (order?.kroklyDriver?.driverId === job.driverId && order.kroklyDriver.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) > now);
+    const validOrder = !job.orderId || (order?.method === 'delivery' && order.payment?.status === 'PAID' && order.status === 'ready' &&
+      order.kroklyDriver?.driverId === job.driverId && order.kroklyDriver.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) > now);
     if (!driver || !subscription || !validOrder || job.expiresAt <= now) { job.status = 'discarded'; continue; }
     job.attempts += 1;
     job.availableAt = now + 20000; // Crash recovery: retry only after this lease.
