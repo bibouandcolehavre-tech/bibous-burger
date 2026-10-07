@@ -1,4 +1,17 @@
-# Notifications clients — état au 24 septembre 2026
+# Notifications clients — reprise du 8 octobre 2026
+
+## Communications du 8 octobre
+
+- Diagnostic production : iOS activé, Android désactivé côté serveur malgré trois appareils Android associés. La clé FCM V1 de `bibou-s-burgers` est toujours associée au bon package dans Expo. La correction autorise l'activation ciblée Android et affiche séparément appareils, accords et clients joignables pour chaque plateforme. La réception sur un vrai Android reste à vérifier ; ne pas confondre configuration serveur et réception effective.
+- Les campagnes push existantes peuvent être de simples aperçus. L'interface montre les trois étapes et ne considère pas un aperçu comme un envoi. Aucune campagne n'est envoyée automatiquement lors de l'activation.
+- SMS commerciaux ajoutés comme module distinct de Twilio Verify : `SMS_MARKETING_ENABLED`, `SMS_MARKETING_VERIFIED`, `SMS_MARKETING_FROM=BibouBurger`, `SMS_MARKETING_PUBLIC_ORIGIN=https://bibous-burger.onrender.com`. Les clés Twilio existantes restent côté serveur. France et expéditeur alphanumérique vérifiés dans le compte actif, identique à celui du serveur ; aucun achat de numéro ni recharge requis.
+- Accord SMS distinct, facultatif et initialement désactivé sur la web app après inscription et dans Mes offres. Aucun accord CRM/push existant n'est converti. Les binaires natifs déjà déposés ne sont pas remplacés par ce changement web.
+- Un aperçu SMS n'envoie rien. Confirmation de facturation exigée ; plafond de quatre segments par SMS, 100 destinataires et deux campagnes par 24 h. Envois français de 10 h à 20 h, lundi–samedi, hors jours fériés nationaux. Le prix dépend du compte Twilio et du nombre de segments ; aucun tarif en euros inventé dans l'interface.
+- STOP personnel HTTPS sans données visibles, confirmation à l'ouverture pour éviter la désinscription par un scanner de lien, retrait des tâches encore en attente, revalidation de l'accord juste avant transmission. Aucun renvoi automatique après résultat ambigu. Accusé Twilio distingué de livraison et de lecture. Historique SMS : 30 jours ; suppression des associations SMS avec le compte.
+- Les règles CRM en place restent inchangées. « Dans le compte » ne vaut pas « notifier ». Le push d'une règle nécessite le canal explicite `in_app_push`, l'accord personnalisé et l'accord promotionnel push ; les SMS ne sont pas automatiquement reliés aux règles CRM.
+- Vérifications : 445 tests sur bases jetables et fournisseurs simulés, export web réussi, aperçu et confirmation push/SMS vérifiés visuellement, choix SMS enregistré puis retiré sur compte fictif à 390 px. Aucun SMS ni push réel émis pendant ces contrôles. Une réception réelle Android/SMS ne doit pas être annoncée comme vérifiée avant un essai autorisé.
+
+Les sections du 24 septembre ci-dessous sont historiques ; elles ne décrivent pas l'état actuel des comptes Apple et des versions publiées.
 
 ## Avancement Android du 24 septembre
 

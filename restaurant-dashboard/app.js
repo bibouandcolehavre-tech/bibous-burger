@@ -76,6 +76,7 @@ let dashboardToken = savedDashboardToken();
 let marketingPanel = null;
 let promotionsPanel = null;
 let notificationsPanel = null;
+let smsPanel = null;
 let crmPanel = null;
 let schedulePanel = null;
 let dispatchPanel = null;
@@ -91,7 +92,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
@@ -848,11 +849,11 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
-  document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications'].includes(view);
+  document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications','marketing-sms'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
   document.querySelector("#schedule-view").hidden = view !== "schedule";
   document.querySelector("#dispatch-view").hidden = view !== "dispatch";
@@ -866,13 +867,14 @@ function showView(view) {
   document.querySelector("#marketing-view").hidden = view !== "marketing";
   document.querySelector("#promotions-view").hidden = view !== "promotions";
   document.querySelector("#notifications-view").hidden = view !== "notifications";
+  document.querySelector("#marketing-sms-view").hidden = view !== "marketing-sms";
   document.querySelector("#crm-view").hidden = view !== "crm";
   document.querySelector("#settings-view").hidden = view !== "settings";
   document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', dispatch: 'Répartir les courses', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
   updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',dispatch:'Choisissez votre livreur et suivez chaque livraison ici.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
-  const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing',backups:'settings'}[view] || view;
+  const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing','marketing-sms':'marketing',backups:'settings'}[view] || view;
   document.querySelectorAll('.sidebar nav .nav-item, .mobile-view-switch .nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === group));
   if (view === "schedule") void schedulePanel?.load();
   if (view === "dispatch") void dispatchPanel?.load();
@@ -882,6 +884,7 @@ function showView(view) {
   if (view === "marketing") void marketingPanel?.load();
   if (view === "promotions") void promotionsPanel?.load();
   if (view === "notifications") void notificationsPanel?.load();
+  if (view === 'marketing-sms') { document.querySelector('#dashboard-title').textContent = 'Écrire par SMS'; updateText('#view-description', 'Préparez votre message et confirmez sa facturation avant tout envoi.'); void smsPanel?.load(); }
   if (["crm", "settings"].includes(view)) void crmPanel?.load();
 }
 
@@ -956,6 +959,7 @@ document.querySelector("#refresh-orders").addEventListener("click", async () => 
   if (currentView === "dispatch") return dispatchPanel?.load();
   if (currentView === "marketing") return marketingPanel?.load();
   if (currentView === "notifications") return notificationsPanel?.load();
+  if (currentView === 'marketing-sms') return smsPanel?.load();
   if (currentView === "customers") return loadCustomers();
   if (currentView === "backups") return loadBackups();
   if (currentView === "menu") return loadMenu();
@@ -985,6 +989,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
     if (currentView === "promotions") promotionsPanel?.load();
     if (currentView === "dispatch") dispatchPanel?.load();
     if (currentView === "notifications") notificationsPanel?.load();
+    if (currentView === 'marketing-sms') smsPanel?.load();
     if (["crm", "settings"].includes(currentView)) crmPanel?.load();
   } catch (error) { document.querySelector("#login-error").textContent = error.message; }
   finally { button.disabled = false; button.textContent = "Accéder aux commandes"; }
@@ -994,6 +999,7 @@ document.querySelector("#dashboard-password").addEventListener("keydown", (event
 if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMarketing({ root: document.querySelector('#marketing-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouPromotions === 'function') promotionsPanel = window.BibouPromotions({ root: document.querySelector('#promotions-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouNotifications === 'function') notificationsPanel = window.BibouNotifications({ root: document.querySelector('#notifications-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
+if (typeof window.BibouMarketingSms === 'function') smsPanel = window.BibouMarketingSms({ root: document.querySelector('#marketing-sms-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSchedule({root:document.querySelector('#schedule-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:showLogin});
 if (window.BibouDispatch?.create) dispatchPanel = window.BibouDispatch.create({root:document.querySelector('#dispatch-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onOrdersChanged:()=>loadOrders(),getOrder:id=>orders.find(order=>order.apiId===id)});
 if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });

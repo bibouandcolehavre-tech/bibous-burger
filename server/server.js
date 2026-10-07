@@ -19,6 +19,7 @@ const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const push = require('./push-notifications');
 const crm = require('./crm');
+const marketingSms = require('./marketing-sms');
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { createProductStockStore } = require("./product-stock");
@@ -62,6 +63,7 @@ if (fsSync.existsSync(envPath)) {
 
 const port = Number(process.env.PORT || 3001);
 const pushConfig = push.configFromEnv(process.env);
+const marketingSmsConfig = marketingSms.configFromEnv(process.env);
 const kroklyPushConfig = kroklyWebPush.configFromEnv(process.env);
 const uberConfig = uber.configFromEnv(process.env);
 const uberClient = uber.createClient(uberConfig);
@@ -766,7 +768,48 @@ const server = http.createServer(async (request, response) => {
       if (url.pathname.endsWith('/preview') && request.method === 'POST') return send(response, 200, { previews:crm.preview(database,input) });
       if (url.pathname.endsWith('/settings') && request.method === 'PATCH') { crm.saveSettings(database,input); await writeDatabase(database); }
       else if (request.method !== 'GET' || url.pathname.endsWith('/preview')) return send(response, 405, { error:'Action non disponible.' });
-      return send(response, 200, crm.dashboard(database,pushConfig,days));
+      const result = crm.dashboard(database,pushConfig,days);
+      result.channels.sms = marketingSms.ready(marketingSmsConfig);
+      result.smsConnection = marketingSms.connection(marketingSmsConfig);
+      result.pushPlatforms = pushConfig.enabled ? pushConfig.platforms : [];
+      return send(response, 200, result);
+    }
+
+    // These routes precede legacy migrations: inspecting messaging never changes data.
+    if (url.pathname === '/api/customer/marketing-sms' || url.pathname.startsWith('/api/dashboard/marketing-sms')) {
+      const isDashboard = url.pathname.startsWith('/api/dashboard/');
+      if (isDashboard && !authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const input = ['POST', 'PATCH'].includes(request.method) ? await readBody(request) : null;
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      if (!isDashboard) {
+        const customer = authenticatedCustomer(request, database);
+        if (!customer) return send(response, 401, { error: 'Connecte-toi pour gérer les SMS.' });
+        if (request.method === 'PATCH') { marketingSms.updatePreferences(database, customer, input); await writeDatabase(database); }
+        else if (request.method !== 'GET') return send(response, 405, { error: 'Action non disponible.' });
+        return send(response, 200, marketingSms.customerState(customer));
+      }
+      if (request.method === 'GET' && url.pathname === '/api/dashboard/marketing-sms') return send(response, 200, marketingSms.dashboard(database, marketingSmsConfig));
+      let campaign;
+      if (request.method === 'POST' && url.pathname === '/api/dashboard/marketing-sms/preview') campaign = marketingSms.prepareCampaign(database, input, marketingSmsConfig);
+      else if (request.method === 'POST' && /^\/api\/dashboard\/marketing-sms\/campaigns\/[a-f0-9-]+\/send$/i.test(url.pathname)) campaign = marketingSms.sendCampaign(database, url.pathname.split('/').at(-2), input, marketingSmsConfig);
+      else return send(response, 405, { error: 'Action non disponible.' });
+      await writeDatabase(database);
+      return send(response, 200, { campaign, ...marketingSms.dashboard(database, marketingSmsConfig) });
+    }
+
+    if (url.pathname.startsWith('/sms-stop/')) {
+      if (!['GET', 'POST'].includes(request.method)) return send(response, 405, { error: 'Action non disponible.' });
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      const token = url.pathname.slice('/sms-stop/'.length), customer = marketingSms.customerForStop(database, token, marketingSmsConfig);
+      if (!customer) return send(response, 404, { error: 'Lien de désinscription introuvable. Tu peux aussi désactiver les SMS dans Mon compte → Mes offres.' });
+      if (request.method === 'POST') {
+        if (url.searchParams.get('confirm') !== '1') return send(response, 400, { error: 'Confirmation requise.' });
+        marketingSms.updatePreferences(database, customer, { accepted: false }); await writeDatabase(database);
+      }
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" });
+      return response.end(`<!doctype html><html lang="fr"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>SMS · Bibou's Burgers</title><style>body{background:#faf1e3;color:#25473b;font:18px system-ui;padding:24px}main{max-width:560px;margin:40px auto;background:#d6eee3;padding:24px;border-radius:20px}button{background:#315b4b;color:white;font:700 18px system-ui;border:0;border-radius:12px;padding:18px;width:100%}p{line-height:1.6}</style><main><h1>Les SMS de Bibou</h1>${request.method === 'POST' ? '<p>Tu es désinscrit des SMS promotionnels. Les SMS nécessaires à la connexion ne sont pas concernés.</p>' : `<p>Tu peux arrêter les SMS promotionnels en appuyant ci-dessous. Cela ne change pas tes commandes ni tes points fidélité.</p><form method="post" action="/sms-stop/${token}?confirm=1"><button>Ne plus recevoir les SMS promotionnels</button></form>`}</main></html>`);
     }
 
     // This reporting route is read-only, before the legacy read-time migrations.
@@ -1760,6 +1803,20 @@ const pushTimer = setInterval(tickPush, pushConfig.enabled ? 15000 : 60 * 60000)
 pushTimer.unref();
 server.once('listening', tickPush);
 server.on('close', () => clearInterval(pushTimer));
+const marketingSmsWorker = marketingSms.createWorker({ config: marketingSmsConfig, transact: async task => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase(), before = JSON.stringify(database.marketingSms);
+    const result = task(database);
+    if (JSON.stringify(database.marketingSms) !== before) await writeDatabase(database);
+    return result;
+  } finally { release(); }
+} });
+if (marketingSms.ready(marketingSmsConfig)) {
+  const timer = setInterval(() => void marketingSmsWorker.tick().catch(() => console.error('SMS commerciaux : traitement indisponible. Consultez les résultats avant de relancer.')), 15000);
+  timer.unref(); server.on('close', () => clearInterval(timer));
+  server.once('listening', () => void marketingSmsWorker.tick().catch(() => console.error('SMS commerciaux : traitement indisponible.')));
+}
 let kroklyPushBusy = false;
 const tickKroklyPush = async () => {
   if (!kroklyPushConfig.enabled || kroklyPushBusy) return;

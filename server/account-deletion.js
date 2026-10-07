@@ -1,6 +1,7 @@
 const { withdrawContest } = require('./referral-contest');
 const { deleteCustomerPush } = require('./push-notifications');
 const { deleteCustomer: deleteCustomerCrm } = require('./crm');
+const { deleteCustomer: deleteCustomerSms } = require('./marketing-sms');
 const { cancelDepositReservation } = require('./reservation-deposit');
 const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   if (!database || !customer) return null;
@@ -8,6 +9,7 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   withdrawContest(database, customer, value);
   deleteCustomerPush(database, customer.id);
   deleteCustomerCrm(database, customer.id);
+  deleteCustomerSms(database, customer.id);
   const customerId = customer.id;
   const customerPhone = customer.phone;
   let ordersAnonymized = 0;

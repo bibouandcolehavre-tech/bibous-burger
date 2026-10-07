@@ -160,7 +160,13 @@ function campaignView(db, campaign) {
 function dashboardPush(db, config, now = Date.now()) {
   const s = store(db), devices = s.devices.filter(d => activeDevice(d, now));
   const eligible = eligibleDevices(db, 'all', config, now);
-  return { enabled: config.enabled, platforms: config.enabled ? config.platforms : [], registeredDevices: devices.length, optedInCustomers: db.customers.filter(c => prefs(c).marketing).length, eligibleCustomers: new Set(eligible.map(d => d.customerId)).size, eligibleDevices: eligible.length, campaigns: s.campaigns.slice(0, 30).map(c => campaignView(db, c)), jobs: Object.fromEntries(['queued', 'accepted', 'provider_ok', 'failed', 'uncertain'].map(status => [status, s.jobs.filter(j => j.status === status).length])) };
+  const platformStatus = ['ios', 'android'].map(platform => {
+    const registered = devices.filter(d => d.platform === platform);
+    const authorized = registered.filter(d => db.customers.some(c => c.id === d.customerId && prefs(c).marketing));
+    return { platform, enabled: live(config, platform), registeredDevices: registered.length, authorizedCustomers: new Set(authorized.map(d => d.customerId)).size, eligibleCustomers: new Set(eligible.filter(d => d.platform === platform).map(d => d.customerId)).size };
+  });
+  const consenting = db.customers.filter(c => prefs(c).marketing);
+  return { enabled: config.enabled, platforms: config.enabled ? config.platforms : [], platformStatus, webSupported: false, consentWithoutDevice: consenting.filter(c => !devices.some(d => d.customerId === c.id)).length, registeredDevices: devices.length, optedInCustomers: consenting.length, eligibleCustomers: new Set(eligible.map(d => d.customerId)).size, eligibleDevices: eligible.length, campaigns: s.campaigns.slice(0, 30).map(c => campaignView(db, c)), jobs: Object.fromEntries(['queued', 'accepted', 'provider_ok', 'failed', 'uncertain'].map(status => [status, s.jobs.filter(j => j.status === status).length])) };
 }
 
 function canDispatch(db, job, config, now) {

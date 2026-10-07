@@ -26,6 +26,22 @@ test('push : aucun consentement implicite et configuration fermée par défaut',
   assert.equal(db.pushNotifications.jobs.length, 0);
 });
 
+test('push : diagnostic iPhone/Android distingue appareil, accord et activation sans exposer de jeton', () => {
+  const { db, c } = setup(database(), 'marketing');
+  push.registerDevice(db, c, device('android'), now);
+  push.updatePreferences(db, db.customers[1], { marketing: true }, now);
+  const status = push.dashboardPush(db, { enabled: true, platforms: ['ios'] }, now);
+  assert.deepEqual(status.platformStatus, [
+    { platform: 'ios', enabled: true, registeredDevices: 1, authorizedCustomers: 1, eligibleCustomers: 1 },
+    { platform: 'android', enabled: false, registeredDevices: 1, authorizedCustomers: 1, eligibleCustomers: 0 },
+  ]);
+  assert.equal(status.consentWithoutDevice, 1);
+  assert.equal(status.webSupported, false);
+  assert.equal(JSON.stringify(status).includes('ExpoPushToken'), false);
+  assert.equal(push.dashboardPush(db, config, now).platformStatus[1].eligibleCustomers, 1);
+  assert.equal(push.dashboardPush(db, off, now).eligibleCustomers, 0);
+});
+
 test('push : jetons et preuve d’installation validés, aucune fuite de jeton', () => {
   const { db, c, d } = setup();
   assert.throws(() => push.registerDevice(db, c, { ...d, token: 'https://evil.test' }, now), /invalide/);
