@@ -154,6 +154,22 @@ test('une nouvelle commande réclamée est imprimée sans clic puis acquittée u
   assert.match(h.element('#printer-status').textContent, /prête/);
 });
 
+test('impression automatique : le statut indique le point de panne sans réclamer de commande', async () => {
+  const h = await harness();
+  h.context.fetch = async () => { throw new Error('Aucune commande ne doit être réclamée'); };
+  await h.run('dispatchAutoPrint()');
+  assert.match(h.element('#printer-status').textContent, /module Epson non chargé/);
+
+  h.context.window.BibouEpsonPrint = { probe: async () => { throw new Error('La page sécurisée ne peut pas joindre le service d’impression Epson.'); } };
+  await h.run('dispatchAutoPrint()');
+  assert.match(h.element('#printer-status').textContent, /ne peut pas joindre le service d’impression Epson/);
+
+  h.context.window.BibouEpsonPrint = { probe: async () => ({ success: true }) };
+  h.context.fetch = async () => result({}, 503);
+  await h.run('dispatchAutoPrint()');
+  assert.match(h.element('#printer-status').textContent, /File d’impression indisponible \(réponse 503\)/);
+});
+
 test("commandes : les commandes terminées ont un onglet et un détail ouvrable", async () => {
   const h = await harness();
   h.context.completedOrder = { id: "order-249", number: 249, customerName: "Alexandre", customerPhone: "+33600000000", method: "delivery", serviceDate: "2026-09-22", slot: "20:00", createdAt: "2026-09-22T18:00:00Z", status: "delivered", subtotal: 20.8, discount: 2.08, discountLabel: "Cadeau de bienvenue", discountRate: 0.1, standardDeliveryFee: 4.99, deliveryFee: 4.99, total: 23.71, items: [{ productId: "gros-lard-menu", name: "Le gros lard", quantity: 1, price: 20.8, options: [{ groupId: "drink", label: "Coca 33 cl", price: 0 }] }] };

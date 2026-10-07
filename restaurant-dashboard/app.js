@@ -233,15 +233,20 @@ async function completePrintJob(orderId, claimId, status, token) {
 }
 
 async function dispatchAutoPrint() {
-  if (autoPrintBusy || !dashboardToken || !window.BibouEpsonPrint) return;
+  if (autoPrintBusy || !dashboardToken) return;
+  if (!window.BibouEpsonPrint) {
+    updateText('#printer-status', '⚠️ Impression automatique indisponible · module Epson non chargé. Rechargez le back-office.');
+    return;
+  }
   autoPrintBusy = true;
   const token = dashboardToken;
   try {
     const probe = await window.BibouEpsonPrint.probe('192.168.192.50');
-    if (!probe.success) throw new Error('Service Epson indisponible.');
+    if (!probe.success) throw new Error(`L’Epson refuse le test de liaison (${probe.code || probe.status || 'état inconnu'}).`);
     if (token !== dashboardToken) return;
     const response = await fetch(`${API_BASE_URL}/dashboard/print-jobs/claim`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok || token !== dashboardToken) throw new Error('File d’impression indisponible.');
+    if (token !== dashboardToken) return;
+    if (!response.ok) throw new Error(`File d’impression indisponible (réponse ${response.status}).`);
     const { job } = await response.json();
     if (!job) { updateText('#printer-status', '🖨 Imprimante prête · tickets automatiques activés'); return; }
     const id = job.order.id;
@@ -261,8 +266,8 @@ async function dispatchAutoPrint() {
       updateText('#printer-status', `⚠️ Ticket #${job.order.number} non confirmé · vérifiez le papier`);
     }
     renderOrders();
-  } catch {
-    updateText('#printer-status', '⚠️ Impression automatique indisponible · commandes visibles à l’écran');
+  } catch (error) {
+    updateText('#printer-status', `⚠️ Impression automatique indisponible · ${error.message || 'cause inconnue'}. Commandes visibles à l’écran.`);
   } finally { autoPrintBusy = false; }
 }
 
