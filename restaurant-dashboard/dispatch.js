@@ -29,9 +29,10 @@ window.BibouDispatch = (() => {
       const response = await fetch(`${api}/dashboard/krokly-drivers${route}`, { method, cache: 'no-store', headers: { Authorization: `Bearer ${session}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000), ...(body ? { body: JSON.stringify(body) } : {}) });
       if (session !== token()) throw Error('La connexion a changé.');
       if (response.status === 401) { onUnauthorized(); throw Error('Reconnectez-vous au back-office.'); }
-      const result = await response.json();
+      const result = await response.json().catch(() => null);
       if (session !== token()) throw Error('La connexion a changé.');
-      if (!response.ok) throw Error(result.error || 'La répartition est momentanément indisponible.');
+      if (!response.ok) throw Error(result?.error || 'La répartition est momentanément indisponible.');
+      if (!result) throw Error('La réponse du serveur est indisponible.');
       return result;
     }
     function card(order, assigned) {

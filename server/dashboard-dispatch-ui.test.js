@@ -105,5 +105,15 @@ test('Krokly order controls stay in the back office and never invite a duplicate
   const html = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/index.html'), 'utf8');
   assert.equal((html.match(/data-view="dispatch"/g) || []).length, 2);
   assert.match(html, /id="dispatch-view"/);
-  assert.match(html, /dispatch\.js\?v=1/);
+  assert.match(html, /dispatch\.js\?v=2/);
+});
+
+test('dispatch gateway HTML errors stay readable and leave assignment disabled', async () => {
+  const h = harness();
+  await h.panel.load();
+  h.context.fetch = async () => ({status:502,ok:false,json:async()=>{throw SyntaxError('Unexpected token <');}});
+  await h.panel.load();
+  assert.match(h.element('[data-dispatch-feedback]').textContent, /momentanément indisponible/);
+  assert.doesNotMatch(h.element('[data-dispatch-feedback]').textContent, /Unexpected token|JSON|SyntaxError/);
+  assert.match(h.element('[data-dispatch-ready]').innerHTML, /disabled/);
 });
