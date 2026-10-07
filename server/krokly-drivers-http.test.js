@@ -20,7 +20,7 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
   await fs.writeFile(file, JSON.stringify({ customers: [{ id: 'c1', name: 'Client fictif', points: 0 }], orders: [order(1), order(2)], reservations: [], nextOrderNumber: 3, nextCustomerId: 2 }));
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
     cwd: dir,
-    env: { PATH: process.env.PATH, PORT: '0', NODE_ENV: 'test', DATA_FILE_PATH: file, SESSION_SECRET: 'test-session-secret', RESTAURANT_DASHBOARD_PASSWORD: 'owner-test-password' },
+    env: { PATH: process.env.PATH, PORT: '0', NODE_ENV: 'test', DATA_FILE_PATH: file, SESSION_SECRET: 's'.repeat(64), RESTAURANT_DASHBOARD_PASSWORD: 'owner-test-password' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   t.after(async () => {
@@ -51,7 +51,11 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal(malik.status, 201);
   const linaToken = (await request('/api/krokly-driver/login', '', 'POST', { username: 'lina', password: lina.data.password })).data.token;
   const malikToken = (await request('/api/krokly-driver/login', '', 'POST', { username: 'malik', password: malik.data.password })).data.token;
-  assert.equal((await request('/api/krokly-driver/state', linaToken)).data.orders.length, 0);
+  const firstState = (await request('/api/krokly-driver/state', linaToken)).data;
+  assert.equal(firstState.orders.length, 0);
+  assert.equal(firstState.push.enabled, true);
+  assert.equal(typeof firstState.push.publicKey, 'string');
+  assert.equal((await request('/api/krokly-driver/push/subscribe', linaToken, 'POST', { endpoint: 'https://127.0.0.1/private' })).status, 400);
   assert.equal((await request('/api/dashboard/krokly-drivers/orders/order-1/assign', owner, 'POST', { driverId: lina.data.driver.id })).status, 200);
   assert.equal((await request('/api/dashboard/krokly-drivers/orders/order-1/assign', owner, 'POST', { driverId: malik.data.driver.id })).status, 409);
   assert.equal((await request('/api/krokly-driver/state', malikToken)).data.orders.length, 0);
