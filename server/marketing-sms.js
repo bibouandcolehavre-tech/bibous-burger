@@ -82,14 +82,21 @@ function prepareCampaign(db, input, config, now = Date.now()) {
   if (!title || title.length > 65 || !body || body.length > 220 || /[\u0000-\u0008\u000b-\u001f]/.test(title + body)) fail('Titre interne : 1 à 65 caractères. SMS : 1 à 220 caractères.');
   const s = store(db), fingerprint = hash(JSON.stringify([title, body, input.audience, config.from, config.origin]));
   const previous = s.campaigns.find(c => c.id === input.requestId);
-  if (previous) { if (previous.fingerprint !== fingerprint) fail('SMS modifié : créez un nouvel aperçu.', 409); return campaignView(db, previous); }
+  if (previous) { if (previous.fingerprint !== fingerprint) fail('SMS modifié : créez un nouvel aperçu.', 409); return previewView(db, previous, now); }
   if (s.campaigns.filter(c => c.createdAt > now - DAY).length >= 50) fail('Limite de 50 aperçus par jour.', 429);
   const customers = eligible(db, input.audience, now);
   if (customers.length > 100) fail('Limite de sécurité : 100 destinataires par campagne.', 409);
   const count = segments(messageBody(body, 'preview', { ...config, origin: config.origin || 'https://bibous-burger.onrender.com' }));
   if (count > 4) fail('Le SMS dépasse quatre segments facturables. Raccourcissez-le.');
   const campaign = { id: input.requestId, title, body, audience: input.audience, fingerprint, status: 'draft', createdAt: now, expiresAt: now + 15 * 60000, sender: config.from, origin: config.origin, segmentsPerMessage: count, maxSegments: count * customers.length, targets: customers.map(c => ({ customerId: c.id, phoneHash: hash(c.phone), acceptedAt: c.smsMarketingPreferences.acceptedAt, consentId: c.smsMarketingPreferences.consentId })) };
-  s.campaigns.unshift(campaign); return campaignView(db, campaign);
+  s.campaigns.unshift(campaign); return previewView(db, campaign, now);
+}
+function previewView(db, campaign, now) {
+  const view = campaignView(db, campaign);
+  if (campaign.status !== 'draft') return view;
+  // Recheck the original targets, without adding new clients or exposing their numbers.
+  const recipients = campaign.targets.map(t => canDispatch(db, t, campaign.audience, now)).filter(Boolean).map(customer => ({ name: [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() || String(customer.name || '').trim() || 'Nom non renseigné' })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  return { ...view, customers: recipients.length, recipients };
 }
 function canDispatch(db, target, audience, now) {
   return eligible(db, audience, now).find(c => c.id === target.customerId && hash(c.phone) === target.phoneHash && c.smsMarketingPreferences.consentId === target.consentId) || null;

@@ -124,12 +124,30 @@ function prepareCampaign(db, input, config, now = Date.now()) {
   if (!title || title.length > 65 || !body || body.length > 220 || /[\u0000-\u0008\u000b-\u001f]/.test(title + body)) fail('Titre : 1 à 65 caractères. Message : 1 à 220 caractères.');
   const s = store(db), fingerprint = hash(JSON.stringify([title, body, input.screen, input.audience]));
   const old = s.campaigns.find(c => c.id === input.requestId);
-  if (old) { if (old.fingerprint !== fingerprint) fail('Cet aperçu a changé. Crée un nouvel aperçu.', 409); return campaignView(db, old); }
+  if (old) { if (old.fingerprint !== fingerprint) fail('Cet aperçu a changé. Crée un nouvel aperçu.', 409); return previewView(db, old, config, now); }
   if (s.campaigns.filter(c => c.createdAt > now - DAY).length >= 50) fail('Trop d’aperçus aujourd’hui. Réessayez demain.', 429);
   const devices = eligibleDevices(db, input.audience, config, now);
   const campaign = { id: input.requestId, fingerprint, title, body, screen: input.screen, audience: input.audience, status: 'draft', createdAt: now, previewExpiresAt: now + 15 * 60000, deviceIds: devices.map(d => d.installationId), targetOwners: Object.fromEntries(devices.map(d => [d.installationId, d.customerId])), customers: new Set(devices.map(d => d.customerId)).size };
   s.campaigns.unshift(campaign);
-  return campaignView(db, campaign);
+  return previewView(db, campaign, config, now);
+}
+
+// Names are resolved only for the authenticated preview, never copied to jobs/history.
+function previewView(db, campaign, config, now) {
+  const view = campaignView(db, campaign);
+  if (campaign.status !== 'draft') return view;
+  const snapshot = new Set(campaign.deviceIds), recipients = new Map();
+  const devices = eligibleDevices(db, campaign.audience, config, now).filter(d => snapshot.has(d.installationId) && campaign.targetOwners[d.installationId] === d.customerId);
+  for (const device of devices) {
+    if (!recipients.has(device.customerId)) {
+      const customer = db.customers.find(c => c.id === device.customerId);
+      const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() || String(customer.name || '').trim() || 'Nom non renseigné';
+      recipients.set(device.customerId, { name, platforms: [] });
+    }
+    const recipient = recipients.get(device.customerId);
+    if (!recipient.platforms.includes(device.platform)) recipient.platforms.push(device.platform);
+  }
+  return { ...view, customers: recipients.size, devices: devices.length, recipients: [...recipients.values()].map(r => ({ ...r, platforms: r.platforms.sort() })).sort((a, b) => a.name.localeCompare(b.name, 'fr')) };
 }
 
 function sendCampaign(db, id, input, config, now = Date.now()) {

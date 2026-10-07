@@ -8,13 +8,13 @@ function harness() {
     if (!elements.has(key)) elements.set(key, { innerHTML: '', _text: '', get textContent() { return this._text; }, set textContent(value) { this._text = value; this.innerHTML = ''; }, checked: false, hidden: true, disabled: false, handlers: {}, addEventListener(event, fn) { this.handlers[event] = fn; }, reset() {} });
     return elements.get(key);
   };
-  const state = () => ({ enabled, platforms: enabled ? ['ios'] : [], optedInCustomers: 1, registeredDevices: 1, eligibleCustomers: enabled ? 1 : 0, campaigns: lastCampaign ? [lastCampaign] : [] });
+  const state = () => ({ enabled, platforms: enabled ? ['ios'] : [], optedInCustomers: 1, registeredDevices: 1, eligibleCustomers: enabled ? 1 : 0, campaigns: lastCampaign ? [{ ...lastCampaign, recipients: undefined }] : [] });
   const context = { window: {}, crypto, AbortSignal, Date, FormData: class { [Symbol.iterator]() { return Object.entries(fields)[Symbol.iterator](); } }, fetch: async (url, options) => {
     calls.push({ url, body: options.body ? JSON.parse(options.body) : null });
     if (pending) return pending;
     if (url.endsWith('/preview')) {
       const input = JSON.parse(options.body);
-      lastCampaign = { ...input, id: input.requestId, status: 'draft', previewExpiresAt: Date.now() + 900000, createdAt: Date.now(), customers: enabled ? 1 : 0, devices: enabled ? 1 : 0, counts: { queued: 0, sending: 0, accepted: 0, provider_ok: 0, failed: 0, uncertain: 0, cancelled: 0, expired: 0 } };
+      lastCampaign = { ...input, id: input.requestId, status: 'draft', previewExpiresAt: Date.now() + 900000, createdAt: Date.now(), customers: enabled ? 1 : 0, devices: enabled ? 1 : 0, recipients: enabled ? [{ name: 'Camille <img src=x onerror=bad()>', platforms: ['ios'] }] : [], counts: { queued: 0, sending: 0, accepted: 0, provider_ok: 0, failed: 0, uncertain: 0, cancelled: 0, expired: 0 } };
       return response({ ...state(), campaign: lastCampaign });
     }
     if (url.endsWith('/send')) { lastCampaign = { ...lastCampaign, status: 'sent' }; return response({ ...state(), campaign: lastCampaign }); }
@@ -65,4 +65,15 @@ test('interface push : session terminée ignore les réponses tardives et efface
   assert.equal(h.el('#push-history').innerHTML, ''); assert.equal(h.el('#push-status').textContent, '');
   h.setToken('other'); h.pending(Promise.resolve(response({}, 401))); await h.panel.load();
   assert.equal(h.unauthorized(), 1);
+});
+
+test('interface push : noms avant envoi, échappés, conservés après actualisation puis effacés', async () => {
+  const h = harness(); await h.panel.load(); await h.submit();
+  assert.match(h.el('#push-recipients').innerHTML, /Camille &lt;img/);
+  assert.ok(!h.el('#push-recipients').innerHTML.includes('<img')); assert.match(h.el('#push-recipients').innerHTML, /iPhone/);
+  await h.panel.load();
+  assert.match(h.el('#push-recipients').innerHTML, /Camille/);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/send')).length, 0);
+  h.el('#push-form').handlers.input(); assert.equal(h.el('#push-recipients').innerHTML, '');
+  await h.submit(); h.panel.clear(); assert.equal(h.el('#push-recipients').innerHTML, '');
 });

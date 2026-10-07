@@ -2,6 +2,7 @@
 const fs=require('node:fs/promises'),http=require('node:http'),path=require('node:path'),os=require('node:os');
 const {spawn}=require('node:child_process');
 const {createCustomerSession}=require('../customer-session'),crm=require('../crm');
+const crypto=require('node:crypto'),push=require('../push-notifications'),sms=require('../marketing-sms');
 if(process.env.NODE_ENV!=='test')throw Error('NODE_ENV=test required');
 (async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bibou-crm-preview-')),databaseFile=path.join(dir,'data.json'),secret='crm-preview-only',now=Date.now(),day=86400000;
@@ -9,8 +10,13 @@ if(process.env.NODE_ENV!=='test')throw Error('NODE_ENV=test required');
   const db={customers:names.map((name,i)=>({id:'demo-'+i,name,phone:'+3360000000'+i,createdAt:new Date(now-90*day).toISOString(),points:0,weeklyOrders:0,welcomeReward:{status:'used'},crmPreferences:{personalizedOffers:i!==2,birthday:'09-20'}})),orders:[],nextCustomerId:4,nextOrderNumber:100,reservations:[]};
   [2,5,8,12,50].forEach((ago,i)=>db.orders.push({id:'demo-order-'+i,number:i+1,customerId:i===4?'demo-1':'demo-0',customerName:names[i===4?1:0],createdAt:new Date(now-ago*day).toISOString(),payment:{status:'PAID',paidAt:new Date(now-ago*day).toISOString()},status:'delivered',method:'pickup',subtotal:30+i,total:30+i,items:[]}));
   db.crm={settings:crm.defaults(),offers:[{id:'demo-offer',customerId:'demo-0',ruleId:'birthday',eventKey:'fictitious',title:'Offre fictive de démonstration',discountPercent:15,minSubtotal:0,createdAt:now-day,expiresAt:now+14*day}]};
+  for(const customer of db.customers.slice(0,2)) {
+    sms.updatePreferences(db,customer,{accepted:true},now);
+    push.updatePreferences(db,customer,{marketing:true},now);
+    push.registerDevice(db,customer,{installationId:crypto.randomUUID(),secret:crypto.randomUUID(),token:'ExpoPushToken[FAKE_ONLY_'+customer.id+']',platform:customer.id==='demo-0'?'ios':'android'},now);
+  }
   await fs.writeFile(databaseFile,JSON.stringify(db));
-  const child=spawn(process.execPath,[path.join(__dirname,'../server.js')],{cwd:dir,env:{PATH:process.env.PATH,NODE_ENV:'test',PORT:'0',DATA_FILE_PATH:databaseFile,SESSION_SECRET:secret,RESTAURANT_DASHBOARD_PASSWORD:'demo-only',PUSH_ENABLED:'false'},stdio:['ignore','pipe','inherit']});
+  const child=spawn(process.execPath,['--require',path.join(__dirname,'push-provider.cjs'),path.join(__dirname,'../server.js')],{cwd:dir,env:{PATH:process.env.PATH,NODE_ENV:'test',PORT:'0',DATA_FILE_PATH:databaseFile,SESSION_SECRET:secret,RESTAURANT_DASHBOARD_PASSWORD:'demo-only',PUSH_ENABLED:'true',PUSH_IOS_ENABLED:'true',PUSH_ANDROID_ENABLED:'true'},stdio:['ignore','pipe','inherit']});
   const api=await new Promise((resolve,reject)=>{child.stdout.on('data',value=>{const match=String(value).match(/http:\/\/localhost:\d+/);if(match)resolve(match[0]);});child.on('error',reject);child.on('exit',code=>reject(Error('API exit '+code)));});
   const dist=path.resolve(__dirname,'../../dist'),dashboard=path.resolve(__dirname,'../../restaurant-dashboard');let origin;
   const server=http.createServer(async(req,res)=>{try{

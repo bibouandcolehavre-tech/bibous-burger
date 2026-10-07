@@ -197,6 +197,13 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .push-phone > strong { display:block; color:#241a14; font-size:17px; }
 .push-phone p { white-space:pre-wrap; color:#44372e; line-height:1.5; }
 .push-muted { font-size:12px; line-height:1.6; color:#6c5748; }
+.message-recipients { margin:18px 0; padding:16px; border:1px solid #dcc7b0; border-radius:14px; background:#fffdf9; }
+.message-recipients h4 { margin:0 0 12px; }
+.message-recipients ul { list-style:none; padding:0; margin:0; max-height:240px; overflow-y:auto; }
+.message-recipients li { display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px 16px; padding:10px 0; border-bottom:1px solid #eee3d8; overflow-wrap:anywhere; }
+.message-recipients li:last-child { border-bottom:0; }
+.message-recipients li small { color:#6c5748; }
+.message-recipients p { line-height:1.5; margin:0; }
 .push-history-item { padding:18px 0; border-bottom:1px solid #e4d8ca; overflow-wrap:anywhere; }
 .push-history-item > div { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
 .push-history-item span,.push-history-item small { color:#705a48; font-size:12px; line-height:1.6; }

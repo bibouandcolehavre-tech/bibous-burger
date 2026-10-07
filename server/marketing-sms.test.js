@@ -8,6 +8,22 @@ const opt = (db, id = 'c1', accepted = true, time = now) => sms.updatePreference
 function preview(db) { return sms.prepareCampaign(db, input(), config, now); }
 function send(db, p) { return sms.sendCampaign(db, p.id, { confirm: true, maxSegments: p.maxSegments }, config, now); }
 
+test('SMS : noms privés dans l’aperçu, aucun numéro ni accord implicite, retrait revérifié', () => {
+  const db = fixture(); db.customers[0].name = 'Zoé Exemple'; db.customers[1].firstName = 'Alex'; db.customers[1].lastName = 'Fictif';
+  opt(db); opt(db, 'c2'); const i = input(), p = sms.prepareCampaign(db, i, config, now);
+  assert.deepEqual(p.recipients, [{ name: 'Alex Fictif' }, { name: 'Zoé Exemple' }]);
+  assert.equal(p.customers, 2); assert.equal(db.marketingSms.jobs.length, 0);
+  assert.equal(db.marketingSms.campaigns[0].recipients, undefined);
+  assert.equal(sms.dashboard(db, config, now).campaigns[0].recipients, undefined);
+  assert.ok(!JSON.stringify(p.recipients).includes('+336')); assert.ok(!JSON.stringify(p.recipients).includes('"c1"'));
+  opt(db, 'c1', false); opt(db, 'c3');
+  const changed = sms.prepareCampaign(db, i, config, now);
+  assert.deepEqual(changed.recipients, [{ name: 'Alex Fictif' }]); assert.equal(changed.customers, 1);
+  assert.equal(changed.maxSegments, p.maxSegments, 'the original authorised billing ceiling remains unchanged');
+  db.customers[1].phone = '+33611111111';
+  assert.deepEqual(sms.prepareCampaign(db, i, config, now).recipients, []);
+});
+
 test('SMS : aucun ancien consentement CRM/push ne vaut un accord SMS ; validation stricte et lecture privée', () => {
   const db = fixture(), before = JSON.stringify(db);
   assert.equal(sms.dashboard(db, config, now).optedInCustomers, 0);

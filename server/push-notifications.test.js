@@ -15,6 +15,33 @@ const campaign = () => ({ requestId: crypto.randomUUID(), title: 'Le burger du m
 const worker = (db, fetchImpl, clock = () => now) => push.createPushWorker({ config, transact: async task => task(db), fetchImpl, clock });
 const response = (data, status = 200) => new Response(JSON.stringify(data), { status });
 
+test('push : aperçu nominatif privé, dédoublonné et limité aux appareils autorisés du cliché initial', () => {
+  const { db, c, d } = setup(database(), 'marketing'); c.firstName = 'Camille'; c.lastName = 'Exemple';
+  push.registerDevice(db, c, device('android'), now);
+  push.registerDevice(db, db.customers[1], device(), now);
+  const input = campaign(), p = push.prepareCampaign(db, input, config, now);
+  assert.deepEqual(p.recipients, [{ name: 'Camille Exemple', platforms: ['android', 'ios'] }]);
+  assert.equal(p.customers, 1); assert.equal(p.devices, 2); assert.equal(db.pushNotifications.jobs.length, 0);
+  assert.equal(db.pushNotifications.campaigns[0].recipients, undefined);
+  assert.equal(push.dashboardPush(db, config, now).campaigns[0].recipients, undefined);
+  for (const value of [c.phone, c.id, d.token, d.secret]) assert.ok(!JSON.stringify(p.recipients).includes(value));
+  const iosOnly = push.prepareCampaign(db, input, { ...config, platforms: ['ios'] }, now);
+  assert.deepEqual(iosOnly.recipients[0].platforms, ['ios']); assert.equal(iosOnly.devices, 1);
+  push.updatePreferences(db, db.customers[1], { marketing: true }, now);
+  assert.equal(push.prepareCampaign(db, input, config, now).recipients.length, 1, 'new clients are not added to an existing preview');
+  push.updatePreferences(db, c, { marketing: false }, now);
+  const revoked = push.prepareCampaign(db, input, config, now);
+  assert.deepEqual(revoked.recipients, []); assert.equal(revoked.customers, 0); assert.equal(revoked.devices, 0);
+});
+
+test('push : un appareil réattribué ne révèle pas le nouveau propriétaire dans un ancien aperçu', () => {
+  const { db, d } = setup(database(), 'marketing'), input = campaign();
+  push.prepareCampaign(db, input, config, now);
+  push.updatePreferences(db, db.customers[1], { marketing: true }, now);
+  push.registerDevice(db, db.customers[1], d, now);
+  assert.deepEqual(push.prepareCampaign(db, input, config, now).recipients, []);
+});
+
 test('push : aucun consentement implicite et configuration fermée par défaut', () => {
   const db = database();
   assert.deepEqual(push.configFromEnv({}), { enabled: false, platforms: [], accessToken: '' });

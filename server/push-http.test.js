@@ -36,6 +36,7 @@ test('API notifications : autorisations, préférences, transitions, isolation e
   const input = { requestId: crypto.randomUUID(), title: 'Test <script>', body: 'Un message fictif uniquement', screen: 'menu', audience: 'all' };
   const preview = await (await req('/dashboard/push/preview', admin, 'POST', input)).json();
   assert.equal(preview.campaign.customers, 1); assert.equal(preview.campaign.devices, 1);
+  assert.deepEqual(preview.campaign.recipients, [{ name: 'Fictif', platforms: ['ios'] }]);
   assert.equal((await req(`/dashboard/push/campaigns/${input.requestId}/send`, admin, 'POST', {})).status, 400);
   await req(`/dashboard/push/campaigns/${input.requestId}/send`, admin, 'POST', { confirm: true });
   await req(`/dashboard/push/campaigns/${input.requestId}/send`, admin, 'POST', { confirm: true });

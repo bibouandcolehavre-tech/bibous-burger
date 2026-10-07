@@ -22,6 +22,8 @@ test('API SMS : lecture sans migration, accord explicite, authentification, STOP
   assert.equal((await (await req('/api/customer/marketing-sms', c2)).json()).preferences.accepted, false);
   const preview = await (await req('/api/dashboard/marketing-sms/preview', admin, 'POST', { requestId: crypto.randomUUID(), title: 'Fictif', body: 'Pas d’envoi réel.', audience: 'all' })).json();
   assert.equal(preview.campaign.customers, 1);
+  assert.deepEqual(preview.campaign.recipients, [{ name: 'Fictif' }]);
+  assert.equal((await req('/api/dashboard/marketing-sms/preview', c1, 'POST', {})).status, 401);
   assert.equal((await req(`/api/dashboard/marketing-sms/campaigns/${preview.campaign.id}/send`, admin, 'POST', { confirm: true, maxSegments: preview.campaign.maxSegments })).status, 409);
   let db = JSON.parse(await fs.readFile(file, 'utf8')); assert.equal(db.marketingSms.jobs.length, 0);
   const stop = '/sms-stop/' + sms.stopToken('c1', { secret });
