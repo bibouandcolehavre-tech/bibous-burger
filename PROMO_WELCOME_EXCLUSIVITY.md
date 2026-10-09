@@ -10,6 +10,8 @@ Demande : garder la bienvenue de 10 %, mais permettre au client de choisir soit 
 - L’offre porte sur les burgers seuls : un burger au prix de base le plus bas offert par groupe de quatre, hors menus et suppléments payants. Les frais de livraison restent inchangés.
 - Campagne prévue pour le vendredi 9 octobre 2026, fin exclusive au 10 octobre 00 h 00, heure de Paris (`2026-10-09T22:00:00.000Z`). Code : `QUATREBURGER`.
 
-Vérifications locales : 468 tests isolés réussis. Cas HTTP de paiement fictif à 29,70 € pour quatre Classique à 9,90 €, taux de bienvenue nul, flags client falsifiés ignorés, remise de bienvenue conservée après paiement, autre commande sans code à 35,64 €. Régression sur une offre cumulable existante et sur les aperçus web/Android.
+Vérifications locales : 470 tests isolés réussis. Cas HTTP de paiement fictif à 29,70 € pour quatre Classique à 9,90 €, taux de bienvenue nul, flags client falsifiés ignorés, remise de bienvenue conservée après paiement, autre commande sans code à 35,64 €. Régression sur une offre cumulable existante et sur les aperçus web/Android.
+
+La confirmation d’activation a été déplacée dans la page du back-office après un blocage reproductible de la fenêtre native du navigateur. Elle exige toujours un second appui explicite et invalide la confirmation lorsque les réglages changent. Tests d’activation, annulation, modification et changement de modèle réussis.
 
 Aucune vraie commande, aucun débit, aucun SMS ou push de test. Les travaux préexistants de la borne et le dossier Apple build 16 sont hors intervention. Le visuel et le texte Instagram sont préparés séparément, sans publication sociale.

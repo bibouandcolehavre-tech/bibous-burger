@@ -9,7 +9,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     free_delivery: { title:'Livraison offerte', type:'free_delivery', code:'LIVRAISON', percent:0, minimum:30, message:'Livraison offerte dès 30 € de produits. Cumulable avec les 10 % de bienvenue.' },
     flash: { title:'−20 % coup de boost', type:'percent_order', code:'FLASH20', percent:20, minimum:0, usageLimit:50, message:'−20 % sur les produits. Offre limitée. Cumulable avec les 10 % de bienvenue.' }
   };
-  let data = null, draft = null, busy = false;
+  let data = null, draft = null, busy = false, pendingActivation = null;
   root.innerHTML = `<div class="menu-intro"><p class="eyebrow">PROMOTIONS</p><h2>Créez vos offres en quelques gestes.</h2><p>Choisissez une idée, fixez ses limites, enregistrez-la, puis activez-la quand vous êtes prêt. Aucun code n’est actif par défaut.</p></div>
     <p id="promo-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
     <div class="promo-layout"><section class="workspace-panel"><h2>Vos codes</h2><div id="promo-list"></div><h3>Nouvelle offre</h3><div id="promo-templates"></div></section>
@@ -31,6 +31,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     q('#promo-templates').innerHTML = Object.entries(templates).map(([key, item]) => `<button type="button" class="promo-template" data-template="${key}">${esc(item.title)} <span>→</span></button>`).join('');
   }
   function renderForm() {
+    pendingActivation = null;
     if (!draft) { q('#promo-form').innerHTML = '<p>Sélectionnez une idée ou un code existant.</p>'; return; }
     q('#promo-heading').textContent = draft.id ? `Modifier ${draft.code}` : 'Créer une nouvelle offre';
     const products = data.burgers.map(item => `<option value="${esc(item.id)}" ${item.id === draft.productId ? 'selected' : ''}>${esc(item.name)}</option>`).join('');
@@ -47,7 +48,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       <label class="promo-check"><input data-field="combineWelcome" type="checkbox" ${draft.combineWelcome !== false?'checked':''}> Cumul avec les 10 % de bienvenue</label>
       <label class="promo-wide">Texte affiché au client<textarea data-field="message" maxlength="180" rows="3">${esc(draft.message)}</textarea></label>
       <p class="promo-wide promo-rule">${draft.combineWelcome !== false ? 'Les 10 % de bienvenue se cumulent avec cette offre sur le montant restant à payer.' : 'Cette offre et les 10 % de bienvenue ne se cumulent pas. Le client choisit cette offre en appliquant le code, ou la bienvenue en le retirant.'} Un seul code promo par commande. Pour les offres « acheté, offert », le produit le moins cher est offert hors suppléments payants. Burgers seuls et menus sont comptés séparément.</p>
-    </div><div class="promo-actions"><button type="button" id="promo-save" class="login-button">${draft.enabled ? 'Enregistrer les modifications' : 'Enregistrer en pause'}</button><button type="button" id="promo-toggle" class="secondary-button">${draft.enabled ? 'Mettre en pause' : 'Activer cette offre'}</button></div>`;
+    </div><div class="promo-actions"><button type="button" id="promo-save" class="login-button">${draft.enabled ? 'Enregistrer les modifications' : 'Enregistrer en pause'}</button><button type="button" id="promo-toggle" class="secondary-button">${draft.enabled ? 'Mettre en pause' : 'Activer cette offre'}</button></div><div id="promo-confirmation" role="status" aria-live="polite"></div>`;
   }
   function readForm() {
     if (!draft) return;
@@ -61,12 +62,18 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     if (draft.type !== 'percent_burger') draft.productId = null;
     if (!draft.type.startsWith('percent_')) draft.percent = 0;
   }
-  async function save(activate) {
+  async function save(activate, confirmed = false) {
     if (busy || !draft) return;
     readForm();
     const next = { ...draft, enabled:activate === null ? draft.enabled : activate };
     delete next.title; delete next.used; delete next.createdAt; delete next.updatedAt;
-    if (next.enabled && !window.confirm(`Activer ${next.code} ? Les clients pourront l’utiliser immédiatement sur les versions compatibles de l’application.`)) return;
+    if (next.enabled && (!confirmed || JSON.stringify(next) !== pendingActivation)) {
+      pendingActivation = JSON.stringify(next);
+      q('#promo-confirmation').innerHTML = `<div class="workspace-panel"><h3>Activer ${esc(next.code)} ?</h3><p>Les clients pourront utiliser cette offre immédiatement. Vérifiez les dates et les règles ci-dessus avant de confirmer.</p><div class="promo-actions"><button type="button" id="promo-confirm-save" class="login-button">Confirmer l’activation</button><button type="button" id="promo-confirm-cancel" class="secondary-button">Annuler</button></div></div>`;
+      feedback('Confirmation nécessaire : aucun changement enregistré pour le moment.');
+      return;
+    }
+    pendingActivation = null;
     next.confirmActivation = next.enabled;
     busy = true; q('#promo-form').querySelectorAll('button').forEach(button => { button.disabled = true; }); feedback('Enregistrement…');
     try { data = await request(next.id ? 'PATCH' : 'POST', next); draft = { ...data.promotions.find(item => item.code === next.code) }; renderList(); renderForm(); feedback(next.enabled ? 'Offre active et enregistrée.' : 'Offre enregistrée en pause.'); }
@@ -80,7 +87,10 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     if (existing) { draft = { ...data.promotions.find(item => item.id === existing.dataset.promoId) }; renderForm(); feedback(''); return; }
     if (event.target.id === 'promo-save') void save(null);
     if (event.target.id === 'promo-toggle') void save(!draft.enabled);
+    if (event.target.id === 'promo-confirm-save') void save(true, true);
+    if (event.target.id === 'promo-confirm-cancel') { pendingActivation = null; q('#promo-confirmation').innerHTML = ''; feedback('Activation annulée. Aucun changement enregistré.'); }
   });
+  root.addEventListener('input', () => { if (pendingActivation) { pendingActivation = null; q('#promo-confirmation').innerHTML = ''; } });
   root.addEventListener('change', event => { if (['type', 'combineWelcome'].includes(event.target.dataset.field)) { readForm(); renderForm(); } });
-  return { async load() { if (busy) return; try { data = await request(); renderList(); renderForm(); feedback('Les offres sont à jour.'); } catch (error) { feedback(error.message); } }, clear() { data = draft = null; q('#promo-list').innerHTML = ''; q('#promo-form').innerHTML = ''; } };
+  return { async load() { if (busy) return; try { data = await request(); renderList(); renderForm(); feedback('Les offres sont à jour.'); } catch (error) { feedback(error.message); } }, clear() { data = draft = pendingActivation = null; q('#promo-list').innerHTML = ''; q('#promo-form').innerHTML = ''; } };
 };
