@@ -13,6 +13,9 @@ import CustomBurgerPreview from "./CustomBurgerPreview";
 import CustomerOffers from "./CustomerOffers";
 import StoreReviewLogin from "./StoreReviewLogin";
 import CustomerIdentityScreen from './CustomerIdentityScreen';
+import KioskPhoneApproval from './KioskPhoneApproval';
+const { kioskPairingFromLocation } = require('./kiosk-qr-client');
+const PHONE_PAIRING = Platform.OS === 'web' && typeof window !== 'undefined' ? kioskPairingFromLocation(window.location.href) : null;
 import WheelAfterPayment from './WheelAfterPayment';
 const { hasCompleteIdentity } = require('./customer-identity');
 const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
@@ -108,6 +111,7 @@ const referralCodeFromUrl = () => {
   try { return new URLSearchParams(window.location.search).get("ref")?.trim().toUpperCase() || ""; } catch { return ""; }
 };
 const initialScreenFromUrl = () => {
+  if (PHONE_PAIRING) return 'kiosk-phone-approval';
   if (typeof window === "undefined") return "menu";
   try {
     if (new URLSearchParams(window.location.search).get("contest")) return "contest";
@@ -1148,6 +1152,7 @@ export default function App() {
 }
 
 function AppContent({ onReviewModeChange }) {
+  const [phonePairing, setPhonePairing] = useState(PHONE_PAIRING);
   const [catalog, setCatalog] = useState(null);
   const [stockMessage, setStockMessage] = useState("Vérification des disponibilités…");
   const [stockFeedback, setStockFeedback] = useState("");
@@ -1335,7 +1340,7 @@ function AppContent({ onReviewModeChange }) {
     void loadCustomerRewards({ token });
     setCrmWelcomeDestination(loginDestination);
     const preferencesChosen = loginStartedFromWelcome && (welcomePersonalizedOffers || welcomeOrderNotifications || welcomeMarketingNotifications);
-    setScreen(isNewCustomer || preferencesChosen ? (nativeAccountFirst ? 'notifications-welcome' : 'crm-welcome') : loginDestination);
+    setScreen(phonePairing ? 'kiosk-phone-approval' : isNewCustomer || preferencesChosen ? (nativeAccountFirst ? 'notifications-welcome' : 'crm-welcome') : loginDestination);
     setLoginDestination("account");
     void recoverPayment(token, savedCustomer.id).catch(() => setStockFeedback('Impossible de lire le suivi du paiement sur cet appareil.'));
   };
@@ -1561,6 +1566,7 @@ function AppContent({ onReviewModeChange }) {
     finally { paymentBusyRef.current = false; setPaymentBusy(false); }
   };
   const recoverPayment = async (token, customerId) => {
+    if (phonePairing) return;
     const attempt = parseAttempt(await readAttempt(), customerId);
     if (!attempt) return;
     paymentAttempt.current = attempt;
@@ -1755,6 +1761,10 @@ function AppContent({ onReviewModeChange }) {
       if (error?.name !== "AbortError") Alert.alert("Ton code de parrainage", `${customer.referralCode}\n\n${referralUrl}`);
     }
   };
+  if (phonePairing) {
+    const closePairing = () => { setPhonePairing(null); window.history?.replaceState(null, '', '/'); setScreen('menu'); };
+    return authToken && !isReviewToken(authToken) ? <KioskPhoneApproval api={API_BASE_URL} authToken={authToken} pairing={phonePairing} onBack={closePairing} /> : <SmsLoginScreen onBack={closePairing} onAuthenticated={authenticate} />;
+  }
   if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
   if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending', 'reservation-payment-pending', 'reservation-deposit-success'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;

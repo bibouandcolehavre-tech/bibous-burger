@@ -16,6 +16,8 @@ const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard
 const { dashboardNews, publicNews, saveNews } = require('./news');
 const { dashboardContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, purgeExpiredContestEntries } = require('./referral-contest');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
+const { terminalDeviceSecret, authorizeTerminal, claimTerminalLaunch, verifyTerminalOrder } = require('./kiosk-terminal-service');
+const { reconcileTerminalPayment } = require('./kiosk-terminal-api');
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const push = require('./push-notifications');
 const crm = require('./crm');
@@ -24,6 +26,7 @@ const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlus
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { createProductStockStore } = require("./product-stock");
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
+const { createKioskConnectionStore, kioskRequestAllowed, kioskCustomerView, orderInKioskSession } = require('./kiosk-connections');
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { createAuthRateLimiter } = require("./auth-rate-limit");
 const { createDashboardSessionStore } = require('./dashboard-sessions');
@@ -84,7 +87,10 @@ const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 const restaurantDashboardPassword = process.env.RESTAURANT_DASHBOARD_PASSWORD;
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 const configuredCustomerSessionSecret = process.env.SESSION_SECRET;
+const kioskDeviceSecret = terminalDeviceSecret(process.env);
 const customerSessionSecret = configuredCustomerSessionSecret || crypto.randomBytes(32).toString("base64url");
+const kioskConnections = createKioskConnectionStore(path.join(path.dirname(databasePath), 'kiosk-connections.json'), { secret: customerSessionSecret });
+const kioskPairingLimiter = createAuthRateLimiter({ limit: 20, windowMs: 60000 });
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
 const googlePlaceSearchQuery = "Bibou's Burgers, 153 Quai Georges V, 76600 Le Havre, France";
 const restaurantAddress = "153 Quai Georges V, 76600 Le Havre, France";
@@ -240,7 +246,7 @@ const twilioConfigured = () => Boolean(twilioAccountSid && twilioAuthToken && tw
 const createSession = (customerId) => createCustomerSession(customerId, customerSessionSecret);
 const authenticatedCustomer = (request, database) => {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
-  const session = readCustomerSession(token, customerSessionSecret);
+  const session = token?.startsWith('kiosk.') ? request.kioskSession : readCustomerSession(token, customerSessionSecret);
   if (!session) return null;
   return database.customers.find((customer) => customer.id === session.customerId) || null;
 };
@@ -401,6 +407,9 @@ const sumupRequest = async (route, options = {}) => {
 };
 
 const refreshPayment = async (record) => {
+  if (record.payment?.channel === 'sumup_terminal') {
+    return reconcileTerminalPayment(record, { apiKey: sumupApiKey, merchantCode: await getSumUpMerchantCode() });
+  }
   const merchantCode = record.payment.merchantCode || await getSumUpMerchantCode();
   let checkout;
   if (record.payment.checkoutId) checkout = await sumupRequest(`checkouts/${encodeURIComponent(record.payment.checkoutId)}`);
@@ -449,6 +458,7 @@ const reconcileTablePreorders = async (database, now = new Date()) => {
 };
 
 const openPayment = async (record, database, { merchantCode, expiresAt, description, prefix }) => {
+  if (record.payment?.channel === 'sumup_terminal') throw paymentError('Paiement au terminal déjà engagé. Vérifiez son résultat sur la borne.');
   if (record.payment?.checkoutReference) await refreshPayment(record);
   else {
     record.payment = { provider: "sumup", checkoutReference: `${prefix}-${record.number}-${crypto.randomUUID()}`, merchantCode, status: "PENDING", createdAt: new Date().toISOString(), validUntil: expiresAt.toISOString() };
@@ -481,6 +491,13 @@ const server = http.createServer(async (request, response) => {
     }
     // Reject sandbox credentials before ANY real route, including public ones.
     if (String(request.headers.authorization || '').startsWith('Bearer review.')) return send(response, 401, { error: 'Une session de test ne peut pas accéder au service réel.' });
+    const kioskToken = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    if (kioskToken.startsWith('kiosk.')) {
+      request.kioskSession = process.env.KIOSK_PAIRING_ENABLED === 'true' && authorizeTerminal(request, { enabled: true, deviceSecret: kioskDeviceSecret })
+        ? kioskConnections.read(kioskToken, request.headers['x-bibou-kiosk-token']) : null;
+      if (!request.kioskSession) return send(response, 401, { error: 'Session borne expirée. Reconnecte ton compte.' });
+      if (!kioskRequestAllowed(request.method, url.pathname)) return send(response, 403, { error: 'Cette action doit être faite depuis ton téléphone, pas depuis la borne.' });
+    }
     const kroklyFile = ({
       '/driver/': ['index.html', 'text/html; charset=utf-8'],
       '/driver/app.js': ['app.js', 'text/javascript; charset=utf-8'],
@@ -624,7 +641,7 @@ const server = http.createServer(async (request, response) => {
       try { return send(response, 200, orderSms.status(await readDatabase(), orderSmsConfig)); }
       finally { release(); }
     }
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1, kioskTerminal: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 && process.env.SUMUP_KIOSK_AFFILIATE_KEY?.startsWith('sup_afk_') && Boolean(sumupApiKey) ? 1 : 0, kioskPairing: process.env.KIOSK_PAIRING_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0 } });
 
     if (url.pathname === '/api/dashboard/promotions') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -932,6 +949,31 @@ const server = http.createServer(async (request, response) => {
     const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
     if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged) await writeDatabase(database);
 
+    if (request.method === 'POST' && url.pathname.startsWith('/api/kiosk-pairing/')) {
+      if (process.env.KIOSK_PAIRING_ENABLED !== 'true') return send(response, 503, { error: 'La connexion QR doit encore être activée sur le serveur.' });
+      const action = url.pathname.slice('/api/kiosk-pairing/'.length), input = await readBody(request);
+      const deviceAction = ['create', 'poll', 'cancel', 'end'].includes(action);
+      if (deviceAction && !authorizeTerminal(request, { enabled: true, deviceSecret: kioskDeviceSecret })) return send(response, 403, { error: 'Accès borne requis.' });
+      const customer = deviceAction ? null : authenticatedCustomer(request, database);
+      if (!deviceAction && (!customer || request.kioskSession)) return send(response, 401, { error: 'Autorise la connexion depuis ton compte sur ton téléphone.' });
+      if (action !== 'poll' && !kioskPairingLimiter.consume(`${action}:${customer?.id || request.socket.remoteAddress}`).allowed) return send(response, 429, { error: 'Réessaie dans un instant.' });
+      try {
+        if (action === 'create') return send(response, 201, kioskConnections.create('Bibou’s Burgers · borne'));
+        if (action === 'inspect') return send(response, 200, kioskConnections.inspect(input));
+        if (action === 'approve') return send(response, 200, kioskConnections.approve(input, customer.id));
+        if (action === 'poll') {
+          const result = kioskConnections.poll(input.session, input.readerSecret, request.headers['x-bibou-kiosk-token']);
+          if (result.status !== 'connected') return send(response, 200, result);
+          const connected = database.customers.find(item => item.id === result.session.customerId);
+          if (!connected) { kioskConnections.revoke(result.token, request.headers['x-bibou-kiosk-token']); return send(response, 409, { error: 'Compte indisponible.' }); }
+          return send(response, 200, { status: 'connected', token: result.token, customer: kioskCustomerView(connected) });
+        }
+        if (action === 'cancel') { kioskConnections.cancel(input.session, input.readerSecret); return send(response, 200, { cancelled: true }); }
+        if (action === 'end') { kioskConnections.revoke(kioskToken, request.headers['x-bibou-kiosk-token']); return send(response, 200, { ended: true }); }
+        return send(response, 404, { error: 'Action inconnue.' });
+      } catch { return send(response, 409, { error: 'Code expiré, invalide ou déjà utilisé. Affiche un nouveau QR code.' }); }
+    }
+
     if (url.pathname === '/api/customer/push' || url.pathname.startsWith('/api/customer/push/')) {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: 'Connecte-toi pour gérer tes notifications.' });
@@ -956,10 +998,12 @@ const server = http.createServer(async (request, response) => {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: 'Connecte-toi pour retrouver tes tours.' });
       if (request.method === 'GET' && url.pathname === '/api/customer/wheel')
-        return send(response, 200, wheelGame.customerWheelState(database, customer.id));
+        return send(response, 200, wheelGame.customerWheelState(request.kioskSession ? { ...database, orders: database.orders.filter(order => orderInKioskSession(order, request.kioskSession)), customers: [] } : database, customer.id));
       if (request.method !== 'POST' || url.pathname !== '/api/customer/wheel/spin')
         return send(response, 405, { error: 'Action non disponible.' });
-      const result = wheelGame.spinWheel(database, customer.id, await readBody(request));
+      const spinInput = await readBody(request);
+      if (request.kioskSession && !database.orders.some(order => order.id === spinInput.orderId && orderInKioskSession(order, request.kioskSession))) return send(response, 403, { error: 'Seuls les tours de cette commande sont utilisables sur la borne.' });
+      const result = wheelGame.spinWheel(database, customer.id, spinInput);
       if (!result.replayed) await writeDatabase(database);
       return send(response, 200, result);
     }
@@ -1184,13 +1228,13 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === "GET" && url.pathname === "/api/auth/me") {
       const customer = authenticatedCustomer(request, database);
-      return customer ? send(response, 200, { customer }) : send(response, 401, { error: "Session expirée." });
+      return customer ? send(response, 200, { customer: request.kioskSession ? kioskCustomerView(customer) : customer }) : send(response, 401, { error: "Session expirée." });
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/rewards") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Connecte-toi pour consulter tes récompenses." });
-      return send(response, 200, { claims: rewardClaimsForCustomer(database, customer.id) });
+      return send(response, 200, { claims: request.kioskSession ? [] : rewardClaimsForCustomer(database, customer.id) });
     }
 
     const rewardClaimMatch = url.pathname.match(/^\/api\/customer\/rewards\/([^/]+)\/claim$/);
@@ -1273,6 +1317,11 @@ const server = http.createServer(async (request, response) => {
       const purchase = database.bibouPlusPurchases.find(item => item.customerId === customer.id && (item.requestId === requestId || item.requestAliases?.includes(requestId)));
       const reservation = database.reservations?.find(item => item.customerId === customer.id && item.deposit && item.requestId === requestId);
       if (!order && !purchase && !reservation) return send(response, 404, { error: "Aucun paiement associé à cette tentative." });
+      if (request.kioskSession && !orderInKioskSession(order, request.kioskSession)) {
+        const recovered = order && kioskConnections.recoverOrder(kioskToken, request.headers['x-bibou-kiosk-token'], order);
+        if (!recovered) return send(response, 404, { error: 'Aucun paiement de cette session.' });
+        request.kioskSession = recovered;
+      }
       return send(response, 200, { kind: order ? "order" : purchase ? "bibou-plus" : "reservation", record: order || purchase || reservation });
     }
 
@@ -1312,14 +1361,14 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
-      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id).map(({uberDirect,...order})=>({...order,uberDelivery:uber.publicDelivery({...order,uberDirect})})) });
+      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id && orderInKioskSession(order, request.kioskSession)).map(({uberDirect,...order})=>({...order,uberDelivery:uber.publicDelivery({...order,uberDirect})})) });
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/reservations") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
       const reservations = reservationsForCustomer(database, customer).sort((a, b) => `${b.serviceDate} ${b.slot}`.localeCompare(`${a.serviceDate} ${a.slot}`));
-      return send(response, 200, { reservations });
+      return send(response, 200, { reservations: request.kioskSession ? [] : reservations });
     }
 
     if (request.method === 'POST' && /^\/api\/customer\/reservations\/[^/]+\/cancel$/.test(url.pathname)) {
@@ -1560,10 +1609,12 @@ const server = http.createServer(async (request, response) => {
       const customer = database.customers.find((item) => item.id === input.customerId);
       const sessionCustomer = authenticatedCustomer(request, database);
       if (!sessionCustomer || sessionCustomer.id !== customer?.id) return send(response, 401, { error: "Connecte-toi par SMS avant de commander." });
+      if (request.kioskSession && input.method !== 'pickup') return send(response, 403, { error: 'La borne ne propose pas la livraison.' });
       const requestId = validateRequestId(input.requestId);
       const fingerprint = orderFingerprint(input);
       const previous = requestId && database.orders.find(item => item.customerId === customer.id && item.requestId === requestId);
       if (previous) {
+        if (!orderInKioskSession(previous, request.kioskSession)) return send(response, 409, { error: 'Une autre session est associée à cette commande.' });
         if (previous.requestFingerprint !== fingerprint) return send(response, 409, { code: "ATTEMPT_CONFLICT", error: "Cette tentative correspond déjà à une autre commande. Vérifie son paiement avant de continuer." });
         return send(response, 200, { order: previous, reused: true });
       }
@@ -1634,6 +1685,7 @@ const server = http.createServer(async (request, response) => {
         }
         createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
         createdOrder.requestId = requestId;
+        if (request.kioskSession) { createdOrder.kioskSessionId = request.kioskSession.id; createdOrder.kioskDeviceDigest = request.kioskSession.deviceDigest; }
         if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
         if (activePromotion?.id) Object.assign(createdOrder, { promotionDiscount: pricing.promotionDiscount, promotionDeliveryDiscount: pricing.promotionDeliveryDiscount, baseDiscount: pricing.baseDiscount });
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
@@ -1649,6 +1701,45 @@ const server = http.createServer(async (request, response) => {
       if (order === false) return send(response, 409, { error: "Ce créneau de livraison vient d’être réservé deux fois. Choisis-en un autre." });
       if (!order) return send(response, 404, { error: "Client introuvable" });
       return send(response, 201, { order });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/kiosk/terminal/config') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const deviceSecret = kioskDeviceSecret;
+      const affiliateKey = process.env.SUMUP_KIOSK_AFFILIATE_KEY;
+      if (process.env.KIOSK_TERMINAL_ENABLED !== 'true' || !deviceSecret || deviceSecret.length < 32
+          || !affiliateKey?.startsWith('sup_afk_') || !sumupApiKey) {
+        return send(response, 503, { error: 'Le paiement borne doit encore être activé sur le serveur.' });
+      }
+      return send(response, 200, { deviceToken: deviceSecret, affiliateKey, merchantCode: await getSumUpMerchantCode() });
+    }
+
+    if (request.method === 'POST' && ['/api/kiosk/terminal/prepare', '/api/kiosk/terminal/verify'].includes(url.pathname)) {
+      if (!authorizeTerminal(request, { enabled: process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret: kioskDeviceSecret })) {
+        return send(response, 403, { error: 'Accès borne non activé.' });
+      }
+      const input = await readBody(request);
+      const customer = authenticatedCustomer(request, database);
+      const order = database.orders.find(item => item.id === input.orderId && item.customerId === customer?.id);
+      if (!customer || !order) return send(response, 401, { error: 'Session client et commande requises.' });
+      if (!orderInKioskSession(order, request.kioskSession)) return send(response, 404, { error: 'Commande de cette session requise.' });
+      if (order.method === 'delivery' || order.status === 'cancelled') return send(response, 409, { error: 'Commande non disponible sur la borne.' });
+      const merchantCode = await getSumUpMerchantCode();
+      if (!sumupApiKey || !merchantCode) return send(response, 503, { error: 'Paiement borne non configuré.' });
+      let payment;
+      if (url.pathname.endsWith('/prepare')) {
+        // Never revalidate stock/expiry to abandon an already-started payment.
+        if (!order.payment || ['FAILED', 'CANCELLED'].includes(order.payment.status)) {
+          if (!storedServiceSlotOpen(order, database)) return send(response, 409, { error: 'Créneau fermé.' });
+          assertStoredOrderAvailable(order.items, await productStockStore.read());
+          if (Date.parse(order.createdAt) + PENDING_RESERVATION_MS <= Date.now()) return send(response, 409, { error: 'Commande expirée avant paiement.' });
+        }
+        payment = await claimTerminalLaunch(order, { merchantCode, persist: () => writeDatabase(database) });
+      } else {
+        payment = await verifyTerminalOrder(order, { apiKey: sumupApiKey, merchantCode,
+          persist: () => writeDatabase(database), finalize: () => finalizePaidOrder(order, database) });
+      }
+      return send(response, 200, { order, payment });
     }
 
     if (request.method === "POST" && url.pathname === "/api/payments/sumup-checkout") {
@@ -1719,10 +1810,11 @@ const server = http.createServer(async (request, response) => {
       if (!order?.payment?.checkoutReference) return send(response, 404, { error: "Paiement introuvable" });
       const customer = authenticatedCustomer(request, database);
       if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour vérifier ce paiement." });
+      if (!orderInKioskSession(order, request.kioskSession)) return send(response, 404, { error: 'Paiement de cette session requis.' });
       await refreshPayment(order);
       const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);
-      return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
+      return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer ? (request.kioskSession ? kioskCustomerView(confirmation.customer) : confirmation.customer) : null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/orders/")) {

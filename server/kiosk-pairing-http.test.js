@@ -1,0 +1,44 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { once } = require('node:events');
+const { createCustomerSession } = require('./customer-session');
+const { parseKioskQr } = require('../kiosk-qr-client');
+test('HTTP QR: explicit phone approval, device-only redemption, no historical data or privileged writes', { timeout: 20000 }, async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-pairing-http-')), file = path.join(dir, 'data.json');
+  const customer = { id: 'fictional-customer', name: 'Camille Test', firstName: 'Camille', lastName: 'Test', phone: '+33600000000', address: 'private address', points: 20 };
+  await fs.writeFile(file, JSON.stringify({ customers: [customer], orders: [{ id: 'old-private-order', customerId: customer.id, status: 'confirmed', payment: { status: 'PAID' } }], nextOrderNumber: 2 }));
+  const device = 'fictional-device-secret-more-than-32-characters';
+  const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], { cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: file, SESSION_SECRET: 'fictional-signing', KIOSK_PAIRING_ENABLED: 'true', KIOSK_TERMINAL_DEVICE_SECRET: device }, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
+  const base = await new Promise((resolve, reject) => {
+    let out = '', err = ''; child.stderr.on('data', c => { err += c; });
+    child.stdout.on('data', c => { out += c; const match = out.match(/http:\/\/localhost:(\d+)/); if (match) resolve(`http://127.0.0.1:${match[1]}`); }); child.once('exit', code => reject(Error(`${code}: ${err}`)));
+  });
+  const call = async (route, token, body, deviceToken, method = body ? 'POST' : 'GET') => {
+    const r = await fetch(`${base}/api${route}`, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(deviceToken ? { 'x-bibou-kiosk-token': deviceToken } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    assert.equal(r.headers.get('cache-control'), 'no-store'); return { status: r.status, data: await r.json() };
+  };
+  const customerToken = createCustomerSession(customer.id, 'fictional-signing');
+  assert.equal((await call('/kiosk-pairing/create', customerToken, {})).status, 403);
+  const created = (await call('/kiosk-pairing/create', null, {}, device)).data;
+  const proof = parseKioskQr(created.qr), receiver = { session: created.session, readerSecret: created.readerSecret };
+  assert.equal((await call('/kiosk-pairing/poll', null, receiver, device)).data.status, 'pending');
+  assert.equal((await call('/kiosk-pairing/approve', null, proof)).status, 401);
+  assert.equal((await call('/kiosk-pairing/inspect', customerToken, proof)).data.status, 'pending');
+  assert.equal((await call('/kiosk-pairing/approve', customerToken, proof)).data.status, 'approved');
+  const connected = (await call('/kiosk-pairing/poll', null, receiver, device)).data;
+  assert.equal(connected.status, 'connected'); assert.equal(connected.customer.points, 20); assert.equal(connected.customer.address, undefined);
+  assert.equal((await call('/auth/me', connected.token)).status, 401);
+  assert.equal((await call('/auth/me', connected.token, null, device)).data.customer.address, undefined);
+  assert.deepEqual((await call('/customer/orders', connected.token, null, device)).data.orders, []);
+  assert.equal((await call('/customer/account', connected.token, null, device, 'DELETE')).status, 403);
+  assert.equal((await call('/dashboard/customers', connected.token, null, device)).status, 403);
+  assert.equal((await call('/kiosk-pairing/approve', connected.token, proof, device)).status, 403);
+  assert.equal((await call('/kiosk-pairing/poll', null, receiver, device)).status, 409);
+  assert.equal((await call('/kiosk-pairing/end', connected.token, {}, device)).data.ended, true);
+  assert.equal((await call('/auth/me', connected.token, null, device)).status, 401);
+});
