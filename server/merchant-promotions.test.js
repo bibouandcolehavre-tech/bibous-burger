@@ -73,6 +73,21 @@ test('trois menus burgers achetés : le quatrième le moins cher est offert, hor
   assert.throws(() => promos.discountFor(offer, [item('menu-duo-tenders', 19.9, 4)], 79.6), /quatre menus burgers/);
 });
 
+test('le quatrième burger offert peut exclure la bienvenue sans supprimer les avantages Bibou +', () => {
+  const offer = promos.validate(example('buy3_get1_burger', { code:'QUATREBURGER', combineWelcome:false }));
+  assert.equal(promos.publicView(offer).combineWelcome, false);
+  assert.equal(promos.publicView({ ...offer, combineWelcome:undefined }).combineWelcome, true);
+  assert.throws(() => promos.validate(example('buy3_get1_burger', { combineWelcome:'false' })), /Cumul/);
+  const items = [item('classique', 9.9, 4)];
+  const price = promos.apply({ subtotal:39.6, deliveryFee:3.99, discountRate:.1 }, offer, items);
+  assert.equal(price.baseDiscount, 0);
+  assert.equal(price.discountRate, 0);
+  assert.equal(price.total, 33.69);
+  const plus = promos.apply({ subtotal:39.6, deliveryFee:0, discountRate:.05 }, offer, items);
+  assert.equal(plus.baseDiscount, 1.49);
+  assert.equal(plus.total, 28.21);
+});
+
 test('la remise produit ne réduit pas les suppléments; livraison offerte se cumule avec la bienvenue', () => {
   const burger = promos.validate(example('percent_burger'));
   const items = [item('classique', 11.9, 2), item('drink-coca', 1.8)];

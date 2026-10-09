@@ -1546,7 +1546,7 @@ const server = http.createServer(async (request, response) => {
         assertPromotionCart(promotion, pricedCart.items);
         if (promotion.id) {
           promotion.previewProductDiscount = merchantPromotions.discountFor(promotion, pricedCart.items, pricedCart.subtotal, promotion.type === 'free_delivery' ? 1 : 0).products;
-          promotion.previewBaseRate = welcomeRewardAvailable(customer, database.orders, new Date(), PENDING_RESERVATION_MS) ? WELCOME_DISCOUNT_RATE : bibouPlusStatus(customer).active ? BIBOU_PLUS_DISCOUNT_RATE : 0;
+          promotion.previewBaseRate = promotion.combineWelcome !== false && welcomeRewardAvailable(customer, database.orders, new Date(), PENDING_RESERVATION_MS) ? WELCOME_DISCOUNT_RATE : bibouPlusStatus(customer).active ? BIBOU_PLUS_DISCOUNT_RATE : 0;
         }
       }
       return send(response, 200, { promotion });
@@ -1613,7 +1613,7 @@ const server = http.createServer(async (request, response) => {
         const sessionCustomer = authenticatedCustomer(request, latestDatabase);
         const benefitsAllowed = sessionCustomer?.id === latestCustomer.id;
         const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
-        const welcomeRewardApplied = (!activePromotion || Boolean(activePromotion.id)) && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
+        const welcomeRewardApplied = (!activePromotion || (Boolean(activePromotion.id) && activePromotion.combineWelcome !== false)) && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
         const crmOffer = !activePromotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
         const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;

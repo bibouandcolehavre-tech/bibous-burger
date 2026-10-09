@@ -17,11 +17,11 @@ const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filt
 });
 const publicView = promotion => ({ id: promotion.id, code: promotion.code, type: promotion.type,
   percent: promotion.percent, productId: promotion.productId, minimum: promotion.minimum,
-  message: promotion.message, combineWelcome: true });
+  message: promotion.message, combineWelcome: promotion.combineWelcome !== false });
 
 function validate(input, existing = []) {
   if (!plain(input)) fail('Offre invalide.');
-  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'usageLimit', 'oncePerCustomer', 'enabled', 'message'];
+  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome'];
   if (Object.keys(input).some(key => !allowed.includes(key))) fail('Réglage de promotion inconnu.');
   const id = input.id === undefined ? crypto.randomUUID() : input.id;
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) fail('Identifiant d’offre invalide.');
@@ -45,10 +45,11 @@ function validate(input, existing = []) {
   const usageLimit = input.usageLimit === null || input.usageLimit === undefined || input.usageLimit === '' ? null : Number(input.usageLimit);
   if (usageLimit !== null && (!Number.isInteger(usageLimit) || usageLimit < 1 || usageLimit > 100000)) fail('Limite d’utilisation invalide.');
   if (typeof input.oncePerCustomer !== 'boolean' || typeof input.enabled !== 'boolean') fail('Activation ou limite par client invalide.');
+  if (input.combineWelcome !== undefined && typeof input.combineWelcome !== 'boolean') fail('Cumul avec la bienvenue invalide.');
   const message = String(input.message || '').trim();
   if (message.length > 180 || /[\u0000-\u001f]/.test(message)) fail('Description trop longue ou invalide.');
   return { id, revision, code, type: input.type, percent, productId, minimum, startsAt, endsAt, usageLimit,
-    oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message };
+    oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message, combineWelcome: input.combineWelcome !== false };
 }
 
 function save(db, input, now = new Date()) {
@@ -144,11 +145,12 @@ function apply(pricing, promotion, items) {
   const { products, delivery } = discountFor(promotion, items, pricing.subtotal, pricing.deliveryFee);
   // A welcome discount is calculated on the remaining products after the
   // promotional item discount, never on already free products or delivery.
-  const baseRate = pricing.discountRate || 0;
+  // Enforce the exclusive choice here too, including when an order is amended.
+  const baseRate = promotion.combineWelcome === false && pricing.discountRate === .1 ? 0 : pricing.discountRate || 0;
   const baseDiscount = money((pricing.subtotal - products) * baseRate);
   const discount = money(products + baseDiscount);
   const deliveryFee = money(pricing.deliveryFee - delivery);
-  return { ...pricing, discount, baseDiscount, promotionDiscount: products, promotionDeliveryDiscount: delivery,
+  return { ...pricing, discountRate: baseRate, discount, baseDiscount, promotionDiscount: products, promotionDeliveryDiscount: delivery,
     deliveryFee, total: money(pricing.subtotal - discount + deliveryFee) };
 }
 

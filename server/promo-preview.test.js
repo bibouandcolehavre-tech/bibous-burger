@@ -23,3 +23,13 @@ test('les bons cadeaux déjà existants restent gratuits et séparés des nouvel
   assert.equal(result.deliveryFee,0);
   assert.throws(() => previewPromotion(base,19.8,{ id:'x',code:'X',type:'bogo_burger',previewProductDiscount:200 },'pickup'));
 });
+
+test('les clients web et Android existants respectent le taux exclusif envoyé par le serveur', () => {
+  const base = { discountRate:.1, discount:3.96, deliveryFee:0, total:35.64 };
+  const promotion = { id:'offer-1', code:'QUATREBURGER', type:'buy3_get1_burger', combineWelcome:false, previewProductDiscount:9.9, previewBaseRate:0 };
+  const result = previewPromotion(base,39.6,promotion,'pickup');
+  assert.equal(result.baseDiscount,0);
+  assert.equal(result.total,29.7);
+  assert.doesNotMatch(result.discountLabel,/bienvenue/);
+  assert.equal(previewPromotion(base,39.6,null,'pickup').total,35.64);
+});

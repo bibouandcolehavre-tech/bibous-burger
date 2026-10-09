@@ -13,7 +13,8 @@ test('codes gérés au restaurant : pause, activation et cumul avec les 10 % de 
   const file = path.join(dir, 'data.json'), providerFile = path.join(dir, 'sumup.json');
   const customer = { id:'customer-1', firstName:'Camille', lastName:'Test', name:'Camille Test', phone:'+33600000000',
     points:0, welcomeReward:{ status:'available' } };
-  await fs.writeFile(file, JSON.stringify({ customers:[customer], orders:[], nextOrderNumber:1 }));
+  const exclusiveCustomer = { ...customer, id:'customer-2', firstName:'Alex', name:'Alex Test' };
+  await fs.writeFile(file, JSON.stringify({ customers:[customer, exclusiveCustomer], orders:[], nextOrderNumber:1 }));
   await fs.writeFile(providerFile, JSON.stringify({ checkouts:{} }));
   const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/sumup-provider.cjs'), path.join(__dirname, 'server.js')], {
     cwd:dir, env:{ PATH:process.env.PATH, NODE_ENV:'test', PORT:'0', DATA_FILE_PATH:file,
@@ -68,4 +69,40 @@ test('codes gérés au restaurant : pause, activation et cumul avec les 10 % de 
   await fs.writeFile(providerFile, JSON.stringify(provider));
   assert.equal((await request(`/payments/sumup-checkout/${order.data.order.id}`)).status,200);
   assert.equal((JSON.parse(await fs.readFile(file,'utf8'))).customers[0].welcomeReward.status,'used');
+
+  // The same server response is consumed by already-installed Android clients.
+  const exclusiveToken = createCustomerSession(exclusiveCustomer.id,'test-secret');
+  const exclusive = await request('/dashboard/promotions','POST',{ ...input, code:'QUATREBURGER', type:'buy3_get1_burger',
+    combineWelcome:false, oncePerCustomer:false, usageLimit:null, enabled:true, confirmActivation:true },admin);
+  assert.equal(exclusive.status,200,JSON.stringify(exclusive.data));
+  const fourBurgers = { ...cart, items:[{ ...cart.items[0], quantity:4 }] };
+  const preview = await request('/promotions/validate','POST',{ code:'QUATREBURGER', ...fourBurgers },exclusiveToken);
+  assert.equal(preview.status,200,JSON.stringify(preview.data));
+  assert.equal(preview.data.promotion.combineWelcome,false);
+  assert.equal(preview.data.promotion.previewBaseRate,0);
+  assert.equal(preview.data.promotion.previewProductDiscount,9.9);
+  const singleChoice = await request('/orders','POST',{ customerId:exclusiveCustomer.id,
+    serviceDate:parisDateKey(new Date(Date.now()+86400000)), slot:'19:00', promoCode:'QUATREBURGER',
+    requestId:'exclusive-promo-test-0001', welcomeRewardApplied:true, discountRate:.1,
+    promotion:{ combineWelcome:true }, ...fourBurgers },exclusiveToken);
+  assert.equal(singleChoice.status,201,JSON.stringify(singleChoice.data));
+  assert.equal(singleChoice.data.order.subtotal,39.6);
+  assert.equal(singleChoice.data.order.baseDiscount,0);
+  assert.equal(singleChoice.data.order.total,29.7);
+  assert.equal(singleChoice.data.order.welcomeRewardApplied,false);
+  assert.doesNotMatch(singleChoice.data.order.discountLabel,/bienvenue/);
+  const exclusiveCheckout = await request('/payments/sumup-checkout','POST',{ orderId:singleChoice.data.order.id },exclusiveToken);
+  assert.equal(exclusiveCheckout.status,201,JSON.stringify(exclusiveCheckout.data));
+  const exclusiveProvider = JSON.parse(await fs.readFile(providerFile,'utf8'));
+  assert.equal(exclusiveProvider.checkouts[exclusiveCheckout.data.checkoutId].amount,29.7);
+  exclusiveProvider.checkouts[exclusiveCheckout.data.checkoutId].status = 'PAID';
+  await fs.writeFile(providerFile,JSON.stringify(exclusiveProvider));
+  assert.equal((await request(`/payments/sumup-checkout/${singleChoice.data.order.id}`,'GET',undefined,exclusiveToken)).status,200);
+  assert.equal((JSON.parse(await fs.readFile(file,'utf8'))).customers[1].welcomeReward.status,'available');
+  const welcomeChoice = await request('/orders','POST',{ customerId:exclusiveCustomer.id,
+    serviceDate:parisDateKey(new Date(Date.now()+86400000)), slot:'19:00',
+    requestId:'exclusive-promo-test-0002', ...fourBurgers },exclusiveToken);
+  assert.equal(welcomeChoice.status,201,JSON.stringify(welcomeChoice.data));
+  assert.equal(welcomeChoice.data.order.welcomeRewardApplied,true);
+  assert.equal(welcomeChoice.data.order.total,35.64);
 });

@@ -4,7 +4,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     percent_burger: { title:'−10 % sur un burger', type:'percent_burger', code:'BURGER10', percent:10, minimum:0, message:'−10 % sur le burger choisi. Cumulable avec les 10 % de bienvenue.' },
     percent_order: { title:'−15 % sur la commande', type:'percent_order', code:'MIDI15', percent:15, minimum:25, message:'−15 % sur les produits, dès 25 € de commande. Cumulable avec les 10 % de bienvenue.' },
     bogo_burger: { title:'1 burger acheté = 1 offert', type:'bogo_burger', code:'DUOBURGER', percent:0, minimum:0, message:'Pour deux burgers seuls, le moins cher est offert, hors suppléments. Cumulable avec les 10 % de bienvenue.' },
-    buy3_get1_burger: { title:'3 burgers achetés = le 4e offert', type:'buy3_get1_burger', code:'QUATREBURGER', percent:0, minimum:0, message:'Dès quatre burgers seuls, le moins cher est offert, hors suppléments. Cumulable avec les 10 % de bienvenue.' },
+    buy3_get1_burger: { title:'3 burgers achetés = le 4e offert', type:'buy3_get1_burger', code:'QUATREBURGER', percent:0, minimum:0, combineWelcome:false, message:'Dès quatre burgers seuls, le moins cher est offert, hors suppléments. Non cumulable avec les 10 % de bienvenue. Retire ce code pour choisir la bienvenue.' },
     buy3_get1_menu: { title:'3 menus achetés = le 4e offert', type:'buy3_get1_menu', code:'QUATREMENUS', percent:0, minimum:0, message:'Dès quatre menus burgers, le moins cher est offert, hors suppléments. Cumulable avec les 10 % de bienvenue.' },
     free_delivery: { title:'Livraison offerte', type:'free_delivery', code:'LIVRAISON', percent:0, minimum:30, message:'Livraison offerte dès 30 € de produits. Cumulable avec les 10 % de bienvenue.' },
     flash: { title:'−20 % coup de boost', type:'percent_order', code:'FLASH20', percent:20, minimum:0, usageLimit:50, message:'−20 % sur les produits. Offre limitée. Cumulable avec les 10 % de bienvenue.' }
@@ -18,7 +18,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
   const feedback = value => { q('#promo-feedback').textContent = value; };
   const localTime = iso => iso ? new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   const isoTime = value => value ? new Date(value).toISOString() : null;
-  const newDraft = key => ({ id:undefined, revision:0, enabled:false, oncePerCustomer:true, startsAt:null, endsAt:null, usageLimit:null, productId:null, ...templates[key] });
+  const newDraft = key => ({ id:undefined, revision:0, enabled:false, oncePerCustomer:true, combineWelcome:true, startsAt:null, endsAt:null, usageLimit:null, productId:null, ...templates[key] });
   async function request(method = 'GET', payload) {
     const response = await fetch(api + '/dashboard/promotions', { method, cache:'no-store', headers:{ Authorization:`Bearer ${token()}`, 'Content-Type':'application/json' }, ...(payload ? { body:JSON.stringify(payload) } : {}) });
     if (response.status === 401) { onUnauthorized(); throw Error('Reconnectez-vous au restaurant.'); }
@@ -44,8 +44,9 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       <label>Fin (facultatif)<input data-field="endsAt" type="datetime-local" value="${localTime(draft.endsAt)}"></label>
       <label>Nombre total d’utilisations (facultatif)<input data-field="usageLimit" type="number" min="1" max="100000" value="${draft.usageLimit ?? ''}" placeholder="Sans limite"></label>
       <label class="promo-check"><input data-field="oncePerCustomer" type="checkbox" ${draft.oncePerCustomer?'checked':''}> Une utilisation par client</label>
+      <label class="promo-check"><input data-field="combineWelcome" type="checkbox" ${draft.combineWelcome !== false?'checked':''}> Cumul avec les 10 % de bienvenue</label>
       <label class="promo-wide">Texte affiché au client<textarea data-field="message" maxlength="180" rows="3">${esc(draft.message)}</textarea></label>
-      <p class="promo-wide promo-rule">Les 10 % de bienvenue se cumulent avec cette offre sur le montant restant à payer. Un seul code promo par commande. Pour les offres « acheté, offert », le produit le moins cher est offert hors suppléments payants. Burgers seuls et menus sont comptés séparément.</p>
+      <p class="promo-wide promo-rule">${draft.combineWelcome !== false ? 'Les 10 % de bienvenue se cumulent avec cette offre sur le montant restant à payer.' : 'Cette offre et les 10 % de bienvenue ne se cumulent pas. Le client choisit cette offre en appliquant le code, ou la bienvenue en le retirant.'} Un seul code promo par commande. Pour les offres « acheté, offert », le produit le moins cher est offert hors suppléments payants. Burgers seuls et menus sont comptés séparément.</p>
     </div><div class="promo-actions"><button type="button" id="promo-save" class="login-button">${draft.enabled ? 'Enregistrer les modifications' : 'Enregistrer en pause'}</button><button type="button" id="promo-toggle" class="secondary-button">${draft.enabled ? 'Mettre en pause' : 'Activer cette offre'}</button></div>`;
   }
   function readForm() {
@@ -80,6 +81,6 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     if (event.target.id === 'promo-save') void save(null);
     if (event.target.id === 'promo-toggle') void save(!draft.enabled);
   });
-  root.addEventListener('change', event => { if (event.target.dataset.field === 'type') { readForm(); renderForm(); } });
+  root.addEventListener('change', event => { if (['type', 'combineWelcome'].includes(event.target.dataset.field)) { readForm(); renderForm(); } });
   return { async load() { if (busy) return; try { data = await request(); renderList(); renderForm(); feedback('Les offres sont à jour.'); } catch (error) { feedback(error.message); } }, clear() { data = draft = null; q('#promo-list').innerHTML = ''; q('#promo-form').innerHTML = ''; } };
 };
