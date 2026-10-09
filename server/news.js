@@ -1,6 +1,7 @@
 const { DEFAULT_NEWS, safePublicUrl } = require('../news-config');
 const { publicContest } = require('./referral-contest');
 const { parisDateKey, regularSlotsForDate, scheduleOverride } = require('./availability');
+const { promotionNews } = require('./promotion-news');
 const error = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const dashboardNews = database => database.news || { revision: 0, items: DEFAULT_NEWS.map(item => ({ ...item })) };
 const closedTonight = (database, now) => {
@@ -18,7 +19,7 @@ const publicNews = (database, now = new Date(), modernContestClient = true) => {
     if (contest.status === 'closed') return { ...item, title: 'Le concours Bibou est terminé', subtitle: 'Le classement final est en cours de vérification.' };
     return { ...item, title: 'Le concours Bibou est ouvert', subtitle: '24 menus pour la 1re place · 20 points par ami inscrit · 1 point par partage du jour · 1 point par € payé · sans achat obligatoire' };
   });
-  if (!closedTonight(database, now)) return { items };
+  if (!closedTonight(database, now)) return { items: promotionNews(database, now, items) };
   const dateLabel = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(now);
   return { items: [{ id: 'contest', kind: 'note', enabled: true, title: 'Fermé exceptionnellement ce soir',
     subtitle: `Ce ${dateLabel} : pas de click & collect, de livraison ni de réservation de table. La carte reste consultable.`, url: '', imageUrl: '' },

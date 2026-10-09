@@ -15,3 +15,9 @@ Vérifications locales : 470 tests isolés réussis. Cas HTTP de paiement fictif
 La confirmation d’activation a été déplacée dans la page du back-office après un blocage reproductible de la fenêtre native du navigateur. Elle exige toujours un second appui explicite et invalide la confirmation lorsque les réglages changent. Tests d’activation, annulation, modification et changement de modèle réussis.
 
 Aucune vraie commande, aucun débit, aucun SMS ou push de test. Les travaux préexistants de la borne et le dossier Apple build 16 sont hors intervention. Le visuel et le texte Instagram sont préparés séparément, sans publication sociale.
+
+## Annonce d’accueil autorisée le 9 octobre
+
+La carte temporaire « Le 4e offert ! » est publiée dans « Nos actualités » via le serveur, avec le code QUATREBURGER, l’échéance de 23 h 59 et les conditions. Elle est retirée à `2026-10-09T22:00:00.000Z`, ou avant si l’offre est désactivée, épuisée ou ne correspond plus aux conditions annoncées. Une fermeture exceptionnelle prime sur la publicité.
+
+Les clients déjà installés sélectionnent une actualité par son identifiant initial : `epicu` sur Android, `contest` sur le web. La carte occupe temporairement le premier emplacement Android et les anciennes cartes sont conservées sous des identifiants éditoriaux temporaires ; le web se repositionne sur la première carte. Tous les identifiants et contenus habituels reviennent à expiration. Aucun changement persistant des actualités ou du concours, aucune reconstruction Android/iOS, aucune diffusion push/SMS.
