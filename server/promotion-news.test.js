@@ -82,3 +82,23 @@ test('Le concours reste fermé et les identifiants d’annonces personnalisées 
   assert.equal(db.referralContest, undefined);
   assert.match(publicNews(db, now, false).items[0].subtitle, /QUATREBURGER/);
 });
+
+test('Vendredi/samedi : annonce du lendemain ce soir puis seulement 19–22 h samedi', () => {
+  const db = fixture();
+  db.merchantPromotions[0].endsAt = '2026-10-10T20:00:00.000Z';
+  db.merchantPromotions[0].activeWindows = [
+    { startsAt:'2026-10-08T22:00:00.000Z', endsAt:'2026-10-09T22:00:00.000Z' },
+    { startsAt:'2026-10-10T17:00:00.000Z', endsAt:'2026-10-10T20:00:00.000Z' }
+  ];
+  assert.match(publicNews(db,now).items[0].subtitle,/ce soir \+ samedi 19–22 h/);
+  for (const iso of ['2026-10-10T17:00:00.000Z','2026-10-10T19:59:59.999Z']) {
+    const headline = publicNews(db,new Date(iso)).items[0];
+    assert.match(headline.subtitle,/Ce soir de 19 h à 22 h/);
+    assert.ok(headline.subtitle.length <= 160);
+  }
+  for (const iso of ['2026-10-09T22:00:00.000Z','2026-10-10T16:59:59.999Z','2026-10-10T20:00:00.000Z','2026-10-11T18:00:00.000Z']) {
+    assert.deepEqual(publicNews(db,new Date(iso)).items,DEFAULT_NEWS);
+  }
+  db.merchantPromotions[0].activeWindows[1].startsAt = '2026-10-10T15:00:00.000Z';
+  assert.deepEqual(publicNews(db,now).items,DEFAULT_NEWS,'ne pas annoncer des horaires devenus incohérents');
+});

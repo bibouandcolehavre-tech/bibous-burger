@@ -73,7 +73,8 @@ test('codes gérés au restaurant : pause, activation et cumul avec les 10 % de 
   // The same server response is consumed by already-installed Android clients.
   const exclusiveToken = createCustomerSession(exclusiveCustomer.id,'test-secret');
   const exclusive = await request('/dashboard/promotions','POST',{ ...input, code:'QUATREBURGER', type:'buy3_get1_burger',
-    combineWelcome:false, oncePerCustomer:false, usageLimit:null, enabled:true, confirmActivation:true },admin);
+    combineWelcome:false, oncePerCustomer:false, usageLimit:null, enabled:true, confirmActivation:true,
+    activeWindows:[{ startsAt:new Date(Date.now()-60000).toISOString(), endsAt:new Date(Date.now()+600000).toISOString() }] },admin);
   assert.equal(exclusive.status,200,JSON.stringify(exclusive.data));
   const fourBurgers = { ...cart, items:[{ ...cart.items[0], quantity:4 }] };
   const preview = await request('/promotions/validate','POST',{ code:'QUATREBURGER', ...fourBurgers },exclusiveToken);
@@ -105,4 +106,19 @@ test('codes gérés au restaurant : pause, activation et cumul avec les 10 % de 
   assert.equal(welcomeChoice.status,201,JSON.stringify(welcomeChoice.data));
   assert.equal(welcomeChoice.data.order.welcomeRewardApplied,true);
   assert.equal(welcomeChoice.data.order.total,35.64);
+
+  const existing = exclusive.data.promotions.find(item => item.code === 'QUATREBURGER');
+  const futureWindow = await request('/dashboard/promotions','PATCH',{ ...existing, confirmActivation:true,
+    activeWindows:[{ startsAt:new Date(Date.now()+600000).toISOString(), endsAt:new Date(Date.now()+1200000).toISOString() }] },admin);
+  assert.equal(futureWindow.status,200,JSON.stringify(futureWindow.data));
+  const before = await fs.readFile(file,'utf8');
+  const unavailable = await request('/promotions/validate','POST',{ code:'QUATREBURGER', ...fourBurgers },exclusiveToken);
+  assert.equal(unavailable.status,400);
+  assert.match(unavailable.data.error,/pas actif sur cet horaire/);
+  const refusedOrder = await request('/orders','POST',{ customerId:exclusiveCustomer.id,
+    serviceDate:parisDateKey(new Date(Date.now()+86400000)), slot:'19:00', promoCode:'QUATREBURGER',
+    requestId:'exclusive-promo-test-0003', ...fourBurgers },exclusiveToken);
+  assert.equal(refusedOrder.status,400);
+  assert.match(refusedOrder.data.error,/pas actif sur cet horaire/);
+  assert.equal((JSON.parse(await fs.readFile(file,'utf8'))).orders.length,JSON.parse(before).orders.length);
 });

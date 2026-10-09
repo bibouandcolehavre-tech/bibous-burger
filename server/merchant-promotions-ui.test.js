@@ -3,9 +3,9 @@ const fs = require('node:fs'), path = require('node:path'), vm = require('node:v
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function harness() {
   const node = () => ({innerHTML:'',textContent:'',handlers:{},addEventListener(type,fn){this.handlers[type]=fn;},querySelectorAll(){return [];}});
-  const root = node(), elements = new Map(), calls = [], fields = [];
+  const root = node(), elements = new Map(), calls = [], fields = [], windowFields = [];
   root.querySelector = key => { if(!elements.has(key)) elements.set(key,node()); return elements.get(key); };
-  root.querySelector('#promo-form').querySelectorAll = () => fields;
+  root.querySelector('#promo-form').querySelectorAll = selector => selector === '[data-window-index]' ? windowFields : fields;
   const data = {promotions:[],burgers:[]};
   const context = vm.createContext({window:{confirm(){throw Error('Native dialog must not be used');}},fetch:async(url,options)=>{
     calls.push({url,...options});
@@ -15,7 +15,7 @@ function harness() {
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../restaurant-dashboard/promotions.js'),'utf8'),context);
   const panel = context.window.BibouPromotions({root,api:'https://test.invalid/api',token:()=> 'test-only',onUnauthorized(){}});
   const click = (id,template) => root.handlers.click({target:{id,closest(selector){return selector==='[data-template]'&&template?{dataset:{template}}:null;}}});
-  return {root,panel,calls,fields,click};
+  return {root,panel,calls,fields,windowFields,click};
 }
 test('promo UI: quatrième burger non cumulable par défaut, deux appuis explicites avant activation',async()=>{
   const h=harness(); await h.panel.load(); h.click('', 'buy3_get1_burger');
@@ -38,4 +38,20 @@ test('promo UI: annuler, modifier ou changer d’offre ne confirme jamais une ac
   h.root.handlers.input({}); h.click('promo-confirm-save'); await tick(); assert.equal(h.calls.length,1);
   h.fields.length=0; h.click('', 'percent_order'); h.click('promo-confirm-save'); await tick(); assert.equal(h.calls.length,1);
   assert.match(h.root.querySelector('#promo-confirmation').innerHTML,/MIDI15/);
+});
+
+test('promo UI: les plages sont préparées et sauvegardées seulement après confirmation explicite', async () => {
+  const h = harness(); await h.panel.load(); h.click('', 'buy3_get1_burger');
+  h.click('promo-add-window');
+  assert.match(h.root.querySelector('#promo-form').innerHTML, /Plage 1 · début/);
+  h.windowFields.push(
+    { dataset:{ windowIndex:'0', boundary:'startsAt' }, value:'2026-10-10T19:00' },
+    { dataset:{ windowIndex:'0', boundary:'endsAt' }, value:'2026-10-10T22:00' }
+  );
+  h.click('promo-toggle'); await tick(); assert.equal(h.calls.length,1);
+  h.click('promo-confirm-save'); await tick();
+  const body = JSON.parse(h.calls[1].body);
+  assert.deepEqual(body.activeWindows, [{ startsAt:new Date('2026-10-10T19:00').toISOString(), endsAt:new Date('2026-10-10T22:00').toISOString() }]);
+  assert.equal(body.enabled,true);
+  assert.equal(body.combineWelcome,false);
 });

@@ -18,6 +18,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
   const feedback = value => { q('#promo-feedback').textContent = value; };
   const localTime = iso => iso ? new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   const isoTime = value => value ? new Date(value).toISOString() : null;
+  const copyOffer = offer => ({ ...offer, ...(offer.activeWindows ? { activeWindows:offer.activeWindows.map(window => ({ ...window })) } : {}) });
   const newDraft = key => ({ id:undefined, revision:0, enabled:false, oncePerCustomer:true, combineWelcome:true, startsAt:null, endsAt:null, usageLimit:null, productId:null, ...templates[key] });
   async function request(method = 'GET', payload) {
     const response = await fetch(api + '/dashboard/promotions', { method, cache:'no-store', headers:{ Authorization:`Bearer ${token()}`, 'Content-Type':'application/json' }, ...(payload ? { body:JSON.stringify(payload) } : {}) });
@@ -43,6 +44,9 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       <label>Minimum de produits (€)<input data-field="minimum" type="number" min="0" max="10000" step="0.01" value="${Number(draft.minimum)||0}"></label>
       <label>Début (facultatif)<input data-field="startsAt" type="datetime-local" value="${localTime(draft.startsAt)}"></label>
       <label>Fin (facultatif)<input data-field="endsAt" type="datetime-local" value="${localTime(draft.endsAt)}"></label>
+      <div class="promo-wide"><h3>Plages d’activation (facultatives)</h3><p>Sans plage : l’offre reste active entre son début et sa fin. Avec des plages : le code est refusé en dehors de ces horaires. Heures locales de cet appareil.</p>
+        ${(draft.activeWindows || []).map((window,index) => `<div class="promo-fields"><label>Plage ${index+1} · début<input data-window-index="${index}" data-boundary="startsAt" type="datetime-local" value="${localTime(window.startsAt)}" required></label><label>Plage ${index+1} · fin<input data-window-index="${index}" data-boundary="endsAt" type="datetime-local" value="${localTime(window.endsAt)}" required></label><button type="button" data-remove-window="${index}" class="secondary-button">Retirer la plage ${index+1}</button></div>`).join('')}
+        <button type="button" id="promo-add-window" class="secondary-button">Ajouter une plage</button></div>
       <label>Nombre total d’utilisations (facultatif)<input data-field="usageLimit" type="number" min="1" max="100000" value="${draft.usageLimit ?? ''}" placeholder="Sans limite"></label>
       <label class="promo-check"><input data-field="oncePerCustomer" type="checkbox" ${draft.oncePerCustomer?'checked':''}> Une utilisation par client</label>
       <label class="promo-check"><input data-field="combineWelcome" type="checkbox" ${draft.combineWelcome !== false?'checked':''}> Cumul avec les 10 % de bienvenue</label>
@@ -58,6 +62,9 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       else if (field.dataset.field === 'usageLimit') draft.usageLimit = field.value === '' ? null : Number(field.value);
       else if (['percent','minimum'].includes(field.dataset.field)) draft[field.dataset.field] = Number(field.value);
       else draft[field.dataset.field] = field.value;
+    });
+    q('#promo-form').querySelectorAll('[data-window-index]').forEach(field => {
+      draft.activeWindows[Number(field.dataset.windowIndex)][field.dataset.boundary] = isoTime(field.value);
     });
     if (draft.type !== 'percent_burger') draft.productId = null;
     if (!draft.type.startsWith('percent_')) draft.percent = 0;
@@ -76,7 +83,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     pendingActivation = null;
     next.confirmActivation = next.enabled;
     busy = true; q('#promo-form').querySelectorAll('button').forEach(button => { button.disabled = true; }); feedback('Enregistrement…');
-    try { data = await request(next.id ? 'PATCH' : 'POST', next); draft = { ...data.promotions.find(item => item.code === next.code) }; renderList(); renderForm(); feedback(next.enabled ? 'Offre active et enregistrée.' : 'Offre enregistrée en pause.'); }
+    try { data = await request(next.id ? 'PATCH' : 'POST', next); draft = copyOffer(data.promotions.find(item => item.code === next.code)); renderList(); renderForm(); feedback(next.enabled ? 'Offre active et enregistrée.' : 'Offre enregistrée en pause.'); }
     catch (error) { feedback(error.message); renderForm(); }
     finally { busy = false; }
   }
@@ -84,7 +91,17 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     const template = event.target.closest('[data-template]');
     if (template) { draft = newDraft(template.dataset.template); renderForm(); feedback('Nouvelle offre en pause tant que vous ne l’activez pas.'); return; }
     const existing = event.target.closest('[data-promo-id]');
-    if (existing) { draft = { ...data.promotions.find(item => item.id === existing.dataset.promoId) }; renderForm(); feedback(''); return; }
+    if (existing) { draft = copyOffer(data.promotions.find(item => item.id === existing.dataset.promoId)); renderForm(); feedback(''); return; }
+    if (event.target.id === 'promo-add-window') {
+      if (busy || !draft) return;
+      readForm();
+      if ((draft.activeWindows || []).length >= 8) { feedback('Maximum : huit plages d’activation.'); return; }
+      draft.activeWindows = [...(draft.activeWindows || []), { startsAt:null, endsAt:null }];
+      renderForm(); return;
+    }
+    if (event.target.dataset?.removeWindow !== undefined && draft && !busy) {
+      readForm(); draft.activeWindows.splice(Number(event.target.dataset.removeWindow),1); renderForm(); return;
+    }
     if (event.target.id === 'promo-save') void save(null);
     if (event.target.id === 'promo-toggle') void save(!draft.enabled);
     if (event.target.id === 'promo-confirm-save') void save(true, true);

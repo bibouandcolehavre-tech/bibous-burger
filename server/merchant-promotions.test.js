@@ -101,3 +101,35 @@ test('la remise produit ne réduit pas les suppléments; livraison offerte se cu
   assert.equal(shipped.total, 27);
   assert.equal(shipped.promotionDeliveryDiscount, 4.99);
 });
+
+const fridaySaturday = [
+  { startsAt:'2026-10-08T22:00:00.000Z', endsAt:'2026-10-09T22:00:00.000Z' },
+  { startsAt:'2026-10-10T17:00:00.000Z', endsAt:'2026-10-10T20:00:00.000Z' }
+];
+test('plages promo : ce soir conservé, samedi strictement 19–22 h à Paris, jamais entre les deux', () => {
+  const db = { orders:[] };
+  const offer = promos.save(db, { ...example('buy3_get1_burger', { code:'QUATREBURGER', combineWelcome:false,
+    endsAt:'2026-10-10T20:00:00.000Z', activeWindows:fridaySaturday, oncePerCustomer:false }), enabled:true, confirmActivation:true });
+  for (const iso of ['2026-10-09T16:00:00.000Z','2026-10-09T21:59:59.999Z','2026-10-10T17:00:00.000Z','2026-10-10T19:59:59.999Z']) {
+    assert.equal(promos.findByCode(db, offer.code, Date.parse(iso)),offer);
+    promos.assertAvailable(db,offer,'fictif',Date.parse(iso));
+  }
+  for (const iso of ['2026-10-08T21:59:59.999Z','2026-10-09T22:00:00.000Z','2026-10-10T12:00:00.000Z','2026-10-10T16:59:59.999Z','2026-10-10T20:00:00.000Z']) {
+    assert.throws(() => promos.findByCode(db,offer.code,Date.parse(iso)),/pas actif/);
+    assert.throws(() => promos.assertAvailable(db,offer,'fictif',Date.parse(iso)),/pas actif/);
+  }
+});
+
+test('plages promo : limites, ISO strict, bornes, chevauchements et champs inconnus refusés', () => {
+  const input = example('percent_order', { startsAt:fridaySaturday[0].startsAt, endsAt:fridaySaturday[1].endsAt });
+  for (const activeWindows of [null,{},Array(9).fill(fridaySaturday[0]),[{ startsAt:null, endsAt:null }],
+    [{ ...fridaySaturday[0], startsAt:'2026-10-09T19:00' }],
+    [{ startsAt:fridaySaturday[0].endsAt, endsAt:fridaySaturday[0].startsAt }],
+    [{ ...fridaySaturday[0], startsAt:'2026-10-08T20:00:00.000Z' }],
+    [{ ...fridaySaturday[1], endsAt:'2026-10-11T20:00:00.000Z' }],
+    [fridaySaturday[0],fridaySaturday[0]], [{ ...fridaySaturday[0], unexpected:true }]]) {
+    assert.throws(() => promos.validate({ ...input, activeWindows }),/plage/i);
+  }
+  assert.deepEqual(promos.validate({ ...input, activeWindows:[...fridaySaturday].reverse() }).activeWindows,fridaySaturday);
+  assert.equal(promos.validate(input).activeWindows,undefined,'les anciennes promos restent inchangées');
+});

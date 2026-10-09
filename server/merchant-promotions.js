@@ -21,7 +21,7 @@ const publicView = promotion => ({ id: promotion.id, code: promotion.code, type:
 
 function validate(input, existing = []) {
   if (!plain(input)) fail('Offre invalide.');
-  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome'];
+  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome'];
   if (Object.keys(input).some(key => !allowed.includes(key))) fail('Réglage de promotion inconnu.');
   const id = input.id === undefined ? crypto.randomUUID() : input.id;
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) fail('Identifiant d’offre invalide.');
@@ -42,6 +42,21 @@ function validate(input, existing = []) {
     if (value && (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value)) fail(`${label} de l’offre invalide.`);
   }
   if (startsAt && endsAt && Date.parse(startsAt) >= Date.parse(endsAt)) fail('La fin doit être après le début.');
+  let activeWindows;
+  if (input.activeWindows !== undefined) {
+    if (!Array.isArray(input.activeWindows) || input.activeWindows.length > 8) fail('Choisis au maximum huit plages d’activation.');
+    activeWindows = input.activeWindows.map(window => {
+      if (!plain(window) || Object.keys(window).some(key => !['startsAt', 'endsAt'].includes(key))) fail('Plage d’activation invalide.');
+      for (const value of [window.startsAt, window.endsAt]) {
+        if (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) fail('Dates de plage d’activation invalides.');
+      }
+      if (Date.parse(window.startsAt) >= Date.parse(window.endsAt)) fail('La fin d’une plage doit être après son début.');
+      if ((startsAt && Date.parse(window.startsAt) < Date.parse(startsAt)) || (endsAt && Date.parse(window.endsAt) > Date.parse(endsAt))) fail('Chaque plage doit rester dans les dates de l’offre.');
+      return { startsAt: window.startsAt, endsAt: window.endsAt };
+    });
+    activeWindows.sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+    if (activeWindows.some((window, index) => index && Date.parse(window.startsAt) < Date.parse(activeWindows[index - 1].endsAt))) fail('Les plages d’activation ne doivent pas se chevaucher.');
+  }
   const usageLimit = input.usageLimit === null || input.usageLimit === undefined || input.usageLimit === '' ? null : Number(input.usageLimit);
   if (usageLimit !== null && (!Number.isInteger(usageLimit) || usageLimit < 1 || usageLimit > 100000)) fail('Limite d’utilisation invalide.');
   if (typeof input.oncePerCustomer !== 'boolean' || typeof input.enabled !== 'boolean') fail('Activation ou limite par client invalide.');
@@ -49,7 +64,8 @@ function validate(input, existing = []) {
   const message = String(input.message || '').trim();
   if (message.length > 180 || /[\u0000-\u001f]/.test(message)) fail('Description trop longue ou invalide.');
   return { id, revision, code, type: input.type, percent, productId, minimum, startsAt, endsAt, usageLimit,
-    oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message, combineWelcome: input.combineWelcome !== false };
+    oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message, combineWelcome: input.combineWelcome !== false,
+    ...(activeWindows === undefined ? {} : { activeWindows }) };
 }
 
 function save(db, input, now = new Date()) {
@@ -75,6 +91,7 @@ function findByCode(db, value, now = Date.now()) {
   const promotion = (db.merchantPromotions || []).find(item => item.code === code);
   if (!promotion) return null;
   if (!promotion.enabled || (promotion.startsAt && Date.parse(promotion.startsAt) > now) || (promotion.endsAt && Date.parse(promotion.endsAt) <= now)) fail('Ce code promo n’est pas actif actuellement.');
+  if (promotion.activeWindows?.length && !promotion.activeWindows.some(window => Date.parse(window.startsAt) <= now && now < Date.parse(window.endsAt))) fail('Ce code promo n’est pas actif sur cet horaire.');
   return promotion;
 }
 

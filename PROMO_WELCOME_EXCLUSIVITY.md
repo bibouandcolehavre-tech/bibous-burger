@@ -21,3 +21,9 @@ Aucune vraie commande, aucun débit, aucun SMS ou push de test. Les travaux pré
 La carte temporaire « Le 4e offert ! » est publiée dans « Nos actualités » via le serveur, avec le code QUATREBURGER, l’échéance de 23 h 59 et les conditions. Elle est retirée à `2026-10-09T22:00:00.000Z`, ou avant si l’offre est désactivée, épuisée ou ne correspond plus aux conditions annoncées. Une fermeture exceptionnelle prime sur la publicité.
 
 Les clients déjà installés sélectionnent une actualité par son identifiant initial : `epicu` sur Android, `contest` sur le web. La carte occupe temporairement le premier emplacement Android et les anciennes cartes sont conservées sous des identifiants éditoriaux temporaires ; le web se repositionne sur la première carte. Tous les identifiants et contenus habituels reviennent à expiration. Aucun changement persistant des actualités ou du concours, aucune reconstruction Android/iOS, aucune diffusion push/SMS.
+
+## Extension au samedi autorisée le 9 octobre
+
+La dernière précision du propriétaire retient samedi 10 octobre de 19 h à 22 h, heure de Paris. La soirée du vendredi est conservée jusqu’à minuit. Le code a donc deux plages (`activeWindows`) : vendredi du 9 octobre à 00 h au 10 octobre à 00 h, puis samedi de 19 h à 22 h. Fin globale exclusive : `2026-10-10T20:00:00.000Z`. Aucun code valable dans l’intervalle samedi 00 h–19 h, ni dimanche.
+
+Les plages sont validées côté serveur (ISO strict, huit maximum, pas de chevauchement, dans les bornes globales), puis contrôlées aussi bien à la validation du code qu’à la création de commande. Les codes sans plages gardent leur comportement. Le back-office permet leur modification et exige toujours une confirmation avant activation ; les clients natifs existants n’ont pas à être reconstruits. La carte d’accueil annonce le samedi dès vendredi soir, puis ses horaires de 19–22 h samedi ; elle n’apparaît pas hors des plages actives.
