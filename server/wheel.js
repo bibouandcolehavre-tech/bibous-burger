@@ -65,7 +65,7 @@ const withinWindow = (wheel, value) => {
 
 function eligibleOrderTurns(order, wheel) {
   if (!wheel?.startDate || !wheel.endDate || !order || order.payment?.status !== 'PAID' ||
-      order.status === 'cancelled' ||
+      order.status === 'cancelled' || order.payment.provider === 'cash' ||
       order.refund?.status === 'due' || !withinWindow(wheel, order.payment.paidAt)) return 0;
   // CHORUS is an owner test exception, not a paid purchase. Limit it to two
   // spins per account below; all other gifted orders stay ineligible.

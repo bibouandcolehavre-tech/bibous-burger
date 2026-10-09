@@ -19,6 +19,7 @@ function orderFingerprint(input) {
     })) : input.items,
   };
   if (typeof input.comment === 'string' && input.comment.trim()) canonical.comment = input.comment.trim();
+  if (input.paymentMethod === 'cash') canonical.paymentMethod = 'cash';
   if (input.tableReservation) canonical.tableReservation = {
     guests: input.tableReservation.guests,
     note: String(input.tableReservation.note || '').trim(),

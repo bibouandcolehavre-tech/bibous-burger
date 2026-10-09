@@ -72,4 +72,10 @@ function kioskCustomerView(customer) {
   return view;
 }
 function orderInKioskSession(order, session) { return !session || Boolean(order && (order.kioskSessionId === session.id || session.recoveredOrders?.includes(order.id))); }
-module.exports = { createKioskConnectionStore, kioskRequestAllowed, kioskCustomerView, orderInKioskSession, SESSION_MS };
+function kioskWheelDatabase(database, session, customerId) {
+  if (!session) return database;
+  const orders=database.orders.filter(order=>order.customerId===customerId && orderInKioskSession(order,session));
+  const ids=new Set(orders.map(order=>order.id));
+  return {...database, orders, customers:[], wheelSpins:(database.wheelSpins||[]).filter(spin=>spin.customerId===customerId && ids.has(spin.orderId))};
+}
+module.exports = { createKioskConnectionStore, kioskRequestAllowed, kioskCustomerView, orderInKioskSession, kioskWheelDatabase, SESSION_MS };

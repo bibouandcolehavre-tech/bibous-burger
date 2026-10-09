@@ -10,7 +10,9 @@ const { parseKioskQr } = require('../kiosk-qr-client');
 test('HTTP QR: explicit phone approval, device-only redemption, no historical data or privileged writes', { timeout: 20000 }, async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-pairing-http-')), file = path.join(dir, 'data.json');
   const customer = { id: 'fictional-customer', name: 'Camille Test', firstName: 'Camille', lastName: 'Test', phone: '+33600000000', address: 'private address', points: 20 };
-  await fs.writeFile(file, JSON.stringify({ customers: [customer], orders: [{ id: 'old-private-order', customerId: customer.id, status: 'confirmed', payment: { status: 'PAID' } }], nextOrderNumber: 2 }));
+  const oldOrder = { id:'old-private-order',customerId:customer.id,status:'confirmed',subtotal:15,total:15,wheelEurosPerTurn:15,payment:{provider:'sumup',status:'PAID',paidAt:new Date().toISOString()} };
+  const oldSpin = { id:'old-private-spin',requestId:'old-private-request-0001',customerId:customer.id,orderId:oldOrder.id,prizeId:'none',label:'Pas de gain cette fois',awardedAt:new Date().toISOString() };
+  await fs.writeFile(file, JSON.stringify({ customers:[customer],orders:[oldOrder],wheelSpins:[oldSpin],nextOrderNumber:2 }));
   const device = 'fictional-device-secret-more-than-32-characters';
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], { cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: file, SESSION_SECRET: 'fictional-signing', KIOSK_PAIRING_ENABLED: 'true', KIOSK_TERMINAL_DEVICE_SECRET: device }, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
@@ -35,6 +37,19 @@ test('HTTP QR: explicit phone approval, device-only redemption, no historical da
   assert.equal((await call('/auth/me', connected.token)).status, 401);
   assert.equal((await call('/auth/me', connected.token, null, device)).data.customer.address, undefined);
   assert.deepEqual((await call('/customer/orders', connected.token, null, device)).data.orders, []);
+  // Fixture-only paid order: no checkout, debit, message or production data.
+  const db = JSON.parse(await fs.readFile(file,'utf8'));
+  const connections = JSON.parse(await fs.readFile(path.join(dir,'kiosk-connections.json'),'utf8'));
+  db.orders.push({ ...oldOrder,id:'current-kiosk-order',kioskSessionId:connections.sessions[0][1].id });
+  await fs.writeFile(file,JSON.stringify(db));
+  const wheel = await call('/customer/wheel',connected.token,null,device);
+  assert.equal(wheel.status,200);assert.equal(wheel.data.available,1);assert.equal(wheel.data.played,0);assert.deepEqual(wheel.data.prizes,[]);
+  assert.equal((await call('/customer/wheel/spin',connected.token,{orderId:oldOrder.id,requestId:'fictional-blocked-spin'},device)).status,403);
+  assert.equal((await call('/customer/wheel/spin',connected.token,{orderId:'current-kiosk-order',requestId:oldSpin.requestId},device)).status,403);
+  const spinBody = {orderId:'current-kiosk-order',requestId:'fictional-current-spin-0001'};
+  const spun = await call('/customer/wheel/spin',connected.token,spinBody,device);
+  assert.equal(spun.status,200);assert.equal(spun.data.state.available,0);assert.equal(spun.data.state.played,1);
+  assert.equal((await call('/customer/wheel/spin',connected.token,spinBody,device)).data.replayed,true);
   assert.equal((await call('/customer/account', connected.token, null, device, 'DELETE')).status, 403);
   assert.equal((await call('/dashboard/customers', connected.token, null, device)).status, 403);
   assert.equal((await call('/kiosk-pairing/approve', connected.token, proof, device)).status, 403);

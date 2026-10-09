@@ -100,6 +100,9 @@ const logoutDashboard = () => {
 };
 const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
 
+const cashDue = order => order?.kioskCash === true && order.status === 'awaiting_payment' && order.payment?.provider === 'cash' && order.payment.status === 'CASH_DUE';
+const cashChanges = new Set();
+
 function orderFromApi(order) {
   const created = new Date(order.createdAt);
   const minutes = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
@@ -115,6 +118,7 @@ function rewardClaimFromApi(claim) {
 }
 
 function actionMarkup(order) {
+  if (cashDue(order.raw)) return `<div class="order-comment"><strong>Espèces à encaisser · ${euro(order.total)}</strong><p>Présenter le numéro #${Number(order.id)} au comptoir. Ne préparer qu’après encaissement. Demande valable 15 minutes.</p><div class="actions"><button class="reject" data-cash-action="cancel" data-cash-order="${escapeHtml(order.apiId)}" ${cashChanges.has(order.apiId) ? 'disabled' : ''}>Annuler sans encaissement</button><button class="accept" data-cash-action="confirm" data-cash-order="${escapeHtml(order.apiId)}" ${cashChanges.has(order.apiId) ? 'disabled' : ''}>Espèces reçues · ${euro(order.total)}</button></div></div>`;
   if (window.BibouDispatch?.activeStatuses.includes(order.raw?.kroklyDriver?.status) && ['Prête', 'En livraison'].includes(order.status)) return '<p>Le livreur confirme la récupération et la livraison depuis Krokly Driver.</p>';
   const u = order.raw?.uberDirect;
   if (u && ["sending", "uncertain", "created"].includes(u.phase) && !["canceled", "returned"].includes(u.status) && ["Prête", "En livraison"].includes(order.status)) return `<p>Le suivi de remise est synchronisé avec Uber Direct.</p>`;
@@ -169,7 +173,7 @@ function orderPricingMarkup(order) {
     if (standardDeliveryFee > deliveryFee) rows.push(`<div><span>Livraison avant avantage</span><strong>${euro(standardDeliveryFee)}</strong></div><div class="order-pricing-saving"><span>${promotion?.type === 'free_delivery' || (promotion && !promotion.id) ? 'Livraison offerte par code promo' : 'Économie livraison Bibou +'}</span><strong>− ${euro(standardDeliveryFee - deliveryFee)}</strong></div>`);
     rows.push(`<div><span>Livraison facturée</span><strong>${deliveryFee ? euro(deliveryFee) : "Offerte"}</strong></div>`);
   } else rows.push(`<div><span>${order.raw?.dineIn ? 'Sur place' : 'Retrait'}</span><strong>Gratuit</strong></div>`);
-  rows.push(`<div class="order-pricing-total"><span>${promotion && !promotion.id ? 'Commande offerte · aucun débit bancaire' : 'Total débité par SumUp'}</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
+  rows.push(`<div class="order-pricing-total"><span>${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Espèces à encaisser au comptoir' : 'Espèces encaissées au comptoir') : promotion && !promotion.id ? 'Commande offerte · aucun débit bancaire' : 'Total débité par SumUp'}</span><strong>${euro(order.paidTotal ?? order.total)}</strong></div>`);
   if (order.paidTotal !== undefined) rows.push(`<div><span>Total après modification</span><strong>${euro(order.total)}</strong></div>`);
   return `<div class="order-pricing">${rows.join("")}</div>`;
 }
@@ -302,8 +306,8 @@ function renderOrders() {
     const stages = ['Nouvelle', 'Acceptée', 'Prête', ...(order.type === 'Livraison' ? ['En livraison'] : []), 'Terminée'];
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
-    const printControls = `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
-    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
+    const printControls = cashDue(order.raw) ? '': `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Paiement en espèces attendu' : 'Espèces encaissées') : order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
     if (completedView || historyView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}</div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
@@ -327,6 +331,20 @@ function renderOrders() {
     } catch (e) { showToast(e.message || 'Enregistrement impossible.'); button.disabled=false; }
   });
   document.querySelectorAll('#orders-list [data-print-order]').forEach(button => button.onclick = () => printOrder(button));
+  document.querySelectorAll('[data-cash-order]').forEach(button => button.onclick = async () => {
+    const id=button.dataset.cashOrder, action=button.dataset.cashAction, token=dashboardToken;
+    const order=orders.find(o=>o.apiId===id);
+    if (!order || cashChanges.has(id) || !cashDue(order.raw)) return;
+    const message=action==='confirm' ? `Confirmer avoir réellement reçu ${euro(order.total)} en espèces pour la commande #${Number(order.id)} ?` : `Annuler la commande #${Number(order.id)} sans encaissement ?`;
+    if (!window.confirm(message)) return;
+    cashChanges.add(id); renderOrders();
+    try {
+      const response=await fetch(`${API_BASE_URL}/dashboard/orders/${encodeURIComponent(id)}/cash`, {method:'POST',headers:dashboardHeaders({'Content-Type':'application/json'}),body:JSON.stringify({action,amount:order.total})});
+      const payload=await response.json(); if(!response.ok) throw Error(payload.error || 'Encaissement non confirmé.');
+      if(token===dashboardToken) { await loadOrders(); showToast(action==='confirm' ? 'Espèces enregistrées. Commande prête à accepter.' : 'Commande espèces annulée.'); }
+    } catch(error) { if(token===dashboardToken) { await loadOrders(); showToast(error.message || 'Vérifiez la commande avant de réessayer.'); } }
+    finally { cashChanges.delete(id); if(token===dashboardToken) renderOrders(); }
+  });
   document.querySelectorAll("#orders-list [data-action]").forEach((button) => button.addEventListener("click", () => changeOrder(Number(button.dataset.id), button.dataset.action)));
   document.querySelectorAll('#orders-list [data-action], #orders-list [data-edit-order], #orders-list [data-refund-order], #orders-list [data-uber-order]').forEach(button => { button.disabled = pendingOrderChanges.has(Number(button.dataset.id || button.dataset.editOrder || button.dataset.refundOrder || button.dataset.uberOrder)); });
 }
@@ -497,7 +515,7 @@ function loadFeed(kind, { notify = true } = {}) {
       if (!Array.isArray(items)) throw new Error("Réponse invalide");
       const fresh = arrivalTracker.update(kind, items);
       if (kind === "orders") {
-        orders = items.filter((item) => item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)).map(orderFromApi);
+        orders = items.filter((item) => (item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)) || cashDue(item)).map(orderFromApi);
         orderAlarm.sync(items);
         if (orderAlarm.state().count && !soundPlayer.state().ready) void ensureServiceSound();
         revenue = payload.revenue && ["today", "week", "month"].every((key) => Number.isFinite(Number(payload.revenue[key]))) ? payload.revenue : { today: 0, week: 0, month: 0 };

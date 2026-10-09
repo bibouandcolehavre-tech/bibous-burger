@@ -299,7 +299,7 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
       name: product.name,
       quantity,
       price: unitPriceCents / 100,
-      options: selections.map(({ groupId, id, label, price }) => ({ groupId, id, label, price }))
+      options: selections.map(({ groupId, id, label, price }) => ({ groupId, id, label: ['montagnes','montagnes-menu'].includes(productId) && groupId === 'protein' && id === 'galette' ? 'Galette de pomme de terre (bacon conservé)' : label, price }))
     };
   });
   return { items, subtotal: subtotalCents / 100 };
