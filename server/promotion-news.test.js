@@ -39,10 +39,15 @@ test('QUATREBURGER : annonce lisible, compatible Android/web existants, actualit
   assert.deepEqual(dashboardNews(db), db.news);
 });
 
-test('L’annonce disparaît exactement à minuit Paris et les identifiants éditoriaux sont restaurés', () => {
+test('À minuit Paris l’annonce QUATREBURGER cède la place au Dynamite puis les actualités sont restaurées à 22 h', () => {
   const db = fixture();
   assert.match(publicNews(db, new Date('2026-10-09T21:59:59.999Z')).items[0].subtitle, /QUATREBURGER/);
-  for (const date of ['2026-10-08T21:59:59.999Z', '2026-10-09T22:00:00.000Z', '2026-10-10T18:00:00.000Z']) {
+  for (const date of ['2026-10-09T22:00:00.000Z', '2026-10-10T18:00:00.000Z']) {
+    const items = publicNews(db, new Date(date)).items;
+    assert.match(items[0].title, /Dynamite Chicken/);
+    assert.equal(items.some(item => item.subtitle?.includes('QUATREBURGER')), false);
+  }
+  for (const date of ['2026-10-08T21:59:59.999Z', '2026-10-10T20:00:00.000Z']) {
     assert.deepEqual(publicNews(db, new Date(date)).items, DEFAULT_NEWS);
   }
 });
@@ -83,7 +88,7 @@ test('Le concours reste fermé et les identifiants d’annonces personnalisées 
   assert.match(publicNews(db, now, false).items[0].subtitle, /QUATREBURGER/);
 });
 
-test('Vendredi/samedi : annonce du lendemain ce soir puis seulement 19–22 h samedi', () => {
+test('L’annonce Dynamite remplace celle du quatrième burger samedi, y compris avant 19 h pour les précommandes', () => {
   const db = fixture();
   db.merchantPromotions[0].endsAt = '2026-10-10T20:00:00.000Z';
   db.merchantPromotions[0].activeWindows = [
@@ -91,12 +96,15 @@ test('Vendredi/samedi : annonce du lendemain ce soir puis seulement 19–22 h sa
     { startsAt:'2026-10-10T17:00:00.000Z', endsAt:'2026-10-10T20:00:00.000Z' }
   ];
   assert.match(publicNews(db,now).items[0].subtitle,/ce soir \+ samedi 19–22 h/);
-  for (const iso of ['2026-10-10T17:00:00.000Z','2026-10-10T19:59:59.999Z']) {
+  for (const iso of ['2026-10-09T22:00:00.000Z','2026-10-10T16:59:59.999Z','2026-10-10T17:00:00.000Z','2026-10-10T19:59:59.999Z']) {
     const headline = publicNews(db,new Date(iso)).items[0];
-    assert.match(headline.subtitle,/Ce soir de 19 h à 22 h/);
+    assert.match(headline.title,/Dynamite Chicken · 9,90 €/);
+    assert.match(headline.subtitle,/Ce soir 19–22 h/);
+    assert.match(headline.subtitle,/Précommande avant 19 h/);
+    assert.doesNotMatch(headline.subtitle,/QUATREBURGER/);
     assert.ok(headline.subtitle.length <= 160);
   }
-  for (const iso of ['2026-10-09T22:00:00.000Z','2026-10-10T16:59:59.999Z','2026-10-10T20:00:00.000Z','2026-10-11T18:00:00.000Z']) {
+  for (const iso of ['2026-10-10T20:00:00.000Z','2026-10-11T18:00:00.000Z']) {
     assert.deepEqual(publicNews(db,new Date(iso)).items,DEFAULT_NEWS);
   }
   db.merchantPromotions[0].activeWindows[1].startsAt = '2026-10-10T15:00:00.000Z';

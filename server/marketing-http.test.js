@@ -9,7 +9,7 @@ test('API marketing : permissions, brouillon privé, écritures limitées et té
   const client=createCustomerSession('c1','test-secret');
   for(const route of ['/dashboard/news','/dashboard/contest'])for(const auth of ['',client])assert.equal((await req(route,auth)).status,401);
   assert.deepEqual(await(await req('/contest')).json(),{status:'inactive'});
-  assert.equal((await(await req('/news')).json()).items[0].kind,'contest');
+  assert.ok((await(await req('/news')).json()).items.some(item=>item.kind==='contest'));
   assert.equal(await fs.readFile(dataFile,'utf8'),original);
   const auth=(await(await req('/dashboard/auth/login','','POST',{password:'test-password'})).json()).token;
   const draftResponse=await req('/dashboard/contest',auth);assert.equal(draftResponse.headers.get('cache-control'),'no-store');
@@ -35,7 +35,7 @@ test('API marketing : permissions, brouillon privé, écritures limitées et té
   assert.equal(published.status,200);
   assert.deepEqual(await(await req('/contest')).json(),{status:'inactive'},'une ancienne application ne doit pas voir le nouveau règlement');
   assert.equal((await(await req('/contest?contestApi=2')).json()).status,'scheduled');
-  assert.match((await(await req('/news')).json()).items[0].title,/se prépare/);
-  assert.match((await(await req('/news?contestApi=2')).json()).items[0].title,/arrive/);
+  assert.match((await(await req('/news')).json()).items.find(item=>item.kind==='contest').title,/se prépare/);
+  assert.match((await(await req('/news?contestApi=2')).json()).items.find(item=>item.kind==='contest').title,/arrive/);
   assert.deepEqual((await(await req('/customer/contest',client)).json()).contest,{status:'inactive'});
 });

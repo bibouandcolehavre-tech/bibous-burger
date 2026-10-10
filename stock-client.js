@@ -1,6 +1,6 @@
 const applyProductStock = (product, catalog) => {
   const stock = catalog?.products?.find((entry) => entry.id === product.id);
-  return stock ? { ...product, soldOut: !stock.available, stockReason: stock.reason } : product;
+  return stock ? { ...product, ...(typeof stock.price === 'number' && Number.isFinite(stock.price) && stock.price >= 0 ? { price: stock.price } : {}), regularPrice: stock.regularPrice, productOffer: stock.productOffer, soldOut: !stock.available, stockReason: stock.reason } : product;
 };
 
 const availableOptionGroups = (groups, catalog) => groups.map((group) => ({

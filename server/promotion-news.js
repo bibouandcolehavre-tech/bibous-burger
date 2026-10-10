@@ -1,4 +1,5 @@
 const promotions = require('./merchant-promotions');
+const { displayedProductOffer } = require('../product-offer');
 
 // A published, time-limited announcement, not a new promotion. It must never
 // advertise a paused, expired, exhausted or differently configured offer.
@@ -17,6 +18,10 @@ const campaign = {
 };
 
 function promotionNews(database, now, items) {
+  if (displayedProductOffer(now)) {
+    return prependHeadline(items, 'Dynamite Chicken · 9,90 €',
+      'Ce soir 19–22 h · Burger seul, hors menu et suppléments. Précommande avant 19 h acceptée pour ce service. Réduction automatique, sans code.');
+  }
   const timestamp = now.getTime();
   if (timestamp < Date.parse(campaign.startsAt) || timestamp >= Date.parse(campaign.endsAt)) return items;
   const activeWindow = campaign.activeWindows.find(window => Date.parse(window.startsAt) <= timestamp && timestamp < Date.parse(window.endsAt));
@@ -33,6 +38,11 @@ function promotionNews(database, now, items) {
     promotions.assertAvailable(database, offer, null, timestamp);
   } catch { return items; }
 
+  return prependHeadline(items, campaign.title,
+    !extended ? campaign.subtitle : activeWindow === campaign.activeWindows[0] ? campaign.extendedSubtitle : campaign.saturdaySubtitle);
+}
+
+function prependHeadline(items, title, subtitle) {
   // Installed clients keep the initially selected card ID. Android initially
   // selects "epicu"; web selects "contest". Reuse the Android headline slot and
   // temporarily rename the preserved editorial cards so both existing clients
@@ -45,8 +55,8 @@ function promotionNews(database, now, items) {
     usedIds.add(id);
     return { ...item, id };
   });
-  return [{ id: 'epicu', kind: 'note', enabled: true, title: campaign.title,
-    subtitle: !extended ? campaign.subtitle : activeWindow === campaign.activeWindows[0] ? campaign.extendedSubtitle : campaign.saturdaySubtitle,
+  return [{ id: 'epicu', kind: 'note', enabled: true, title,
+    subtitle,
     url: '', imageUrl: '' }, ...preserved];
 }
 

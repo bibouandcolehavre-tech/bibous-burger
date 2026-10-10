@@ -6,7 +6,7 @@ const fail = (message, statusCode = 400) => { throw Object.assign(new Error(mess
 const money = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const burgerIds = Object.keys(PRODUCT_CATALOG).filter(id => !PRODUCT_CATALOG[id].menu && !PRODUCT_CATALOG[id].kind);
-const burgerPriceForPromotion = item => item.productId === 'custom-burger' ? item.price : PRODUCT_CATALOG[item.productId].price;
+const burgerPriceForPromotion = item => item.basePrice ?? (item.productId === 'custom-burger' ? item.price : PRODUCT_CATALOG[item.productId].price);
 const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery', 'free_drink', 'free_fries'];
 const normalizeCode = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
 const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filter(order => {

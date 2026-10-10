@@ -18,7 +18,7 @@ function editable(order, input, now) {
 function preview(order, input, stock = {}, now = Date.now()) {
   editable(order, input, now);
   if (typeof input.reason !== 'string' || !input.reason.trim() || input.reason.trim().length > 300) fail('Indiquez le motif de la modification (300 caractères maximum).', 400);
-  const cart = validateAndPriceOrderItems(input.items, stock);
+  const cart = validateAndPriceOrderItems(input.items, stock, order, new Date(order.createdAt || now));
   assertPromotionCart(order.promotion, cart.items);
   const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: cart.subtotal, deliveryFee: order.standardDeliveryFee ?? order.deliveryFee, active: order.bibouPlusApplied, discountRate: order.discountRate || 0 }), order.promotion, order.method, cart.items);
   if (cents(pricing.total) > cents(order.total)) fail('Le nouveau total ne peut pas dépasser le montant payé. Choisissez un remplacement sans supplément.', 400);

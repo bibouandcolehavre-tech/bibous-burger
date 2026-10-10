@@ -9,6 +9,7 @@ COPY kiosk-qr-client.js ./kiosk-qr-client.js
 COPY service-policy.js ./service-policy.js
 COPY dietary-policy.js ./dietary-policy.js
 COPY custom-burger-preview.js ./custom-burger-preview.js
+COPY product-offer.js ./product-offer.js
 
 ENV PORT=3001
 EXPOSE 3001

@@ -30,6 +30,7 @@ const { createAttempt, parseAttempt, paymentState, openCheckoutUrl } = require("
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 const { slotAlreadyStarted } = require('./client-slots');
+const { repriceOfferCart } = require('./product-offer');
 const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
 const { shouldShowPartnerLaunch } = require('./partner-launch-policy');
@@ -1410,7 +1411,7 @@ function AppContent({ onReviewModeChange }) {
     setStockFeedback("");
     setCart((current) => {
       const items = [...(current?.items || []), { ...item, lineId: `${Date.now()}-${Math.random().toString(36).slice(2)}` }];
-      return { items, total: Math.round(items.reduce((sum, entry) => sum + entry.total, 0) * 100) / 100, comment: current?.comment || "", delivery: current?.delivery || (reservationDraft ? { method: 'pickup', fee: 0, day: reservationDraft.serviceDate, date: reservationDraft.serviceDate, dayLabel: reservationDraft.dayLabel, slot: reservationDraft.slot } : { method: preferredMethod, fee: preferredMethod === "pickup" ? 0 : undefined, day: DEFAULT_DELIVERY_DAY.id, date: DEFAULT_DELIVERY_DAY.date, dayLabel: DEFAULT_DELIVERY_DAY.dayLabel, slot: null }) };
+      return repriceOfferCart({ items, total: Math.round(items.reduce((sum, entry) => sum + entry.total, 0) * 100) / 100, comment: current?.comment || "", delivery: current?.delivery || (reservationDraft ? { method: 'pickup', fee: 0, day: reservationDraft.serviceDate, date: reservationDraft.serviceDate, dayLabel: reservationDraft.dayLabel, slot: reservationDraft.slot } : { method: preferredMethod, fee: preferredMethod === "pickup" ? 0 : undefined, day: DEFAULT_DELIVERY_DAY.id, date: DEFAULT_DELIVERY_DAY.date, dayLabel: DEFAULT_DELIVERY_DAY.dayLabel, slot: null }) });
     });
     setScreen(destination);
   };
@@ -1419,7 +1420,7 @@ function AppContent({ onReviewModeChange }) {
     const items = current.items.filter((item) => item.lineId !== lineId);
     return items.length ? { ...current, items, total: Math.round(items.reduce((sum, item) => sum + item.total, 0) * 100) / 100 } : null;
   });
-  const updateDelivery = (delivery) => setCart({ ...cart, delivery });
+  const updateDelivery = (delivery) => setCart(repriceOfferCart({ ...cart, delivery }));
   const continueWithCustomer = async (deliveryFee) => {
     if (!authToken) {
       setLoginDestination("details");
@@ -1440,7 +1441,7 @@ function AppContent({ onReviewModeChange }) {
       }
     }
     setCustomer((current) => ({ ...current, ...savedCustomer }));
-    setCart({ ...cart, delivery: { ...cart.delivery, fee: deliveryFee } });
+    setCart(repriceOfferCart({ ...cart, delivery: { ...cart.delivery, fee: deliveryFee } }));
     setScreen("payment");
   };
   const apiRequest = async (route, token, body) => {
@@ -1608,7 +1609,7 @@ function AppContent({ onReviewModeChange }) {
     } finally { paymentStartRef.current = false; }
   };
   const validatePromo = async code => {
-    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code, method: cart.delivery.method, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })) });
+    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code, method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })) });
     if (!ok) throw new Error(payload.error || 'Impossible de vérifier ce code. Réessaie.');
     previewPromotion({}, cart.total, payload.promotion, cart.delivery.method);
     if (!payload.promotion) throw new Error('Code promo non confirmé.');
@@ -1623,6 +1624,12 @@ function AppContent({ onReviewModeChange }) {
   };
   const pay = async (promoCode = '') => {
     if (!authToken || !customer.id || !cart?.items?.length) { setScreen('login'); return; }
+    const currentCart = repriceOfferCart(cart);
+    if (currentCart.total !== cart.total) {
+      setCart(currentCart);
+      Alert.alert('Prix actualisé', 'Le tarif de cette offre a changé. Vérifie le nouveau montant avant de continuer. Aucun paiement n’a été lancé.');
+      return;
+    }
     if (reservationDraft && !(await tablePreordersReady())) {
       Alert.alert('Réservation momentanément indisponible', 'Le serveur ne peut pas encore associer ton repas à une table. Aucun paiement n’a été lancé. Réessaie dans un instant.');
       return;

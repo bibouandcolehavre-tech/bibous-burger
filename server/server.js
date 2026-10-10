@@ -1610,7 +1610,7 @@ const server = http.createServer(async (request, response) => {
       assertPromotionMethod(promotion, input.method);
       if (promotion.type === 'free_delivery' && bibouPlusStatus(customer).active) return send(response, 400, { error: 'Ta livraison est déjà offerte avec Bibou + ; ce code ne t’apporterait pas de réduction supplémentaire.' });
       if (promotion.requiredMenuCount || promotion.id) {
-        const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
+        const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
         assertPromotionCart(promotion, pricedCart.items);
         if (promotion.id) {
           promotion.previewProductDiscount = merchantPromotions.discountFor(promotion, pricedCart.items, pricedCart.subtotal, promotion.type === 'free_delivery' ? 1 : 0).products;
@@ -1646,7 +1646,7 @@ const server = http.createServer(async (request, response) => {
       if (tableRequest !== undefined && (!tableRequest || typeof tableRequest !== 'object' || Array.isArray(tableRequest) || input.method !== 'pickup' || !Number.isInteger(tableRequest.guests) || tableRequest.guests < 1 || tableRequest.guests > 4 || typeof tableRequest.note !== 'string' || tableRequest.note.length > 500)) return send(response, 400, { error: 'Informations de table invalides.' });
       if (tableRequest && !(await serviceModuleStore.read()).modules.tables) return send(response, 409, { error: 'Les réservations de table sont momentanément indisponibles.' });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
-      const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read());
+      const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
       assertPromotionMethod(promotion, input.method);
       assertPromotionCart(promotion, pricedCart.items);
       const subtotal = pricedCart.subtotal;

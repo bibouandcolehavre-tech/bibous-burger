@@ -142,7 +142,7 @@ test('Actualités : aucun burger, vidéo Epicu et concours, visibilité et ordre
   assert.deepEqual(n.items.map(item=>item.id),['contest','epicu','paris-normandie','social']);assert.equal(n.items.length,4);assert.equal(n.items.some(item=>item.kind==='product'),false);assert.match(n.items[1].url,/DX1QN8DIdet/);
   assert.equal(n.items[2].kind,'video');assert.match(n.items[2].url,/presse\.havraise\/videos\/bibous-burger\/1226219005580139/);assert.match(n.items[2].subtitle,/13 juin 2025/);assert.equal(JSON.stringify(n.items).includes('Étoiles gourmandes'),false);
   saveNews(db,{revision:0,items:n.items.map((x,i)=>({...x,enabled:i!==0})).reverse()},now);
-  assert.equal(publicNews(db).items[0].kind,'social');assert.equal(publicNews(db).items.length,3);
+  assert.equal(publicNews(db,now).items[0].kind,'social');assert.equal(publicNews(db,now).items.length,3);
   assert.throws(()=>saveNews(db,{revision:0,items:[]}),/changé/);
 });
 test('La carte du concours annonce sa vraie phase après publication, sans exposer le brouillon',()=>{
@@ -150,7 +150,7 @@ test('La carte du concours annonce sa vraie phase après publication, sans expos
   assert.match(publicNews(db,new Date('2026-09-30T12:00:00Z')).items[0].subtitle,/Ouverture le 1 octobre/);
   assert.match(publicNews(db,new Date('2026-10-04T12:00:00Z')).items[0].title,/ouvert/);
   assert.match(publicNews(db,new Date('2026-10-15T12:00:00Z')).items[0].title,/terminé/);
-  assert.match(publicNews({}).items[0].title,/se prépare/);
+  assert.match(publicNews({},now).items[0].title,/se prépare/);
 });
 test('Actualités : pas de javascript, lien avec identifiants, doublon ni produit inconnu',()=>{
   const card={id:'test',kind:'article',enabled:true,title:'Test',subtitle:''};

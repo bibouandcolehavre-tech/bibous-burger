@@ -1,4 +1,5 @@
 const { containsPork, porkOption } = require('../dietary-policy');
+const { productOfferForService, offerCatalogProduct } = require('../product-offer');
 const { BASE_CENTS, PROTEINS, CHEESES, EXTRAS, EXTRA_STOCK_IDS, parseSelectionEntries, pricedOptions } = require('../custom-burger-preview');
 const PRODUCT_CATALOG = {
   taurus: { name: "Le Taurus", price: 16.9, menu: true },
@@ -210,9 +211,9 @@ const productStock = (id, overrides = {}) => {
   return { available: true, enabled: true, reason: "" };
 };
 
-const availabilityCatalog = (overrides = {}) => ({
+const availabilityCatalog = (overrides = {}, now = new Date()) => ({
   products: Object.entries(STOCK_CATALOG).map(([id, product]) => ({
-    id, name: product.menu ? `Menu - ${product.name}` : product.name, price: product.price,
+    id, name: product.menu ? `Menu - ${product.name}` : product.name, ...offerCatalogProduct(id, product.price, now),
     category: product.category || (product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers"),
     retired: Boolean(product.retired),
     ...productStock(id, overrides)
@@ -281,7 +282,7 @@ const validatedSelections = (product, selections, productId) => {
   return resolved;
 };
 
-const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
+const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, now = new Date()) => {
   if (!Array.isArray(inputItems) || !inputItems.length || inputItems.length > 20) throw orderInputError("Le panier est invalide.");
   let subtotalCents = 0;
   const items = inputItems.map((input) => {
@@ -292,13 +293,16 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}) => {
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw orderInputError("La quantité demandée est invalide.");
     const selections = validatedSelections(product, input.selections, productId);
     assertItemAvailable(productId, selections, overrides);
-    const unitPriceCents = cents(product.price) + selections.reduce((sum, entry) => sum + cents(entry.price), 0);
+    const offer = productOfferForService(productId, context, now);
+    const basePrice = offer ? offer.price : product.price;
+    const unitPriceCents = cents(basePrice) + selections.reduce((sum, entry) => sum + cents(entry.price), 0);
     subtotalCents += unitPriceCents * quantity;
     return {
       productId,
       name: product.name,
       quantity,
       price: unitPriceCents / 100,
+      ...(offer ? { basePrice, regularBasePrice: product.price, productOfferId: offer.id } : {}),
       options: selections.map(({ groupId, id, label, price }) => ({ groupId, id, label: ['montagnes','montagnes-menu'].includes(productId) && groupId === 'protein' && id === 'galette' ? 'Galette de pomme de terre (bacon conservé)' : label, price }))
     };
   });
