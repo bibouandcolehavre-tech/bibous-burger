@@ -31,6 +31,16 @@ function createKioskConnectionStore(file, { secret, now = Date.now, capacity = 1
     return session && session.deviceDigest === digest(deviceToken) ? session : null;
   }
   return {
+    guest(deviceToken) {
+      if (typeof deviceToken !== 'string' || deviceToken.length < 32) throw Error('Accès borne requis.');
+      return change((pairing, data) => {
+        if (data.sessions.length >= capacity) throw Error('Trop de sessions en cours.');
+        const token = `kiosk.${crypto.randomBytes(32).toString('base64url')}`;
+        const session = { guest:true, customerId:`kiosk-guest-${crypto.randomUUID()}`, id:crypto.randomUUID(), deviceDigest:digest(deviceToken), expiresAt:now()+SESSION_MS, recoveredOrders:[] };
+        data.sessions.push([digest(token), session]);
+        return { status:'connected', token, session };
+      });
+    },
     create: name => change(pairing => pairing.create(name)),
     inspect: proof => change(pairing => pairing.inspect(proof)),
     approve: (proof, customerId) => change(pairing => pairing.approve(proof, customerId)),
@@ -67,6 +77,7 @@ function kioskRequestAllowed(method, route) {
   return method === 'POST' && ['/api/orders', '/api/kiosk/terminal/prepare', '/api/kiosk/terminal/verify', '/api/kiosk-pairing/end', '/api/customer/wheel/spin', '/api/promotions/validate'].includes(route);
 }
 function kioskCustomerView(customer) {
+  if (customer.isKioskGuest) return { id:customer.id, name:'Client borne', phone:'', points:0, weeklyOrders:0, isKioskGuest:true };
   const view = Object.fromEntries(['id', 'name', 'firstName', 'lastName', 'phone', 'points', 'weeklyOrders', 'weeklyProgramPoints', 'bibouPlusExpiresAt'].filter(key => Object.hasOwn(customer, key)).map(key => [key, customer[key]]));
   if (customer.welcomeReward) view.welcomeReward = { type: customer.welcomeReward.type, status: customer.welcomeReward.status, discountRate: customer.welcomeReward.discountRate };
   return view;

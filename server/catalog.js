@@ -1,4 +1,5 @@
 const { containsPork, porkOption } = require('../dietary-policy');
+const { meatOption, vegetarianInstruction } = require('./kiosk-recipe');
 const { productOfferForService, offerCatalogProduct } = require('../product-offer');
 const { BASE_CENTS, PROTEINS, CHEESES, EXTRAS, EXTRA_STOCK_IDS, parseSelectionEntries, pricedOptions } = require('../custom-burger-preview');
 const PRODUCT_CATALOG = {
@@ -60,6 +61,8 @@ const option = (groupId, id, label, price = 0, extra = {}) => ({ groupId, id, la
 const OPTIONS = [
   option("protein", "viande", "Viande"),
   option("protein", "galette", "Galette de pomme de terre (végétarien)"),
+  option("protein", "galette-base", "Galette de pommes de terre"),
+  option("protein", "vegetarian", vegetarianInstruction),
   option("meat-type", "halal", "Viande halal"),
   option("meat-type", "non-halal", "Viande non halal"),
   option("salad", "roquette", "Roquette"),
@@ -78,6 +81,7 @@ const OPTIONS = [
   option("sauces", "tartare", "Tartare"),
   option("sauces", "blanche", "Blanche"),
   option("sauces", "bearnaise", "Béarnaise"),
+  option("sauces", "bleu", "Sauce au bleu"),
   option("sauces", "sans-sauce", "Pas de sauce", 0, { exclusive: true }),
   option("sauces", "fixed-atlas", "Sauce imposée · Barbecue miel"),
   option("sauces", "fixed-dynamite", "Sauce imposée · Sauce thaï"),
@@ -184,7 +188,7 @@ const optionProductId = ({ groupId, id }) => {
   if (groupId === "custom-protein") return PROTEINS.find((choice) => choice.id === id)?.productId || null;
   if (groupId === "custom-extra") return EXTRA_STOCK_IDS[id] || null;
   if (groupId === "custom-cheese") return { cheddar: "ingredient-cheddar", mozzarella: "ingredient-mozzarella", raclette: "ingredient-raclette", fourme: "ingredient-fourme" }[id] || null;
-  if (groupId === "protein" && id === "galette") return "ingredient-potato-patty";
+  if (groupId === "protein" && ['galette','galette-base','vegetarian'].includes(id)) return "ingredient-potato-patty";
   if (groupId === "extras") return {
     "second-steak": "ingredient-second-steak", "galette-plus": "ingredient-potato-patty", cheddar: "ingredient-cheddar",
     raclette: "ingredient-raclette", mozzarella: "ingredient-mozzarella", fourme: "ingredient-fourme", lard: "ingredient-lard", bacon: "ingredient-bacon"
@@ -272,6 +276,10 @@ const validatedSelections = (product, selections, productId) => {
   if (allowedGroups.has('meat-type')) {
     const vegetarian = byGroup.protein[0]?.id === 'galette';
     const meatType = byGroup['meat-type'][0]?.id;
+    const kioskPatty = ['galette-base','vegetarian'].includes(byGroup.protein[0]?.id);
+    const realVegetarian = byGroup.protein[0]?.id === 'vegetarian';
+    if (kioskPatty && meatType) throw orderInputError('La galette remplace la viande : retire le choix de viande.');
+    if (realVegetarian && resolved.some(meatOption)) throw orderInputError('Le burger végétarien ne peut pas contenir de viande, bacon, lard ou tenders.');
     // Android v4 has no meat-type selector. An absent choice stays absent: never
     // infer halal/non-halal. Still validate explicit choices from cached clients.
     if (vegetarian && meatType) throw orderInputError('Retire le choix de viande pour la version végétarienne.');

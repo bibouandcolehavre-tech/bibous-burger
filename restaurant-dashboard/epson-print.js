@@ -23,6 +23,7 @@
     return slot || 'HEURE A CONFIRMER';
   };
   const serviceHeading = order => {
+    if (order.kioskImmediate) return [order.kioskDiningMode === 'here' ? 'SUR PLACE' : 'A EMPORTER', 'COMMANDE BORNE'];
     const method = order.dineIn ? 'SUR PLACE - TABLE + REPAS' : order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE A CONFIRMER';
     return [method, `POUR LE ${serviceDay(order.serviceDate)}`,
       order.dineIn ? `ARRIVEE A ${serviceTime(order.slot)}` : order.method === 'pickup' ? `A ${serviceTime(order.slot)}` : `CRENEAU ${serviceTime(order.slot)}`,

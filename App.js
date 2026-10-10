@@ -33,6 +33,8 @@ const { slotAlreadyStarted } = require('./client-slots');
 const { repriceOfferCart } = require('./product-offer');
 const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
+const { kioskRecipeGroup, kioskRecipeChoices, vegetarianInstruction } = require('./server/kiosk-recipe');
+const NEW_PROTEIN_CHOICES = Platform.OS === 'web'; // Native consumer releases remain unchanged until approved.
 const { shouldShowPartnerLaunch } = require('./partner-launch-policy');
 const { supportsNewCustomerJourneys, supportsRankingContest } = require('./customer-experience-policy');
 
@@ -541,6 +543,7 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
   const hasPork = containsPork(product);
   const halalChosen = choices['meat-type']?.includes('halal');
   const optionGroups = availableOptionGroups((product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS)).map(group => {
+    if (NEW_PROTEIN_CHOICES) { group = kioskRecipeGroup(group, choices); if (group.id === 'protein') return group; }
     if (group.id === 'salad') return saladGroupForProduct(product);
     if (group.id === 'protein' && hasPork) return { ...group, options: group.options.filter(option => option.id === 'viande') };
     if (group.id === 'meat-type' && hasPork) return { ...group, options: group.options.filter(option => option.id === 'non-halal') };
@@ -567,7 +570,7 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
     else if (option.soldOut || option.unavailableForHalal || option.unavailableForVegetarian) return;
     else if (option.exclusive) next = [option.id];
     else { const withoutExclusive = current.filter((id) => !group.options.find((item) => item.id === id)?.exclusive); next = group.max === 1 ? [option.id] : [...withoutExclusive, option.id]; if (group.max && next.length > group.max) return; }
-    const updated = { ...choices, [group.id]: next };
+    const updated = NEW_PROTEIN_CHOICES ? kioskRecipeChoices(choices, group.id, next) : { ...choices, [group.id]: next };
     if (group.id === 'protein' && next.includes('galette')) {
       delete updated['meat-type'];
       updated['menu-fries'] = ['maison'];
@@ -583,8 +586,8 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
       <Header onBack={onBack} />
       <Image source={product.image} style={[styles.detailImage, product.kind === 'solo' && styles.detailImageSolo]} />
       <View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View>
-      <Text style={styles.detailDescription}>{product.detail}</Text>
-      {hasPork && <View accessibilityRole="alert" style={styles.porkNotice}><Text style={styles.dietaryNoticeTitle}>CONTIENT DU PORC</Text><Text style={styles.dietaryNoticeText}>Cette recette n’existe pas en version halal.</Text></View>}
+      <Text style={styles.detailDescription}>{NEW_PROTEIN_CHOICES && choices.protein?.includes('vegetarian') ? vegetarianInstruction : product.detail}</Text>
+      {hasPork && !(NEW_PROTEIN_CHOICES && choices.protein?.includes('vegetarian')) && <View accessibilityRole="alert" style={styles.porkNotice}><Text style={styles.dietaryNoticeTitle}>CONTIENT DU PORC</Text><Text style={styles.dietaryNoticeText}>Cette recette n’existe pas en version halal.</Text></View>}
       {product.isMenu && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>MENU COMPLET</Text><Text style={styles.menuIncludedText}>Burger + frites + boisson inclus dans ce prix.</Text></View>}
       {product.kind === 'solo' && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>MENU SOLO COMPLET</Text><Text style={styles.menuIncludedText}>3 tenders XL + 1 portion de frites + 1 boisson au choix. Frites maison incluses ; cheddar bacon en remplacement pour +2,50 €.</Text></View>}
       {product.kind !== 'solo' && <Text style={styles.sectionTitle}>{product.kind === 'duo' ? 'Compose ton Menu Duo' : product.isMenu ? 'Compose ton menu' : 'Compose ton burger'}</Text>}
@@ -599,14 +602,14 @@ function ProductScreen({ product, catalog, onBack, onAdd }) {
 }
 
 function OptionVisual({ groupId, option }) {
-  if (groupId === "sauces") return SAUCE_VISUALS[option.id] ? <Image source={SAUCE_VISUALS[option.id]} style={styles.saucePotPhoto} /> : <View style={styles.noSauceVisual}><Text style={styles.noSauceVisualText}>×</Text></View>;
+  if (groupId === "sauces") return SAUCE_VISUALS[option.id] ? <Image source={SAUCE_VISUALS[option.id]} style={styles.saucePotPhoto} /> : <View style={styles.noSauceVisual}><Text style={styles.noSauceVisualText}>{option.id === 'bleu' ? '🧀' : '×'}</Text></View>;
   if (groupId === "drink" || groupId.startsWith("duo-drink")) return option.image ? <Image source={option.image} style={styles.optionDrinkImage} /> : <View style={styles.optionDrinkFallback}><Text style={styles.optionDrinkFallbackText}>🥤</Text></View>;
   return null;
 }
 
 function OptionGroup({ group, selectedIds, onToggleChoice }) {
   const selectionText = group.max ? `${selectedIds.length} sur ${group.max} sélectionné${selectedIds.length > 1 ? "s" : ""}` : `${selectedIds.length} sélectionné${selectedIds.length > 1 ? "s" : ""}`;
-  const helper = FRIES_CHOICE_GROUPS.has(group.id) ? "Frites maison incluses · cheddar +1 € · cheddar bacon +2,50 €" : group.id === "meat-type" ? "Choisis le type de viande pour ce burger" : group.id === "protein" ? "Choisis viande ou version végétarienne" : group.id === "salad" ? "Sélectionne les crudités que tu souhaites" : group.id === "sauces" ? "Choisis une seule sauce" : group.id === "drink" || group.id.startsWith("duo-drink") ? "Choisis une boisson" : group.max === 1 ? "Sélectionne jusqu’à 1 choix" : "Facultatif";
+  const helper = group.helper || (FRIES_CHOICE_GROUPS.has(group.id) ? "Frites maison incluses · cheddar +1 € · cheddar bacon +2,50 €" : group.id === "meat-type" ? "Choisis le type de viande pour ce burger" : group.id === "protein" ? "Choisis viande ou version végétarienne" : group.id === "salad" ? "Sélectionne les crudités que tu souhaites" : group.id === "sauces" ? "Choisis une seule sauce" : group.id === "drink" || group.id.startsWith("duo-drink") ? "Choisis une boisson" : group.max === 1 ? "Sélectionne jusqu’à 1 choix" : "Facultatif");
   return <View style={styles.optionGroup}><View style={styles.optionGroupHeader}><View style={styles.optionGroupTitleWrap}><Text style={styles.optionGroupTitle}>{group.title}{group.required ? "  (requis)" : ""}</Text><Text style={styles.optionGroupHelper}>{selectionText} · {helper}</Text></View></View><View style={styles.optionGrid}>{group.options.map((option) => <OptionRow key={option.id} groupId={group.id} option={option} selected={selectedIds.includes(option.id)} onPress={() => onToggleChoice(option)} />)}</View></View>;
 }
 

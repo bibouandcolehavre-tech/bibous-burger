@@ -28,6 +28,7 @@ const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderIt
 const { createProductStockStore } = require("./product-stock");
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createKioskConnectionStore, kioskRequestAllowed, kioskCustomerView, orderInKioskSession, kioskWheelDatabase } = require('./kiosk-connections');
+const { immediateService, guestCustomer } = require('./kiosk-immediate');
 const { createSmsAttemptLimiter } = require("./sms-rate-limit");
 const { createAuthRateLimiter } = require("./auth-rate-limit");
 const { createDashboardSessionStore } = require('./dashboard-sessions');
@@ -249,7 +250,7 @@ const authenticatedCustomer = (request, database) => {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
   const session = token?.startsWith('kiosk.') ? request.kioskSession : readCustomerSession(token, customerSessionSecret);
   if (!session) return null;
-  return database.customers.find((customer) => customer.id === session.customerId) || null;
+  return database.customers.find((customer) => customer.id === session.customerId) || guestCustomer(session);
 };
 const authenticatedDashboard = (request) => {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
@@ -497,6 +498,7 @@ const server = http.createServer(async (request, response) => {
       request.kioskSession = process.env.KIOSK_PAIRING_ENABLED === 'true' && authorizeTerminal(request, { enabled: true, deviceSecret: kioskDeviceSecret })
         ? kioskConnections.read(kioskToken, request.headers['x-bibou-kiosk-token']) : null;
       if (!request.kioskSession) return send(response, 401, { error: 'Session borne expirée. Reconnecte ton compte.' });
+      if (request.kioskSession.guest && ['/api/customer/wheel','/api/customer/wheel/spin'].includes(url.pathname)) return send(response,403,{error:'Un compte client est nécessaire pour la fidélité.'});
       if (!kioskRequestAllowed(request.method, url.pathname)) return send(response, 403, { error: 'Cette action doit être faite depuis ton téléphone, pas depuis la borne.' });
     }
     const kroklyFile = ({
@@ -642,7 +644,7 @@ const server = http.createServer(async (request, response) => {
       try { return send(response, 200, orderSms.status(await readDatabase(), orderSmsConfig)); }
       finally { release(); }
     }
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { kioskCash: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1, kioskTerminal: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 && process.env.SUMUP_KIOSK_AFFILIATE_KEY?.startsWith('sup_afk_') && Boolean(sumupApiKey) ? 1 : 0, kioskPairing: process.env.KIOSK_PAIRING_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { kioskImmediate:1, kioskGuest:process.env.KIOSK_PAIRING_ENABLED === 'true' && process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, kioskCash: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1, kioskTerminal: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 && process.env.SUMUP_KIOSK_AFFILIATE_KEY?.startsWith('sup_afk_') && Boolean(sumupApiKey) ? 1 : 0, kioskPairing: process.env.KIOSK_PAIRING_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0 } });
 
     if (url.pathname === '/api/dashboard/promotions') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -950,6 +952,14 @@ const server = http.createServer(async (request, response) => {
     const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
     if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged) await writeDatabase(database);
 
+    if (request.method === 'POST' && url.pathname === '/api/kiosk/guest') {
+      if (process.env.KIOSK_PAIRING_ENABLED !== 'true' || !authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) return send(response, 403, { error:'Accès borne requis.' });
+      if (!kioskPairingLimiter.consume(`guest:${request.socket.remoteAddress}`).allowed) return send(response, 429, { error:'Réessaie dans un instant.' });
+      const input = await readBody(request);
+      if (!input || Array.isArray(input) || Object.keys(input).length) return send(response, 400, { error:'Aucune coordonnée n’est nécessaire pour commander sans compte.' });
+      const result = kioskConnections.guest(request.headers['x-bibou-kiosk-token']);
+      return send(response, 201, { token:result.token, customer:guestCustomer(result.session) });
+    }
     if (request.method === 'POST' && url.pathname.startsWith('/api/kiosk-pairing/')) {
       if (process.env.KIOSK_PAIRING_ENABLED !== 'true') return send(response, 503, { error: 'La connexion QR doit encore être activée sur le serveur.' });
       const action = url.pathname.slice('/api/kiosk-pairing/'.length), input = await readBody(request);
@@ -1628,10 +1638,12 @@ const server = http.createServer(async (request, response) => {
       if (cash && !validateRequestId(input.requestId)) return send(response, 400, { error:'Identifiant de tentative requis pour la borne.' });
       const comment = input.comment === undefined ? "" : typeof input.comment === "string" ? input.comment.trim() : null;
       if (comment === null || comment.length > 500) return send(response, 400, { error: "Le commentaire doit contenir au maximum 500 caractères." });
-      const customer = database.customers.find((item) => item.id === input.customerId);
+      const customer = database.customers.find((item) => item.id === input.customerId) || guestCustomer(request.kioskSession);
       const sessionCustomer = authenticatedCustomer(request, database);
-      if (!sessionCustomer || sessionCustomer.id !== customer?.id) return send(response, 401, { error: "Connecte-toi par SMS avant de commander." });
+      if (!sessionCustomer || sessionCustomer.id !== customer?.id || input.customerId !== customer.id) return send(response, 401, { error: "Session de commande requise." });
       if (request.kioskSession && input.method !== 'pickup') return send(response, 403, { error: 'La borne ne propose pas la livraison.' });
+      const immediate = immediateService(input, authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret }));
+      if (request.kioskSession?.guest && !immediate) return send(response, 400, { error:'Le client sans compte doit commander directement sur la borne.' });
       const requestId = validateRequestId(input.requestId);
       const fingerprint = orderFingerprint(input);
       const previous = requestId && database.orders.find(item => item.customerId === customer.id && item.requestId === requestId);
@@ -1645,13 +1657,14 @@ const server = http.createServer(async (request, response) => {
       const tableRequest = input.tableReservation;
       if (tableRequest !== undefined && (!tableRequest || typeof tableRequest !== 'object' || Array.isArray(tableRequest) || input.method !== 'pickup' || !Number.isInteger(tableRequest.guests) || tableRequest.guests < 1 || tableRequest.guests > 4 || typeof tableRequest.note !== 'string' || tableRequest.note.length > 500)) return send(response, 400, { error: 'Informations de table invalides.' });
       if (tableRequest && !(await serviceModuleStore.read()).modules.tables) return send(response, 409, { error: 'Les réservations de table sont momentanément indisponibles.' });
+      if (immediate) Object.assign(input, { serviceDate:immediate.serviceDate, slot:immediate.slot });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
       assertPromotionMethod(promotion, input.method);
       assertPromotionCart(promotion, pricedCart.items);
       const subtotal = pricedCart.subtotal;
       const grid = input.slotGrid === 20 ? 20 : 15;
-      const serviceSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database, subtotal, grid);
+      const serviceSlotError = immediate ? null : validateServiceSlot(input.serviceDate, input.slot, new Date(), input.method, database, subtotal, grid);
       if (serviceSlotError) return send(response, 400, { error: serviceSlotError });
       if (tableRequest) {
         const tableSlotError = validateServiceSlot(input.serviceDate, input.slot, new Date(), 'reservation', database, undefined, 20);
@@ -1680,11 +1693,11 @@ const server = http.createServer(async (request, response) => {
         assertPromotionMethod(activePromotion, input.method);
         assertPromotionCart(activePromotion, pricedCart.items);
         ensureBibouPlusStore(latestDatabase);
-        const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId);
+        const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId) || guestCustomer(request.kioskSession);
         if (!latestCustomer) return null;
         if (input.method === "delivery" && remainingDeliveryPlaces(latestDatabase, input.serviceDate, input.slot).remaining < 1) return false;
         const sessionCustomer = authenticatedCustomer(request, latestDatabase);
-        const benefitsAllowed = sessionCustomer?.id === latestCustomer.id;
+        const benefitsAllowed = !latestCustomer.isKioskGuest && sessionCustomer?.id === latestCustomer.id;
         const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
         const welcomeRewardApplied = (!activePromotion || (Boolean(activePromotion.id) && activePromotion.combineWelcome !== false)) && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
@@ -1706,15 +1719,16 @@ const server = http.createServer(async (request, response) => {
           createdOrder.dineIn = true;
         }
         createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
+        if (immediate) Object.assign(createdOrder, immediate, { kioskGuest:Boolean(customer.isKioskGuest), slotDurationMinutes:0 });
         createdOrder.requestId = requestId;
         if (request.kioskSession) { createdOrder.kioskSessionId = request.kioskSession.id; createdOrder.kioskDeviceDigest = request.kioskSession.deviceDigest; }
         if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
         if (activePromotion?.id) Object.assign(createdOrder, { promotionDiscount: pricing.promotionDiscount, promotionDeliveryDiscount: pricing.promotionDeliveryDiscount, baseDiscount: pricing.baseDiscount });
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
-        const finalSlotError = validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);
+        const finalSlotError = immediate ? null : validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
-        createdOrder.pickupAdvanceBonusApplied = !createdOrder.dineIn && qualifiesForAdvancePickup(createdOrder);
+        createdOrder.pickupAdvanceBonusApplied = !immediate && !createdOrder.dineIn && qualifiesForAdvancePickup(createdOrder);
         latestDatabase.orders.unshift(createdOrder);
         if (cash) prepareCashOrder(createdOrder);
         else if (settlePromotionalOrder(createdOrder)) finalizePaidOrder(createdOrder, latestDatabase);
@@ -1869,7 +1883,7 @@ const server = http.createServer(async (request, response) => {
     return send(response, 404, { error: "Route introuvable" });
   } catch (error) {
     console.error(error);
-    if ([400, 404, 408, 409, 413, 429, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
+    if ([400, 403, 404, 408, 409, 413, 429, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
     return send(response, error.message === "Invalid JSON" ? 400 : 500, { error: "Une erreur serveur est survenue." });
   } finally {
     releaseDatabase?.();

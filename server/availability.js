@@ -115,6 +115,7 @@ const serviceSlotInstant = (dateKey, slot) => {
 };
 
 const qualifiesForAdvancePickup = (order) => {
+  if (order.kioskImmediate === true) return false;
   if (order.method !== "pickup") return false;
   const arrival = serviceSlotInstant(order.serviceDate, order.slot);
   const created = Date.parse(order.createdAt);
@@ -157,6 +158,7 @@ const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery
 // Existing unpaid orders may still have a :20/:40 appointment or an old range.
 // Keep their checkout valid unless the service has since been explicitly closed.
 const storedServiceSlotOpen = (order, database) => {
+  if (order.kioskImmediate === true && order.method === 'pickup' && ['here','take'].includes(order.kioskDiningMode)) return true;
   const window = bookingWindow(order);
   if (!window) return false;
   const override = scheduleOverride(database, order.serviceDate, order.slot, order.method, window);
