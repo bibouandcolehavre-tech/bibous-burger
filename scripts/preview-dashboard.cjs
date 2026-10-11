@@ -53,6 +53,8 @@ async function main() {
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
       if(!/^[a-z0-9.-]+$/.test(name))throw Error('Invalid path');
       let content=await fs.readFile(path.join(staticRoot,name));
+      // Browser QA must not contact or print to a physical restaurant printer.
+      if(name==='epson-print.js')content=Buffer.from("window.BibouEpsonPrint={probe:async()=>({success:false,code:'QA_PRINT_DISABLED'}),send:async()=>{throw Error('Impression physique désactivée en vérification locale.');},orderReceiptEnvelope:()=>{throw Error('Ticket réel désactivé en vérification locale.');}};");
       if(['app.js','ancienne-interface.js'].includes(name))content=Buffer.from(content.toString().replace(/^const API_BASE_URL = .*?;/,"const API_BASE_URL = '/api';"));
       if(['index.html','ancienne-interface.html'].includes(name))content=Buffer.from(content.toString().replace('<body>','<body><div style="padding:5px;text-align:center;background:#33251f;color:white;font-size:11px">VÉRIFICATION LOCALE · données fictives · aucun paiement, SMS ou coursier réel</div>'));
       const type = name.endsWith('.png')?'image/png':name.endsWith('.webmanifest')?'application/manifest+json':name.endsWith('.css')?'text/css':name.endsWith('.js')?'text/javascript':'text/html; charset=utf-8';
