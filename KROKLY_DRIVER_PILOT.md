@@ -2,7 +2,7 @@
 
 Mise à jour du 11 octobre 2026 : première PWA Krokli Driver préparée dans un clone isolé, à partir de `main` (`2a82b48`). **Cette mise à jour n’a pas été publiée par cette intervention** ; aucun compte livreur réel créé, aucune commande réelle attribuée ou modifiée. Le pilote existant avait déjà un manifest, un service worker, des comptes distincts et les étapes de livraison côté serveur. Cette révision complète l’installation mobile, les icônes et la charte vert `#315b4b`, orange `#bb7258`, crème `#fbf3e6`.
 
-Le propriétaire souhaite un premier essai Bibou avec Mathieu, sous surveillance du restaurant. L’origine publique documentée du service est `https://bibous-burger-app.onrender.com` : le chemin du pilote est `/driver/`, soit `https://bibous-burger-app.onrender.com/driver/`. Vérifier la version effectivement servie avant de partager le lien. Ne pas transmettre l’adresse locale `127.0.0.1` à un livreur : elle ne fonctionne que sur l’ordinateur de développement.
+Le propriétaire souhaite un premier essai Bibou avec Mathieu, sous surveillance du restaurant. Le serveur qui sert le pilote est `https://bibous-burger.onrender.com` : le chemin du pilote est `/driver/`, soit `https://bibous-burger.onrender.com/driver/`. Son manifest a été vérifié en HTTP 200 le 11 octobre 2026 avant cette publication ; vérifier aussi la version effectivement servie après publication. L’origine `bibous-burger-app.onrender.com` est l’application client, pas le serveur Driver. Ne pas transmettre l’adresse locale `127.0.0.1` à un livreur : elle ne fonctionne que sur l’ordinateur de développement.
 
 ## Installer sur le téléphone
 
