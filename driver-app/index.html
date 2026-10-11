@@ -4,18 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow">
-  <meta name="theme-color" content="#153d35">
-  <title>Krokly Driver</title>
+  <meta name="theme-color" content="#315b4b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Krokli Driver">
+  <title>Krokli Driver</title>
   <link rel="icon" href="/driver/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/driver/apple-touch-icon.png" sizes="180x180">
   <link rel="manifest" href="/driver/manifest.webmanifest">
   <link rel="stylesheet" href="/driver/style.css">
   <script defer src="/driver/app.js"></script>
 </head>
 <body>
   <div class="shell">
-    <header><div class="logo"><span class="mark">K</span><span>Krokly <b>Driver</b></span></div><span class="pilot">PILOTE BIBOU</span></header>
+    <header><div class="logo"><img class="mark" src="/driver/icon.svg" width="41" height="41" alt=""><span>Krokli <b>Driver</b></span></div><span class="pilot">PILOTE BIBOU</span></header>
     <main>
       <section class="hero"><p class="eyebrow">Bibou's Burgers · livraison interne</p><h1>La bonne course.<br><em>Au bon livreur.</em></h1><p>Un espace pour attribuer, accepter et suivre chaque livraison.</p></section>
+      <details class="installation card" id="installation">
+        <summary>Installer Krokli Driver sur mon téléphone</summary>
+        <p id="installation-status">Retrouve tes courses depuis une icône sur ton écran d’accueil.</p>
+        <button class="primary" id="install-app" type="button" hidden>Installer Krokli Driver</button>
+        <div class="installation-guides">
+          <div><h3>iPhone et iPad · Safari</h3><ol><li>Ouvre cette page dans Safari, puis le menu <strong>Partager</strong> (carré avec une flèche vers le haut).</li><li>Choisis <strong>Sur l’écran d’accueil</strong>. Si l’option apparaît, active <strong>Ouvrir comme app web</strong>, puis touche <strong>Ajouter</strong>.</li><li>Ouvre l’icône <strong>Krokli Driver</strong> et connecte-toi avec ton compte livreur.</li></ol></div>
+          <div><h3>Android · Chrome</h3><ol><li>Ouvre cette page dans Chrome.</li><li>Utilise le bouton d’installation lorsqu’il apparaît, ou le menu <strong>⋮</strong> : <strong>Installer et créer un raccourci</strong>, puis <strong>Installer</strong>. Selon la version, l’option s’appelle <strong>Ajouter à l’écran d’accueil</strong>.</li><li>Ouvre l’icône <strong>Krokli Driver</strong> et connecte-toi avec ton compte livreur.</li></ol></div>
+        </div>
+        <p class="muted">Dans le navigateur d’une messagerie, ouvre d’abord le lien dans Safari ou Chrome. Une connexion Internet est nécessaire pour voir les courses et confirmer chaque étape. L’installation peut demander une nouvelle connexion à ton compte.</p>
+      </details>
+      <div id="connection-status" class="connection-status" role="status" aria-live="polite" hidden></div>
       <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
       <section id="login" class="login card">
         <h2>Se connecter</h2>
@@ -33,7 +47,7 @@
         <div id="content"></div>
       </section>
     </main>
-    <footer>Krokly Driver · Accès réservé aux livreurs et à l’équipe Bibou.</footer>
+    <footer>Krokli Driver · Accès réservé aux livreurs et à l’équipe Bibou.</footer>
   </div>
 </body>
 </html>

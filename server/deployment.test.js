@@ -31,7 +31,7 @@ test('Le paquet Docker démarre avec tous les modules des actualités', { timeou
         if (file.endsWith('.js') && !file.endsWith('.test.js')) await fs.copyFile(path.join(from, file), path.join(to, file));
       }
     } else if (source === 'driver-app') {
-      const expected = ['app.js', 'icon.svg', 'index.html', 'manifest.webmanifest', 'style.css', 'sw.js'];
+      const expected = ['app.js', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'icon.svg', 'index.html', 'manifest.webmanifest', 'style.css', 'sw.js'];
       assert.deepEqual((await fs.readdir(from)).sort(), expected, 'Le paquet livreur ne doit contenir que les fichiers publics prévus.');
       await fs.mkdir(to, { recursive: true });
       for (const file of expected) await fs.copyFile(path.join(from, file), path.join(to, file));
@@ -59,6 +59,10 @@ test('Le paquet Docker démarre avec tous les modules des actualités', { timeou
   const health = await fetch(base + '/api/health');
   assert.equal(health.status, 200);
   assert.equal((await fetch(base + '/driver/')).status, 200);
+  for (const file of ['icon-192.png', 'icon-512.png', 'apple-touch-icon.png']) {
+    const icon = await fetch(base + '/driver/' + file);
+    assert.equal(icon.status, 200); assert.equal(icon.headers.get('content-type'), 'image/png');
+  }
   const news = await (await fetch(base + '/api/news')).json();
   const { publicNews } = require('./news');
   assert.deepEqual(news.items, publicNews({}, new Date()).items);

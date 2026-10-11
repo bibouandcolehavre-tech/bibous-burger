@@ -507,6 +507,9 @@ const server = http.createServer(async (request, response) => {
       '/driver/style.css': ['style.css', 'text/css; charset=utf-8'],
       '/driver/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
       '/driver/icon.svg': ['icon.svg', 'image/svg+xml'],
+      '/driver/icon-192.png': ['icon-192.png', 'image/png'],
+      '/driver/icon-512.png': ['icon-512.png', 'image/png'],
+      '/driver/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
       '/driver/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json']
     })[url.pathname];
     if (request.method === 'GET' && kroklyFile) {
@@ -553,7 +556,7 @@ const server = http.createServer(async (request, response) => {
             return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, orders: kroklyDrivers.assigned(database, driver.id), push: { enabled: kroklyPushConfig.enabled, publicKey: kroklyPushConfig.publicKey, devices: (database.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length } });
           }
           if (url.pathname === '/api/krokly-driver/push/subscribe' && request.method === 'POST') {
-            if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokly ne sont pas encore configurées.' });
+            if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokli Driver ne sont pas encore configurées.' });
             const result = kroklyWebPush.register(database, driver.id, input.endpoint);
             await writeDatabase(database);
             return send(response, 200, result);
@@ -564,7 +567,7 @@ const server = http.createServer(async (request, response) => {
             return send(response, 200, result);
           }
           if (url.pathname === '/api/krokly-driver/push/test' && request.method === 'POST') {
-            if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokly ne sont pas encore configurées.' });
+            if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokli Driver ne sont pas encore configurées.' });
             const result = kroklyWebPush.queueTest(database, driver.id);
             await writeDatabase(database);
             return send(response, 200, result);
@@ -607,7 +610,7 @@ const server = http.createServer(async (request, response) => {
         }
         return send(response, 405, { error: 'Action de répartition indisponible.' });
       } catch (error) {
-        return send(response, [400, 401, 403, 404, 409, 429].includes(error.statusCode) ? error.statusCode : 500, { error: error.statusCode ? error.message : 'Krokly Driver momentanément indisponible.' });
+        return send(response, [400, 401, 403, 404, 409, 429].includes(error.statusCode) ? error.statusCode : 500, { error: error.statusCode ? error.message : 'Krokli Driver momentanément indisponible.' });
       }
     }
     if (url.pathname === '/api/keyyo/call') {
@@ -1982,7 +1985,7 @@ const tickKroklyPush = async () => {
         await writeDatabase(database);
       } finally { unlock(); }
     }
-  } catch { console.error('Alertes livreurs Krokly : traitement indisponible, nouvelle tentative automatique.'); }
+  } catch { console.error('Alertes livreurs Krokli Driver : traitement indisponible, nouvelle tentative automatique.'); }
   finally { kroklyPushBusy = false; }
 };
 if (kroklyPushConfig.enabled) {

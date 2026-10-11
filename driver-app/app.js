@@ -14,6 +14,63 @@ let fresh = false;
 let generation = 0;
 let issuedSecret = null;
 let serviceWorkerReady = null;
+let installPrompt = null;
+let lastCheckedAt = null;
+
+function isStandalone() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function isAppleMobile() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+}
+
+function updateInstallation() {
+  const installed = isStandalone();
+  document.querySelector('#install-app').hidden = installed || !installPrompt;
+  document.querySelector('#installation-status').textContent = installed
+    ? 'Tu utilises Krokli Driver depuis son icône. Les courses et leurs étapes demandent une connexion Internet.'
+    : 'Retrouve tes courses depuis une icône sur ton écran d’accueil.';
+}
+
+function updateConnectionStatus() {
+  const status = document.querySelector('#connection-status');
+  const offline = navigator.onLine === false;
+  status.hidden = !offline && !token;
+  status.className = `connection-status${offline || (token && !fresh) ? ' waiting' : ''}`;
+  status.textContent = offline
+    ? 'Hors connexion. Les courses ne sont pas à jour et aucune étape ne peut être confirmée. Reconnecte-toi, puis actualise.'
+    : !token ? '' : fresh && lastCheckedAt
+      ? `Courses vérifiées à ${new Date(lastCheckedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}.`
+      : loading ? 'Vérification des courses auprès du restaurant…'
+        : 'Courses à vérifier. Actualise avant toute action.';
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  updateInstallation();
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  updateInstallation();
+  document.querySelector('#installation-status').textContent = 'Installation ajoutée. Ouvre l’icône Krokli Driver sur ton écran d’accueil.';
+});
+document.querySelector('#install-app').addEventListener('click', async () => {
+  const prompt = installPrompt;
+  if (!prompt) return;
+  installPrompt = null;
+  updateInstallation();
+  try {
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    document.querySelector('#installation-status').textContent = choice.outcome === 'accepted'
+      ? 'Installation demandée. Suis les indications du navigateur, puis ouvre l’icône Krokli Driver.'
+      : 'Tu peux retrouver l’installation dans le menu de ton navigateur quand tu le souhaites.';
+  } catch {
+    document.querySelector('#installation-status').textContent = 'Utilise le menu de Safari ou Chrome et les étapes ci-dessous pour installer Krokli Driver.';
+  }
+});
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -69,6 +126,7 @@ async function api(route, options = {}) {
     return data;
   } catch (error) {
     if (error.name === 'AbortError' || error.name === 'TimeoutError') throw Error('Le serveur ne répond pas. Actualise pour vérifier.');
+    if (error instanceof TypeError) throw Error('Connexion au serveur impossible. Vérifie ton réseau.');
     throw error;
   } finally { timeout.cancel(); }
 }
@@ -86,6 +144,7 @@ function signOut(showMessage = true) {
   profile = null;
   currentState = null;
   issuedSecret = null;
+  lastCheckedAt = null;
   localStorage.removeItem('krokly-token');
   lastOrders = '';
   content.innerHTML = '';
@@ -100,17 +159,18 @@ function signOut(showMessage = true) {
 
 function updateControls() {
   form.querySelectorAll('button,input').forEach(control => { control.disabled = busy; });
-  content.querySelectorAll('button,input,select').forEach(control => { control.disabled = busy || !fresh; });
+  content.querySelectorAll('button,input,select').forEach(control => { control.disabled = busy || loading || !fresh || navigator.onLine === false; });
   const refreshButton = document.querySelector('#refresh');
   if (refreshButton) refreshButton.disabled = busy || loading;
+  updateConnectionStatus();
 }
 
 async function readyWorker() {
   let timer;
   try {
     const registration = await Promise.race([serviceWorkerReady || navigator.serviceWorker.ready,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Les alertes ne répondent pas. Réessaie depuis l’icône Krokly.')), 5000); })]);
-    if (!registration) throw Error('Les alertes ne sont pas disponibles. Réessaie depuis l’icône Krokly.');
+      new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Les alertes ne répondent pas. Réessaie depuis l’icône Krokli Driver.')), 5000); })]);
+    if (!registration) throw Error('Les alertes ne sont pas disponibles. Réessaie depuis l’icône Krokli Driver.');
     return registration;
   } finally { clearTimeout(timer); }
 }
@@ -142,7 +202,7 @@ function renderDriver() {
   const orders = currentState.orders || [];
   const push = currentState.push || {};
   const notificationPanel = push.enabled
-    ? `<div class="card push-card"><h3>Alertes de courses</h3><p>Sur iPhone, ajoute d’abord Krokly Driver à l’écran d’accueil, puis ouvre-le depuis son icône. Appuie ensuite sur « Activer les alertes ». Accepte la demande de l’iPhone.</p><div class="actions"><button class="primary" data-push-enable>Activer les alertes</button><button class="secondary" data-push-test>Tester dans 15 secondes</button></div><p class="muted">Après le test, verrouille le téléphone : l’alerte doit apparaître. Tant que cet essai n’est pas réussi sur ton iPhone, surveille aussi les courses à l’écran.</p></div>`
+    ? `<div class="card push-card"><h3>Alertes de courses · à tester</h3><p>Sur iPhone et iPad, installe d’abord Krokli Driver avec l’aide en haut de cette page, puis ouvre son icône. Appuie ensuite sur « Activer les alertes » et accepte la demande du téléphone.</p><div class="actions"><button class="primary" data-push-enable>Activer les alertes</button><button class="secondary" data-push-test>Tester dans 15 secondes</button></div><p class="muted">Lance le test, verrouille le téléphone et vérifie la réception. Tant que cet essai n’est pas réussi sur ton appareil, surveille aussi les courses à l’écran. Même ensuite, le réseau et les réglages du téléphone peuvent retarder une alerte.</p></div>`
     : `<div class="hint"><strong>Alertes écran verrouillé non activées.</strong> Le restaurant peut voir les courses dans le back-office. Garde cet écran ouvert pendant le service tant que les alertes ne sont pas vérifiées.</div>`;
   content.innerHTML = `${notificationPanel}
     <div class="metrics"><div class="metric"><strong>${orders.filter(o => o.status === 'offered').length}</strong><span>à accepter</span></div><div class="metric"><strong>${orders.filter(o => o.status === 'accepted').length}</strong><span>à récupérer</span></div><div class="metric"><strong>${orders.filter(o => o.status === 'picked_up').length}</strong><span>en livraison</span></div></div>
@@ -168,7 +228,7 @@ function ownerDriver(driver) {
 function renderOwner() {
   const ready = currentState.orders.filter(o => o.status === 'ready' && o.eligible);
   const assigned = currentState.orders.filter(o => o.assignment && ['offered', 'accepted', 'picked_up', 'issue'].includes(o.assignment.status));
-  content.innerHTML = `<div class="hint">Une course doit être <strong>payée et marquée prête</strong> avant attribution. Une commande confiée à Uber ne peut pas être attribuée en parallèle à Krokly.</div>
+  content.innerHTML = `<div class="hint">Une course doit être <strong>payée et marquée prête</strong> avant attribution. Une commande confiée à Uber ne peut pas être attribuée en parallèle à Krokli.</div>
     <div class="metrics"><div class="metric"><strong>${ready.length}</strong><span>à attribuer</span></div><div class="metric"><strong>${assigned.length}</strong><span>attribuée(s)</span></div><div class="metric"><strong>${currentState.drivers.filter(d => d.active).length}</strong><span>livreur(s) actifs</span></div></div>
     <h3 class="section-title">Commandes en livraison</h3>${currentState.orders.length ? `<div class="grid">${currentState.orders.map(ownerOrder).join('')}</div>` : '<div class="empty"><strong>Aucune livraison à répartir</strong>Les commandes payées et prêtes apparaîtront ici.</div>'}
     <h3 class="section-title">Comptes livreurs</h3><div class="card"><form id="create-form" class="create"><label>Nom du livreur<input name="name" required maxlength="60" placeholder="Ex. : Lina"></label><label>Identifiant<input name="username" required maxlength="32" placeholder="Ex. : lina"></label><button class="primary" type="submit">Créer le compte</button></form>
@@ -192,10 +252,10 @@ function applicationServerKey(value) {
 async function enableNotifications() {
   const current = generation, key = currentState?.push?.publicKey;
   if (!currentState?.push?.enabled || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) throw new Error('Les alertes ne sont pas disponibles sur ce téléphone ou ce navigateur.');
-  if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) throw new Error('Sur iPhone, ouvre Krokly depuis son icône ajoutée à l’écran d’accueil, puis active les alertes ici.');
+  if (isAppleMobile() && !isStandalone()) throw new Error('Sur iPhone ou iPad, ouvre Krokli Driver depuis son icône ajoutée à l’écran d’accueil, puis active les alertes ici.');
   const permission = await Notification.requestPermission();
   if (current !== generation) return;
-  if (permission !== 'granted') throw new Error('Notifications refusées sur ce téléphone. Active-les dans les réglages de l’iPhone puis réessaie.');
+  if (permission !== 'granted') throw new Error('Notifications refusées sur cet appareil. Vérifie les réglages du téléphone et du navigateur, puis réessaie.');
   const registration = await readyWorker();
   if (current !== generation) return;
   let subscription = await registration.pushManager.getSubscription();
@@ -231,6 +291,7 @@ async function unregisterNotifications() {
 
 async function refresh(force = false) {
   if (!token || busy || loading) return false;
+  if (navigator.onLine === false) { fresh = false; updateControls(); return false; }
   const current = generation, role = mode;
   loading = true; updateControls();
   try {
@@ -239,6 +300,7 @@ async function refresh(force = false) {
     if (!Array.isArray(data.orders) || (role === 'owner' ? !Array.isArray(data.drivers) : !data.driver?.id)) throw Error('La réponse du serveur est incomplète. Actualise pour vérifier.');
     currentState = data;
     fresh = true;
+    lastCheckedAt = Date.now();
     if (mode === 'driver') profile = data.driver;
     const digest = JSON.stringify(data);
     if (force || digest !== lastOrders) {
@@ -302,8 +364,10 @@ form.addEventListener('submit', async event => {
 
 document.querySelector('#logout').addEventListener('click', () => { void unregisterNotifications(); signOut(); });
 document.querySelector('#refresh')?.addEventListener('click', () => { void refresh(true); });
-window.addEventListener('online', () => { void refresh(true); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) void refresh(true); });
+window.addEventListener('offline', () => { fresh = false; updateControls(); });
+window.addEventListener('online', () => { fresh = false; updateControls(); void refresh(true); });
+window.addEventListener('pageshow', event => { if (event.persisted && token) { fresh = false; updateControls(); void refresh(true); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { fresh = false; updateControls(); void refresh(true); } });
 
 document.addEventListener('submit', async event => {
   if (event.target.id !== 'create-form') return;
@@ -366,6 +430,8 @@ document.addEventListener('click', async event => {
 });
 
 loginView();
+updateInstallation();
+updateConnectionStatus();
 if (token) refresh(true);
 if ('serviceWorker' in navigator) serviceWorkerReady = navigator.serviceWorker.register('/driver/sw.js').then(() => navigator.serviceWorker.ready).catch(() => null);
 setInterval(() => refresh(), 7000);

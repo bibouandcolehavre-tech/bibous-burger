@@ -7,7 +7,7 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { parisDateKey } = require('./availability');
 
-test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { timeout: 30000 }, async t => {
+test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { timeout: 30000 }, async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'krokly-driver-http-'));
   const file = path.join(dir, 'data.json');
   const date = parisDateKey(new Date());
@@ -40,9 +40,20 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
       method, headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' },
       ...(input ? { body: JSON.stringify(input) } : {})
     });
-    return { status: response.status, data: await response.json() };
+    return { status: response.status, data: await response.json(), headers: response.headers };
   }
   assert.equal((await fetch(`${base}/driver/`)).status, 200);
+  const manifestResponse = await fetch(`${base}/driver/manifest.webmanifest`);
+  assert.match(manifestResponse.headers.get('content-type'), /application\/manifest\+json/);
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.name, 'Krokli Driver'); assert.equal(manifest.id, '/driver/');
+  for (const [asset, size] of [['icon-192.png', 192], ['icon-512.png', 512], ['apple-touch-icon.png', 180]]) {
+    const response = await fetch(`${base}/driver/${asset}`);
+    assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'image/png');
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    assert.equal(bytes.readUInt32BE(16), size); assert.equal(bytes.readUInt32BE(20), size);
+  }
   assert.equal((await request('/api/dashboard/krokly-drivers')).status, 401);
   const owner = (await request('/api/dashboard/auth/login', '', 'POST', { password: 'owner-test-password' })).data.token;
   const lina = await request('/api/dashboard/krokly-drivers', owner, 'POST', { username: 'lina', name: 'Lina' });
@@ -53,7 +64,9 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal(copiedLogin.status, 200);
   const linaToken = copiedLogin.data.token;
   const malikToken = (await request('/api/krokly-driver/login', '', 'POST', { username: 'malik', password: malik.data.password })).data.token;
-  const firstState = (await request('/api/krokly-driver/state', linaToken)).data;
+  const firstResponse = await request('/api/krokly-driver/state', linaToken);
+  assert.equal(firstResponse.headers.get('cache-control'), 'no-store');
+  const firstState = firstResponse.data;
   assert.equal(firstState.orders.length, 0);
   const renameRoute = '/api/dashboard/krokly-drivers/' + lina.data.driver.id + '/name';
   assert.equal((await request(renameRoute, '', 'PATCH', { name: 'Lina (surnom)' })).status, 401);
@@ -71,7 +84,9 @@ test('Krokly Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal((await request('/api/krokly-driver/orders/order-1/accept', malikToken, 'POST')).status, 404);
   assert.equal((await request('/api/krokly-driver/state', linaToken)).data.orders[0].deliveryAddress, undefined);
   assert.equal((await request('/api/krokly-driver/orders/order-1/accept', linaToken, 'POST')).status, 200);
-  assert.equal((await request('/api/krokly-driver/state', linaToken)).data.orders[0].deliveryAddress.address, '1 rue fictive');
+  const acceptedResponse = await request('/api/krokly-driver/state', linaToken);
+  assert.equal(acceptedResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(acceptedResponse.data.orders[0].deliveryAddress.address, '1 rue fictive');
   assert.equal((await request('/api/dashboard/orders/order-1', owner, 'PATCH', { status: 'delivered' })).status, 409);
   assert.equal((await request('/api/krokly-driver/orders/order-1/pickup', linaToken, 'POST')).status, 200);
   assert.equal((await request('/api/krokly-driver/orders/order-1/deliver', linaToken, 'POST')).status, 200);

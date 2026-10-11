@@ -20,8 +20,8 @@ function configFromEnv(env) {
   const subject = String(env.KROKLY_VAPID_SUBJECT || 'mailto:contact@bibousburgers.com').trim();
   if (!secret) return { enabled: false, publicKey: null };
   const privateBytes = Buffer.from(secret, 'base64url');
-  if (privateBytes.length !== 32 || privateBytes.toString('base64url') !== secret) throw new Error('Clé VAPID Krokly invalide.');
-  if (!/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(subject) && !/^https:\/\//.test(subject)) throw new Error('Contact VAPID Krokly invalide.');
+  if (privateBytes.length !== 32 || privateBytes.toString('base64url') !== secret) throw new Error('Clé VAPID Krokli Driver invalide.');
+  if (!/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(subject) && !/^https:\/\//.test(subject)) throw new Error('Contact VAPID Krokli Driver invalide.');
   const ecdh = crypto.createECDH('prime256v1');
   ecdh.setPrivateKey(privateBytes);
   const publicBytes = ecdh.getPublicKey(undefined, 'uncompressed');

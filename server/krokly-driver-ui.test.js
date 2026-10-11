@@ -5,7 +5,7 @@ const result = (data, status = 200) => ({ ok: status >= 200 && status < 300, sta
 const state = (name = 'Livreur fictif', status = 'accepted') => ({ driver: { id: 'd1', name }, push: { enabled: false }, orders: [{ id: 'o1', number: 1, status, restaurant: 'Restaurant fictif', customerName: 'Client fictif', customerPhone: '0600000000', deliveryAddress: { address: 'Adresse privée fictive' } }] });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function harness(initialToken = 'driver-only-fake', initialMode = 'driver') {
-  const elements = new Map(), handlers = {}, calls = [], stored = new Map([['krokly-token', initialToken], ['krokly-mode', initialMode]]);
+  const elements = new Map(), handlers = {}, windowHandlers = {}, calls = [], stored = new Map([['krokly-token', initialToken], ['krokly-mode', initialMode]]);
   const controls = [{ disabled: false }], modeButtons = ['driver', 'owner'].map(mode => ({ dataset: { mode }, classList: { toggle() {} }, addEventListener(event, fn) { this[event] = fn; } }));
   const el = id => {
     if (!elements.has(id)) elements.set(id, { value: '', hidden: false, innerHTML: '', textContent: '', type: 'password', checked: false, disabled: false, handlers: {}, addEventListener(event, fn) { this.handlers[event] = fn; }, querySelectorAll: () => controls });
@@ -15,11 +15,11 @@ function harness(initialToken = 'driver-only-fake', initialMode = 'driver') {
     FormData: class { [Symbol.iterator]() { return [['name', 'Fictif'], ['username', 'fictif']][Symbol.iterator](); } },
     localStorage: { getItem: key => stored.get(key) || null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) },
     document: { querySelector: el, querySelectorAll: selector => selector === '[data-mode]' ? modeButtons : selector === '[data-expiry]' ? [] : controls, addEventListener: (event, fn) => { handlers[event] = fn; } },
-    window: { confirm: () => true, addEventListener() {} }, navigator: {}, fetch: async (url, options) => { calls.push({ url, options }); return result(initialMode === 'owner' ? { orders: [], drivers: [] } : state()); }
+    window: { confirm: () => true, addEventListener: (event, fn) => { windowHandlers[event] = fn; } }, navigator: { onLine: true }, fetch: async (url, options) => { calls.push({ url, options }); return result(initialMode === 'owner' ? { orders: [], drivers: [] } : state()); }
   });
-  vm.runInContext(source + '\nObject.assign(hooks, {refresh, signOut, api, token: () => token});', context);
+  vm.runInContext(source + '\nObject.assign(hooks, {refresh, signOut, api, isAppleMobile, isStandalone, token: () => token});', context);
   const fetchWith = fn => { context.fetch = async (url, options) => { calls.push({ url, options }); return fn(url, options); }; };
-  return { hooks, el, calls, controls, modeButtons, context, fetchWith, stored, login: () => el('#login-form').handlers.submit({ preventDefault() {} }), logout: () => el('#logout').handlers.click(), create: () => handlers.submit({ target: { id: 'create-form' }, preventDefault() {} }), action: (dataset = { action: 'pickup', order: 'o1' }) => handlers.click({ target: { closest: selector => selector.includes('data-action') ? { dataset } : null } }) };
+  return { hooks, el, calls, controls, modeButtons, context, fetchWith, stored, windowEvent: (event, data = {}) => windowHandlers[event]?.(data), login: () => el('#login-form').handlers.submit({ preventDefault() {} }), logout: () => el('#logout').handlers.click(), create: () => handlers.submit({ target: { id: 'create-form' }, preventDefault() {} }), action: (dataset = { action: 'pickup', order: 'o1' }) => handlers.click({ target: { closest: selector => selector.includes('data-action') ? { dataset } : null } }) };
 }
 
 test('livreur : déconnexion efface les données privées et ignore une réponse tardive', async () => {
@@ -128,4 +128,49 @@ test('livreur : les requêtes fonctionnent aussi sans la méthode récente Abort
   assert.equal(await h.hooks.refresh(true), true);
   assert.equal(h.calls.at(-1).options.signal instanceof AbortSignal, true);
   assert.equal(h.el('#workspace').hidden, false);
+});
+
+test('livreur : coupure réseau bloque toute étape, retour réseau attend un état serveur vérifié', async () => {
+  const h = harness(); await flush(); const before = h.calls.length;
+  h.context.navigator.onLine = false; h.windowEvent('offline');
+  assert.equal(h.controls[0].disabled, true);
+  assert.match(h.el('#connection-status').textContent, /Hors connexion/);
+  await h.action(); await h.hooks.refresh(true);
+  assert.equal(h.calls.length, before, 'no offline transition or deferred mutation');
+  let resolve; h.fetchWith(() => new Promise(done => { resolve = done; }));
+  h.context.navigator.onLine = true; h.windowEvent('online');
+  assert.equal(h.controls[0].disabled, true);
+  await h.action(); assert.equal(h.calls.length, before + 1);
+  resolve(result(state())); await flush();
+  assert.equal(h.controls[0].disabled, false);
+  assert.match(h.el('#connection-status').textContent, /Courses vérifiées/);
+  assert.ok(h.calls.every(call => call.options.cache === 'no-store'));
+  assert.deepEqual([...h.stored.keys()].sort(), ['krokly-mode', 'krokly-token']);
+});
+
+test('livreur : retour dans une page conservée suspend les actions pendant la vérification', async () => {
+  const h = harness(); await flush(); let resolve;
+  h.fetchWith(() => new Promise(done => { resolve = done; })); h.windowEvent('pageshow', { persisted: true });
+  assert.equal(h.controls[0].disabled, true);
+  await h.action(); assert.equal(h.calls.at(-1).options.method, undefined);
+  resolve(result(state())); await flush(); assert.equal(h.controls[0].disabled, false);
+});
+
+test('installation : le bouton utilise une seule invitation du navigateur et aucune API métier', async () => {
+  const h = harness(''); let prevented = false, prompts = 0;
+  assert.equal(h.el('#install-app').hidden, true);
+  h.windowEvent('beforeinstallprompt', { preventDefault() { prevented = true; }, async prompt() { prompts++; }, userChoice: Promise.resolve({ outcome: 'dismissed' }) });
+  assert.equal(prevented, true); assert.equal(h.el('#install-app').hidden, false);
+  await h.el('#install-app').handlers.click(); await h.el('#install-app').handlers.click();
+  assert.equal(prompts, 1); assert.equal(h.calls.length, 0);
+  assert.equal(h.el('#install-app').hidden, true);
+  assert.match(h.el('#installation-status').textContent, /menu/);
+});
+
+test('installation : iPad avec agent Macintosh et ouverture autonome sont reconnus', () => {
+  const h = harness('');
+  h.context.navigator.userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X)'; h.context.navigator.maxTouchPoints = 5;
+  assert.equal(h.hooks.isAppleMobile(), true);
+  h.context.navigator.maxTouchPoints = 0; assert.equal(h.hooks.isAppleMobile(), false);
+  h.context.navigator.standalone = true; assert.equal(h.hooks.isStandalone(), true);
 });

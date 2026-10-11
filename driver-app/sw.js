@@ -1,5 +1,7 @@
-const CACHE = 'krokly-driver-shell-v4';
-const STATIC = ['/driver/', '/driver/app.js', '/driver/style.css', '/driver/icon.svg', '/driver/manifest.webmanifest'];
+const CACHE = 'krokly-driver-shell-v5';
+// Only this public shell is stored. Never intercept APIs, authenticated
+// requests, query strings or future routes that may contain private data.
+const STATIC = ['/driver/', '/driver/app.js', '/driver/style.css', '/driver/icon.svg', '/driver/icon-192.png', '/driver/icon-512.png', '/driver/apple-touch-icon.png', '/driver/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)).then(() => self.skipWaiting()));
 });
@@ -8,14 +10,14 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith('/driver/')) return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.search || !STATIC.includes(url.pathname) || event.request.headers.has('Authorization')) return;
+  event.respondWith(fetch(event.request).catch(() => caches.open(CACHE).then(cache => cache.match(event.request))));
 });
 self.addEventListener('push', event => {
-  event.waitUntil(self.registration.showNotification('Krokly Driver · nouvelle alerte', {
+  event.waitUntil(self.registration.showNotification('Krokli Driver · nouvelle alerte', {
     body: 'Ouvre ton espace livreur pour voir la course ou le test.',
-    icon: '/driver/icon.svg',
-    badge: '/driver/icon.svg',
+    icon: '/driver/icon-192.png',
+    badge: '/driver/icon-192.png',
     tag: 'krokly-driver-alert',
     renotify: true,
     data: { url: '/driver/' }
