@@ -53,9 +53,10 @@ async function main() {
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
       if(!/^[a-z0-9.-]+$/.test(name))throw Error('Invalid path');
       let content=await fs.readFile(path.join(staticRoot,name));
-      if(name==='app.js')content=Buffer.from(content.toString().replace(/^const API_BASE_URL = .*?;/,"const API_BASE_URL = '/api';"));
-      if(name==='index.html')content=Buffer.from(content.toString().replace('<body>','<body><div style="padding:5px;text-align:center;background:#33251f;color:white;font-size:11px">VÉRIFICATION LOCALE · données fictives · aucun paiement, SMS ou coursier réel</div>'));
-      res.writeHead(200,{'Content-Type':name.endsWith('.css')?'text/css':name.endsWith('.js')?'text/javascript':'text/html; charset=utf-8'});res.end(content);
+      if(['app.js','ancienne-interface.js'].includes(name))content=Buffer.from(content.toString().replace(/^const API_BASE_URL = .*?;/,"const API_BASE_URL = '/api';"));
+      if(['index.html','ancienne-interface.html'].includes(name))content=Buffer.from(content.toString().replace('<body>','<body><div style="padding:5px;text-align:center;background:#33251f;color:white;font-size:11px">VÉRIFICATION LOCALE · données fictives · aucun paiement, SMS ou coursier réel</div>'));
+      const type = name.endsWith('.png')?'image/png':name.endsWith('.webmanifest')?'application/manifest+json':name.endsWith('.css')?'text/css':name.endsWith('.js')?'text/javascript':'text/html; charset=utf-8';
+      res.writeHead(200,{'Content-Type':type});res.end(content);
     } catch(error) {res.writeHead(500,{'Content-Type':'text/plain'});res.end(error.message);}
   });
   server.listen(4189,'127.0.0.1',()=>console.log('QA isolated: http://127.0.0.1:4189/ — password: local-qa-only'));

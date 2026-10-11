@@ -904,9 +904,13 @@ function showView(view) {
   if (view === "notifications") void notificationsPanel?.load();
   if (view === 'marketing-sms') { document.querySelector('#dashboard-title').textContent = 'Écrire par SMS'; updateText('#view-description', 'Préparez votre message et confirmez sa facturation avant tout envoi.'); void smsPanel?.load(); }
   if (["crm", "settings"].includes(view)) void crmPanel?.load();
+  window.BibouRestaurantApp?.changed(view, filter);
 }
 
-document.querySelectorAll('[data-jump]').forEach(button => button.addEventListener('click', () => showView(button.dataset.jump)));
+document.querySelectorAll('[data-jump]').forEach(button => button.addEventListener('click', () => {
+  if (button.dataset.orderFilter) setOrderFilter(button.dataset.orderFilter);
+  showView(button.dataset.jump);
+}));
 document.addEventListener('click', event => { if (event.target.closest('[data-open-dispatch]')) showView('dispatch'); });
 document.querySelector('#home-period').addEventListener('change', renderHome);
 document.querySelector('#home-priority').addEventListener('click', () => {
@@ -1029,6 +1033,7 @@ renderOrders();
 renderReservations();
 renderRewardClaims();
 showView('home');
+window.BibouRestaurantApp?.start(showView);
 if (dashboardToken) { showDashboard(); void ensureServiceSound(); void refreshFeeds({ notify: false }); } else { showLogin(); }
 const resumeUpdates = () => {
   if (!dashboardToken) return;

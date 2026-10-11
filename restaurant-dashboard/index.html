@@ -2,20 +2,28 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Bibou's Burgers — Espace restaurant</title>
     <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#315B4B" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Bibou Restaurant" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./restaurant-icon.png" />
+    <link rel="icon" type="image/png" href="./restaurant-icon.png" />
     <link rel="stylesheet" href="./styles.css?v=recipients-1" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
     <link rel="stylesheet" href="./service-schedule.css?v=workspace-1" />
     <link rel="stylesheet" href="./workspace.css?v=simple-slots-audio-20261001" />
     <link rel="stylesheet" href="./promotions.css?v=1" />
     <link rel="stylesheet" href="./dispatch.css?v=1" />
+    <link rel="stylesheet" href="./pwa.css?v=restaurant-pwa-20261011" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
       <div class="login-panel">
-        <div class="login-brand">Bibou's<br /><span>Burgers</span></div>
+        <img class="login-logo" src="./restaurant-wordmark.png" alt="Bibou’s Burgers" width="225" height="112" />
         <p class="eyebrow">ESPACE RESTAURANT</p>
         <h1>Bonjour, l’équipe !</h1>
         <p>Connectez-vous pour voir et gérer les commandes en direct.</p>
@@ -24,6 +32,8 @@
         <p id="login-error" class="login-error" role="alert"></p>
         <button id="dashboard-login" class="login-button">Accéder aux commandes</button>
         <small>Accès réservé à l’équipe Bibou’s Burgers.</small>
+        <button type="button" class="pwa-install-link" data-install-app>Installer sur cet appareil</button>
+        <a class="app-legacy" href="./ancienne-interface.html">Ouvrir l’ancienne interface</a>
       </div>
     </section>
     <div id="dashboard-app" class="app-shell" hidden>
@@ -48,6 +58,17 @@
       </aside>
 
       <main class="main-panel">
+        <header class="app-brandbar">
+          <button type="button" class="app-brand-home" data-jump="home" aria-label="Accueil du restaurant"><img src="./restaurant-wordmark.png" alt="Bibou’s Burgers" width="210" height="100" /></button>
+          <div class="app-brand-title"><strong>Restaurant</strong><span>Le Havre · espace responsable</span></div>
+          <button type="button" class="pwa-install-link" data-install-app>Installer l’application</button>
+        </header>
+        <nav class="app-navigation" aria-label="Navigation de l’application">
+          <button type="button" class="app-home" data-jump="home">▦ Toutes les rubriques</button>
+          <span id="app-current" aria-live="polite">Accueil</span>
+          <a class="app-legacy" href="./ancienne-interface.html">Ancienne interface</a>
+        </nav>
+        <p id="app-offline" class="app-offline" role="alert" hidden>Connexion coupée. Les informations affichées peuvent être anciennes. Reconnectez l’iPad avant toute action.</p>
         <header class="topbar">
           <div>
             <p id="service-date-heading" class="eyebrow"></p>
@@ -89,6 +110,19 @@
         <nav class="workspace-subnav" id="marketing-subnav" aria-label="Marketing" hidden><button class="nav-item" data-view="marketing">Actualités & concours</button><button class="nav-item" data-view="promotions">Codes promo</button><button class="nav-item" data-view="crm">Offres & statistiques CRM</button><button class="nav-item" data-view="notifications">Notifications push</button><button class="nav-item" data-view="marketing-sms">SMS commerciaux</button></nav>
         <nav class="workspace-subnav" id="settings-subnav" aria-label="Réglages" hidden><button class="nav-item" data-view="settings">Paramètres & connexions</button><button class="nav-item" data-view="backups">Sauvegardes</button></nav>
         <section id="home-view" class="home-view" aria-label="Vue d’ensemble">
+          <nav class="app-rubrics" aria-label="Ouvrir une rubrique">
+            <button type="button" data-jump="orders" data-order-filter="all"><span aria-hidden="true">▤</span><strong>Commandes</strong><small>Accepter, préparer, remettre</small></button>
+            <button type="button" data-jump="orders" data-order-filter="Historique"><span aria-hidden="true">◷</span><strong>Historique</strong><small>Retrouver une commande</small></button>
+            <button type="button" data-jump="reservations"><span aria-hidden="true">▣</span><strong>Réservations</strong><small>Tables et demandes</small></button>
+            <button type="button" data-jump="menu"><span aria-hidden="true">☰</span><strong>Carte & produits</strong><small>Produits et disponibilités</small></button>
+            <button type="button" data-jump="schedule"><span aria-hidden="true">▦</span><strong>Créneaux</strong><small>Horaires et services</small></button>
+            <button type="button" data-jump="dispatch"><span aria-hidden="true">↗</span><strong>Répartition des livreurs</strong><small>Attribuer et suivre les courses</small></button>
+            <button type="button" data-jump="customers"><span aria-hidden="true">♡</span><strong>Clients & fidélité</strong><small>Comptes, points et avantages</small></button>
+            <button type="button" data-jump="marketing"><span aria-hidden="true">✦</span><strong>Marketing</strong><small>Promotions et messages</small></button>
+            <button type="button" data-jump="settings"><span aria-hidden="true">⚙</span><strong>Réglages</strong><small>Tickets, alertes et sauvegardes</small></button>
+          </nav>
+          <!-- Retain the previous home nodes for the existing read-only renderers. -->
+          <div class="previous-home" hidden>
           <div class="home-hero"><div><p class="eyebrow">LE SERVICE, EN UN COUP D’ŒIL</p><h2 id="home-priority-title">On prépare votre tableau…</h2><p id="home-priority-detail">Les informations se mettent à jour automatiquement.</p></div><button class="primary-button" id="home-priority">Voir les commandes →</button></div>
           <div class="home-metrics"><article><span>Commandes en cours</span><strong id="home-active">—</strong><small>À préparer ou à remettre</small></article><article><span>Tables aujourd’hui</span><strong id="home-tables">—</strong><small>En attente et confirmées</small></article><article class="home-revenue"><label for="home-period">Chiffre d’affaires <select id="home-period"><option value="today">Aujourd’hui</option><option value="week">Cette semaine</option><option value="month">Ce mois</option></select></label><strong id="home-revenue">—</strong><small>Commandes de l’application</small></article></div>
           <div class="home-columns"><section class="workspace-panel"><div class="workspace-heading"><h2>En cuisine & en route</h2><button class="text-button" data-jump="orders">Tout voir →</button></div><div id="home-orders"></div></section><section class="workspace-panel"><div class="workspace-heading"><h2>Les prochaines tables</h2><button class="text-button" data-jump="reservations">Tout voir →</button></div><div id="home-reservations"></div></section></div>
@@ -101,6 +135,7 @@
             <button data-jump="notifications"><span>✉</span><strong>Écrire à mes clients<small>Préparer une notification</small></strong><b>→</b></button>
             <button data-jump="crm"><span>↗</span><strong>Développer la fidélité<small>Offres et résultats</small></strong><b>→</b></button>
           </div>
+          </div>
         </section>
 
         <section id="marketing-view" hidden></section>
@@ -111,6 +146,7 @@
         <section id="schedule-view" hidden></section>
         <section id="dispatch-view" hidden aria-label="Répartition des courses"></section>
         <section id="settings-view" hidden></section>
+        <details class="app-orders-stats"><summary>Activité & chiffre d’affaires</summary>
         <section id="orders-metrics" class="metrics orders-metrics" aria-label="Résumé des commandes et chiffre d’affaires">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
           <article><span class="metric-icon red">●</span><div><strong id="new-count">1</strong><small>nouvelle à accepter</small></div></article>
@@ -120,6 +156,7 @@
           <article><span class="metric-icon dark">€</span><div><strong id="turnover-month">0,00 €</strong><small>chiffre d’affaires ce mois</small></div></article>
         </section>
 
+        </details>
         <section id="orders-view" class="orders-section">
           <div class="section-header">
             <div class="filters" role="tablist">
@@ -193,6 +230,15 @@
       </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
+    <dialog id="app-install-dialog" class="app-install-dialog" aria-labelledby="app-install-title">
+      <h2 id="app-install-title">Bibou Restaurant sur l’iPad</h2>
+      <p>Dans <strong>Safari</strong>, ouvrez le back-office, puis :</p>
+      <ol><li>Touchez <strong>Partager</strong>.</li><li>Choisissez <strong>Sur l’écran d’accueil</strong>.</li><li>Si proposé, gardez <strong>Ouvrir comme app web</strong> activé, puis touchez <strong>Ajouter</strong>.</li></ol>
+      <p>L’icône Bibou ouvre une application à part. Le multitâche à côté d’Uber dépend du modèle et de la version de votre iPad.</p>
+      <p class="app-install-note">Une reconnexion au compte restaurant peut être demandée. L’installation ne crée pas un service d’impression en arrière-plan : les automatismes actuels nécessitent que l’application reste active.</p>
+      <button type="button" id="app-install-confirm" class="primary-button" hidden>Installer</button>
+      <form method="dialog"><button class="secondary-button">Fermer</button></form>
+    </dialog>
     <script src="./alerts.js?v=simple-slots-audio-20261001"></script>
     <script src="./marketing.js?v=actualites-1"></script>
     <script src="./promotions.js?v=5"></script>
@@ -204,6 +250,7 @@
     <script src="./uber-direct.js?v=dispatch-20261007"></script>
     <script src="./dispatch.js?v=2"></script>
     <script src="./epson-print.js?v=service-time-20261001"></script>
-    <script src="./app.js?v=dispatch-20261007"></script>
+    <script src="./pwa.js?v=restaurant-pwa-20261011"></script>
+    <script src="./app.js?v=restaurant-pwa-20261011"></script>
   </body>
 </html>
