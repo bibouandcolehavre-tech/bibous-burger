@@ -1617,7 +1617,7 @@ const server = http.createServer(async (request, response) => {
       const promotion = promotionForCode(input?.code, database);
       if (!promotion) return send(response, 400, { error: 'Saisis un code promo.' });
       assertPromotionAvailable(database, promotion, customer.id);
-      assertPromotionMethod(promotion, input.method);
+      assertPromotionMethod(promotion, input.method, { ...input, isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) }, { preview:true });
       if (promotion.type === 'free_delivery' && bibouPlusStatus(customer).active) return send(response, 400, { error: 'Ta livraison est déjà offerte avec Bibou + ; ce code ne t’apporterait pas de réduction supplémentaire.' });
       if (promotion.requiredMenuCount || promotion.id) {
         const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
@@ -1660,7 +1660,8 @@ const server = http.createServer(async (request, response) => {
       if (immediate) Object.assign(input, { serviceDate:immediate.serviceDate, slot:immediate.slot });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
-      assertPromotionMethod(promotion, input.method);
+      const promotionContext = { ...input, isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) };
+      assertPromotionMethod(promotion, input.method, promotionContext);
       assertPromotionCart(promotion, pricedCart.items);
       const subtotal = pricedCart.subtotal;
       const grid = input.slotGrid === 20 ? 20 : 15;
@@ -1690,7 +1691,7 @@ const server = http.createServer(async (request, response) => {
         if (tableRequest && !(await serviceModuleStore.read()).modules.tables) throw Object.assign(new Error('Les réservations de table sont momentanément indisponibles.'), { statusCode: 409 });
         const activePromotion = promotionForCode(input.promoCode, latestDatabase);
         assertPromotionAvailable(latestDatabase, activePromotion, input.customerId);
-        assertPromotionMethod(activePromotion, input.method);
+        assertPromotionMethod(activePromotion, input.method, promotionContext);
         assertPromotionCart(activePromotion, pricedCart.items);
         ensureBibouPlusStore(latestDatabase);
         const latestCustomer = latestDatabase.customers.find((item) => item.id === input.customerId) || guestCustomer(request.kioskSession);
@@ -1703,7 +1704,7 @@ const server = http.createServer(async (request, response) => {
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
         const crmOffer = !activePromotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
         const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;
-        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items);
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items, promotionContext);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, wheelEurosPerTurn: wheelGame.EUROS_PER_TURN, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         if (tableRequest) {

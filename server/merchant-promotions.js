@@ -17,11 +17,38 @@ const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filt
 });
 const publicView = promotion => ({ id: promotion.id, code: promotion.code, type: promotion.type,
   percent: promotion.percent, productId: promotion.productId, minimum: promotion.minimum,
-  message: promotion.message, combineWelcome: promotion.combineWelcome !== false });
+  message: promotion.message, combineWelcome: promotion.combineWelcome !== false,
+  ...(promotion.serviceConditions ? { serviceConditions: promotion.serviceConditions } : {}) });
+
+function validateServiceConditions(input) {
+  if (input === undefined || input === null) return undefined;
+  if (!plain(input) || Object.keys(input).some(key => !['serviceDate', 'startSlot', 'endSlot', 'onlineOnly'].includes(key))) fail('Conditions du service invalides.');
+  const { serviceDate, startSlot, endSlot, onlineOnly } = input;
+  if (typeof serviceDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(serviceDate) ||
+      !Number.isFinite(Date.parse(serviceDate)) || new Date(serviceDate).toISOString().slice(0, 10) !== serviceDate) fail('Date du service invalide.');
+  if (![startSlot, endSlot].every(value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) || startSlot >= endSlot) fail('Horaires du service invalides.');
+  if (typeof onlineOnly !== 'boolean') fail('Mode de commande du service invalide.');
+  return { serviceDate, startSlot, endSlot, onlineOnly };
+}
+
+function assertServiceConditions(promotion, method, context = {}, { preview = false } = {}) {
+  const conditions = promotion?.serviceConditions;
+  if (!conditions) return;
+  if (!['pickup', 'delivery'].includes(method) || (conditions.onlineOnly &&
+      (context.isKiosk || context.kioskService || context.dineIn || context.tableReservation)))
+    fail('Cette offre est réservée au click & collect et à la livraison via l’application ou le site, hors borne et repas sur place.');
+  // Older Android clients omit the appointment during code preview. The order
+  // endpoint always rechecks the complete service and the server-derived channel.
+  if (preview && context.serviceDate === undefined && context.slot === undefined) return;
+  const date = context.serviceDate || context.date;
+  const slot = typeof context.slot === 'string' && context.slot.match(/^((?:[01]\d|2[0-3]):[0-5]\d)(?:$|\s*[–-])/);
+  if (date !== conditions.serviceDate || !slot || slot[1] < conditions.startSlot || slot[1] >= conditions.endSlot)
+    fail(`Cette offre concerne le service du ${conditions.serviceDate.split('-').reverse().join('/')} de ${conditions.startSlot.replace(':', ' h ')} à ${conditions.endSlot.replace(':', ' h ')}. Choisis un créneau de ce service.`);
+}
 
 function validate(input, existing = []) {
   if (!plain(input)) fail('Offre invalide.');
-  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome'];
+  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome', 'serviceConditions'];
   if (Object.keys(input).some(key => !allowed.includes(key))) fail('Réglage de promotion inconnu.');
   const id = input.id === undefined ? crypto.randomUUID() : input.id;
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) fail('Identifiant d’offre invalide.');
@@ -63,8 +90,10 @@ function validate(input, existing = []) {
   if (input.combineWelcome !== undefined && typeof input.combineWelcome !== 'boolean') fail('Cumul avec la bienvenue invalide.');
   const message = String(input.message || '').trim();
   if (message.length > 180 || /[\u0000-\u001f]/.test(message)) fail('Description trop longue ou invalide.');
+  const serviceConditions = validateServiceConditions(input.serviceConditions);
   return { id, revision, code, type: input.type, percent, productId, minimum, startsAt, endsAt, usageLimit,
     oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message, combineWelcome: input.combineWelcome !== false,
+    ...(serviceConditions ? { serviceConditions } : {}),
     ...(activeWindows === undefined ? {} : { activeWindows }) };
 }
 
@@ -177,4 +206,4 @@ function dashboard(db) {
     burgers: burgerIds.map(id => ({ id, name: PRODUCT_CATALOG[id].name, price: id === 'custom-burger' ? 9.9 : PRODUCT_CATALOG[id].price })) };
 }
 
-module.exports = { validate, save, findByCode, assertAvailable, discountFor, apply, dashboard, publicView };
+module.exports = { validate, save, findByCode, assertAvailable, assertServiceConditions, discountFor, apply, dashboard, publicView };

@@ -20,7 +20,7 @@ function preview(order, input, stock = {}, now = Date.now()) {
   if (typeof input.reason !== 'string' || !input.reason.trim() || input.reason.trim().length > 300) fail('Indiquez le motif de la modification (300 caractères maximum).', 400);
   const cart = validateAndPriceOrderItems(input.items, stock, order, new Date(order.createdAt || now));
   assertPromotionCart(order.promotion, cart.items);
-  const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: cart.subtotal, deliveryFee: order.standardDeliveryFee ?? order.deliveryFee, active: order.bibouPlusApplied, discountRate: order.discountRate || 0 }), order.promotion, order.method, cart.items);
+  const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: cart.subtotal, deliveryFee: order.standardDeliveryFee ?? order.deliveryFee, active: order.bibouPlusApplied, discountRate: order.discountRate || 0 }), order.promotion, order.method, cart.items, { ...order, isKiosk:Boolean(order.kioskSessionId || order.kioskDeviceDigest) });
   if (cents(pricing.total) > cents(order.total)) fail('Le nouveau total ne peut pas dépasser le montant payé. Choisissez un remplacement sans supplément.', 400);
   if (JSON.stringify(cart.items) === JSON.stringify(order.items)) fail('Le panier proposé est identique à la commande.', 400);
   return { ...pricing, items: cart.items, reason: input.reason.trim(), refundAmount: (cents(order.total) - cents(pricing.total)) / 100 };

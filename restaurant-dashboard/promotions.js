@@ -18,7 +18,7 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
   const feedback = value => { q('#promo-feedback').textContent = value; };
   const localTime = iso => iso ? new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   const isoTime = value => value ? new Date(value).toISOString() : null;
-  const copyOffer = offer => ({ ...offer, ...(offer.activeWindows ? { activeWindows:offer.activeWindows.map(window => ({ ...window })) } : {}) });
+  const copyOffer = offer => ({ ...offer, ...(offer.serviceConditions ? { serviceConditions:{ ...offer.serviceConditions } } : {}), ...(offer.activeWindows ? { activeWindows:offer.activeWindows.map(window => ({ ...window })) } : {}) });
   const newDraft = key => ({ id:undefined, revision:0, enabled:false, oncePerCustomer:true, combineWelcome:true, startsAt:null, endsAt:null, usageLimit:null, productId:null, ...templates[key] });
   async function request(method = 'GET', payload) {
     const response = await fetch(api + '/dashboard/promotions', { method, cache:'no-store', headers:{ Authorization:`Bearer ${token()}`, 'Content-Type':'application/json' }, ...(payload ? { body:JSON.stringify(payload) } : {}) });
@@ -44,6 +44,16 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       <label>Minimum de produits (€)<input data-field="minimum" type="number" min="0" max="10000" step="0.01" value="${Number(draft.minimum)||0}"></label>
       <label>Début (facultatif)<input data-field="startsAt" type="datetime-local" value="${localTime(draft.startsAt)}"></label>
       <label>Fin (facultatif)<input data-field="endsAt" type="datetime-local" value="${localTime(draft.endsAt)}"></label>
+      <div class="promo-wide"><h3>Service concerné (facultatif)</h3>
+        <label class="promo-check"><input id="promo-service-enabled" type="checkbox" ${draft.serviceConditions ? 'checked' : ''}> Limiter aux créneaux d’un service</label>
+        <p>Les clients peuvent commander avant le service. Le créneau de retrait ou de livraison doit respecter la date et les horaires ci-dessous. Heure du restaurant (Paris).</p>
+        <div class="promo-fields">
+          <label>Date du service<input id="promo-service-date" type="date" value="${esc(draft.serviceConditions?.serviceDate || '')}" ${draft.serviceConditions ? '' : 'disabled'}></label>
+          <label>Premier créneau inclus<input id="promo-service-start" type="time" value="${esc(draft.serviceConditions?.startSlot || '19:00')}" ${draft.serviceConditions ? '' : 'disabled'}></label>
+          <label>Fin du service exclue<input id="promo-service-end" type="time" value="${esc(draft.serviceConditions?.endSlot || '22:00')}" ${draft.serviceConditions ? '' : 'disabled'}></label>
+        </div>
+        <label class="promo-check"><input id="promo-online-only" type="checkbox" ${draft.serviceConditions?.onlineOnly !== false ? 'checked' : ''} ${draft.serviceConditions ? '' : 'disabled'}> Application et site seulement : click & collect ou livraison, hors borne et sur place</label>
+      </div>
       <div class="promo-wide"><h3>Plages d’activation (facultatives)</h3><p>Sans plage : l’offre reste active entre son début et sa fin. Avec des plages : le code est refusé en dehors de ces horaires. Heures locales de cet appareil.</p>
         ${(draft.activeWindows || []).map((window,index) => `<div class="promo-fields"><label>Plage ${index+1} · début<input data-window-index="${index}" data-boundary="startsAt" type="datetime-local" value="${localTime(window.startsAt)}" required></label><label>Plage ${index+1} · fin<input data-window-index="${index}" data-boundary="endsAt" type="datetime-local" value="${localTime(window.endsAt)}" required></label><button type="button" data-remove-window="${index}" class="secondary-button">Retirer la plage ${index+1}</button></div>`).join('')}
         <button type="button" id="promo-add-window" class="secondary-button">Ajouter une plage</button></div>
@@ -68,6 +78,11 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     });
     if (draft.type !== 'percent_burger') draft.productId = null;
     if (!draft.type.startsWith('percent_')) draft.percent = 0;
+    if (q('#promo-service-enabled').checked) draft.serviceConditions = {
+      serviceDate:q('#promo-service-date').value, startSlot:q('#promo-service-start').value,
+      endSlot:q('#promo-service-end').value, onlineOnly:q('#promo-online-only').checked
+    };
+    else delete draft.serviceConditions;
   }
   async function save(activate, confirmed = false) {
     if (busy || !draft) return;
@@ -108,6 +123,6 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     if (event.target.id === 'promo-confirm-cancel') { pendingActivation = null; q('#promo-confirmation').innerHTML = ''; feedback('Activation annulée. Aucun changement enregistré.'); }
   });
   root.addEventListener('input', () => { if (pendingActivation) { pendingActivation = null; q('#promo-confirmation').innerHTML = ''; } });
-  root.addEventListener('change', event => { if (['type', 'combineWelcome'].includes(event.target.dataset.field)) { readForm(); renderForm(); } });
+  root.addEventListener('change', event => { if (['type', 'combineWelcome'].includes(event.target.dataset.field) || event.target.id === 'promo-service-enabled') { readForm(); renderForm(); } });
   return { async load() { if (busy) return; try { data = await request(); renderList(); renderForm(); feedback('Les offres sont à jour.'); } catch (error) { feedback(error.message); } }, clear() { data = draft = pendingActivation = null; q('#promo-list').innerHTML = ''; q('#promo-form').innerHTML = ''; } };
 };

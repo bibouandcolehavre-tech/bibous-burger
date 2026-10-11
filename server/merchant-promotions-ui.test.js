@@ -55,3 +55,21 @@ test('promo UI: les plages sont préparées et sauvegardées seulement après co
   assert.equal(body.enabled,true);
   assert.equal(body.combineWelcome,false);
 });
+
+test('promo UI: un service précis et les exclusions sont conservés après confirmation', async () => {
+  const h = harness(); await h.panel.load(); h.click('', 'percent_burger');
+  h.root.querySelector('#promo-service-enabled').checked = true;
+  h.root.querySelector('#promo-service-date').value = '2026-10-11';
+  h.root.querySelector('#promo-service-start').value = '19:00';
+  h.root.querySelector('#promo-service-end').value = '22:00';
+  h.root.querySelector('#promo-online-only').checked = true;
+  h.fields.push({ type:'text', dataset:{field:'code'}, value:'DYNAMITE10' },
+    { type:'select-one', dataset:{field:'productId'}, value:'dynamite' });
+  h.click('promo-toggle'); await tick();
+  assert.equal(h.calls.length, 1);
+  h.click('promo-confirm-save'); await tick();
+  const body = JSON.parse(h.calls[1].body);
+  assert.deepEqual(body.serviceConditions, { serviceDate:'2026-10-11', startSlot:'19:00', endSlot:'22:00', onlineOnly:true });
+  assert.equal(body.productId, 'dynamite');
+  assert.match(h.root.querySelector('#promo-form').innerHTML, /value="2026-10-11"/);
+});

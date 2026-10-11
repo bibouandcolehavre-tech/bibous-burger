@@ -26,7 +26,8 @@ const assertPromotionAvailable = (database, promotion, customerId) => {
     throw Object.assign(new Error('Ce code promo a déjà été utilisé.'), { statusCode: 409 });
   }
 };
-const assertPromotionMethod = (promotion, method) => {
+const assertPromotionMethod = (promotion, method, context = {}, options = {}) => {
+  merchant.assertServiceConditions(promotion, method, context, options);
   if (promotion?.type === 'free_delivery' && method !== 'delivery') throw Object.assign(new Error('Ce code est réservé à la livraison.'), { statusCode: 400 });
   if (promotion?.pickupOnly && method !== 'pickup') {
     throw Object.assign(new Error('Ce code est réservé au Click & Collect. Vous pouvez retirer vos menus et les déguster sur place.'), { statusCode: 400 });
@@ -48,9 +49,9 @@ const assertPromotionCart = (promotion, items) => {
     throw Object.assign(new Error('Ce code offre deux menus hors suppléments payants. Retirez les suppléments pour continuer.'), { statusCode: 400 });
   }
 };
-const applyPromotion = (pricing, promotion, method, items = []) => {
+const applyPromotion = (pricing, promotion, method, items = [], context = {}) => {
   if (!promotion) return pricing;
-  assertPromotionMethod(promotion, method);
+  assertPromotionMethod(promotion, method, context);
   if (promotion.id) return merchant.apply(pricing, promotion, items);
   if (promotion.discountPercent !== 100 || (!promotion.freeDelivery && !promotion.pickupOnly)) throw new Error('Promotion non prise en charge.');
   return { ...pricing, discountRate: 1, discount: pricing.subtotal, deliveryFee: 0, total: 0 };

@@ -17,7 +17,32 @@ const campaign = {
   saturdaySubtitle: 'QUATREBURGER · Ce soir de 19 h à 22 h\n4 burgers seuls : le moins cher offert. Hors suppléments. Non cumulable avec la bienvenue.',
 };
 
+const sundayCampaign = {
+  startsAt:'2026-10-10T22:00:00.000Z', endsAt:'2026-10-11T19:00:00.000Z',
+  serviceConditions:{ serviceDate:'2026-10-11', startSlot:'19:00', endSlot:'21:00', onlineOnly:true },
+  offers:[['DYNAMITE10','dynamite'], ['GROSLARD10','gros-lard']],
+};
+
+function sundayBurgerNews(database, now, items) {
+  const timestamp = now.getTime();
+  if (timestamp < Date.parse(sundayCampaign.startsAt) || timestamp >= Date.parse(sundayCampaign.endsAt)) return null;
+  try {
+    for (const [code, productId] of sundayCampaign.offers) {
+      const offer = promotions.findByCode(database, code, timestamp);
+      if (!offer || offer.type !== 'percent_burger' || offer.productId !== productId || offer.percent !== 10 ||
+          offer.combineWelcome !== true || offer.minimum !== 0 || offer.oncePerCustomer || offer.usageLimit !== null ||
+          offer.ownerCustomerId || offer.sourceWheelSpinId || offer.endsAt !== sundayCampaign.endsAt ||
+          !offer.serviceConditions || Object.entries(sundayCampaign.serviceConditions).some(([key,value]) => offer.serviceConditions[key] !== value)) return null;
+      promotions.assertAvailable(database, offer, null, timestamp);
+    }
+  } catch { return null; }
+  return prependHeadline(items, 'Dynamite ou Gros Lard · −10 %',
+    'Ce soir · DYNAMITE10 ou GROSLARD10. Plusieurs burgers seuls de la même recette. Click & collect/livraison. Bienvenue cumulable.');
+}
+
 function promotionNews(database, now, items) {
+  const sunday = sundayBurgerNews(database, now, items);
+  if (sunday) return sunday;
   if (displayedProductOffer(now)) {
     return prependHeadline(items, 'Dynamite Chicken · 9,90 €',
       'Ce soir 19–22 h · Burger seul, hors menu et suppléments. Précommande avant 19 h acceptée pour ce service. Réduction automatique, sans code.');
