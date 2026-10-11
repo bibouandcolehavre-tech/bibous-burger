@@ -71,7 +71,8 @@ test("retrait, livraison et tables : trois créneaux fixes par heure", () => {
     assert.match(validateServiceSlot(dateKey, "12:00 – 12:30", now, method), /pas disponible/);
     assert.match(validateServiceSlot(dateKey, "12:10", now, method), /pas disponible/);
     assert.equal(slotsForDate("2026-09-19", method)[0], "19:00");
-    assert.equal(slotsForDate("2026-09-20", method).at(-1), "20:40");
+    if (method === 'reservation') assert.deepEqual(slotsForDate("2026-09-20", method), []);
+    else assert.equal(slotsForDate("2026-09-20", method).at(-1), "20:40");
   }
   assert.equal(slotsForDate(dateKey).length, 15);
   assert.equal(validateServiceSlot(dateKey, slot, now), null);

@@ -13,7 +13,7 @@ test('extra hours are authoritative for each service, persisted and isolated by 
  for(const [m,slot] of [['pickup','22:40'],['delivery','22:40'],['reservation','22:40']]){
   assert.equal(validateServiceSlot(date,slot,now,m,restored),null);
   const statuses=m==='reservation'?reservationAvailabilityForDate(restored,date,now):availabilityForDate(restored,date,now,m);
-  assert.equal(statuses[slot].unavailable,false);assert.match(validateServiceSlot('2026-09-27',slot,now,m,restored),/pas disponible/);
+  assert.equal(statuses[slot].unavailable,false);assert.match(validateServiceSlot('2026-09-27',slot,now,m,restored),m==='reservation'?/dimanche soir/:/pas disponible/);
  }
  assert.equal(qualifiesForAdvancePickup({method:'pickup',serviceDate:date,slot:'22:40',createdAt:'2026-09-26T19:00:00Z'}),true);
 });

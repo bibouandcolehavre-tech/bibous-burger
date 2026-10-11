@@ -1,4 +1,4 @@
-const { candidateSlots, regularSlotsForDate, serviceClosureReason, validateServiceDate, parisDateKey, scheduleOverride, bookingWindow, slotWindow, windowsOverlap } = require('./availability');
+const { candidateSlots, regularSlotsForDate, serviceClosureReason, recurringServiceClosureReason, validateServiceDate, parisDateKey, scheduleOverride, bookingWindow, slotWindow, windowsOverlap } = require('./availability');
 const METHODS = ['pickup', 'delivery', 'reservation'];
 const failure = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 function assertDate(date, now) {
@@ -33,6 +33,8 @@ function save(database, input, now = new Date()) {
     if (Object.keys(values).length !== candidates.length || candidates.some(slot => typeof values[slot] !== 'boolean')) throw failure('Liste de créneaux invalide.');
     services[method] = {};
     for (const row of current.services[method]) {
+      const recurring = recurringServiceClosureReason(input.date, row.slot, method);
+      if (values[row.slot] && recurring) throw failure(recurring);
       if (row.committed && row.open && !values[row.slot] && input.acknowledgeExisting !== true) throw failure('Des commandes ou tables existent sur les créneaux fermés. Confirme leur prise en charge.', 409);
       // Keep only exceptions to the regular schedule (including the one-off closure).
       const defaultOpen = row.standard && !serviceClosureReason(input.date, row.slot, method);

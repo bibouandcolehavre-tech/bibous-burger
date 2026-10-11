@@ -24,6 +24,6 @@ test('Fermeture totale de ce soir annoncée aux anciens clients et retirée dema
 
 test('Une fermeture partielle ne s’annonce pas comme fermeture totale', () => {
   const db = database();
-  db.serviceSchedule.dates[date].services.reservation['19:00'] = true;
+  db.serviceSchedule.dates[date].services.pickup['19:00'] = true;
   assert.doesNotMatch(publicNews(db, tonight).items[0].title, /Fermé exceptionnellement/);
 });

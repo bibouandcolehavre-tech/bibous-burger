@@ -35,7 +35,7 @@ const { createDashboardSessionStore } = require('./dashboard-sessions');
 const autoPrint = require('./auto-print');
 const { BURGER_POINTS, MENU_POINTS, ensureCurrentLoyaltyWeek, grantLoyaltyForOrder, revokeLoyaltyForOrder } = require("./loyalty");
 const { applyReferralCode, ensureAllReferralCodes, ensureReferralCode, grantReferralReward, revokeReferralReward } = require("./referrals");
-const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, storedServiceSlotOpen } = require("./availability");
+const { PENDING_RESERVATION_MS, SLOT_CAPACITY, slotMinutesForMethod, availabilityForDate, remainingDeliveryPlaces, validateServiceDate, validateServiceSlot, qualifiesForAdvancePickup, serviceClosureReason, recurringServiceClosureReason, storedServiceSlotOpen } = require("./availability");
 const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, reservationAvailabilityForDate, reservationsForCustomer, updateReservationStatus } = require("./reservations");
 const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance, cancelDepositReservation } = require('./reservation-deposit');
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
@@ -1114,6 +1114,17 @@ const server = http.createServer(async (request, response) => {
       let reservation = database.reservations?.find(item => item.customerId === customer.id && item.requestId === requestId);
       if (reservation && reservation.requestFingerprint !== fingerprint) return send(response, 409, { error: 'Cette tentative correspond à une autre réservation. Vérifie son paiement avant de recommencer.' });
       if (reservation?.status === 'cancelled') return send(response, 409, { error: 'Cette tentative de réservation a expiré ou a été annulée. Choisis un nouveau créneau.' });
+      const closure = recurringServiceClosureReason(canonical.serviceDate, canonical.slot, 'reservation');
+      if (closure && reservation?.payment?.status !== 'PAID') {
+        // A previously started deposit may already have been paid: reconcile it
+        // without creating another checkout or losing the existing reservation.
+        if (reservation?.payment?.checkoutReference) {
+          await refreshPayment(reservation);
+          finalizePaidTableDeposit(reservation, database);
+          await writeDatabase(database);
+        }
+        if (reservation?.payment?.status !== 'PAID') return send(response, reservation ? 409 : 400, { error: closure });
+      }
       const merchantCode = await getSumUpMerchantCode();
       if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: 'Le paiement des réservations par SumUp est momentanément indisponible.' });
       if (!reservation) {

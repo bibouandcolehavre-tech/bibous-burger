@@ -4,8 +4,11 @@ const SLOT_CAPACITY = 2;
 const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
 
-// One-off closure requested by the restaurant; dates use the Paris service day.
+// Closures use the Paris service day. Recurring policy takes precedence over
+// saved date-specific openings, including those from older clients.
 const serviceClosureReason = (dateKey, slot, method = "delivery", database = {}, grid = 20) => {
+  const recurring = recurringServiceClosureReason(dateKey, slot, method);
+  if (recurring) return recurring;
   const override = scheduleOverride(database, dateKey, slot, method, slotWindow(slot, grid === 20 ? 20 : legacySlotMinutes(method)));
   if (typeof override === "boolean") return override ? null : "Ce créneau est exceptionnellement fermé. Choisis un autre horaire.";
   return dateKey === "2026-09-25" && String(slot).slice(0, 5) >= "19:00"
@@ -29,10 +32,17 @@ const dateFromKey = (dateKey) => {
 };
 const legacySlotMinutes = method => method === 'delivery' ? 30 : 15;
 
+const recurringServiceClosureReason = (dateKey, slot, method) => {
+  const date = dateFromKey(dateKey);
+  const start = clockMinutes(String(slot || '').split(' – ')[0]);
+  return method === 'reservation' && date?.getUTCDay() === 0 && start !== null && start >= 19 * 60
+    ? 'Le dimanche soir, seules la livraison et le click & collect sont proposés. Choisis un autre jour pour réserver une table.' : null;
+};
+
 const regularSlotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
   if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
-  return regularSlotsForWeekday(date.getUTCDay());
+  return regularSlotsForWeekday(date.getUTCDay()).filter(slot => !recurringServiceClosureReason(dateKey, slot, method));
 };
 const legacySlotsForDate = (dateKey, method) => {
   const date = dateFromKey(dateKey);
@@ -43,7 +53,7 @@ const legacySlotsForDate = (dateKey, method) => {
   return windows.flatMap(([start, end]) => Array.from({ length: (end - start) * 60 / step }, (_, index) => {
     const minute = start * 60 + index * step;
     return method === 'delivery' ? `${clock(minute)} – ${clock(minute + step)}` : clock(minute);
-  }));
+  })).filter(slot => !recurringServiceClosureReason(dateKey, slot, method));
 };
 
 const candidateSlots = (method = 'delivery', grid = 20) => {
@@ -78,6 +88,7 @@ const bookingWindow = (booking, method = booking.method) => slotWindow(booking.s
 // Project saved exceptions onto the active grid, conservatively: no newly offered
 // slot may span a minute that was explicitly closed. Conversion is read-only.
 const scheduleOverride = (database, dateKey, slot, method, window = slotWindow(slot, slotMinutesForMethod(method))) => {
+  if (recurringServiceClosureReason(dateKey, slot, method)) return false;
   const saved = database.serviceSchedule?.dates?.[dateKey];
   const entries = Object.entries(saved?.services?.[method] || {});
   if (!window || !entries.length) return undefined;
@@ -98,7 +109,7 @@ const slotsForDate = (dateKey, method = "delivery", database = {}, grid = 15) =>
   const regular = grid === 20 ? regularSlotsForDate(dateKey, method) : legacySlotsForDate(dateKey, method);
   if (!dateFromKey(dateKey) || !["delivery", "pickup", "reservation"].includes(method)) return [];
   const extra = candidateSlots(method, grid).filter(slot => scheduleOverride(database, dateKey, slot, method, slotWindow(slot, grid === 20 ? 20 : legacySlotMinutes(method))) !== undefined);
-  return [...new Set([...regular, ...extra])].sort();
+  return [...new Set([...regular, ...extra])].filter(slot => !recurringServiceClosureReason(dateKey, slot, method)).sort();
 };
 
 // Paris wall clock converted without relying on the server's local time zone.
@@ -134,6 +145,8 @@ const validateServiceDate = (dateKey, now = new Date()) => {
 const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery", database = {}, subtotal, grid = 15) => {
   const dateError = validateServiceDate(dateKey, now);
   if (dateError) return dateError;
+  const recurring = recurringServiceClosureReason(dateKey, slot, method);
+  if (recurring) return recurring;
   if (!slotsForDate(dateKey, method, database, grid).includes(slot)) return "Ce créneau n’est pas disponible ce jour-là. Actualise les horaires proposés.";
   const closureReason = serviceClosureReason(dateKey, slot, method, database, grid);
   if (closureReason) return closureReason;
@@ -159,6 +172,7 @@ const validateServiceSlot = (dateKey, slot, now = new Date(), method = "delivery
 // Keep their checkout valid unless the service has since been explicitly closed.
 const storedServiceSlotOpen = (order, database) => {
   if (order.kioskImmediate === true && order.method === 'pickup' && ['here','take'].includes(order.kioskDiningMode)) return true;
+  if (recurringServiceClosureReason(order.serviceDate, order.slot, order.tableReservationId || order.dineIn ? 'reservation' : order.method)) return false;
   const window = bookingWindow(order);
   if (!window) return false;
   const override = scheduleOverride(database, order.serviceDate, order.slot, order.method, window);
@@ -195,6 +209,7 @@ const availabilityForDate = (database, dateKey, now = new Date(), method = "deli
 module.exports = {
   slotMinutesForMethod, scheduleOverride, slotWindow, bookingWindow, windowsOverlap, storedServiceSlotOpen,
   serviceClosureReason,
+  recurringServiceClosureReason,
   regularSlotsForDate,
   candidateSlots,
   PENDING_RESERVATION_MS,

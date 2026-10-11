@@ -19,12 +19,13 @@ test('September 25 evening is closed for delivery, pickup and tables, while lunc
   }
 });
 
-test('closure expires by date and leaves Saturday, Sunday and following Friday open', () => {
+test('one-off closure expires without changing the recurring Sunday table closure', () => {
   for (const date of ['2026-09-26', '2026-09-27', '2026-10-02']) {
     for (const method of ['delivery', 'pickup', 'reservation']) {
       const slot = method === 'delivery' ? '19:00 – 19:30' : '19:00';
       assert.equal(serviceClosureReason(date, slot), null);
-      assert.equal(validateServiceSlot(date, slot, now, method), null);
+      if (date === '2026-09-27' && method === 'reservation') assert.match(validateServiceSlot(date, slot, now, method), /dimanche soir/);
+      else assert.equal(validateServiceSlot(date, slot, now, method), null);
     }
   }
 });

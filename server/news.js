@@ -8,7 +8,9 @@ const closedTonight = (database, now) => {
   const date = parisDateKey(now);
   return ['pickup', 'delivery', 'reservation'].every(method => {
     const slots = regularSlotsForDate(date, method).filter(slot => slot >= '18:00');
-    return slots.length > 0 && slots.every(slot => scheduleOverride(database, date, slot, method) === false);
+    // A service absent from the regular schedule (Sunday-evening tables) is
+    // already closed; it must not suppress a genuine full-closure notice.
+    return slots.every(slot => scheduleOverride(database, date, slot, method) === false);
   });
 };
 const publicNews = (database, now = new Date(), modernContestClient = true) => {
