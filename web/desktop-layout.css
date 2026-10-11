@@ -1,0 +1,17 @@
+/* Desktop-only presentation adjustments. No DOM or application logic changes. */
+@media (min-width: 900px) {
+  /* Same content column and same order as the existing mobile application. */
+  .r-1fkl15p > .r-1cmskyw,
+  .r-1fkl15p > .r-1vamr63 {
+    max-width: none !important;
+    width: 100% !important;
+  }
+  /* Keep the existing three service choices, with readable desktop labels. */
+  .r-1fkl15p > .r-1vamr63 > div > .css-146c3p1:nth-child(2) {
+    font-size: 16px !important;
+  }
+  .r-1fkl15p > .r-1vamr63 > div > .css-146c3p1:nth-child(3) {
+    font-size: 12px !important;
+  }
+  /* Product list, personalization controls, prices and photographs unchanged. */
+}

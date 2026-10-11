@@ -1,6 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { RESTAURANT: info } = require('../restaurant-info');
+// The approved landscape preview is presentation-only and web-only. Keep its
+// stylesheet outside App.js so native applications and their builds are unchanged.
+const desktopLayoutCss = fs.readFileSync(path.resolve(__dirname, '../web/desktop-layout.css'), 'utf8');
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const json = value => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -93,6 +96,7 @@ function enrichIndex(source) {
   return source.replace(/<html lang="[^"]*">/, '<html lang="fr">')
     .replace(/<title>[^<]*<\/title>/, head({ title: "Bibou's Burgers Le Havre — Livraison & Click & collect", url: info.origin + '/' }))
     .replace(/<noscript>[\s\S]*?<\/noscript>/, '')
+    .replace('</head>', `<style id="bibou-desktop-layout">${desktopLayoutCss}</style></head>`)
     .replace('<div id="root"></div>', `<div id="root">${fallback}</div>`);
 }
 const robots = `User-agent: *\nAllow: /\n\nSitemap: ${info.origin}/sitemap.xml\n`;
