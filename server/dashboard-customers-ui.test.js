@@ -178,12 +178,13 @@ test("commandes : les commandes terminées ont un onglet et un détail ouvrable"
   assert.equal(h.element("#completed-filter-count").textContent, 1);
   h.run("filter = 'Terminée'; renderOrders()");
   const html = h.element("#orders-list").innerHTML;
-  assert.match(html, /<details class="order-card completed-order">/);
+  assert.match(html, /<details class="order-card completed-order" data-order-disclosure="order:order-249"\s*>/);
   assert.match(html, /#249 · Alexandre/);
   assert.match(html, /Ouvrir la commande/);
   assert.match(html, /Menu · Le gros lard/);
   assert.match(html, /Coca 33 cl/);
   assert.match(html, /23,71 €/);
+  assert.match(html, /data-close-order="order-249"/);
   assert.equal(html.includes("data-action"), false);
 });
 

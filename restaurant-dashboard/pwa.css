@@ -1,6 +1,9 @@
 /* Presentation only. The operational modules and database remain unchanged. */
 :root{--app-green:#315b4b;--app-orange:#bb7258;--app-paper:#fbf3e6;--ink:#263e33;--green:#315b4b;--orange:#bb7258;--line:#dddace;--muted:#5d6a5d}
 body{background:var(--app-paper);font-size:16px;line-height:1.45}
+.completed-order>summary .open-order-label,.completed-order[open]>summary .closed-order-label{display:none}
+.completed-order[open]>summary .open-order-label{display:inline}
+.completed-order-body>[data-close-order]{margin-top:16px}
 .app-shell{grid-template-columns:1fr}.sidebar,.mobile-view-switch{display:none!important}
 .main-panel{max-width:1500px;width:100%;padding:0 28px 40px;margin:auto;min-width:0}
 .app-brandbar{display:flex;align-items:center;gap:25px;min-height:124px;padding:14px 28px;margin:0 -28px;background:var(--app-green);color:var(--app-paper);padding-top:calc(14px + env(safe-area-inset-top))}

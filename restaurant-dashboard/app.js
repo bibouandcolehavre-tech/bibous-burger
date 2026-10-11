@@ -21,6 +21,8 @@ let customerLastUpdate = 0;
 let filter = "all";
 let archiveSearch = "";
 let selectedOrderId = null;
+// Disclosure state belongs to this signed-in screen only, never to customer data.
+const openOrderDisclosures = new Set();
 const pendingOrderChanges = new Set();
 const pendingPrints = new Set();
 const uncertainPrints = new Set();
@@ -92,7 +94,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
@@ -279,6 +281,11 @@ async function dispatchAutoPrint() {
 }
 
 function renderOrders() {
+  // Polling refreshes the content, not the responsible person's open/closed choice.
+  document.querySelectorAll('#orders-list details[data-order-disclosure]').forEach(detail => {
+    if (detail.open) openOrderDisclosures.add(detail.dataset.orderDisclosure);
+    else openOrderDisclosures.delete(detail.dataset.orderDisclosure);
+  });
   const completedView = filter === "Terminée";
   const historyView = filter === "Historique";
   const archiveQuery = archiveSearch.trim().toLocaleLowerCase('fr-FR');
@@ -307,10 +314,17 @@ function renderOrders() {
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
     const printControls = cashDue(order.raw) ? '': `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
-    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details"><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Paiement en espèces attendu' : 'Espèces encaissées') : order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
-    if (completedView || historyView) return `<details class="order-card completed-order"><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small>Ouvrir la commande</small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}</div></details>`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details" data-order-disclosure="payment:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`payment:${order.apiId}`) ? 'open' : ''}><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Paiement en espèces attendu' : 'Espèces encaissées') : order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
+    if (completedView || historyView) return `<details class="order-card completed-order" data-order-disclosure="order:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`order:${order.apiId}`) ? 'open' : ''}><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small><span class="closed-order-label">Ouvrir la commande</span><span class="open-order-label">Fermer la commande</span></small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}<button type="button" class="secondary-button" data-close-order="${escapeHtml(order.apiId)}">Fermer la commande</button></div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
+  document.querySelectorAll('#orders-list [data-close-order]').forEach(button => button.onclick = () => {
+    const detail = button.closest('details[data-order-disclosure]');
+    if (!detail) return;
+    detail.open = false;
+    openOrderDisclosures.delete(detail.dataset.orderDisclosure);
+    detail.querySelector('summary')?.focus();
+  });
   document.querySelectorAll('[data-uber-order]').forEach(button => button.onclick = () => {
     const order = orders.find(o => o.id === Number(button.dataset.uberOrder)), token = dashboardToken;
     if (order) window.BibouUber.open(order.raw, {api:API_BASE_URL,headers:dashboardHeaders({'Content-Type':'application/json'}),current:()=>dashboardToken===token,refresh:()=>loadOrders()});
