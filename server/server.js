@@ -26,6 +26,7 @@ const marketingSms = require('./marketing-sms');
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { createProductStockStore } = require("./product-stock");
+const quantityStock = require('./quantity-stock');
 const { createCustomerSession, readCustomerSession } = require("./customer-session");
 const { createKioskConnectionStore, kioskRequestAllowed, kioskCustomerView, orderInKioskSession, kioskWheelDatabase } = require('./kiosk-connections');
 const { immediateService, guestCustomer } = require('./kiosk-immediate');
@@ -146,6 +147,7 @@ const ensureDatabase = async () => {
 };
 const readDatabase = async () => { await ensureDatabase(); return JSON.parse(await fs.readFile(databasePath, "utf8")); };
 const writeDatabase = async (database) => {
+  quantityStock.reconcile(database);
   await ensureDatabase();
   const temporary = `${databasePath}.${crypto.randomUUID()}.tmp`;
   try {
@@ -694,7 +696,24 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && ["/api/catalog", "/api/dashboard/catalog"].includes(url.pathname)) {
       if (url.pathname.startsWith("/api/dashboard/") && !authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
       response.setHeader("Cache-Control", "no-store");
-      return send(response, 200, availabilityCatalog(await productStockStore.read()));
+      releaseDatabase = await acquireDatabase();
+      const catalogDatabase = await readDatabase();
+      if (quantityStock.reconcile(catalogDatabase)) await writeDatabase(catalogDatabase);
+      const catalog = quantityStock.catalog(catalogDatabase, await productStockStore.read(), new Date(), url.pathname === '/api/dashboard/catalog');
+      if (url.pathname === '/api/catalog') catalog.products = catalog.products.filter(product => product.visible !== false);
+      return send(response, 200, catalog);
+    }
+
+    const quantityRoute = /^\/api\/dashboard\/catalog\/([^/]+)\/quantity$/.exec(url.pathname);
+    if (request.method === 'PATCH' && quantityRoute) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const input = await readBody(request);
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      quantityStock.reconcile(database);
+      quantityStock.setQuantity(database, decodeURIComponent(quantityRoute[1]), input);
+      await writeDatabase(database);
+      return send(response, 200, quantityStock.catalog(database, await productStockStore.read(), new Date(), true));
     }
 
     if (request.method === "PATCH" && url.pathname.startsWith("/api/dashboard/catalog/")) {
@@ -704,7 +723,7 @@ const server = http.createServer(async (request, response) => {
       releaseDatabase = await acquireDatabase();
       const stock = await productStockStore.update(id, input.available);
       response.setHeader("Cache-Control", "no-store");
-      return send(response, 200, availabilityCatalog(stock));
+      return send(response, 200, quantityStock.catalog(await readDatabase(), stock, new Date(), true));
     }
 
     if (request.method === "GET" && url.pathname === "/api/integrations/sumup/status") {
@@ -953,7 +972,8 @@ const server = http.createServer(async (request, response) => {
     const contestPurged = purgeExpiredContestEntries(database);
     const supportCreditsChanged = applySupportCredits(database);
     const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
-    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged) await writeDatabase(database);
+    const quantityChanged = quantityStock.reconcile(database);
+    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || quantityChanged) await writeDatabase(database);
 
     if (request.method === 'POST' && url.pathname === '/api/kiosk/guest') {
       if (process.env.KIOSK_PAIRING_ENABLED !== 'true' || !authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) return send(response, 403, { error:'Accès borne requis.' });
@@ -1354,7 +1374,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname === '/api/dashboard/amendment-catalog') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
-      return send(response, 200, amendmentCatalog(await productStockStore.read()));
+      return send(response, 200, amendmentCatalog(quantityStock.effectiveFlags(database, await productStockStore.read())));
     }
     const amendmentRoute = url.pathname.match(/^\/api\/(dashboard|customer)\/orders\/([^/]+)\/(amendment|amendment-preview|refund)$/);
     if (amendmentRoute && request.method === 'POST') {
@@ -1364,18 +1384,26 @@ const server = http.createServer(async (request, response) => {
       const order = database.orders.find(o => o.id === id && (scope === 'dashboard' || o.customerId === customer.id));
       if (!order) return send(response, 404, { error: 'Commande introuvable.' });
       const input = await readBody(request);
+      const amendmentStock = quantityStock.effectiveFlags(database, await productStockStore.read(), order.id, true);
       if (scope === 'dashboard') {
-        if (action === 'amendment-preview') return send(response, 200, amendments.preview(order, input, await productStockStore.read()));
+        if (action === 'amendment-preview') {
+          const preview = amendments.preview(order, input, amendmentStock);
+          quantityStock.assertChange(database, order, preview.proposal.items);
+          return send(response, 200, preview);
+        }
         if (action === 'refund') amendments.recordRefund(order, input);
         else {
-          amendments.propose(order, input, await productStockStore.read());
+          quantityStock.assertChange(database, order, amendments.preview(order, input, amendmentStock).proposal.items);
+          amendments.propose(order, input, amendmentStock);
           order.amendment.notification = push.queueAmendmentNotification(database, order, pushConfig);
         }
       } else {
         if (action !== 'amendment') return send(response, 404, { error: 'Action indisponible.' });
-        const changed = amendments.decide(order, input, await productStockStore.read());
+        if (input.decision === 'accept' && order.amendment?.status === 'pending') quantityStock.assertChange(database, order, order.amendment.proposal.items);
+        const previousItems = structuredClone(order.items);
+        const changed = amendments.decide(order, input, amendmentStock);
         if (changed) {
-          if (order.amendment.status === 'accepted') adjustAmendedLoyalty(order, database);
+          if (order.amendment.status === 'accepted') { quantityStock.applyChange(database, order, previousItems); adjustAmendedLoyalty(order, database); }
           cancelLinkedTable(order, database);
           revokeLoyaltyForCancelledOrder(order, database);
           push.queueAmendmentNotification(database, order, pushConfig);
@@ -1560,7 +1588,10 @@ const server = http.createServer(async (request, response) => {
       const order = database.orders.find(item => item.id === decodeURIComponent(cashCollection[1]));
       if (!order) return send(response, 404, { error:'Commande introuvable.' });
       if (input.action === 'confirm') {
-        if (cashDue(order)) assertStoredOrderAvailable(order.items, await productStockStore.read());
+        if (cashDue(order)) {
+          quantityStock.reserve(database, order);
+          assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
+        }
         if (confirmCashOrder(order, input.amount)) finalizePaidOrder(order, database);
       } else if (input.action === 'cancel') { cancelCashOrder(order); cancelLinkedTable(order, database); }
       else return send(response, 400, { error:'Action espèces invalide.' });
@@ -1634,7 +1665,7 @@ const server = http.createServer(async (request, response) => {
       assertPromotionMethod(promotion, input.method, { ...input, isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) }, { preview:true });
       if (promotion.type === 'free_delivery' && bibouPlusStatus(customer).active) return send(response, 400, { error: 'Ta livraison est déjà offerte avec Bibou + ; ce code ne t’apporterait pas de réduction supplémentaire.' });
       if (promotion.requiredMenuCount || promotion.id) {
-        const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
+        const pricedCart = validateAndPriceOrderItems(input.items, quantityStock.effectiveFlags(database, await productStockStore.read()), input);
         assertPromotionCart(promotion, pricedCart.items);
         if (promotion.id) {
           promotion.previewProductDiscount = merchantPromotions.discountFor(promotion, pricedCart.items, pricedCart.subtotal, promotion.type === 'free_delivery' ? 1 : 0).products;
@@ -1673,7 +1704,7 @@ const server = http.createServer(async (request, response) => {
       if (tableRequest && !(await serviceModuleStore.read()).modules.tables) return send(response, 409, { error: 'Les réservations de table sont momentanément indisponibles.' });
       if (immediate) Object.assign(input, { serviceDate:immediate.serviceDate, slot:immediate.slot });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
-      const pricedCart = validateAndPriceOrderItems(input.items, await productStockStore.read(), input);
+      const pricedCart = validateAndPriceOrderItems(input.items, quantityStock.effectiveFlags(database, await productStockStore.read()), input);
       const promotionContext = { ...input, isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) };
       assertPromotionMethod(promotion, input.method, promotionContext);
       assertPromotionCart(promotion, pricedCart.items);
@@ -1744,6 +1775,7 @@ const server = http.createServer(async (request, response) => {
         const finalSlotError = immediate ? null : validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
         createdOrder.pickupAdvanceBonusApplied = !immediate && !createdOrder.dineIn && qualifiesForAdvancePickup(createdOrder);
+        quantityStock.reserve(latestDatabase, createdOrder);
         latestDatabase.orders.unshift(createdOrder);
         if (cash) prepareCashOrder(createdOrder);
         else if (settlePromotionalOrder(createdOrder)) finalizePaidOrder(createdOrder, latestDatabase);
@@ -1784,7 +1816,8 @@ const server = http.createServer(async (request, response) => {
         // Never revalidate stock/expiry to abandon an already-started payment.
         if (!order.payment || ['FAILED', 'CANCELLED'].includes(order.payment.status)) {
           if (!storedServiceSlotOpen(order, database)) return send(response, 409, { error: 'Créneau fermé.' });
-          assertStoredOrderAvailable(order.items, await productStockStore.read());
+          quantityStock.reserve(database, order);
+          assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
           if (Date.parse(order.createdAt) + PENDING_RESERVATION_MS <= Date.now()) return send(response, 409, { error: 'Commande expirée avant paiement.' });
         }
         payment = await claimTerminalLaunch(order, { merchantCode, persist: () => writeDatabase(database) });
@@ -1807,7 +1840,8 @@ const server = http.createServer(async (request, response) => {
       if (order.status !== "awaiting_payment") return send(response, 409, { error: "Cette commande n’est plus en attente de paiement." });
       const closureReason = !storedServiceSlotOpen(order, database) ? serviceClosureReason(order.serviceDate, order.slot, order.method, database) || "Ce créneau n’est plus proposé. Choisis un autre horaire." : null;
       if (closureReason) return send(response, 409, { code: "SERVICE_CLOSED", error: closureReason });
-      assertStoredOrderAvailable(order.items, await productStockStore.read());
+      quantityStock.reserve(database, order);
+      assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
       const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
       if (!Number.isFinite(checkoutExpiresAt.getTime()) || checkoutExpiresAt.getTime() <= Date.now()) {
         return send(response, 409, { code: "ORDER_EXPIRED", error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
@@ -1815,7 +1849,7 @@ const server = http.createServer(async (request, response) => {
       const merchantCode = await getSumUpMerchantCode();
       if (!sumupApiKey || !merchantCode || !sumupReturnUrl || !sumupRedirectUrl) return send(response, 503, { error: "SumUp n’est pas encore configuré sur le serveur." });
 
-      assertStoredOrderAvailable(order.items, await productStockStore.read());
+      assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
       await openPayment(order, database, { merchantCode, expiresAt: checkoutExpiresAt, description: `Commande Bibou's Burgers #${order.number}`, prefix: "bibous" });
       const confirmation = finalizePaidOrder(order, database);
       await writeDatabase(database);

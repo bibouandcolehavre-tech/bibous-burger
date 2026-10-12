@@ -13,7 +13,9 @@ async function extractBackup(file, destination) {
   // mkdir without recursive refuses ALL existing destinations, even empty ones.
   await fs.mkdir(destination, { mode: 0o700 });
   try {
-    for (const [name, data] of [["data.json", snapshot.data.database], ["product-stock.json", snapshot.data.stock]]) {
+    const sections = [["data.json", snapshot.data.database], ["product-stock.json", snapshot.data.stock]];
+    if (snapshot.data.keyyoCallSms) sections.push(["keyyo-call-sms.json", snapshot.data.keyyoCallSms]);
+    for (const [name, data] of sections) {
       await fs.writeFile(path.join(destination, name), `${JSON.stringify(data, null, 2)}\n`, { flag: "wx", mode: 0o600 });
     }
   } catch (error) {

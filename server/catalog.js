@@ -44,6 +44,10 @@ const PRODUCT_CATALOG = {
 };
 
 const STOCK_ONLY_CATALOG = {
+  // Inventory preparation only. These recipes are not saleable by this release.
+  'naan-poulet': { name: 'Cheese naan poulet', price: 7.9, menuPrice: 10.9, category: 'naans', draft: true },
+  'naan-boeuf': { name: 'Cheese naan bœuf', price: 7.9, menuPrice: 10.9, category: 'naans', draft: true },
+  'naan-canard': { name: 'Cheese naan canard', price: 7.9, menuPrice: 10.9, category: 'naans', draft: true },
   "ingredient-second-steak": { name: "Supplément · Steak haché", price: 3, category: "supplements" },
   "ingredient-potato-patty": { name: "Supplément · Galette de pomme de terre", price: 2, category: "supplements" },
   "ingredient-cheddar": { name: "Supplément · Cheddar", price: 1, category: "supplements" },
@@ -207,6 +211,7 @@ const productStock = (id, overrides = {}) => {
   const product = Object.hasOwn(STOCK_CATALOG, id) ? STOCK_CATALOG[id] : null;
   if (!product) return { available: false, enabled: false, reason: "Ce produit n’est plus à la carte." };
   const enabled = product.retired ? false : Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
+  if (product.draft) return { available: false, enabled, reason: enabled ? 'En préparation · non publié.' : `${product.name} est momentanément indisponible.`, availabilityState: enabled ? 'unpublished' : 'out_of_stock' };
   if (!enabled) return { available: false, enabled: false, reason: `${product.name} est momentanément indisponible.` };
   const included = product.menu ? ["frites-maison"] : ["duo", "solo"].includes(product.kind) ? ["frites-maison", "tenders-xl-3"] : [];
   for (const includedId of included) {
@@ -220,6 +225,7 @@ const availabilityCatalog = (overrides = {}, now = new Date()) => ({
     id, name: product.menu ? `Menu - ${product.name}` : product.name, ...offerCatalogProduct(id, product.price, now),
     category: product.category || (product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers"),
     retired: Boolean(product.retired),
+    ...(product.draft ? { visible: false, published: false, lunchOnly: true, menuPrice: product.menuPrice } : {}),
     ...productStock(id, overrides)
   })),
   options: Object.fromEntries([...OPTIONS,
@@ -323,4 +329,4 @@ const amendmentCatalog = (overrides = {}) => ({
   choices: OPTIONS, rules: GROUP_RULES
 });
 
-module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };
+module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, optionProductId, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };

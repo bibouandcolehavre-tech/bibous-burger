@@ -11,6 +11,7 @@ let menuProducts = [];
 let menuLoaded = false;
 let menuSaving = false;
 let menuRequest = 0;
+const stockQuantityDrafts = new Map();
 let customerData = null;
 let customerOffset = 0;
 let selectedCustomerId = null;
@@ -664,35 +665,96 @@ async function changeRewardClaim(id, status) {
   }
 }
 
+const menuAvailabilityLabel = product => product.availabilityState === 'unpublished' ? '● En préparation · non publié' : product.availabilityState === 'outside_service' ? '● Hors service · midi uniquement' : product.available ? '● Disponible' : '● En rupture';
+const menuOutOfStock = product => product.availabilityState ? product.availabilityState === 'out_of_stock' : !product.available;
+function stockQuantityMarkup(product) {
+  const stock = product.quantityStock;
+  if (!stock || product.retired) return '';
+  const draft = stockQuantityDrafts.get(product.id), value = draft?.value ?? (stock.quantity === null ? '' : String(stock.quantity));
+  return `<form class="stock-quantity-form" data-quantity-form="${escapeHtml(product.id)}"><label>Quantité en stock<input type="number" inputmode="numeric" min="0" max="100000" step="1" value="${escapeHtml(value)}" placeholder="Sans limite" data-quantity-input="${escapeHtml(product.id)}" aria-label="Quantité en stock : ${escapeHtml(product.name)}" ${menuSaving ? 'disabled' : ''}></label><div class="stock-quantity-actions"><button type="submit" ${menuSaving ? 'disabled' : ''}>Enregistrer</button><button type="button" data-stock-unlimited="${escapeHtml(product.id)}" ${menuSaving || !stock.tracked && !draft ? 'disabled' : ''}>Sans limite</button></div><p class="stock-quantity-summary">${stock.tracked ? `<strong>${Number(stock.availableQuantity)} disponible(s)</strong>${stock.reserved ? ` · ${Number(stock.reserved)} réservé(s) par un paiement en cours` : ''}` : 'Quantité non limitée'}${stock.sharedStockId !== product.id || product.category === 'burgers' && product.id !== 'custom-burger' ? '<br>Compteur commun au burger seul et à son menu.' : ''}</p>${stock.legacyReserved ? '<p class="stock-quantity-warning" role="status">Des unités sont réservées par d’anciens paiements encore à vérifier. Leurs commandes originales sont conservées ; aucun paiement n’est relancé ici.</p>' : ''}${stock.shortage ? '<p class="stock-quantity-warning" role="status">Paiement confirmé après une libération ou un écart de stock. Vérifiez les commandes et recomptez cet article avant de réenregistrer sa quantité.</p>' : ''}</form>`;
+}
 function renderMenu() {
   const query = document.querySelector("#menu-search").value.trim().toLocaleLowerCase("fr");
   const category = document.querySelector("#menu-filter").value;
-  const visible = menuProducts.filter((product) => product.name.toLocaleLowerCase("fr").includes(query) && (category === "all" || (category === "unavailable" ? !product.available : product.category === category)));
-  const categories = { menus: "Nos menus", burgers: "Nos burgers", supplements: "Suppléments des burgers", desserts: "Desserts", snacks: "Petites faims", drinks: "Boissons" };
+  const visible = menuProducts.filter((product) => product.name.toLocaleLowerCase("fr").includes(query) && (category === "all" || (category === "unavailable" ? menuOutOfStock(product) : product.category === category)));
+  const categories = { menus: "Nos menus", burgers: "Nos burgers", naans: "Nos cheese naans · midi uniquement", supplements: "Suppléments des burgers", desserts: "Desserts", snacks: "Petites faims", drinks: "Boissons" };
   document.querySelector("#menu-list").innerHTML = !menuLoaded ? '<p class="empty">Chargement de la carte…</p>' : !visible.length ? '<p class="empty">Aucun produit ne correspond à cette recherche.</p>' : Object.entries(categories).map(([key, title]) => {
     const products = visible.filter((product) => product.category === key);
     if (!products.length) return "";
-    return `<section class="menu-group"><h3>${title}<span>${products.length}</span></h3><div class="menu-grid">${products.map((product) => `<article class="menu-product ${product.available ? "" : "is-unavailable"}"><div class="menu-product-copy"><h4>${escapeHtml(product.name)}</h4><p class="menu-product-price">${euro(product.price)}</p><span class="stock-label ${product.available ? "available" : "unavailable"}">${product.available ? "● Disponible" : "● En rupture"}</span>${product.enabled && !product.available ? `<p class="stock-reason">${escapeHtml(product.reason)}</p>` : ""}</div><button type="button" class="stock-toggle ${product.enabled ? "" : "restore"}" data-stock-id="${escapeHtml(product.id)}" ${menuSaving ? "disabled" : ""} aria-label="${product.enabled ? "Mettre en rupture" : "Remettre disponible"} : ${escapeHtml(product.name)}">${product.enabled ? "Mettre en rupture" : "Remettre disponible"}</button></article>`).join("")}</div></section>`;
+    return `<section class="menu-group"><h3>${title}<span>${products.length}</span></h3><div class="menu-grid">${products.map((product) => `<article class="menu-product ${product.available ? "" : "is-unavailable"}"><div class="menu-product-copy"><h4>${escapeHtml(product.name)}</h4><p class="menu-product-price">${product.menuPrice ? `Seul ${euro(product.price)} · Menu ${euro(product.menuPrice)}` : euro(product.price)}</p><span class="stock-label ${product.available ? "available" : "unavailable"}">${menuAvailabilityLabel(product)}</span>${product.lunchOnly ? '<p class="stock-reason">Un seul réglage pour le naan seul et son menu. Les horaires ne réactivent jamais une rupture.</p>' : ''}${product.enabled && !product.available ? `<p class="stock-reason">${escapeHtml(product.reason)}</p>` : ""}${stockQuantityMarkup(product)}</div><button type="button" class="stock-toggle ${product.enabled ? "" : "restore"}" data-stock-id="${escapeHtml(product.id)}" ${menuSaving ? "disabled" : ""} aria-label="${product.enabled ? "Mettre en rupture" : "Remettre disponible"} : ${escapeHtml(product.name)}">${product.enabled ? "Mettre en rupture" : "Remettre disponible"}</button></article>`).join("")}</div></section>`;
   }).join("");
   document.querySelectorAll("[data-stock-id]").forEach((button) => button.addEventListener("click", () => changeProductStock(button.dataset.stockId)));
+  document.querySelectorAll('[data-quantity-input]').forEach(input => input.addEventListener('input', () => {
+    const id = input.dataset.quantityInput, product = menuProducts.find(p => p.id === id);
+    stockQuantityDrafts.set(id, { value: input.value, revision: stockQuantityDrafts.get(id)?.revision ?? product.quantityStock.revision });
+    input.closest('form').querySelector('[data-stock-unlimited]').disabled = false;
+  }));
+  document.querySelectorAll('[data-quantity-form]').forEach(form => form.addEventListener('submit', event => { event.preventDefault(); void changeProductQuantity(form.dataset.quantityForm); }));
+  document.querySelectorAll('[data-stock-unlimited]').forEach(button => button.addEventListener('click', () => changeProductQuantity(button.dataset.stockUnlimited, true)));
 }
 
 async function loadMenu() {
-  if (menuSaving) return;
+  if (menuSaving || document.activeElement?.closest?.('[data-quantity-form]')) return;
   const requestId = ++menuRequest;
   try {
     const response = await fetch(`${API_BASE_URL}/dashboard/catalog`, { headers: dashboardHeaders(), cache: "no-store" });
     if (requestId !== menuRequest) return;
+    if (document.activeElement?.closest?.('[data-quantity-form]')) return;
     if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
     if (!response.ok) throw new Error("Impossible de charger la carte. Réessayez avec Actualiser.");
     const payload = await response.json();
     if (requestId !== menuRequest) return;
+    if (document.activeElement?.closest?.('[data-quantity-form]')) return;
     menuProducts = payload.products;
     menuLoaded = true;
     renderMenu();
-    document.querySelector("#menu-feedback").textContent = `${menuProducts.filter((product) => product.available).length} produits disponibles · ${menuProducts.filter((product) => !product.available).length} en rupture`;
+    document.querySelector("#menu-feedback").textContent = `${menuProducts.filter((product) => product.available).length} produits disponibles · ${menuProducts.filter(menuOutOfStock).length} en rupture${menuProducts.some(p => p.lunchOnly) ? ' · cheese naans : disponibilité automatique au service du midi' : ''}`;
   } catch (error) {
     if (requestId === menuRequest) document.querySelector("#menu-feedback").textContent = error.message;
+  }
+}
+
+async function changeProductQuantity(id, unlimited = false) {
+  const product = menuProducts.find(p => p.id === id), draft = stockQuantityDrafts.get(id);
+  if (!product?.quantityStock || menuSaving) return;
+  const value = draft?.value ?? String(product.quantityStock.quantity ?? '');
+  if (!unlimited && (!/^\d+$/.test(value) || Number(value) > 100000)) {
+    document.querySelector('#menu-feedback').textContent = 'Saisissez une quantité entière, zéro, ou choisissez « Sans limite ».';
+    return;
+  }
+  const token = dashboardToken;
+  menuSaving = true; ++menuRequest; renderMenu();
+  document.querySelector('#menu-feedback').textContent = 'Enregistrement de la quantité…';
+  try {
+    const response = await fetch(`${API_BASE_URL}/dashboard/catalog/${encodeURIComponent(id)}/quantity`, { method: 'PATCH', headers: dashboardHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ quantity: unlimited ? null : Number(value), revision: draft?.revision ?? product.quantityStock.revision }) });
+    if (token !== dashboardToken) return;
+    if (response.status === 401) return showLogin('Votre session a expiré. Connectez-vous à nouveau.');
+    const payload = await response.json();
+    if (token !== dashboardToken) return;
+    if (!response.ok) {
+      if (response.status === 409) {
+        // Preserve the entered number but refresh the revision for a deliberate
+        // second save, never overwrite a concurrent sale automatically.
+        stockQuantityDrafts.delete(id);
+        const current = await fetch(`${API_BASE_URL}/dashboard/catalog`, { headers: dashboardHeaders(), cache: 'no-store' });
+        if (token !== dashboardToken) return;
+        if (current.ok) {
+          const latest = await current.json();
+          if (token !== dashboardToken) return;
+          menuProducts = latest.products;
+          stockQuantityDrafts.set(id, { value, revision: menuProducts.find(p => p.id === id)?.quantityStock.revision });
+        }
+      }
+      throw new Error(payload.error || 'La quantité n’a pas été enregistrée.');
+    }
+    menuProducts = payload.products;
+    for (const p of menuProducts.filter(p => p.quantityStock?.sharedStockId === product.quantityStock.sharedStockId)) stockQuantityDrafts.delete(p.id);
+    document.querySelector('#menu-feedback').textContent = `${product.name} : ${unlimited ? 'quantité sans limite' : `${Number(value)} en stock`}. Enregistré.${!product.enabled ? ' La rupture manuelle reste active.' : ''}`;
+  } catch (error) {
+    if (token === dashboardToken) document.querySelector('#menu-feedback').textContent = error.message || 'La quantité n’a pas été enregistrée.';
+  } finally {
+    menuSaving = false;
+    if (token === dashboardToken) renderMenu();
   }
 }
 
