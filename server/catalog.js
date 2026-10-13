@@ -317,7 +317,7 @@ const validatedSelections = (product, selections, productId) => {
   return resolved;
 };
 
-const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, now = new Date()) => {
+const priceOrderItems = (inputItems, overrides, context, now, checkNaanService) => {
   if (!Array.isArray(inputItems) || !inputItems.length || inputItems.length > 20) throw orderInputError("Le panier est invalide.");
   let subtotalCents = 0;
   const items = inputItems.map((input) => {
@@ -327,7 +327,7 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, no
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw orderInputError("La quantité demandée est invalide.");
     const selections = validatedSelections(product, input.selections, productId);
-    assertNaanService(productId, context);
+    checkNaanService(productId, context);
     assertItemAvailable(productId, selections, overrides);
     const offer = productOfferForService(productId, context, now);
     const basePrice = offer ? offer.price : product.price;
@@ -344,6 +344,14 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, no
   });
   return { items, subtotal: subtotalCents / 100 };
 };
+const validateAndPriceOrderItems = (items, overrides = {}, context = {}, now = new Date()) =>
+  priceOrderItems(items, overrides, context, now, assertNaanService);
+// Private review sessions reuse exactly the production recipes and prices.
+// This separate entry point cannot be selected by a field in a public request.
+const validateAndPriceReviewItems = (items, overrides = {}, context = {}, now = new Date()) =>
+  priceOrderItems(items, overrides, context, now, (id, service) => {
+    if (isCheeseNaan(id) && !require('../cheese-naans').lunchSlot(service.slot)) throw orderInputError('Les cheese naans se testent avec un créneau du midi.');
+  });
 
 const amendmentCatalog = (overrides = {}) => ({
   ...availabilityCatalog(overrides),
@@ -351,4 +359,4 @@ const amendmentCatalog = (overrides = {}) => ({
   choices: OPTIONS, rules: GROUP_RULES
 });
 
-module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems, optionProductId };
+module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems, validateAndPriceReviewItems, optionProductId };

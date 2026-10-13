@@ -46,7 +46,9 @@ test('review: real pricing, simulated checkout, idempotent loyalty and subscript
   assert.equal(order.status, 'awaiting_payment');
   await assert.rejects(request(sandbox, '/orders', token, { ...input, customerId: 'real-client' }), { statusCode: 403 });
   await request(sandbox, '/orders', token, input);
-  assert.equal((await request(sandbox, '/customer/orders', token)).orders.length, 1);
+  const history = (await request(sandbox, '/customer/orders', token)).orders;
+  assert.equal(history.filter(item => item.requestId === input.requestId).length, 1);
+  assert.equal(history.length, 2); // One deliberately seeded missing-drink demonstration.
   const paid = await request(sandbox, '/payments/sumup-checkout', token, { orderId: order.id });
   assert.equal(paid.order.payment.status, 'PAID'); assert.equal(paid.checkoutUrl, undefined);
   const first = (await request(sandbox, '/auth/me', token)).customer;

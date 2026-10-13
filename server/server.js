@@ -664,6 +664,10 @@ const server = http.createServer(async (request, response) => {
       finally { release(); }
     }
     if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { kioskImmediate:1, kioskGuest:process.env.KIOSK_PAIRING_ENABLED === 'true' && process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, kioskCash: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, paymentRecovery: 1, promoCodes: 1, contestPrizes: 1, quantityStock: 1, categoryReplacements: 1, articleRatings: 1, cheeseNaans: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1, kioskTerminal: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 && process.env.SUMUP_KIOSK_AFFILIATE_KEY?.startsWith('sup_afk_') && Boolean(sumupApiKey) ? 1 : 0, kioskPairing: process.env.KIOSK_PAIRING_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0 } });
+    if (request.method === 'GET' && url.pathname === '/privacy') {
+      response.writeHead(200, { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff', 'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'" });
+      return response.end(require('./public-privacy').publicPrivacyHtml());
+    }
 
     if (url.pathname === '/api/dashboard/promotions') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });

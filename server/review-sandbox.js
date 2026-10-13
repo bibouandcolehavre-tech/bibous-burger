@@ -2,7 +2,7 @@
 // payment or push dependency. Every session owns a disposable in-memory store.
 const crypto = require('node:crypto');
 const { createAuthRateLimiter } = require('./auth-rate-limit');
-const { validateAndPriceOrderItems } = require('./catalog');
+const { validateAndPriceReviewItems: validateAndPriceOrderItems } = require('./catalog');
 const { validateRequestId, orderFingerprint } = require('./order-attempt');
 const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion } = require('./promo-codes');
 const { validateServiceSlot, qualifiesForAdvancePickup } = require('./availability');
@@ -13,7 +13,15 @@ const { bibouPlusStatus, bibouPlusOrderPricing, activateBibouPlus } = require('.
 const { grantWelcomeReward, consumeWelcomeReward } = require('./welcome-reward');
 const crm = require('./crm');
 const marketingSms = require('./marketing-sms');
-const { customerOrderRatings } = require('./article-ratings');
+const { customerOrderRatings, saveArticleRatings } = require('./article-ratings');
+const { validateIdentity } = require('../customer-identity');
+const { naanLoyaltyPoints } = require('../cheese-naans');
+const { prepareReviewScenarios, reviewContestState, reviewCatalog } = require('./review-scenarios');
+const contest = require('./referral-contest');
+const contestPrizes = require('./contest-prizes');
+const wheel = require('./wheel');
+const replacements = require('./order-replacements');
+const amendments = require('./order-amendments');
 
 // Only a SHA-256 verifier is committed; the 192-bit random code is given to Play
 // in its private app-access instructions, never embedded in the client bundle.
@@ -45,7 +53,8 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         const customer = { id: `review-customer-${crypto.randomUUID()}`, name: 'Équipe de validation', phone: '+33600000000', address: '153 quai Georges V', postalCode: '76600', city: 'Le Havre', points: 1500, weeklyOrders: 0, weeklyProgramPoints: 0, referralCode: 'TEST-NON-UTILISABLE', reviewMode: true };
         grantWelcomeReward(customer, new Date(now()));
         const db = { customers: [customer], orders: [], reservations: [], rewardClaims: [], bibouPlusPurchases: [] };
-        sessions.set(token, { expiresAt: now() + ttlMs, customer, db, requests: 0, pushPreferences: { service: false, marketing: false } });
+        const scenarios = prepareReviewScenarios(db, customer, new Date(now()));
+        sessions.set(token, { ...scenarios, expiresAt: now() + ttlMs, customer, db, requests: 0, pushPreferences: { service: false, marketing: false } });
         return { token, customer: snapshot(customer), reviewMode: true };
       }
       const session = sessions.get(token);
@@ -54,33 +63,57 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
       const { customer, db } = session;
       const date = new Date(now());
       if (route === '/auth/me' && method === 'GET') return { customer: snapshot(customer), reviewMode: true };
-      if (route === '/health' && method === 'GET') return { ok: true, reviewMode: true, capabilities: { paymentRecovery: 1, promoCodes: 1 } };
+      if (route === '/health' && method === 'GET') return { ok: true, reviewMode: true, capabilities: { paymentRecovery: 1, promoCodes: 1, contestPrizes: 1, articleRatings: 1, categoryReplacements: 1, cheeseNaans: 1 } };
+      if (route === '/catalog' && method === 'GET') return reviewCatalog(db, date);
+      const promotionContext = { appPlatform: 'ios', customerId: customer.id };
+      const availablePromotion = promotion => promotion?.sourceContestPrize
+        ? contestPrizes.assertAvailable(db, contestPrizes.findVoucher(db, promotion.code), customer.id, promotionContext, date)
+        : assertPromotionAvailable(db, promotion, customer.id, promotionContext);
       if (route === '/promotions/validate' && method === 'POST') {
         const input = await readBody();
-        const promotion = promotionForCode(input?.code);
+        const promotion = promotionForCode(input?.code, db);
         if (!promotion) throw fail('Saisis un code promo.');
-        assertPromotionAvailable(db, promotion);
-        assertPromotionMethod(promotion, input.method);
-        if (promotion.requiredMenuCount) assertPromotionCart(promotion, validateAndPriceOrderItems(input.items).items);
+        availablePromotion(promotion);
+        assertPromotionMethod(promotion, input.method, promotionContext, { preview: true });
+        if (promotion.requiredMenuCount || promotion.sourceContestPrize) assertPromotionCart(promotion, validateAndPriceOrderItems(input.items, {}, input, date).items);
         return { promotion };
       }
       if (route === '/customer/account' && method === 'DELETE') { sessions.delete(token); return { deleted: true }; }
       if (route === '/customer/orders' && method === 'GET') return { orders: snapshot(db.orders) };
       const ratingsRoute = /^\/customer\/orders\/([^/]+)\/ratings$/.exec(route);
-      if (ratingsRoute && method === 'GET') {
+      if (ratingsRoute && ['GET', 'POST'].includes(method)) {
         const order = db.orders.find(o => o.id === ratingsRoute[1] && o.customerId === customer.id);
         if (!order) throw fail('Commande fictive introuvable.', 404);
-        return { ...customerOrderRatings(db, order), reviewMode: true };
+        // Shadow eligibility is only applied inside this disposable session.
+        const simulated = { ...order, reviewMode: false };
+        return { ...(method === 'POST' ? saveArticleRatings(db, simulated, await readBody(), date) : customerOrderRatings(db, simulated)), reviewMode: true };
       }
-      if (ratingsRoute && method === 'POST') throw fail('Une commande fictive ne peut pas créer un avis client réel.', 409);
+      const replacementRoute = /^\/customer\/orders\/([^/]+)\/(replacement-options|replacement-choice|amendment)$/.exec(route);
+      if (replacementRoute) {
+        const order = db.orders.find(order => order.id === replacementRoute[1] && order.customerId === customer.id);
+        if (!order) throw fail('Commande fictive introuvable.', 404);
+        if (replacementRoute[2] === 'replacement-options' && method === 'GET') return { ...replacements.options(order, { 'drink-coca': false }, now()), reviewMode: true };
+        if (replacementRoute[2] === 'replacement-choice' && method === 'POST') { replacements.submit(order, await readBody(), { 'drink-coca': false }, now()); return { order: snapshot(order), reviewMode: true }; }
+        if (replacementRoute[2] === 'amendment' && method === 'POST') { amendments.decide(order, await readBody(), {}, now()); return { order: snapshot(order), reviewMode: true }; }
+        throw fail('Action de test indisponible.', 405);
+      }
       if (route === '/customer/marketing-sms' && ['GET', 'PATCH'].includes(method)) {
         if (method === 'PATCH') marketingSms.updatePreferences(db, customer, await readBody(), now());
         return { ...snapshot(marketingSms.customerState(customer)), reviewMode: true };
       }
       if (route === '/customer/reservations' && method === 'GET') return { reservations: snapshot(db.reservations) };
       if (route === '/customer/rewards' && method === 'GET') return { claims: snapshot(db.rewardClaims) };
-      if (route === '/customer/contest' && method === 'GET') return { contest: { status: 'inactive', title: 'Les ambassadeurs Bibou' }, participation: null };
-      if (route === '/customer/contest/prizes' && method === 'GET') return { rules: require('../contest-prize-policy').CONTEST_PRIZE_RULES, appOnly: true, grants: [], vouchers: [] };
+      if (route === '/customer/contest' && method === 'GET') return reviewContestState(db, customer, date);
+      if (route === '/customer/contest/join' && method === 'POST') { contest.joinContest(db, customer, await readBody(), session.contestSecret, date); return reviewContestState(db, customer, date); }
+      if (route === '/customer/contest/share' && method === 'POST') { contest.recordShareAction(db, customer, await readBody(), date); return reviewContestState(db, customer, date); }
+      if (route === '/customer/contest/prizes/alerts' && method === 'PATCH') { contestPrizes.updateAlerts(db, customer, await readBody(), date); return { ...contestPrizes.customerState(db, customer, promotionContext, date), reviewMode: true }; }
+      if (route === '/customer/contest/prizes' && method === 'GET') return { ...contestPrizes.customerState(db, customer, promotionContext, date), reviewMode: true };
+      if (route === '/customer/wheel' && method === 'GET') return { ...wheel.customerWheelState(db, customer.id, date), reviewMode: true };
+      if (route === '/customer/wheel/spin' && method === 'POST') {
+        const input = await readBody();
+        if (!input || Object.keys(input).some(key => !['requestId', 'orderId'].includes(key))) throw fail('Référence de tour de test invalide.');
+        return { ...wheel.spinWheel(db, customer.id, { requestId: input.requestId, orderId: input.orderId, now: date }), reviewMode: true };
+      }
       if (route === '/customer/crm' && ['GET', 'PATCH'].includes(method)) {
         if (method === 'PATCH') crm.updateCustomerPreferences(db, customer, await readBody(), now());
         return snapshot(crm.customerState(db, customer, now()));
@@ -94,6 +127,7 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
       }
       if (route === `/customers/${customer.id}` && method === 'PATCH') {
         const input = await readBody();
+        if ('firstName' in input || 'lastName' in input) { const identity = validateIdentity(input); if (identity.error) throw fail(identity.error); Object.assign(customer, identity); }
         // Never accept customer IDs, phone, points, privileges, or benefit flags.
         for (const key of ['name', 'address', 'postalCode', 'city']) if (typeof input[key] === 'string') customer[key] = boundedText(input[key]);
         return { customer: snapshot(customer) };
@@ -134,20 +168,22 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         }
         if (db.orders.length >= 50) throw fail('Limite de commandes de test atteinte.', 429);
         if (!['delivery', 'pickup'].includes(input.method)) throw fail('Mode de commande invalide.');
-        const priced = validateAndPriceOrderItems(input.items);
+        const priced = validateAndPriceOrderItems(input.items, {}, input, date);
         const slotError = validateServiceSlot(input.serviceDate, input.slot, date, input.method);
         if (slotError) throw fail(slotError);
         const active = bibouPlusStatus(customer, date).active;
-        const promotion = promotionForCode(input.promoCode);
-        assertPromotionAvailable(db, promotion);
-        assertPromotionMethod(promotion, input.method);
+        const promotion = promotionForCode(input.promoCode, db);
+        const context = { ...promotionContext, serviceDate: input.serviceDate };
+        availablePromotion(promotion);
+        assertPromotionMethod(promotion, input.method, context);
         assertPromotionCart(promotion, priced.items);
         const welcome = !promotion && customer.welcomeReward?.status === 'available';
-        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: priced.subtotal, deliveryFee: input.method === 'delivery' ? 3.99 : 0, active, discountRate: welcome ? .1 : active ? .05 : 0 }), promotion, input.method);
+        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal: priced.subtotal, deliveryFee: input.method === 'delivery' ? 3.99 : 0, active, discountRate: welcome ? .1 : active ? .05 : 0 }), promotion, input.method, priced.items, context);
         const number = db.orders.length + 1;
-        const order = { ...pricing, id: `review-order-${number}`, number: `TEST-${number}`, customerId: customer.id, customerName: customer.name, items: priced.items, requestId, requestFingerprint: fingerprint, method: input.method, serviceDate: input.serviceDate, slot: input.slot, comment: boundedText(input.comment, 500), createdAt: date.toISOString(), status: 'awaiting_payment', reviewMode: true, bibouPlusApplied: active, welcomeRewardApplied: welcome, loyaltyBasePoints: priced.items.reduce((sum, item) => sum + ((item.productId.endsWith('-menu') || item.productId === 'taurus') ? 15 : ['atlas','classique','duck','dynamite','hambagu','basilic','montagnes','gros-lard','pork','custom-burger'].includes(item.productId) ? 10 : 0) * item.quantity, 0) };
+        const order = { ...pricing, id: `review-order-${number}`, number: `TEST-${number}`, customerId: customer.id, customerName: customer.name, items: priced.items, requestId, requestFingerprint: fingerprint, method: input.method, serviceDate: input.serviceDate, slot: input.slot, comment: boundedText(input.comment, 500), createdAt: date.toISOString(), status: 'awaiting_payment', reviewMode: true, bibouPlusApplied: active, welcomeRewardApplied: welcome, loyaltyBasePoints: priced.items.reduce((sum, item) => sum + (naanLoyaltyPoints(item) || ((item.productId.endsWith('-menu') || item.productId === 'taurus') ? 15 : ['atlas','classique','duck','dynamite','hambagu','basilic','montagnes','gros-lard','pork','custom-burger'].includes(item.productId) ? 10 : 0)) * item.quantity, 0) };
         order.pickupAdvanceBonusApplied = qualifiesForAdvancePickup(order);
         if (promotion) { order.promotion = promotion; order.discountLabel = `Code promo ${promotion.code}`; }
+        if (promotion?.sourceContestPrize) { order.contestPrizePlatform = 'ios'; contestPrizes.reserve(db, order, date); }
         db.orders.unshift(order);
         return { order: snapshot(order) };
       }
@@ -155,8 +191,9 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         const input = await readBody();
         const order = db.orders.find(item => item.id === input.orderId);
         if (!order) throw fail('Commande de test introuvable.', 404);
-        order.payment = { status: 'PAID', provider: 'isolated-review-simulation' };
-        order.status = 'confirmed';
+        order.payment = { status: 'PAID', provider: 'isolated-review-simulation', paidAt: date.toISOString() };
+        order.status = 'delivered'; // Disposable simulated completion, never restaurant acknowledgement.
+        order.wheelEurosPerTurn = 15;
         if (!order.promotion) grantLoyaltyForOrder(customer, order, date, { bibouPlus: order.bibouPlusApplied });
         consumeWelcomeReward(customer, order, date);
         return { order: snapshot(order), reviewMode: true };
