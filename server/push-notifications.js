@@ -111,10 +111,10 @@ function queueAmendmentNotification(db, order, config, now = Date.now()) {
     expired: ['Proposition expirée', 'Sans réponse à temps, la commande a été annulée. Le restaurant doit traiter le remboursement.'],
     cancelled: ['Commande annulée', 'Le restaurant a annulé la commande. Consulte le suivi du remboursement.']
   };
-  const copy = copies[a.status];
+  const copy = a.mode === 'category-choice' && a.status === 'pending' ? a.phase === 'submitted' ? ['Tes nouveaux choix sont envoyés', 'Le restaurant doit confirmer le remplacement de tes articles.'] : ['Un article est indisponible', 'Choisis un remplacement dans Mes commandes, ou annule la commande.'] : copies[a.status];
   if (!copy) return { channel: 'in_app', devices: 0 };
   store(db).jobs.filter(j => j.entityId === order.id && j.kind === 'service' && j.status === 'queued').forEach(j => { j.status = 'cancelled'; });
-  enqueue(db, customer, devices, { kind: 'service', eventKey: `amendment:${order.id}:${a.revision}:${a.status}`, title: copy[0], body: copy[1], screen: 'orders', entityId: order.id }, now);
+  enqueue(db, customer, devices, { kind: 'service', eventKey: `amendment:${order.id}:${a.revision}:${a.status}:${a.phase || ''}`, title: copy[0], body: copy[1], screen: 'orders', entityId: order.id }, now);
   return { channel: devices.length ? 'in_app_push' : 'in_app', devices: devices.length };
 }
 
@@ -190,6 +190,7 @@ function dashboardPush(db, config, now = Date.now()) {
 function canDispatch(db, job, config, now) {
   const s = store(db), device = s.devices.find(d => d.installationId === job.deviceId && d.customerId === job.customerId), customer = db.customers.find(c => c.id === job.customerId);
   if (!customer || !device || !prefs(customer)[job.kind] || !activeDevice(device, now)) return null;
+  if (job.contestPrizeVoucherId && !require('./contest-prizes').alertEligible(db, job.contestPrizeVoucherId, new Date(now))) return null;
   if (job.kind === 'marketing') {
     if (job.crmOfferId) {
       const offer = db.crm?.offers.find(o => o.id === job.crmOfferId && o.customerId === customer.id);
@@ -210,6 +211,15 @@ function queueCrmNotification(db, offer, config, now = Date.now()) {
   if (!devices.length) return;
   enqueue(db, customer, devices, { kind:'marketing', crmOfferId:offer.id, eventKey:`crm:${offer.id}`, title:offer.title,
     body:`Une offre personnelle de −${offer.discountPercent} % t’attend. Consulte ses conditions dans Mon compte > Mes offres.`, screen:'account' }, now);
+}
+
+function queueContestPrizeNotification(db, voucher, message, config, now = Date.now()) {
+  const customer = db.customers.find(c => c.id === voucher.customerId);
+  if (!config?.enabled || !customer || !prefs(customer).service || !require('./contest-prizes').alertEligible(db, voucher.id, new Date(now))) return 0;
+  const devices = customerDevices(db, customer, now).filter(d => live(config, d.platform));
+  enqueue(db, customer, devices, { kind: 'service', eventKey: message.eventKey, title: message.title, body: message.body,
+    screen: 'contest', contestPrizeVoucherId: voucher.id, expiresAt: Math.min(now + 2 * 3600000, Date.parse(voucher.expiresAt)) }, now);
+  return devices.length;
 }
 
 function purgePush(db, now = Date.now()) {
@@ -290,4 +300,4 @@ function createPushWorker({ config, transact, fetchImpl = fetch, clock = Date.no
   return { tick };
 }
 
-module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueAmendmentNotification, queueCrmNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };
+module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueAmendmentNotification, queueCrmNotification, queueContestPrizeNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };

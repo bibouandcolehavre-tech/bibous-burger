@@ -3,6 +3,13 @@ const applyProductStock = (product, catalog) => {
   return stock ? { ...product, ...(typeof stock.price === 'number' && Number.isFinite(stock.price) && stock.price >= 0 ? { price: stock.price } : {}), regularPrice: stock.regularPrice, productOffer: stock.productOffer, soldOut: !stock.available, stockReason: stock.reason } : product;
 };
 
+// Timed recipes fail closed until a current server catalogue makes them visible.
+// Existing products keep their previous behaviour during a temporary API error.
+const visibleCustomerProducts = (products, catalog) => products.filter(product => {
+  const state = catalog?.products?.find(entry => entry.id === product.id);
+  return product.lunchOnly ? state?.visible === true : state?.visible !== false;
+});
+
 const availableOptionGroups = (groups, catalog) => groups.map((group) => ({
   ...group,
   options: group.options.map((option) => ({ ...option, soldOut: catalog?.options?.[`${group.id}:${option.id}`] === false }))
@@ -19,4 +26,4 @@ const cartStockProblem = (items, catalog) => {
   return "";
 };
 
-module.exports = { applyProductStock, availableOptionGroups, cartStockProblem };
+module.exports = { applyProductStock, availableOptionGroups, cartStockProblem, visibleCustomerProducts };

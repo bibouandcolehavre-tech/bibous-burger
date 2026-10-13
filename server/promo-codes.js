@@ -2,6 +2,7 @@
 // discount, price or payment state. CHORUS has no usage cap or expiry by request.
 const { PRODUCT_CATALOG } = require('./catalog');
 const merchant = require('./merchant-promotions');
+const contestPrizes = require('./contest-prizes');
 const normalizePromoCode = value => {
   if (value === undefined || value === null || value === '') return '';
   if (typeof value !== 'string' || value.length > 40) throw Object.assign(new Error('Code promo invalide.'), { statusCode: 400 });
@@ -14,12 +15,15 @@ const promotionForCode = (value, database) => {
   if (code === 'GROSLARD') return { code, discountPercent: 100, freeDelivery: false, pickupOnly: true, requiredMenuCount: 2, singleUse: true,
     message: 'Ce code promo vous permet de bénéficier de deux menus offerts, au choix. Choisissez le retrait en Click & Collect ; vous pouvez aussi déguster vos menus sur place. Hors suppléments payants.' };
   if (database) {
+    const personalPrize = contestPrizes.promotion(database, code);
+    if (personalPrize) return personalPrize;
     const configured = merchant.findByCode(database, code);
     if (configured) return merchant.publicView(configured);
   }
   throw Object.assign(new Error('Ce code promo n’est pas valide.'), { statusCode: 400 });
 };
-const assertPromotionAvailable = (database, promotion, customerId) => {
+const assertPromotionAvailable = (database, promotion, customerId, context = {}) => {
+  if (promotion?.sourceContestPrize) return contestPrizes.assertAvailable(database, contestPrizes.findVoucher(database, promotion.code), customerId, context);
   if (promotion?.id) return merchant.assertAvailable(database, promotion, customerId);
   if (!promotion?.singleUse) return;
   if ((database.orders || []).some(order => order.promotion?.code === promotion.code && order.payment?.status === 'PAID')) {
@@ -27,6 +31,7 @@ const assertPromotionAvailable = (database, promotion, customerId) => {
   }
 };
 const assertPromotionMethod = (promotion, method, context = {}, options = {}) => {
+  if (promotion?.sourceContestPrize) return contestPrizes.assertMethod(promotion, method, { ...context, appPlatform: context.appPlatform || context.contestPrizePlatform }, options);
   merchant.assertServiceConditions(promotion, method, context, options);
   if (promotion?.type === 'free_delivery' && method !== 'delivery') throw Object.assign(new Error('Ce code est réservé à la livraison.'), { statusCode: 400 });
   if (promotion?.pickupOnly && method !== 'pickup') {
@@ -34,6 +39,7 @@ const assertPromotionMethod = (promotion, method, context = {}, options = {}) =>
   }
 };
 const assertPromotionCart = (promotion, items) => {
+  if (promotion?.sourceContestPrize) return contestPrizes.assertCart(promotion, items);
   if (promotion?.id) {
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     merchant.discountFor(promotion, items, subtotal, promotion.type === 'free_delivery' ? 1 : 0);
@@ -52,13 +58,27 @@ const assertPromotionCart = (promotion, items) => {
 const applyPromotion = (pricing, promotion, method, items = [], context = {}) => {
   if (!promotion) return pricing;
   assertPromotionMethod(promotion, method, context);
+  if (promotion.sourceContestPrize) {
+    contestPrizes.assertCart(promotion, items);
+    return { ...pricing, discountRate: 1, discount: pricing.subtotal, total: pricing.deliveryFee };
+  }
   if (promotion.id) return merchant.apply(pricing, promotion, items);
   if (promotion.discountPercent !== 100 || (!promotion.freeDelivery && !promotion.pickupOnly)) throw new Error('Promotion non prise en charge.');
   return { ...pricing, discountRate: 1, discount: pricing.subtotal, deliveryFee: 0, total: 0 };
 };
-const settlePromotionalOrder = (order, now = new Date()) => {
+const settlePromotionalOrder = (order, now = new Date(), database) => {
   if (!order.promotion || order.status !== 'awaiting_payment' || order.payment) return false;
   if (order.promotion.id) return false;
+  if (order.promotion.sourceContestPrize) {
+    const voucher = contestPrizes.findVoucher(database || {}, order.promotion.code);
+    const allocation = voucher?.allocations.find(a => a.orderId === order.id);
+    if (!voucher || voucher.customerId !== order.customerId || !allocation || allocation.quantity !== order.items.reduce((sum, item) => sum + item.quantity, 0)) throw new Error('Réservation du lot personnel incohérente.');
+    if (order.discount !== order.subtotal || order.discountRate !== 1 || order.total !== order.deliveryFee) throw new Error('Total du lot personnel incohérent.');
+    if (order.total > 0) return false; // Delivery fees still use the usual secure payment.
+    if (order.total !== 0 || order.deliveryFee !== 0) throw new Error('Total du lot personnel invalide.');
+    order.payment = { provider: 'contest_prize', status: 'PAID', amount: 0, paidAt: now.toISOString() };
+    return true;
+  }
   const promo = promotionForCode(order.promotion.code);
   assertPromotionMethod(promo, order.method);
   if (!promo || order.total !== 0 || order.deliveryFee !== 0 || order.discount !== order.subtotal || order.discountRate !== 1) throw new Error('Total promotionnel incohérent.');

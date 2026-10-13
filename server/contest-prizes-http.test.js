@@ -1,0 +1,53 @@
+const test = require('node:test'), assert = require('node:assert/strict');
+const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+const { spawn } = require('node:child_process'), { once } = require('node:events');
+const prizes = require('./contest-prizes'), contest = require('./referral-contest');
+const { createCustomerSession } = require('./customer-session');
+test('lots HTTP : uniquement le compte gagnant dans l’app ; commandes gratuites atomiques et panier réel sans débit', { timeout: 25000 }, async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-prize-http-')), file = path.join(dir, 'data.json');
+  const customers = [1, 2, 3].map(n => ({ id: `c${n}`, firstName: 'Gagnant', lastName: `Fictif${n}`, name: `Gagnant Fictif${n}`, phone: `+3360000000${n}`, verifiedPhone: `+3360000000${n}`, phoneVerifiedAt: '2026-09-01T09:00:00Z', points: 650, welcomeReward: { status: 'available' }, address: '1 rue fictive', postalCode: '76600', city: 'Le Havre' }));
+  const db = { customers, orders: [1, 2, 3].map(n => ({ id: `source${n}`, customerId: `c${n}`, total: 100 - n * 10, status: 'delivered', createdAt: '2026-09-01T10:00:00Z', payment: { status: 'PAID', paidAt: '2026-09-01T10:00:00Z' } })), nextOrderNumber: 1,
+    referralContest: { ...contest.defaultContest(), status: 'published', revision: 2, rules: 'Règlement de test', startDate: '2026-09-01', endDate: '2026-09-30', entries: [1, 2, 3].map(n => ({ customerId: `c${n}`, alias: `Participant ${n}`, joinedAt: `2026-09-01T09:0${n}:00Z`, prizeAlerts: true, shareEvents: [] })) } };
+  const at = new Date('2026-10-13T10:00:00Z'), preview = prizes.finalizationPreview(db, at);
+  prizes.finalize(db, { confirmation: 'VALIDER LES LOTS DU CONCOURS', requestId: crypto.randomUUID(), rankingFingerprint: preview.rankingFingerprint, startMonth: '2026-11', eligibleMenuIds: ['classique-menu', 'duck-menu'] }, at);
+  await fs.writeFile(file, JSON.stringify(db));
+  const providerFile = path.join(dir, 'sumup.json'); await fs.writeFile(providerFile, JSON.stringify({ checkouts: {} }));
+  const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/contest-prize-clock.cjs'), '--require', path.join(__dirname, 'test-fixtures/sumup-provider.cjs'), path.join(__dirname, 'server.js')], {
+    cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', FAKE_CONTEST_PRIZE_CLOCK: 'true', PORT: '0', DATA_FILE_PATH: file, RESTAURANT_DASHBOARD_PASSWORD: 'test-only', SESSION_SECRET: 'test-secret', SUMUP_API_KEY: 'FAKE', SUMUP_MERCHANT_CODE: 'TEST', GOOGLE_MAPS_API_KEY: 'FAKE', FAKE_SUMUP_FILE: providerFile, SUMUP_RETURN_URL: 'https://example.invalid/return', SUMUP_REDIRECT_URL: 'https://example.invalid/app' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
+  const base = await new Promise((resolve, reject) => { let output = '', errors = ''; child.stdout.on('data', d => { output += d; const m = output.match(/http:\/\/localhost:\d+/); if (m) resolve(m[0] + '/api'); }); child.stderr.on('data', d => { errors += d; }); child.on('error', reject); child.on('exit', () => reject(Error(errors))); });
+  const request = async (route, body, { token = createCustomerSession('c1', 'test-secret', { now: Date.parse('2026-11-12T10:00:00Z') }), platform = 'ios', origin, method = body === undefined ? 'GET' : 'POST' } = {}) => {
+    const response = await fetch(base + route, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(platform ? { 'X-Bibou-Platform': platform } : {}), ...(origin ? { Origin: origin } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: response.status, data: await response.json() };
+  };
+  assert.equal((await request('/customer/contest/prizes', undefined, { token: '' })).status, 401);
+  const own = await request('/customer/contest/prizes'); assert.equal(own.status, 200); assert.equal(own.data.grants.length, 1);
+  const code = own.data.vouchers[0].code; assert(code);
+  assert.equal((await request('/customer/contest/prizes', undefined, { platform: null })).data.vouchers[0].code, null);
+  assert.equal((await request('/customer/contest/prizes', undefined, { origin: 'https://bibous-burger-app.onrender.com' })).data.vouchers[0].code, null);
+  const otherToken = createCustomerSession('c2', 'test-secret', { now: Date.parse('2026-11-12T10:00:00Z') }); assert(!JSON.stringify((await request('/customer/contest/prizes', undefined, { token: otherToken })).data).includes(code));
+  const admin = (await request('/dashboard/auth/login', { password: 'test-only' })).data.token;
+  assert.equal((await request('/dashboard/contest/prizes/finalize', {}, { token: admin })).status, 400);
+  assert.equal((await request('/dashboard/contest/prizes')).status, 401);
+  const item = { productId: 'classique-menu', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }, { groupId: 'drink', id: 'coca' }] };
+  const body = { customerId: 'c1', method: 'pickup', serviceDate: '2026-11-12', slot: '12:00', slotGrid: 20, items: [item], promoCode: code, requestId: 'test-personal-gift-001' };
+  const promoInput = { code, method: 'pickup', serviceDate: body.serviceDate, slot: body.slot, items: [item] };
+  assert.equal((await request('/promotions/validate', promoInput)).status, 200);
+  assert.equal((await request('/promotions/validate', promoInput, { token: otherToken })).status, 403);
+  assert.equal((await request('/orders', body, { platform: null })).status, 403);
+  assert.equal((await request('/orders', { ...body, appPlatform: 'ios' }, { platform: null })).status, 403, 'The JSON body cannot enable the app channel');
+  assert.equal((await request('/orders', { ...body, serviceDate: '2026-12-01' })).status, 400);
+  const first = await Promise.all([request('/orders', body), request('/orders', body)]); assert.deepEqual(first.map(r => r.status).sort(), [200, 201], JSON.stringify(first));
+  const order = first[0].data.order; assert.equal(order.id, first[1].data.order.id); assert.equal(order.total, 0); assert.equal(order.payment.provider, 'contest_prize'); assert.equal(order.status, 'confirmed');
+  assert.equal(order.promotion.menuAllowance, 1, 'No later amendment may increase the gifted menu quantity');
+  assert.equal((await request('/customer/contest/prizes')).data.vouchers[0].remaining, 1);
+  const second = { ...body, requestId: 'test-personal-gift-002' }, last = await Promise.all([request('/orders', second), request('/orders', { ...second, requestId: 'test-personal-gift-003' })]);
+  assert.deepEqual(last.map(r => r.status).sort(), [201, 409], JSON.stringify(last)); assert.equal((await request('/customer/contest/prizes')).data.vouchers[0].remaining, 0);
+  assert.equal((await request('/orders', body)).status, 200, 'Response recovery does not reconsume a benefit');
+  assert.equal((await request('/dashboard/orders/' + order.id, { status: 'cancelled' }, { token: admin, method: 'PATCH' })).status, 200);
+  assert.equal((await request('/customer/contest/prizes')).data.vouchers[0].remaining, 1);
+  const saved = JSON.parse(await fs.readFile(file, 'utf8')); assert.equal(saved.customers[0].points, 650); assert.equal(saved.customers[0].welcomeReward.status, 'available');
+  assert.equal(saved.contestPrizes.smsJobs.length, 0); assert.equal(saved.referralContest.status, 'published', 'Existing fixture state only, no public campaign is activated');
+  assert.equal((await request('/customer/contest/prizes/alerts', { enabled: false }, { method: 'PATCH' })).status, 200);
+  const providerCalls = await fs.readFile(path.join(dir, 'calls.jsonl'), 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error; }); assert.equal(providerCalls, '', 'No SumUp transaction is launched for a gifted pickup');
+});

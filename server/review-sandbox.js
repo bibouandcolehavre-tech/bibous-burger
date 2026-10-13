@@ -12,6 +12,8 @@ const { grantLoyaltyForOrder } = require('./loyalty');
 const { bibouPlusStatus, bibouPlusOrderPricing, activateBibouPlus } = require('./bibou-plus');
 const { grantWelcomeReward, consumeWelcomeReward } = require('./welcome-reward');
 const crm = require('./crm');
+const marketingSms = require('./marketing-sms');
+const { customerOrderRatings } = require('./article-ratings');
 
 // Only a SHA-256 verifier is committed; the 192-bit random code is given to Play
 // in its private app-access instructions, never embedded in the client bundle.
@@ -64,9 +66,21 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
       }
       if (route === '/customer/account' && method === 'DELETE') { sessions.delete(token); return { deleted: true }; }
       if (route === '/customer/orders' && method === 'GET') return { orders: snapshot(db.orders) };
+      const ratingsRoute = /^\/customer\/orders\/([^/]+)\/ratings$/.exec(route);
+      if (ratingsRoute && method === 'GET') {
+        const order = db.orders.find(o => o.id === ratingsRoute[1] && o.customerId === customer.id);
+        if (!order) throw fail('Commande fictive introuvable.', 404);
+        return { ...customerOrderRatings(db, order), reviewMode: true };
+      }
+      if (ratingsRoute && method === 'POST') throw fail('Une commande fictive ne peut pas créer un avis client réel.', 409);
+      if (route === '/customer/marketing-sms' && ['GET', 'PATCH'].includes(method)) {
+        if (method === 'PATCH') marketingSms.updatePreferences(db, customer, await readBody(), now());
+        return { ...snapshot(marketingSms.customerState(customer)), reviewMode: true };
+      }
       if (route === '/customer/reservations' && method === 'GET') return { reservations: snapshot(db.reservations) };
       if (route === '/customer/rewards' && method === 'GET') return { claims: snapshot(db.rewardClaims) };
       if (route === '/customer/contest' && method === 'GET') return { contest: { status: 'inactive', title: 'Les ambassadeurs Bibou' }, participation: null };
+      if (route === '/customer/contest/prizes' && method === 'GET') return { rules: require('../contest-prize-policy').CONTEST_PRIZE_RULES, appOnly: true, grants: [], vouchers: [] };
       if (route === '/customer/crm' && ['GET', 'PATCH'].includes(method)) {
         if (method === 'PATCH') crm.updateCustomerPreferences(db, customer, await readBody(), now());
         return snapshot(crm.customerState(db, customer, now()));

@@ -5,7 +5,7 @@ window.BibouAmendments = (() => {
   const money = n => Number(n).toFixed(2).replace('.', ',') + ' €';
   const groups = { protein:'Protéine', 'meat-type':'Viande halal ou non halal', salad:'Crudités', sauces:'Sauce', drink:'Boisson du menu', extras:'Suppléments', 'menu-fries':'Frites du menu', 'solo-fries':'Frites du Menu Solo', 'duo-fries-one':'Frites · personne 1', 'duo-fries-two':'Frites · personne 2', sides:'Accompagnements ajoutés', desserts:'Desserts', 'menu-desserts':'Dessert du menu (+2 €)', 'solo-dessert':'Dessert du Menu Solo (+2 €)', 'duo-dessert-one':'Dessert · personne 1 (+2 €)', 'duo-dessert-two':'Dessert · personne 2 (+2 €)', 'duo-drink-one':'Première boisson', 'duo-drink-two':'Deuxième boisson' };
   function clear() { dialog?.remove(); dialog = null; }
-  async function open(order, { api, headers, current, refresh }) {
+  async function openLegacy(order, { api, headers, current, refresh }) {
     clear();
     const modal = document.createElement('dialog'); dialog = modal;
     modal.className = 'amendment-dialog';
@@ -79,6 +79,39 @@ window.BibouAmendments = (() => {
       }
       render();
     }catch(e){error(e);}
+  }
+  async function open(order, options) {
+    const { api, headers, current, refresh } = options;
+    clear();
+    const modal = document.createElement('dialog'); dialog = modal; modal.className = 'amendment-dialog';
+    modal.innerHTML = `<div class="amendment-heading"><h2>Article indisponible · #${Number(order.number)}</h2><button data-close aria-label="Fermer">×</button></div><div data-content>Chargement…</div><p data-error role="alert"></p>`;
+    document.body.append(modal); modal.showModal(); modal.querySelector('[data-close]').onclick = clear; modal.addEventListener('cancel', clear);
+    const content = modal.querySelector('[data-content]'), error = modal.querySelector('[data-error]');
+    const request = async (route, body) => {
+      if (!current()) throw Error('Votre session a changé.');
+      const r = await fetch(api + route, { method: body ? 'POST' : 'GET', headers, signal: AbortSignal.timeout(15000), ...(body ? { body: JSON.stringify(body) } : {}) });
+      const data = await r.json(); if (!current()) throw Error('Votre session a changé.'); if (!r.ok) throw Error(data.error || 'Remplacement indisponible.'); return data;
+    };
+    const action = async (button, task) => {
+      button.disabled = true; error.textContent = '';
+      try { await task(); if (modal.isConnected) { await refresh(); clear(); } }
+      catch (e) { if (modal.isConnected) { error.textContent = e.message; button.disabled = false; } }
+    };
+    try {
+      const a = order.amendment;
+      if (a?.mode === 'category-choice' && a.status === 'pending' && a.phase === 'submitted') {
+        content.innerHTML = `<h3>Le client a choisi ses remplacements</h3><p>${esc(a.proposal.reason)}</p>${a.proposal.items.map(i => `<p>${i.quantity} × ${esc(i.name)}<br>${i.options.map(o => esc(o.label)).join(' · ')}</p>`).join('')}<p>Nouveau total : <strong>${money(a.proposal.total)}</strong><br>Remboursement à effectuer dans SumUp si accord : ${money(a.proposal.refundAmount)}</p><p>La commande initiale est conservée jusqu’à votre confirmation. Aucun supplément ne sera débité.</p><button data-accept class="primary-button">Confirmer les nouveaux choix</button><button data-reject>Demander un autre choix au client</button>`;
+        for (const decision of ['accept', 'reject']) content.querySelector('[data-' + decision + ']').onclick = e => action(e.target, () => request(`/dashboard/orders/${encodeURIComponent(order.id)}/replacement-confirm`, { revision: a.revision, decision }));
+      } else if (a?.mode === 'category-choice' && a.status === 'pending') {
+        content.innerHTML = `<h3>Le client choisit ses remplacements</h3><p>${a.targets.map(t => esc(t.label)).join('<br>')}</p><p>La préparation reste bloquée. Réponse attendue avant ${new Date(a.expiresAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}. Sans réponse, la commande sera annulée avec remboursement à effectuer.</p>`;
+      } else {
+        const data = await request(`/dashboard/orders/${encodeURIComponent(order.id)}/replacement-targets`);
+        if (!modal.isConnected) return;
+        content.innerHTML = `<p>Cochez uniquement les articles indisponibles. Le client recevra les alternatives de leur catégorie : boissons, frites, desserts, cheese naans, menus ou burgers seuls.</p><p>Choisissez un article entier OU ses composants, pas les deux.</p>${data.targets.map(t => `<label class="amendment-choice"><input type="checkbox" data-target value="${esc(t.key)}" />${esc(t.label)}</label>`).join('')}<label>Message au client<textarea data-reason maxlength="300">Un article de ta commande est indisponible. Choisis un remplacement ou annule ta commande.</textarea></label><p>Le panier initial reste inchangé. Aucun supplément ne sera débité. Tout remboursement devra être effectué dans SumUp puis enregistré dans le back-office.</p><button data-send class="primary-button">Demander au client de choisir</button><button data-manual>Autre modification du panier · proposition manuelle</button>`;
+        content.querySelector('[data-send]').onclick = e => action(e.target, () => request(`/dashboard/orders/${encodeURIComponent(order.id)}/replacement-request`, { revision: data.revision, targets: [...content.querySelectorAll('[data-target]:checked')].map(el => el.value), reason: content.querySelector('[data-reason]').value }));
+        content.querySelector('[data-manual]').onclick = () => { clear(); void openLegacy(order, options); };
+      }
+    } catch (e) { if (modal.isConnected) error.textContent = e.message; }
   }
   return {open,clear};
 })();

@@ -1,0 +1,130 @@
+{
+  "source": "https://stblehavre.com/calendrier-nm1/",
+  "scope": "Official home calendar checked visually; kickoff 20:00 Europe/Paris. Inactive draft only: opening windows, prize rules and ticket delivery still need confirmation.",
+  "confirmed": true,
+  "matches": [
+    {
+      "date": "2026-10-16",
+      "opponent": "UJAP Quimper",
+      "startAt": "2026-10-16T18:00:00.000Z",
+      "deadlineAt": "2026-10-11T18:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2026-10-24",
+      "opponent": "Denain VB",
+      "startAt": "2026-10-24T18:00:00.000Z",
+      "deadlineAt": "2026-10-19T18:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2026-11-06",
+      "opponent": "Orléans LBA",
+      "startAt": "2026-11-06T19:00:00.000Z",
+      "deadlineAt": "2026-11-01T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2026-11-13",
+      "opponent": "Levallois SCB",
+      "startAt": "2026-11-13T19:00:00.000Z",
+      "deadlineAt": "2026-11-08T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2026-11-20",
+      "opponent": "JA Vichy",
+      "startAt": "2026-11-20T19:00:00.000Z",
+      "deadlineAt": "2026-11-15T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2026-12-11",
+      "opponent": "Caen BC",
+      "startAt": "2026-12-11T19:00:00.000Z",
+      "deadlineAt": "2026-12-06T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2026-12-22",
+      "opponent": "Champagne Basket",
+      "startAt": "2026-12-22T19:00:00.000Z",
+      "deadlineAt": "2026-12-17T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-01-08",
+      "opponent": "Stade Rochelais R",
+      "startAt": "2027-01-08T19:00:00.000Z",
+      "deadlineAt": "2027-01-03T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-01-29",
+      "opponent": "Hyères Toulon VB",
+      "startAt": "2027-01-29T19:00:00.000Z",
+      "deadlineAt": "2027-01-24T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-02-09",
+      "opponent": "ADA Blois",
+      "startAt": "2027-02-09T19:00:00.000Z",
+      "deadlineAt": "2027-02-04T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-03-05",
+      "opponent": "Nantes BH",
+      "startAt": "2027-03-05T19:00:00.000Z",
+      "deadlineAt": "2027-02-28T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-03-12",
+      "opponent": "ALM Évreux",
+      "startAt": "2027-03-12T19:00:00.000Z",
+      "deadlineAt": "2027-03-07T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-03-26",
+      "opponent": "CEP Poitiers",
+      "startAt": "2027-03-26T19:00:00.000Z",
+      "deadlineAt": "2027-03-21T19:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-03-30",
+      "opponent": "Aix Maurienne SB",
+      "startAt": "2027-03-30T18:00:00.000Z",
+      "deadlineAt": "2027-03-25T18:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-04-09",
+      "opponent": "O Antibes JLPCA",
+      "startAt": "2027-04-09T18:00:00.000Z",
+      "deadlineAt": "2027-04-04T18:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-04-23",
+      "opponent": "Alliance Sport Alsace",
+      "startAt": "2027-04-23T18:00:00.000Z",
+      "deadlineAt": "2027-04-18T18:00:00.000Z",
+      "confirmed": true
+    },
+    {
+      "date": "2027-05-07",
+      "opponent": "Rouen MB",
+      "startAt": "2027-05-07T18:00:00.000Z",
+      "deadlineAt": "2027-05-02T18:00:00.000Z",
+      "confirmed": true
+    }
+  ],
+  "sourceImage": "https://stblehavre.com/wp-content/uploads/2026/10/calendrier-a-domicile-724x1024.jpg",
+  "enabled": false,
+  "verifiedOn": "2026-10-13",
+  "seasonYearNote": "2026/2027 rollover inferred from the official October 2026 calendar image and its weekday/date alignment."
+}

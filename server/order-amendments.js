@@ -57,6 +57,7 @@ function cancel(order, status, now = Date.now()) {
 }
 function decide(order, input, stock = {}, now = Date.now()) {
   const amendment = order.amendment;
+  if (amendment?.mode === 'category-choice' && input.decision === 'accept') fail('Choisis les articles de remplacement puis attends la confirmation du restaurant.');
   if (!amendment || input.revision !== amendment.revision || !['accept', 'refuse'].includes(input.decision)) fail('Cette proposition n’est plus actuelle. Actualise le suivi.');
   const result = input.decision === 'accept' ? 'accepted' : 'refused';
   if (amendment.status === result && (result !== 'accepted' || order.status !== 'cancelled')) return false; // Safe replay after a lost response.

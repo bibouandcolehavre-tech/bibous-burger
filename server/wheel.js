@@ -2,6 +2,7 @@
 // its published window. All outcomes and eligibility are enforced server-side.
 const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
+const stb = require('./stb-tickets');
 
 const MAX_WHEEL_DISCOUNT_PERCENT = 5;
 const LEGACY_EUROS_PER_TURN = 10;
@@ -115,10 +116,13 @@ function customerWheelState(database, customerId, now = new Date()) {
     adjustmentDue: Math.max(0, spins.length - earned),
     orderTurns: orders.map(order => ({ orderId: order.id,
       available: Math.max(0, (order.payment?.provider === 'promotion' ? Number(eligibleChorusIds.has(order.id)) : eligibleOrderTurns(order, wheel)) - spins.filter(spin => spin.orderId === order.id).length),
+      stbEligible: order.payment?.provider !== 'promotion',
       tier: order.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(order.subtotal) - Number(order.discount || 0)), orderEurosPerTurn(order)),
     })).filter(item => item.available > 0),
-    segments: WHEEL_TIERS,
-    rules: activeWheel(wheel, now) ? wheel.officialRules : null,
+    stbTickets: stb.customerState(database, customerId, now),
+    baseSegments: WHEEL_TIERS,
+    segments: stb.availableMatch(database, now) ? Object.fromEntries(Object.entries(WHEEL_TIERS).map(([tier, segments]) => [tier, [...segments.map(([id, weight]) => [id, id === 'none' ? weight - 1 : weight]), ['stb-tickets', 1]]])) : WHEEL_TIERS,
+    rules: activeWheel(wheel, now) ? wheel.officialRules + (stb.availableMatch(database, now) ? ' Pendant la disponibilité du lot STB, 1 % des tours remplace un résultat sans gain par un lot unique de deux places : la probabilité sans gain passe alors de 50 % à 49 %. Le lot est attribué au plus tard cinq jours avant le match ; si nécessaire, un tirage de rattrapage est effectué parmi les participants éligibles, une chance par client. ' + stb.config(database).rules : '') : null,
     prizes: spins.filter(spin => !spin.revokedAt).map(spin => ({ id: spin.id, prizeId: spin.prizeId, label: spin.label, code: spin.code || null,
       redemptionStatus: spin.redemptionStatus || null, awardedAt: spin.awardedAt, expiresAt: spin.expiresAt || null })),
   };
@@ -160,7 +164,10 @@ function spinWheel(database, customerId, { now = new Date(), requestId, orderId,
   if (!referral && (!earnedForOrder || playedForOrder >= earnedForOrder || chorusLimitReached))
     throw Object.assign(new Error('Aucun tour disponible pour cette commande payée ou ce parrainage.'), { statusCode: 409 });
   const tier = referral || sourceOrder.payment?.provider === 'promotion' ? 'small' : wheelTierForAmount(Math.max(0, Number(sourceOrder.subtotal) - Number(sourceOrder.discount || 0)), orderEurosPerTurn(sourceOrder));
-  let prize = prizeForNumber(randomInt(100), tier);
+  const number = randomInt(100);
+  let prize = prizeForNumber(number, tier);
+  const eligibleForStb = referral || sourceOrder?.payment?.provider !== 'promotion';
+  const match = eligibleForStb ? stb.availableMatch(database, now) : null;
   const prior = (database.wheelSpins || []).filter(spin => spin.customerId === customerId && spin.prizeId && !spin.revokedAt && spin.redemptionStatus !== 'used' && (!spin.expiresAt || Date.parse(spin.expiresAt) > now.getTime()));
   const matchingCount = prior.filter(spin => spin.prizeId === prize.id).length;
   const giftLimit = tier === 'large' ? 2 : 1;
@@ -172,6 +179,13 @@ function spinWheel(database, customerId, { now = new Date(), requestId, orderId,
   const expiresAt = prize.validDays ? new Date(now.getTime() + prize.validDays * 86400000).toISOString() : null;
   const spin = { id: crypto.randomUUID(), requestId, customerId, orderId: orderId || null, referralCustomerId: referral?.id || null,
     tier, prizeId: prize.id, label: prize.label, awardedAt, expiresAt };
+  if (match) {
+    stb.participate(database, customerId, spin, now);
+    if (number === 0) {
+      const won = stb.spinAward(database, match, customerId, spin.id, now);
+      if (won) { prize = { id: 'stb-tickets', type: 'tickets' }; spin.prizeId = prize.id; spin.label = `Deux places STB · ${won.opponent}`; spin.stbAwardId = won.id; }
+    }
+  }
   database.wheelSpins ||= [];
   database.wheelSpins.push(spin);
   if (prize.type === 'points') {
@@ -232,4 +246,14 @@ function reconcileWheelRewards(database, now = new Date()) {
   return changed;
 }
 
-module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, CHORUS_TEST_TURN_LIMIT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, wheelDiscountPercentForOrder };
+function reconcileStbTickets(database, now = new Date(), randomInt = crypto.randomInt) {
+  const wheel = database.wheel || defaultWheel();
+  return stb.reconcile(database, (spinId, customerId) => {
+    const spin = (database.wheelSpins || []).find(s => s.id === spinId && s.customerId === customerId && !s.revokedAt);
+    if (!spin || !database.customers.some(c => c.id === customerId)) return false;
+    if (spin.referralCustomerId) return eligibleReferrals(database, customerId, wheel).some(c => c.id === spin.referralCustomerId);
+    const order = database.orders.find(o => o.id === spin.orderId && o.customerId === customerId);
+    return order?.payment?.provider !== 'promotion' && eligibleOrderTurns(order, wheel) > 0;
+  }, now, randomInt);
+}
+module.exports = { MAX_WHEEL_DISCOUNT_PERCENT, EUROS_PER_TURN, CHORUS_TEST_TURN_LIMIT, WHEEL_PRIZES, WHEEL_TIERS, defaultWheel, activeWheel, eligibleOrderTurns, referralTurns, customerWheelState, wheelTierForAmount, prizeForNumber, spinWheel, reconcileWheelRewards, reconcileStbTickets, wheelDiscountPercentForOrder };

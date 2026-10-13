@@ -23,6 +23,8 @@ const { anonymizeCustomerAccount } = require("./account-deletion");
 const push = require('./push-notifications');
 const crm = require('./crm');
 const marketingSms = require('./marketing-sms');
+const articleRatings = require('./article-ratings');
+const { naanLoyaltyPoints } = require('../cheese-naans');
 const { BIBOU_PLUS_DISCOUNT_RATE, BIBOU_PLUS_PRICE, activateBibouPlus, bibouPlusOrderPricing, bibouPlusStatus, ensureBibouPlusStore } = require("./bibou-plus");
 const { availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems } = require("./catalog");
 const { createProductStockStore } = require("./product-stock");
@@ -44,6 +46,10 @@ const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restore
 const { applySupportCredits } = require("./support-credits");
 const serviceSchedule = require("./service-schedule");
 const amendments = require("./order-amendments");
+const replacements = require('./order-replacements');
+const stbTickets = require('./stb-tickets');
+const contestPrizes = require('./contest-prizes');
+const contestPrizeAlerts = require('./contest-prize-alerts');
 const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
 const orderSms = require('./order-sms');
@@ -77,6 +83,7 @@ const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.js
 const serviceModuleStore = createServiceModuleStore(path.join(path.dirname(databasePath), 'service-modules.json'));
 const keyyoConfig = keyyo.configFromEnv(process.env);
 const orderSmsConfig = orderSms.configFromEnv(process.env);
+const contestPrizeSmsConfig = contestPrizeAlerts.configFromEnv(process.env);
 const keyyoSms = keyyo.createCallSms({ config: keyyoConfig, file: path.join(path.dirname(databasePath), 'keyyo-call-sms.json') });
 const productStockStore = createProductStockStore(path.join(path.dirname(databasePath), "product-stock.json"));
 const allowedStatuses = ["confirmed", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"];
@@ -108,6 +115,10 @@ const dashboardSessions = createDashboardSessionStore(path.join(path.dirname(dat
 const kroklyTokenSecret = crypto.createHmac('sha256', customerSessionSecret).update('krokly-drivers-v1').digest('hex');
 const reviewSandbox = createReviewSandbox({ enabled: process.env.STORE_REVIEW_ENABLED !== 'false' });
 const acquireDatabase = createDatabaseLock();
+// A client channel hint is not device attestation. Benefit ownership, quotas,
+// dates and authenticated access are always checked separately on the server.
+const contestPrizeContext = request => ({ appPlatform: !request.headers.origin && ['ios', 'android'].includes(request.headers['x-bibou-platform']) ? request.headers['x-bibou-platform'] : null,
+  isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled: process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret: kioskDeviceSecret })) });
 const autoPrintStartedAt = new Date().toISOString();
 let googleReviewsCache = { value: null, expiresAt: 0 };
 let orderCreationQueue = Promise.resolve();
@@ -163,7 +174,7 @@ const backupStore = createBackupStore({
       // Read existing data only: a missing file must not silently restore seed data.
       const database = JSON.parse(await fs.readFile(databasePath, "utf8"));
       const stock = await productStockStore.read();
-      return { database: orderSms.backupDatabase(database), stock, keyyoCallSms: await keyyoSms.backupState() };
+      return { database: contestPrizeAlerts.backupDatabase(orderSms.backupDatabase(database)), stock, keyyoCallSms: await keyyoSms.backupState() };
     } finally { release(); }
   }
 });
@@ -291,7 +302,7 @@ const finalizePaidTableDeposit = (reservation, database) => {
   push.queueServiceNotification(database, reservation, 'reservation', 'awaiting_payment', pushConfig);
   return true;
 };
-const loyaltyPointsForItems = (items) => items.reduce((total, item) => total + (menuProductIds.has(item.productId) ? MENU_POINTS : burgerProductIds.has(item.productId) ? BURGER_POINTS : 0) * Math.max(1, Number(item.quantity) || 1), 0);
+const loyaltyPointsForItems = (items) => items.reduce((total, item) => total + (menuProductIds.has(item.productId) ? MENU_POINTS : burgerProductIds.has(item.productId) ? BURGER_POINTS : naanLoyaltyPoints(item)) * Math.max(1, Number(item.quantity) || 1), 0);
 const finalizePaidOrder = (order, database) => {
   if (order.payment?.status !== "PAID") return null;
   if (order.status === "cancelled") {
@@ -333,7 +344,7 @@ const finalizePaidOrder = (order, database) => {
   }
   // A gifted order is fulfilled normally, but is not a paid purchase for loyalty
   // or referral rewards. It must not multiply points on earlier paid orders.
-  if (order.payment.provider === 'promotion') return { customer, pointsAdded: 0, referralPointsAdded: 0 };
+  if (order.payment.provider === 'promotion' || order.promotion?.sourceContestPrize) return { customer, pointsAdded: 0, referralPointsAdded: 0 };
   const { pointsAdded } = grantLoyaltyForOrder(customer, order, new Date(now), { bibouPlus: Boolean(order.bibouPlusApplied) });
   consumeWelcomeReward(customer, order, new Date(now));
   const referral = grantReferralReward(order, database, new Date(now));
@@ -649,7 +660,7 @@ const server = http.createServer(async (request, response) => {
       try { return send(response, 200, orderSms.status(await readDatabase(), orderSmsConfig)); }
       finally { release(); }
     }
-    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { kioskImmediate:1, kioskGuest:process.env.KIOSK_PAIRING_ENABLED === 'true' && process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, kioskCash: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, paymentRecovery: 1, promoCodes: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1, kioskTerminal: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 && process.env.SUMUP_KIOSK_AFFILIATE_KEY?.startsWith('sup_afk_') && Boolean(sumupApiKey) ? 1 : 0, kioskPairing: process.env.KIOSK_PAIRING_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0 } });
+    if (request.method === "GET" && url.pathname === "/api/health") return send(response, 200, { ok: true, service: "Bibou's Burgers API", version: process.env.RENDER_GIT_COMMIT || null, capabilities: { kioskImmediate:1, kioskGuest:process.env.KIOSK_PAIRING_ENABLED === 'true' && process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, kioskCash: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0, paymentRecovery: 1, promoCodes: 1, contestPrizes: 1, quantityStock: 1, categoryReplacements: 1, articleRatings: 1, cheeseNaans: 1, quarterHourAppointments: 1, androidV4Compatibility: 1, advancePickupLoyalty: 1, customerPush: 1, customerCrm: 1, customerIdentity: 2, serviceSchedule: 1, orderAmendments: 1, uberDirect: 1, tablePreorders: 1, reservationDeposits: 1, kioskTerminal: process.env.KIOSK_TERMINAL_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 && process.env.SUMUP_KIOSK_AFFILIATE_KEY?.startsWith('sup_afk_') && Boolean(sumupApiKey) ? 1 : 0, kioskPairing: process.env.KIOSK_PAIRING_ENABLED === 'true' && kioskDeviceSecret?.length >= 32 ? 1 : 0 } });
 
     if (url.pathname === '/api/dashboard/promotions') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -700,6 +711,10 @@ const server = http.createServer(async (request, response) => {
       const catalogDatabase = await readDatabase();
       if (quantityStock.reconcile(catalogDatabase)) await writeDatabase(catalogDatabase);
       const catalog = quantityStock.catalog(catalogDatabase, await productStockStore.read(), new Date(), url.pathname === '/api/dashboard/catalog');
+      const ratings = articleRatings.publicArticleRatings(catalogDatabase);
+      catalog.products = catalog.products.map(product => ({ ...product, satisfaction: ratings[articleRatings.ratingKey(product.id)] || null }));
+      // Draft products are manageable by the restaurant, but remain absent from
+      // the public menu. Enabling stock never publishes a draft recipe.
       if (url.pathname === '/api/catalog') catalog.products = catalog.products.filter(product => product.visible !== false);
       return send(response, 200, catalog);
     }
@@ -882,6 +897,24 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, dashboardContest(database));
     }
 
+    if (['/api/dashboard/contest/prizes', '/api/dashboard/contest/prizes/finalize'].includes(url.pathname)) {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      const finalizing = url.pathname.endsWith('/finalize');
+      if (request.method !== (finalizing ? 'POST' : 'GET')) return send(response, 405, { error: 'Action non disponible.' });
+      const input = finalizing ? await readBody(request) : null;
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      if (finalizing) { contestPrizes.finalize(database, input); await writeDatabase(database); }
+      const closed = require('./referral-contest').contestStatus(database.referralContest || {}, new Date()) === 'closed';
+      const customers = new Map(database.customers.map(c => [c.id, c]));
+      return send(response, 200, { preview: closed ? contestPrizes.finalizationPreview(database) : null,
+        rules: require('../contest-prize-policy').CONTEST_PRIZE_RULES,
+        grants: (database.contestPrizes?.grants || []).map(g => ({ id: g.id, rank: g.rank, menus: g.menus, months: g.months, startMonth: g.startMonth, lastMonth: g.lastMonth,
+          status: g.status, customerName: customers.get(g.customerId)?.name || 'Compte supprimé', alertsEnabled: g.alertsEnabled })),
+        smsEnabled: contestPrizeAlerts.configured(contestPrizeSmsConfig),
+        smsCounts: Object.fromEntries(['queued', 'accepted', 'rejected', 'uncertain', 'cancelled'].map(status => [status, (database.contestPrizes?.smsJobs || []).filter(j => j.status === status).length])) });
+    }
+
     if (url.pathname === "/api/dashboard/customers" || url.pathname.startsWith("/api/dashboard/customers/")) {
       response.setHeader("Cache-Control", "no-store");
       if (!authenticatedDashboard(request)) return send(response, 401, { error: "Accès restaurant requis." });
@@ -972,8 +1005,22 @@ const server = http.createServer(async (request, response) => {
     const contestPurged = purgeExpiredContestEntries(database);
     const supportCreditsChanged = applySupportCredits(database);
     const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
+    const stbChanged = wheelGame.reconcileStbTickets(database);
     const quantityChanged = quantityStock.reconcile(database);
-    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || quantityChanged) await writeDatabase(database);
+    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || stbChanged || quantityChanged) await writeDatabase(database);
+
+    if (url.pathname === '/api/dashboard/stb-tickets') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      if (request.method === 'PATCH') { stbTickets.configure(database, await readBody(request)); await writeDatabase(database); }
+      else if (request.method !== 'GET') return send(response, 405, { error: 'Action indisponible.' });
+      return send(response, 200, stbTickets.config(database));
+    }
+    const stbFulfill = /^\/api\/dashboard\/stb-tickets\/([^/]+)\/fulfill$/.exec(url.pathname);
+    if (stbFulfill && request.method === 'POST') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      stbTickets.fulfill(database, stbFulfill[1], await readBody(request)); await writeDatabase(database);
+      return send(response, 200, { recorded: true });
+    }
 
     if (request.method === 'POST' && url.pathname === '/api/kiosk/guest') {
       if (process.env.KIOSK_PAIRING_ENABLED !== 'true' || !authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) return send(response, 403, { error:'Accès borne requis.' });
@@ -1053,6 +1100,17 @@ const server = http.createServer(async (request, response) => {
       else return send(response, 405, { error: 'Action non disponible.' });
       await writeDatabase(database);
       return send(response, 200, { campaign, ...push.dashboardPush(database, pushConfig) });
+    }
+
+    if (['/api/customer/contest/prizes', '/api/customer/contest/prizes/alerts'].includes(url.pathname)) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer) return send(response, 401, { error: 'Connecte-toi pour retrouver tes menus gagnés.' });
+      const alerts = url.pathname.endsWith('/alerts');
+      if (request.method !== (alerts ? 'PATCH' : 'GET')) return send(response, 405, { error: 'Action non disponible.' });
+      if (alerts) contestPrizes.updateAlerts(database, customer, await readBody(request));
+      const changed = contestPrizes.issueCurrentMonth(database);
+      if (alerts || changed) await writeDatabase(database);
+      return send(response, 200, contestPrizes.customerState(database, customer, contestPrizeContext(request)));
     }
 
     if (url.pathname === '/api/customer/contest' || url.pathname === '/api/customer/contest/join' || url.pathname === '/api/customer/contest/share') {
@@ -1376,6 +1434,34 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
       return send(response, 200, amendmentCatalog(quantityStock.effectiveFlags(database, await productStockStore.read())));
     }
+    const replacementRoute = /^\/api\/(dashboard|customer)\/orders\/([^/]+)\/(replacement-targets|replacement-request|replacement-options|replacement-choice|replacement-confirm)$/.exec(url.pathname);
+    if (replacementRoute) {
+      const [, scope, id, action] = replacementRoute;
+      const customer = scope === 'customer' ? authenticatedCustomer(request, database) : null;
+      if (scope === 'dashboard' ? !authenticatedDashboard(request) : !customer) return send(response, 401, { error: 'Connexion requise.' });
+      const order = database.orders.find(o => o.id === id && (scope === 'dashboard' || o.customerId === customer.id && orderInKioskSession(o, request.kioskSession)));
+      if (!order) return send(response, 404, { error: 'Commande introuvable.' });
+      if (scope === 'dashboard' && action === 'replacement-targets' && request.method === 'GET') return send(response, 200, { revision: order.amendment?.revision || 0, targets: replacements.targets(order) });
+      if (scope === 'customer' && action === 'replacement-options' && request.method === 'GET') return send(response, 200, replacements.options(order, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id, true)));
+      if (request.method !== 'POST') return send(response, 405, { error: 'Action indisponible.' });
+      const input = await readBody(request), stock = quantityStock.effectiveFlags(database, await productStockStore.read(), order.id, true);
+      const previousItems = structuredClone(order.items);
+      if (scope === 'dashboard' && action === 'replacement-request') replacements.requestReplacement(order, input);
+      else if (scope === 'customer' && action === 'replacement-choice') {
+        replacements.submit(order, input, stock);
+        quantityStock.assertChange(database, order, order.amendment.proposal.items);
+      }
+      else if (scope === 'dashboard' && action === 'replacement-confirm') {
+        replacements.confirm(order, input, stock);
+        if (order.amendment.status === 'accepted') {
+          quantityStock.applyChange(database, order, previousItems);
+          adjustAmendedLoyalty(order, database);
+        }
+      } else return send(response, 403, { error: 'Cette action appartient au client ou au responsable.' });
+      order.amendment.notification = push.queueAmendmentNotification(database, order, pushConfig);
+      await writeDatabase(database);
+      return send(response, 200, { order });
+    }
     const amendmentRoute = url.pathname.match(/^\/api\/(dashboard|customer)\/orders\/([^/]+)\/(amendment|amendment-preview|refund)$/);
     if (amendmentRoute && request.method === 'POST') {
       const [, scope, id, action] = amendmentRoute;
@@ -1385,6 +1471,7 @@ const server = http.createServer(async (request, response) => {
       if (!order) return send(response, 404, { error: 'Commande introuvable.' });
       const input = await readBody(request);
       const amendmentStock = quantityStock.effectiveFlags(database, await productStockStore.read(), order.id, true);
+      const previousItems = structuredClone(order.items);
       if (scope === 'dashboard') {
         if (action === 'amendment-preview') {
           const preview = amendments.preview(order, input, amendmentStock);
@@ -1393,17 +1480,18 @@ const server = http.createServer(async (request, response) => {
         }
         if (action === 'refund') amendments.recordRefund(order, input);
         else {
-          quantityStock.assertChange(database, order, amendments.preview(order, input, amendmentStock).proposal.items);
           amendments.propose(order, input, amendmentStock);
+          quantityStock.assertChange(database, order, order.amendment.proposal.items);
           order.amendment.notification = push.queueAmendmentNotification(database, order, pushConfig);
         }
       } else {
         if (action !== 'amendment') return send(response, 404, { error: 'Action indisponible.' });
-        if (input.decision === 'accept' && order.amendment?.status === 'pending') quantityStock.assertChange(database, order, order.amendment.proposal.items);
-        const previousItems = structuredClone(order.items);
         const changed = amendments.decide(order, input, amendmentStock);
         if (changed) {
-          if (order.amendment.status === 'accepted') { quantityStock.applyChange(database, order, previousItems); adjustAmendedLoyalty(order, database); }
+          if (order.amendment.status === 'accepted') {
+            quantityStock.applyChange(database, order, previousItems);
+            adjustAmendedLoyalty(order, database);
+          }
           cancelLinkedTable(order, database);
           revokeLoyaltyForCancelledOrder(order, database);
           push.queueAmendmentNotification(database, order, pushConfig);
@@ -1411,6 +1499,19 @@ const server = http.createServer(async (request, response) => {
       }
       await writeDatabase(database);
       return send(response, 200, { order });
+    }
+
+    const ratingRoute = /^\/api\/customer\/orders\/([^/]+)\/ratings$/.exec(url.pathname);
+    if (ratingRoute && ['GET', 'POST'].includes(request.method)) {
+      const customer = authenticatedCustomer(request, database);
+      if (!customer || request.kioskSession?.guest) return send(response, 401, { error: 'Connecte-toi pour noter tes articles.' });
+      const order = database.orders.find(o => o.id === ratingRoute[1] && o.customerId === customer.id && orderInKioskSession(o, request.kioskSession));
+      if (!order) return send(response, 404, { error: 'Commande introuvable.' });
+      if (request.method === 'POST') {
+        articleRatings.saveArticleRatings(database, order, await readBody(request));
+        await writeDatabase(database);
+      }
+      return send(response, 200, articleRatings.customerOrderRatings(database, order));
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
@@ -1661,10 +1762,10 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       const promotion = promotionForCode(input?.code, database);
       if (!promotion) return send(response, 400, { error: 'Saisis un code promo.' });
-      assertPromotionAvailable(database, promotion, customer.id);
-      assertPromotionMethod(promotion, input.method, { ...input, isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) }, { preview:true });
+      assertPromotionAvailable(database, promotion, customer.id, contestPrizeContext(request));
+      assertPromotionMethod(promotion, input.method, { ...input, ...contestPrizeContext(request) }, { preview:true });
       if (promotion.type === 'free_delivery' && bibouPlusStatus(customer).active) return send(response, 400, { error: 'Ta livraison est déjà offerte avec Bibou + ; ce code ne t’apporterait pas de réduction supplémentaire.' });
-      if (promotion.requiredMenuCount || promotion.id) {
+      if (promotion.requiredMenuCount || promotion.id || promotion.sourceContestPrize) {
         const pricedCart = validateAndPriceOrderItems(input.items, quantityStock.effectiveFlags(database, await productStockStore.read()), input);
         assertPromotionCart(promotion, pricedCart.items);
         if (promotion.id) {
@@ -1705,7 +1806,7 @@ const server = http.createServer(async (request, response) => {
       if (immediate) Object.assign(input, { serviceDate:immediate.serviceDate, slot:immediate.slot });
       if (!customer || !Array.isArray(input.items) || !input.items.length || !["delivery", "pickup"].includes(input.method) || !input.slot || !input.serviceDate) return send(response, 400, { error: "Informations de commande incomplètes." });
       const pricedCart = validateAndPriceOrderItems(input.items, quantityStock.effectiveFlags(database, await productStockStore.read()), input);
-      const promotionContext = { ...input, isKiosk: Boolean(request.kioskSession || authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret })) };
+      const promotionContext = { ...input, ...contestPrizeContext(request) };
       assertPromotionMethod(promotion, input.method, promotionContext);
       assertPromotionCart(promotion, pricedCart.items);
       const subtotal = pricedCart.subtotal;
@@ -1735,7 +1836,7 @@ const server = http.createServer(async (request, response) => {
         const latestDatabase = await readDatabase();
         if (tableRequest && !(await serviceModuleStore.read()).modules.tables) throw Object.assign(new Error('Les réservations de table sont momentanément indisponibles.'), { statusCode: 409 });
         const activePromotion = promotionForCode(input.promoCode, latestDatabase);
-        assertPromotionAvailable(latestDatabase, activePromotion, input.customerId);
+        assertPromotionAvailable(latestDatabase, activePromotion, input.customerId, contestPrizeContext(request));
         assertPromotionMethod(activePromotion, input.method, promotionContext);
         assertPromotionCart(activePromotion, pricedCart.items);
         ensureBibouPlusStore(latestDatabase);
@@ -1769,6 +1870,7 @@ const server = http.createServer(async (request, response) => {
         createdOrder.requestId = requestId;
         if (request.kioskSession) { createdOrder.kioskSessionId = request.kioskSession.id; createdOrder.kioskDeviceDigest = request.kioskSession.deviceDigest; }
         if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
+        if (activePromotion?.sourceContestPrize) { createdOrder.contestPrizePlatform = promotionContext.appPlatform; createdOrder.discountLabel = 'Menus gagnés au concours'; contestPrizes.reserve(latestDatabase, createdOrder); }
         if (activePromotion?.id) Object.assign(createdOrder, { promotionDiscount: pricing.promotionDiscount, promotionDeliveryDiscount: pricing.promotionDeliveryDiscount, baseDiscount: pricing.baseDiscount });
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }
         createdOrder.requestFingerprint = fingerprint;
@@ -1778,7 +1880,8 @@ const server = http.createServer(async (request, response) => {
         quantityStock.reserve(latestDatabase, createdOrder);
         latestDatabase.orders.unshift(createdOrder);
         if (cash) prepareCashOrder(createdOrder);
-        else if (settlePromotionalOrder(createdOrder)) finalizePaidOrder(createdOrder, latestDatabase);
+        else if (settlePromotionalOrder(createdOrder, new Date(), latestDatabase)) finalizePaidOrder(createdOrder, latestDatabase);
+        contestPrizes.reconcile(latestDatabase);
         await writeDatabase(latestDatabase);
         return createdOrder;
       });
@@ -1938,6 +2041,39 @@ const server = http.createServer(async (request, response) => {
     releaseDatabase?.();
   }
 });
+
+const stbTimer = setInterval(async () => {
+  const release = await acquireDatabase();
+  try { const database = await readDatabase(); if (wheelGame.reconcileStbTickets(database)) await writeDatabase(database); }
+  catch { console.error('Lots STB : vérification indisponible.'); }
+  finally { release(); }
+}, 60000);
+stbTimer.unref(); server.on('close', () => clearInterval(stbTimer));
+
+let maintainingPrizes = false;
+const maintainPrizes = async () => {
+  if (maintainingPrizes) return;
+  maintainingPrizes = true;
+  const release = await acquireDatabase();
+  try { const database = await readDatabase(); if (contestPrizeAlerts.schedule(database, { pushConfig, smsConfig: contestPrizeSmsConfig })) await writeDatabase(database); }
+  catch { console.error('Lots du concours : entretien indisponible. Aucun résultat automatiquement validé.'); }
+  finally { release(); maintainingPrizes = false; }
+};
+const contestPrizeTimer = setInterval(maintainPrizes, 60000);
+contestPrizeTimer.unref(); server.once('listening', maintainPrizes); server.on('close', () => clearInterval(contestPrizeTimer));
+const contestPrizeSmsWorker = contestPrizeAlerts.createWorker({ config: contestPrizeSmsConfig, transact: async task => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase(), before = JSON.stringify(database.contestPrizes);
+    const result = task(database);
+    if (JSON.stringify(database.contestPrizes) !== before) await writeDatabase(database);
+    return result;
+  } finally { release(); }
+} });
+if (contestPrizeAlerts.configured(contestPrizeSmsConfig)) {
+  const timer = setInterval(() => void contestPrizeSmsWorker.tick().catch(() => console.error('Rappels des lots : consulter les résultats avant de relancer.')), 15000);
+  timer.unref(); server.on('close', () => clearInterval(timer));
+}
 
 let syncingUber = false;
 const syncUberDeliveries = async () => {

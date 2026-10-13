@@ -72,6 +72,7 @@ const saveDashboardToken = token => {
   catch { try { sessionStorage.setItem(dashboardTokenKey, token); } catch {} }
 };
 const removeDashboardToken = () => {
+  stockQuantityDrafts.clear(); ++menuRequest; menuProducts = []; menuLoaded = false;
   try { localStorage.removeItem(dashboardTokenKey); } catch {}
   try { sessionStorage.removeItem(dashboardTokenKey); } catch {}
 };
@@ -772,7 +773,7 @@ async function changeProductStock(id) {
     if (!response.ok) throw new Error(payload.error || "Modification non enregistrée. Réessayez.");
     menuProducts = payload.products;
     const updated = menuProducts.find((item) => item.id === id);
-    document.querySelector("#menu-feedback").textContent = `${updated.name} : ${updated.available ? "disponible" : "en rupture"}. Modification enregistrée.${updated.enabled && !updated.available ? ` ${updated.reason}` : ""}`;
+    document.querySelector("#menu-feedback").textContent = `${updated.name} : ${menuAvailabilityLabel(updated).replace('● ', '')}. Modification enregistrée.${updated.enabled && !updated.available ? ` ${updated.reason}` : ""}`;
   } catch (error) {
     document.querySelector("#menu-feedback").textContent = error.message || "Modification non enregistrée. Vérifiez votre connexion puis actualisez.";
   } finally {

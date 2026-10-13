@@ -8,8 +8,8 @@ const fixture = () => ({ customers: [customer('1',true),customer('2'),customer('
 const input = code => ({contestId:'bibou-launch',revision:1,acceptRules:true,confirmAdult:true,confirmRegion:true,sponsorCode:code});
 test('Brouillon privé, validation des dates et aucune activation par PATCH', () => {
   const db={customers:[],orders:[]};
-  assert.equal(defaultContest().startDate,'2026-10-05');
-  assert.equal(defaultContest().endDate,'2026-10-31');
+  assert.equal(defaultContest().startDate,'');
+  assert.equal(defaultContest().endDate,'');
   assert.deepEqual(publicContest(db,now),{status:'inactive'});
   assert.equal(dashboardContest(db,now).launchLocked,true);
   assert.throws(()=>saveContestDraft(db,{revision:0,status:'published'}),/activation/);
@@ -30,7 +30,7 @@ test('Publication explicite uniquement après règlement finalisé, puis ouvertu
   const confirmation={revision:0,confirmation:'PUBLIER LE CONCOURS'};
   assert.throws(()=>publishContest(db,confirmation,new Date('2026-10-03T12:00:00Z')),/règlement/);
   assert.throws(()=>publishContest(db,{...confirmation,confirmation:'oui'},new Date('2026-10-03T12:00:00Z')),/Confirmation/);
-  saveContestDraft(db,{revision:0,rules:'Règlement fictif réservé aux tests.'},new Date('2026-10-03T12:00:00Z'));
+  saveContestDraft(db,{revision:0,startDate:'2026-10-05',endDate:'2026-10-31',rules:'Règlement fictif réservé aux tests.'},new Date('2026-10-03T12:00:00Z'));
   assert.equal(publishContest(db,{revision:1,confirmation:'PUBLIER LE CONCOURS'},new Date('2026-10-03T12:00:00Z')).status,'published');
   assert.equal(dashboardContest(db,new Date('2026-10-03T12:00:00Z')).launchLocked,false);
   assert.equal(publicContest(db,new Date('2026-10-04T21:59:59Z')).status,'scheduled');

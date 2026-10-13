@@ -1,11 +1,12 @@
 const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 const { normalizeReferralCode } = require('./referrals');
+const { CONTEST_PRIZE_RULES } = require('../contest-prize-policy');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 // Approved scoring and dates remain a private draft until the rules are finalized.
 const SCORE_PER_REFERRAL = 20;
-const defaultContest = () => ({ id: 'bibou-launch', status: 'draft', revision: 0, title: 'Les ambassadeurs Bibou', startDate: '2026-10-05', endDate: '2026-10-31', region: 'France métropolitaine', firstPrize: '2 menus par mois de novembre 2026 à octobre 2027 (24 menus)', secondPrize: '1 menu par mois de novembre 2026 à avril 2027 (6 menus)', thirdPrize: '2 menus en une seule fois en novembre 2026', rules: '', entries: [] });
+const defaultContest = () => ({ id: 'bibou-launch', status: 'draft', revision: 0, title: 'Les ambassadeurs Bibou', startDate: '', endDate: '', region: 'France métropolitaine', firstPrize: '2 menus par mois pendant 12 mois (24 menus)', secondPrize: '1 menu par mois pendant 6 mois (6 menus)', thirdPrize: '2 menus en une seule fois', rules: '', entries: [] });
 const contestFor = database => database.referralContest || defaultContest();
 const dateValid = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T12:00:00Z`)) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
 const withinDates = (contest, value) => {
@@ -67,7 +68,7 @@ function publicContest(database, now = new Date()) {
   const status = contestStatus(contest, now);
   if (status === 'inactive') return { status };
   const { id, revision, title, startDate, endDate, region, firstPrize, secondPrize, thirdPrize, rules } = contest;
-  return { id, revision, title, startDate, endDate, region, firstPrize, secondPrize, thirdPrize, rules, status, scoring: { pointsPerEuro: 1, pointsPerVerifiedReferral: SCORE_PER_REFERRAL, pointsPerDailyShareAction: 1 } };
+  return { id, revision, title, startDate, endDate, region, firstPrize, secondPrize, thirdPrize, rules: `${rules}\n\nConditions d’utilisation des menus gagnés\n${CONTEST_PRIZE_RULES}`, status, scoring: { pointsPerEuro: 1, pointsPerVerifiedReferral: SCORE_PER_REFERRAL, pointsPerDailyShareAction: 1 } };
 }
 
 const verifiedPhone = customer => /^\+33[67]\d{8}$/.test(customer?.phone || '') && customer.verifiedPhone === customer.phone && Number.isFinite(Date.parse(customer.phoneVerifiedAt));
@@ -159,7 +160,7 @@ function joinContest(database, customer, input, secret, now = new Date()) {
     sponsorId = sponsor.id;
   }
   const newCustomer = withinDates(contest, customer.createdAt) && withinDates(contest, customer.firstPhoneVerifiedAt);
-  contest.entries.push({ customerId: customer.id, phoneHash, alias: `Participant ${crypto.randomBytes(4).toString('hex').toUpperCase()}`, sponsorId, newCustomer, joinedAt: now.toISOString(), rulesRevision: contest.revision, shareEvents: [] });
+  contest.entries.push({ customerId: customer.id, phoneHash, alias: `Participant ${crypto.randomBytes(4).toString('hex').toUpperCase()}`, sponsorId, newCustomer, joinedAt: now.toISOString(), rulesRevision: contest.revision, shareEvents: [], prizeAlerts: input.acceptPrizeAlerts === true, prizeAlertsUpdatedAt: now.toISOString() });
   return { changed: true, ...customerContest(database, customer, now) };
 }
 
@@ -218,4 +219,4 @@ function dashboardContest(database, now = new Date()) {
   return { draft, status: contestStatus(contest, now), missing: readiness(contest), launchLocked: contest.status === 'draft', scoring: { pointsPerEuro: 1, pointsPerVerifiedReferral: SCORE_PER_REFERRAL, pointsPerDailyShareAction: 1 }, statistics: { participants: participants.length, newReferrals: participants.filter(entry => entry.sponsorId && entry.newCustomer).length, paidCustomers: paid.size, paidOrders: eligibleOrders.length, paidRevenue: paidRevenueCents / 100 }, ranking: ranking.slice(0, 100), rankingTotal: ranking.length };
 }
 
-module.exports = { defaultContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, withdrawContest, purgeExpiredContestEntries, dashboardContest, contestStatus };
+module.exports = { defaultContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, withdrawContest, purgeExpiredContestEntries, dashboardContest, contestStatus, contestRanking };

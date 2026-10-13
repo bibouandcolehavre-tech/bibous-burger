@@ -2,6 +2,11 @@
 // fulfillment authorization remain server-side. No redeemable code is bundled.
 function previewPromotion(base, subtotal, promotion, method) {
   if (!promotion) return base;
+  if (promotion.sourceContestPrize) {
+    if (typeof promotion.code !== 'string' || promotion.discountPercent !== 100 || !Number.isInteger(promotion.menuAllowance) || promotion.menuAllowance < 1 || !Number.isFinite(base.deliveryFee || 0)) throw new Error('Réponse de lot personnel invalide.');
+    const fee = method === 'delivery' ? (base.deliveryFee || 0) : 0;
+    return { ...base, discountRate: 1, discount: subtotal, discountLabel: 'Menus gagnés au concours', deliveryFee: fee, total: fee };
+  }
   if (promotion.id) {
     if (typeof promotion.code !== 'string' || !['percent_order','percent_burger','bogo_burger','buy3_get1_burger','buy3_get1_menu','free_delivery'].includes(promotion.type)) throw new Error('Réponse de code promo invalide.');
     const productDiscount = Number(promotion.previewProductDiscount);

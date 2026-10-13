@@ -1,8 +1,11 @@
 const { containsPork, porkOption } = require('../dietary-policy');
 const { meatOption, vegetarianInstruction } = require('./kiosk-recipe');
 const { productOfferForService, offerCatalogProduct } = require('../product-offer');
+const { CHEESE_NAANS, isCheeseNaan } = require('../cheese-naans');
+const { naanAvailability, assertNaanService } = require('./cheese-naans');
 const { BASE_CENTS, PROTEINS, CHEESES, EXTRAS, EXTRA_STOCK_IDS, parseSelectionEntries, pricedOptions } = require('../custom-burger-preview');
 const PRODUCT_CATALOG = {
+  ...CHEESE_NAANS,
   taurus: { name: "Le Taurus", price: 16.9, menu: true },
   "montagnes-menu": { name: "À travers les montagnes", price: 16.9, menu: true },
   "atlas-menu": { name: "Au sommet de l'Atlas", price: 18.9, menu: true, soldOut: true, fixedSauce: "fixed-atlas" },
@@ -44,10 +47,6 @@ const PRODUCT_CATALOG = {
 };
 
 const STOCK_ONLY_CATALOG = {
-  // Inventory preparation only. These recipes are not saleable by this release.
-  'naan-poulet': { name: 'Cheese naan poulet', price: 7.9, menuPrice: 10.9, category: 'naans', draft: true },
-  'naan-boeuf': { name: 'Cheese naan bœuf', price: 7.9, menuPrice: 10.9, category: 'naans', draft: true },
-  'naan-canard': { name: 'Cheese naan canard', price: 7.9, menuPrice: 10.9, category: 'naans', draft: true },
   "ingredient-second-steak": { name: "Supplément · Steak haché", price: 3, category: "supplements" },
   "ingredient-potato-patty": { name: "Supplément · Galette de pomme de terre", price: 2, category: "supplements" },
   "ingredient-cheddar": { name: "Supplément · Cheddar", price: 1, category: "supplements" },
@@ -63,6 +62,13 @@ const STOCK_CATALOG = { ...PRODUCT_CATALOG, ...STOCK_ONLY_CATALOG };
 
 const option = (groupId, id, label, price = 0, extra = {}) => ({ groupId, id, label, price, ...extra });
 const OPTIONS = [
+  option('naan-format', 'solo', 'Naan seul'),
+  option('naan-format', 'menu', 'Menu cheese naan · boisson et frites ou dessert', 3),
+  option('naan-side', 'fries', 'Frites maison incluses'),
+  option('naan-side', 'dessert', 'Un dessert inclus'),
+  option('naan-dessert', 'oreo', 'Tiramisu Oreo'),
+  option('naan-dessert', 'cookie', 'Tiramisu cookie'),
+  option('naan-dessert', 'speculoos', 'Tiramisu spéculoos'),
   option("protein", "viande", "Viande"),
   option("protein", "galette", "Galette de pomme de terre (végétarien)"),
   option("protein", "galette-base", "Galette de pommes de terre"),
@@ -158,6 +164,9 @@ const OPTIONS = [
 
 const OPTION_CATALOG = new Map(OPTIONS.map((entry) => [`${entry.groupId}:${entry.id}`, entry]));
 const GROUP_RULES = {
+  'naan-format': { min: 1, max: 1 },
+  'naan-side': { max: 1 },
+  'naan-dessert': { max: 1 },
   protein: { min: 1, max: 1 },
   'meat-type': { max: 1 },
   salad: { min: 1, max: 5 },
@@ -184,11 +193,14 @@ const SOLO_GROUPS = new Set(["solo-fries", "drink", "solo-dessert"]);
 const FRIES_CHOICE_GROUPS = new Set(["menu-fries", "solo-fries", "duo-fries-one", "duo-fries-two"]);
 const DESSERT_CHOICE_GROUPS = new Set(["desserts", "menu-desserts", "solo-dessert", "duo-dessert-one", "duo-dessert-two"]);
 const SIMPLE_GROUPS = new Set();
+const NAAN_GROUPS = new Set(['naan-format', 'naan-side', 'naan-dessert', 'drink']);
 
 const cents = (value) => Math.round(Number(value) * 100);
 const orderInputError = (message) => Object.assign(new Error(message), { statusCode: 400 });
 // Stock is shared by a standalone product and the same product selected in a menu.
 const optionProductId = ({ groupId, id }) => {
+  if (groupId === 'naan-side' && id === 'fries') return 'frites-maison';
+  if (groupId === 'naan-dessert') return { oreo: 'dessert-oreo', cookie: 'dessert-cookie', speculoos: 'dessert-speculoos' }[id] || null;
   if (groupId === "custom-protein") return PROTEINS.find((choice) => choice.id === id)?.productId || null;
   if (groupId === "custom-extra") return EXTRA_STOCK_IDS[id] || null;
   if (groupId === "custom-cheese") return { cheddar: "ingredient-cheddar", mozzarella: "ingredient-mozzarella", raclette: "ingredient-raclette", fourme: "ingredient-fourme" }[id] || null;
@@ -211,7 +223,6 @@ const productStock = (id, overrides = {}) => {
   const product = Object.hasOwn(STOCK_CATALOG, id) ? STOCK_CATALOG[id] : null;
   if (!product) return { available: false, enabled: false, reason: "Ce produit n’est plus à la carte." };
   const enabled = product.retired ? false : Object.hasOwn(overrides, id) ? overrides[id] : !product.soldOut;
-  if (product.draft) return { available: false, enabled, reason: enabled ? 'En préparation · non publié.' : `${product.name} est momentanément indisponible.`, availabilityState: enabled ? 'unpublished' : 'out_of_stock' };
   if (!enabled) return { available: false, enabled: false, reason: `${product.name} est momentanément indisponible.` };
   const included = product.menu ? ["frites-maison"] : ["duo", "solo"].includes(product.kind) ? ["frites-maison", "tenders-xl-3"] : [];
   for (const includedId of included) {
@@ -220,13 +231,13 @@ const productStock = (id, overrides = {}) => {
   return { available: true, enabled: true, reason: "" };
 };
 
-const availabilityCatalog = (overrides = {}, now = new Date()) => ({
+const availabilityCatalog = (overrides = {}, now = new Date(), database = {}) => ({
   products: Object.entries(STOCK_CATALOG).map(([id, product]) => ({
     id, name: product.menu ? `Menu - ${product.name}` : product.name, ...offerCatalogProduct(id, product.price, now),
     category: product.category || (product.menu ? "menus" : id.startsWith("drink-") ? "drinks" : product.kind ? "snacks" : "burgers"),
     retired: Boolean(product.retired),
-    ...(product.draft ? { visible: false, published: false, lunchOnly: true, menuPrice: product.menuPrice } : {}),
-    ...productStock(id, overrides)
+    ...productStock(id, overrides),
+    ...naanAvailability(id, productStock(id, overrides), now, database)
   })),
   options: Object.fromEntries([...OPTIONS,
     ...PROTEINS.map((choice) => ({ groupId: "custom-protein", id: choice.id })),
@@ -258,7 +269,7 @@ const validatedSelections = (product, selections, productId) => {
     try { return pricedOptions(parseSelectionEntries(selections)); }
     catch (error) { throw orderInputError(error.message); }
   }
-  const allowedGroups = product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.kind === "solo" ? SOLO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
+  const allowedGroups = product.kind === 'naan' ? NAAN_GROUPS : product.kind === "simple" ? SIMPLE_GROUPS : product.kind === "duo" ? DUO_GROUPS : product.kind === "solo" ? SOLO_GROUPS : product.menu ? MENU_GROUPS : BURGER_GROUPS;
   const seen = new Set();
   const resolved = selections.map((selection) => {
     const key = `${String(selection?.groupId || "")}:${String(selection?.id || "")}`;
@@ -271,9 +282,19 @@ const validatedSelections = (product, selections, productId) => {
   for (const groupId of allowedGroups) {
     const rule = GROUP_RULES[groupId];
     const count = byGroup[groupId].length;
-    if (rule.min && count < rule.min) throw orderInputError(groupId === "drink" ? "Choisis une boisson dans chaque menu avant de commander." : "Complète les choix requis avant de commander.");
+    // A naan has an included drink only in its menu format, checked below.
+    if (rule.min && count < rule.min && !(product.kind === 'naan' && groupId === 'drink')) throw orderInputError(groupId === "drink" ? "Choisis une boisson dans chaque menu avant de commander." : "Complète les choix requis avant de commander.");
     if (rule.max && count > rule.max) throw orderInputError(`Tu peux sélectionner au maximum ${rule.max} choix dans cette catégorie.`);
     if (count > 1 && byGroup[groupId].some((entry) => entry.exclusive)) throw orderInputError("Deux choix incompatibles ont été sélectionnés.");
+  }
+  if (product.kind === 'naan') {
+    const menu = byGroup['naan-format'][0]?.id === 'menu';
+    const side = byGroup['naan-side'][0]?.id;
+    if (!menu && (side || byGroup['naan-dessert'].length || byGroup.drink.length)) throw orderInputError('Un naan seul ne comprend ni accompagnement ni boisson.');
+    if (menu && !side) throw orderInputError('Choisis des frites ou un dessert pour ton menu cheese naan.');
+    if (menu && byGroup.drink.length !== 1) throw orderInputError('Choisis une boisson pour ton menu cheese naan.');
+    if (side === 'dessert' && byGroup['naan-dessert'].length !== 1) throw orderInputError('Choisis le dessert de ton menu cheese naan.');
+    if (side === 'fries' && byGroup['naan-dessert'].length) throw orderInputError('Le menu comprend des frites ou un dessert, pas les deux.');
   }
   if (product.fixedSauce && (byGroup.sauces.length !== 1 || byGroup.sauces[0].id !== product.fixedSauce)) throw orderInputError("La sauce de ce burger est imposée. Actualise l’application avant de commander.");
   // Android v4 still offers the former crudités. Keep accepting those choices
@@ -306,6 +327,7 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, no
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw orderInputError("La quantité demandée est invalide.");
     const selections = validatedSelections(product, input.selections, productId);
+    assertNaanService(productId, context);
     assertItemAvailable(productId, selections, overrides);
     const offer = productOfferForService(productId, context, now);
     const basePrice = offer ? offer.price : product.price;
@@ -313,7 +335,7 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, no
     subtotalCents += unitPriceCents * quantity;
     return {
       productId,
-      name: product.name,
+      name: isCheeseNaan(productId) && selections.some(option => option.groupId === 'naan-format' && option.id === 'menu') ? `Menu · ${product.name}` : product.name,
       quantity,
       price: unitPriceCents / 100,
       ...(offer ? { basePrice, regularBasePrice: product.price, productOfferId: offer.id } : {}),
@@ -325,8 +347,8 @@ const validateAndPriceOrderItems = (inputItems, overrides = {}, context = {}, no
 
 const amendmentCatalog = (overrides = {}) => ({
   ...availabilityCatalog(overrides),
-  definitions: Object.fromEntries(Object.entries(PRODUCT_CATALOG).map(([id,p]) => [id, { ...p, groups: [...(p.kind === "simple" ? SIMPLE_GROUPS : p.kind === "duo" ? DUO_GROUPS : p.kind === "solo" ? SOLO_GROUPS : p.menu ? MENU_GROUPS : BURGER_GROUPS)] }])),
+  definitions: Object.fromEntries(Object.entries(PRODUCT_CATALOG).map(([id,p]) => [id, { ...p, groups: [...(p.kind === 'naan' ? NAAN_GROUPS : p.kind === "simple" ? SIMPLE_GROUPS : p.kind === "duo" ? DUO_GROUPS : p.kind === "solo" ? SOLO_GROUPS : p.menu ? MENU_GROUPS : BURGER_GROUPS)] }])),
   choices: OPTIONS, rules: GROUP_RULES
 });
 
-module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, optionProductId, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems };
+module.exports = { amendmentCatalog, PRODUCT_CATALOG, STOCK_CATALOG, availabilityCatalog, assertStoredOrderAvailable, validateAndPriceOrderItems, optionProductId };
