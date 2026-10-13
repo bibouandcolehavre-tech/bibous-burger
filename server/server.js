@@ -1,3 +1,5 @@
+const { createTerminalSession } = require('./kiosk-terminal-session');
+const terminalSession = createTerminalSession();
 const http = require("node:http");
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
@@ -1892,6 +1894,34 @@ const server = http.createServer(async (request, response) => {
       if (order === false) return send(response, 409, { error: "Ce créneau de livraison vient d’être réservé deux fois. Choisis-en un autre." });
       if (!order) return send(response, 404, { error: "Client introuvable" });
       return send(response, 201, { order });
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/dashboard/kiosk/terminal/authorization') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      response.setHeader('Cache-Control', 'no-store');
+      try { return send(response, 200, terminalSession.beginAuthorization(await getSumUpMerchantCode())); }
+      catch { return send(response, 503, { error: 'Autorisation SumUp à configurer.' }); }
+    }
+    if (request.method === 'GET' && url.pathname === '/api/kiosk/terminal/oauth/callback') {
+      response.setHeader('Cache-Control', 'no-store');
+      response.setHeader('Referrer-Policy', 'no-referrer');
+      try {
+        const result = await terminalSession.completeAuthorization(url.searchParams.get('state'), url.searchParams.get('code'));
+        return send(response, 200, result);
+      } catch { return send(response, 400, { error: 'Autorisation non confirmée. Recommence depuis les réglages restaurant.' }); }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/kiosk/terminal/session') {
+      response.setHeader('Cache-Control', 'no-store');
+      if (!authorizeTerminal(request, { enabled: process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret: kioskDeviceSecret })) {
+        return send(response, 403, { error: 'Accès borne requis.' });
+      }
+      try {
+        const session = await terminalSession.get(await getSumUpMerchantCode());
+        return send(response, 200, session);
+      } catch {
+        return send(response, 503, { error: 'Reconnexion SumUp non disponible.' });
+      }
     }
 
     if (request.method === 'GET' && url.pathname === '/api/kiosk/terminal/config') {

@@ -18,6 +18,7 @@ window.BibouCrm = function ({ root, settingsRoot, api, token, onUnauthorized, on
     <label>Délai minimum entre deux offres à un client (jours)<input type="number" min="1" max="365" data-setting="cooldownDays"></label><label>Maximum d’offres par jour, toutes règles réunies<input type="number" min="1" max="1000" data-setting="dailyLimit"></label><label>Début de création des offres (heure de Paris)<input type="number" min="0" max="23" data-setting="startHour"></label><label>Fin de création des offres (heure de Paris)<input type="number" min="1" max="24" data-setting="endHour"></label></div><p class="crm-hint">Si plusieurs règles correspondent au même client, la première dans la liste est prioritaire. Un anniversaire du 29 février est ciblé uniquement les années bissextiles. Une commande jamais passée n’est pas considérée comme une inactivité.</p><button type="button" id="crm-settings-save" class="login-button">Enregistrer les paramètres</button></section>
     <section class="marketing-panel"><h2>Canaux & connexions</h2><div id="crm-connections"></div><p>Les promotions par push nécessitent à la fois l’accord aux offres personnalisées, l’accord aux notifications marketing et un téléphone compatible enregistré. Les SMS de connexion Twilio ne sont pas un canal publicitaire.</p></section>
     <section class="marketing-panel"><h2>Les données de vos clients</h2><p>Anniversaire facultatif (jour et mois uniquement) et accord aux offres personnalisées dans l’application client, à l’inscription puis dans Mon compte → Mes offres. Aucun ancien compte n’est inscrit automatiquement. Retrait du consentement possible à tout moment ; les bons déjà attribués restent valables. La suppression du compte efface ses données de ciblage et ses offres personnelles.</p><p>Cette installation gère un seul restaurant. Elle ne propose pas encore de séparation entre plusieurs établissements ou de rôles employés : ne partagez pas cet accès avec un autre commerce.</p></section>
+    <section class="marketing-panel"><h2>Paiement de la borne</h2><p>Autorisez une fois votre compte SumUp pour que la borne puisse rétablir sa session automatiquement après une interruption.</p><button type="button" class="secondary-button" id="terminal-authorize">Autoriser la reconnexion automatique SumUp</button><p id="terminal-authorization-status" role="status" aria-live="polite"></p></section>
     <section class="marketing-panel"><h2>Accès & sécurité</h2><p>Restez connecté sur cet appareil tant que vous utilisez régulièrement le tableau. La session est conservée après fermeture et mise à jour du serveur. Le mot de passe n’est jamais stocké sur l’appareil. Les sauvegardes restent dans leur rubrique dédiée.</p><button type="button" class="secondary-button" id="crm-logout">Se déconnecter de cet appareil</button></section>`;
   const q = selector => root.querySelector(selector);
   const message = value => [root,settingsRoot].forEach(r=>{r.querySelector('.crm-feedback').textContent=value;});
@@ -81,6 +82,17 @@ window.BibouCrm = function ({ root, settingsRoot, api, token, onUnauthorized, on
   q('#crm-preview').onclick=async()=>{if(busy||!draft)return;const id=epoch;freeze(true);message('Calcul de l’audience, sans envoi…');try{const r=await request('/dashboard/crm/preview','POST',draft);if(id!==epoch)return;r.previews.forEach(p=>{q(`[data-audience="${p.id}"]`).innerHTML=audience(p);});message('Aperçu calculé. Aucun bon créé, aucun message envoyé.');}catch(error){if(id===epoch)message(error.message);}finally{if(id===epoch)freeze(false);}};
   q('#crm-save').onclick=save; settingsRoot.querySelector('#crm-settings-save').onclick=save;
   q('#crm-reload').onclick=()=>{if(!dirty||window.confirm('Abandonner les modifications non enregistrées ?'))void load(true);};
+  settingsRoot.querySelector('#terminal-authorize').onclick=async()=>{
+    if(busy)return;
+    const button=settingsRoot.querySelector('#terminal-authorize'),status=settingsRoot.querySelector('#terminal-authorization-status');
+    button.disabled=true;status.textContent='Ouverture de l’autorisation SumUp…';
+    try {
+      const result=await request('/dashboard/kiosk/terminal/authorization','POST');
+      const url=new URL(result.url);
+      if(url.origin!=='https://api.sumup.com'||url.pathname!=='/authorize')throw Error('Lien d’autorisation non confirmé.');
+      window.location.assign(url.toString());
+    }catch(error){status.textContent=error.message;button.disabled=false;}
+  };
   settingsRoot.querySelector('#crm-logout').onclick=onLogout;
   freeze(true);
   return {load(force=false){if(!data)busy=false;return load(force);},clear(){epoch++;data=draft=null;dirty=busy=false;['#crm-metrics','#crm-segments','#crm-products','#crm-rules','#crm-results','#crm-performance','#crm-push-results','#crm-offers'].forEach(s=>{q(s).innerHTML='';});settingsRoot.querySelector('#crm-connections').innerHTML='';message('');freeze(true);}};

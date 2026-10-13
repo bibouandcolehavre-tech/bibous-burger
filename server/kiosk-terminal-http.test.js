@@ -37,6 +37,23 @@ test('terminal HTTP requires device and owner, persists one launch, refuses deli
   const configResponse = await fetch(`${base}/api/kiosk/terminal/config`, { headers: { Authorization: `Bearer ${operatorToken}` } });
   assert.equal(configResponse.status, 200);
   assert.equal(configResponse.headers.get('cache-control'), 'no-store');
+  // Recovery routes never allow a customer session to obtain merchant credentials.
+  for (const headers of [{}, { Authorization: `Bearer ${token}` }]) {
+    const denied = await fetch(`${base}/api/kiosk/terminal/session`, { method: 'POST', headers });
+    assert.equal(denied.status, 403);
+    assert.equal(denied.headers.get('cache-control'), 'no-store');
+  }
+  const unconfigured = await fetch(`${base}/api/kiosk/terminal/session`, { method: 'POST', headers: { 'x-bibou-kiosk-token': secret } });
+  assert.equal(unconfigured.status, 503);
+  const unauthorizedSetup = await fetch(`${base}/api/dashboard/kiosk/terminal/authorization`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(unauthorizedSetup.status, 401);
+  const incompleteSetup = await fetch(`${base}/api/dashboard/kiosk/terminal/authorization`, { method: 'POST', headers: { Authorization: `Bearer ${operatorToken}` } });
+  assert.equal(incompleteSetup.status, 503);
+  const replay = await fetch(`${base}/api/kiosk/terminal/oauth/callback?state=fictional&code=fictional`);
+  assert.equal(replay.status, 400);
+  assert.equal(replay.headers.get('referrer-policy'), 'no-referrer');
+  const unchanged = JSON.parse(await fs.readFile(file, 'utf8')).orders.find(o => o.id === order.id);
+  assert.equal(unchanged.payment.launchClaimedAt, undefined);
   const config = await configResponse.json();
   assert.equal(config.deviceToken, secret);
   assert.equal(config.apiKey, undefined);
