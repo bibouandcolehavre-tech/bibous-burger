@@ -3,18 +3,19 @@ const {spawn}=require('node:child_process'),{once}=require('node:events');
 const {createCustomerSession}=require('./customer-session'),{parisDateKey}=require('./availability'),crm=require('./crm');
 test('CRM HTTP: restaurant permissions, consent, private offers, persisted settings and authoritative checkout', {timeout:25000},async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bibou-crm-http-')),file=path.join(dir,'data.json'),now=Date.now();
-  const db={customers:[{id:'c1',name:'Fictif',phone:'+33600000001',points:0,welcomeReward:{status:'used'},crmPreferences:{personalizedOffers:true,birthday:'09-20'}},{id:'c2',name:'Autre fictif',phone:'+33600000002',points:0,welcomeReward:{status:'used'}}],orders:[],nextOrderNumber:1,nextCustomerId:3,
-    crm:{settings:crm.defaults(),offers:[{id:'coupon-private',customerId:'c1',ruleId:'inactive',eventKey:'test',title:'Test fictif',discountPercent:20,minSubtotal:0,createdAt:now-1000,expiresAt:now+86400000}]}};
+  const birthday=parisDateKey(new Date(now)).slice(5);
+  const db={customers:[{id:'c1',name:'Fictif',phone:'+33600000001',points:0,welcomeReward:{status:'used'},crmPreferences:{personalizedOffers:true,birthday:'09-20'}},{id:'c2',name:'Autre fictif',phone:'+33600000002',points:0,welcomeReward:{status:'used'}},{id:'c3',name:'Anniversaire fictif',phone:'+33600000003',createdAt:new Date(now).toISOString(),points:650,welcomeReward:{status:'available'},crmPreferences:{personalizedOffers:true,birthday}}],orders:[],nextOrderNumber:1,nextCustomerId:4,
+    crm:{settings:crm.defaults(),offers:[{id:'coupon-private',customerId:'c1',ruleId:'inactive',eventKey:'test',title:'Test fictif',discountPercent:20,minSubtotal:0,createdAt:now-1000,expiresAt:now+86400000},{id:'birthday-at-registration',customerId:'c3',ruleId:'birthday',eventKey:`birthday:${parisDateKey(new Date(now)).slice(0,4)}`,title:'Anniversaire fictif',discountPercent:15,minSubtotal:0,createdAt:now-1000,expiresAt:now+86400000}]}};
   const original=JSON.stringify(db);await fs.writeFile(file,original);
   const child=spawn(process.execPath,[path.join(__dirname,'server.js')],{cwd:dir,env:{PATH:process.env.PATH,PORT:'0',NODE_ENV:'test',DATA_FILE_PATH:file,SESSION_SECRET:'crm-secret-only',RESTAURANT_DASHBOARD_PASSWORD:'crm-test-only'},stdio:['ignore','pipe','pipe']});
   t.after(async()=>{child.kill();if(child.exitCode===null)await once(child,'exit');await fs.rm(dir,{recursive:true,force:true});});
   let errors='';child.stderr.on('data',d=>{errors+=d;});
   const base=await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{const match=String(d).match(/http:\/\/localhost:\d+/);if(match)resolve(match[0]+'/api');});child.on('error',reject);child.on('exit',code=>reject(Error(code+errors)));});
   const request=(route,token='',method='GET',body)=>fetch(base+route,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
-  const c1=createCustomerSession('c1','crm-secret-only'),c2=createCustomerSession('c2','crm-secret-only');
+  const c1=createCustomerSession('c1','crm-secret-only'),c2=createCustomerSession('c2','crm-secret-only'),c3=createCustomerSession('c3','crm-secret-only');
   for(const token of ['',c1])for(const route of ['/dashboard/crm','/dashboard/settings','/dashboard/crm/preview'])assert.equal((await request(route,token)).status,401);
   const admin=(await(await request('/dashboard/auth/login','','POST',{password:'crm-test-only'})).json()).token;
-  const initial=await request('/dashboard/crm',admin);assert.equal(initial.status,200);assert.equal(initial.headers.get('cache-control'),'no-store');assert.equal((await initial.json()).statistics.offers,1);assert.equal(await fs.readFile(file,'utf8'),original,'opening dashboard must not mutate database');
+  const initial=await request('/dashboard/crm',admin);assert.equal(initial.status,200);assert.equal(initial.headers.get('cache-control'),'no-store');assert.equal((await initial.json()).statistics.offers,2);assert.equal(await fs.readFile(file,'utf8'),original,'opening dashboard must not mutate database');
   assert.equal((await request('/dashboard/crm/preview',admin,'POST',crm.defaults())).status,200);assert.equal(await fs.readFile(file,'utf8'),original);
   assert.equal((await request('/dashboard/settings',admin,'PATCH',{...crm.defaults(),enabled:true})).status,400);
   const updated=await request('/dashboard/settings',admin,'PATCH',{...crm.defaults(),cooldownDays:10});assert.equal(updated.status,200);assert.equal((await updated.json()).settings.revision,1);assert.equal((await request('/dashboard/settings',admin,'PATCH',crm.defaults())).status,409);
@@ -30,5 +31,10 @@ test('CRM HTTP: restaurant permissions, consent, private offers, persisted setti
   const duplicate=(await(await request('/orders',c1,'POST',order)).json()).order;assert.equal(duplicate.id,first.id);
   const next=(await(await request('/orders',c1,'POST',{...order,requestId:'crm-order-attempt-0002'})).json()).order;assert.equal(next.crmOfferId,undefined);assert.equal(next.discountRate,0);
   const forged=(await(await request('/orders',c2,'POST',{...order,customerId:'c2',requestId:'crm-order-attempt-0003',crmOfferId:'coupon-private',discountRate:.5})).json()).order;assert.equal(forged.crmOfferId,undefined);assert.equal(forged.discountRate,0);
-  const after=JSON.parse(await fs.readFile(file,'utf8'));assert.equal(after.crm.settings.enabled,false);assert.equal(after.crm.offers.length,1);assert.equal(after.pushNotifications?.jobs?.length||0,0);
+  const birthdayState=await(await request('/customer/crm',c3)).json();assert.equal(birthdayState.offers[0].status,'ineligible_birthday');
+  assert.equal((await request('/customer/crm',c3,'PATCH',{birthday,personalizedOffers:true,birthdayEligibleFrom:'2020-01-01'})).status,400);
+  const birthdayOrderResponse=await request('/orders',c3,'POST',{...order,customerId:'c3',requestId:'birthday-order-attempt-0001',crmOfferId:'birthday-at-registration',discountRate:.15,total:.01});
+  assert.equal(birthdayOrderResponse.status,201,JSON.stringify(await birthdayOrderResponse.clone().json()));
+  const birthdayOrder=(await birthdayOrderResponse.json()).order;assert.equal(birthdayOrder.crmOfferId,undefined);assert.equal(birthdayOrder.discountRate,.1);assert.equal(birthdayOrder.welcomeRewardApplied,true);assert.equal(birthdayOrder.total,Math.round(birthdayOrder.subtotal*.9*100)/100);
+  const after=JSON.parse(await fs.readFile(file,'utf8'));assert.equal(after.crm.settings.enabled,false);assert.equal(after.crm.offers.length,2);assert.equal(after.pushNotifications?.jobs?.length||0,0);assert.equal(after.customers.find(c=>c.id==='c3').points,650);
 });

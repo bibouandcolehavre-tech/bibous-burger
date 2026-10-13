@@ -194,6 +194,7 @@ function canDispatch(db, job, config, now) {
     if (job.crmOfferId) {
       const offer = db.crm?.offers.find(o => o.id === job.crmOfferId && o.customerId === customer.id);
       if (!db.crm?.settings.enabled || !offer || offer.expiresAt <= now || customer.crmPreferences?.personalizedOffers !== true || !db.crm.settings.rules.some(r => r.id === offer.ruleId && r.enabled && r.channel === 'in_app_push')) return null;
+      if (!require('./birthday-policy').birthdayOfferEligible(customer, offer, now)) return null;
     } else {
       const campaign = s.campaigns.find(c => c.id === job.campaignId);
       if (!campaign || campaign.status !== 'sent' || (campaign.audience === 'plus' && !bibouPlusStatus(customer, new Date(now)).active)) return null;

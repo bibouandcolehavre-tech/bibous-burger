@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 const { queueCrmNotification } = require('./push-notifications');
 const { orderProductInsights } = require('./order-insights');
+const { nextBirthdayDate, birthdayTrigger, birthdayOfferEligible } = require('./birthday-policy');
 
 const DAY = 86400000;
 const TYPES = ['inactive', 'birthday', 'large_order', 'frequency', 'spend'];
@@ -71,6 +72,17 @@ function updateCustomerPreferences(db, customer, input, now = Date.now()) {
   if (birthday && (typeof birthday !== 'string' || !/^\d{2}-\d{2}$/.test(birthday) || !Number.isFinite(parsedBirthday) || iso(parsedBirthday).slice(5,10) !== birthday)) fail('Anniversaire invalide : mois et jour requis.');
   const previous = customer.crmPreferences || {};
   customer.crmPreferences = { ...previous, personalizedOffers: input.personalizedOffers, birthday, updatedAt: iso(now), consentVersion: 1 };
+  if (birthday !== (previous.birthday || '')) {
+    if (birthday) {
+      customer.crmPreferences.birthdayRecordedAt = iso(now);
+      customer.crmPreferences.birthdayEligibleFrom = nextBirthdayDate(birthday, now);
+    } else {
+      delete customer.crmPreferences.birthdayRecordedAt;
+      delete customer.crmPreferences.birthdayEligibleFrom;
+    }
+    const invalid = new Set((db.crm?.offers || []).filter(o => o.customerId === customer.id && o.ruleId === 'birthday' && !birthdayOfferEligible(customer, o, now)).map(o => o.id));
+    (db.pushNotifications?.jobs || []).filter(j => invalid.has(j.crmOfferId) && j.status === 'queued').forEach(j => { j.status = 'cancelled'; });
+  }
   if (input.personalizedOffers !== (previous.personalizedOffers === true)) customer.crmPreferences[input.personalizedOffers?'acceptedAt':'revokedAt'] = iso(now);
   if (!input.personalizedOffers) (db.pushNotifications?.jobs || []).filter(j => j.customerId === customer.id && j.crmOfferId && j.status === 'queued').forEach(j => { j.status = 'cancelled'; });
 }
@@ -81,9 +93,7 @@ function trigger(rule, customer, orders, now) {
   const last = orders[0], recent = orders.filter(o => paidAt(o) >= now - rule.lookbackDays * DAY);
   if (rule.type === 'inactive') return last && paidAt(last) <= now - rule.inactiveDays * DAY ? `inactive:${last.id}` : null;
   if (rule.type === 'birthday') {
-    const day = parisDateKey(new Date(now)), next = new Date(`${day}T12:00:00Z`); next.setUTCDate(next.getUTCDate()+1);
-    const tomorrow = next.toISOString().slice(0,10);
-    return customer.crmPreferences?.birthday === tomorrow.slice(5) ? `birthday:${tomorrow.slice(0,4)}` : null;
+    return birthdayTrigger(customer, now);
   }
   if (rule.type === 'large_order') { const order = recent.find(o => rule.minAmount > 0 && Number(o.subtotal) >= rule.minAmount); return order ? `large_order:${order.id}` : null; }
   if (rule.type === 'frequency') return rule.minOrders > 0 && recent.length >= rule.minOrders ? `frequency:${last.id}` : null;
@@ -122,6 +132,7 @@ function evaluate(db, pushConfig, now = Date.now()) {
       if (quota <= 0) break;
       const offer = { id:crypto.randomUUID(), ruleId:rule.id, customerId:target.customerId, eventKey:target.eventKey, title:rule.title,
         discountPercent:rule.discountPercent, minSubtotal:rule.minSubtotal, createdAt:now, expiresAt:now + rule.validityDays * DAY };
+      if (rule.type === 'birthday') offer.birthdayDate = `${target.eventKey.slice('birthday:'.length)}-${db.customers.find(c => c.id === target.customerId).crmPreferences.birthday}`;
       s.offers.push(offer); quota--; created++;
       if (rule.channel === 'in_app_push') queueCrmNotification(db, offer, pushConfig, now);
     }
@@ -134,10 +145,14 @@ function offerStatus(db, offer, now) {
   if (orders.some(o => o.payment?.status === 'PAID')) return 'used';
   if (offer.expiresAt <= now) return 'expired';
   if (orders.some(o => o.status === 'awaiting_payment' && !['FAILED','EXPIRED'].includes(o.payment?.status) && (Date.parse(o.createdAt) + 15*60000 > now || o.payment?.checkoutId || o.payment?.status === 'CREATING'))) return 'reserved';
+  if (offer.ruleId === 'birthday') {
+    const customer = db.customers.find(c => c.id === offer.customerId);
+    if (!customer || !birthdayOfferEligible(customer, offer, now)) return 'ineligible_birthday';
+  }
   return 'available';
 }
 function customerState(db, c, now = Date.now()) {
-  return { preferences:{ personalizedOffers:optedIn(c), birthday:c.crmPreferences?.birthday || '' }, offers:(db.crm?.offers || []).filter(o => o.customerId === c.id && o.expiresAt > now).map(o => ({ id:o.id, title:o.title, discountPercent:o.discountPercent, minSubtotal:o.minSubtotal, expiresAt:o.expiresAt, status:offerStatus(db,o,now) })) };
+  return { preferences:{ personalizedOffers:optedIn(c), birthday:c.crmPreferences?.birthday || '', birthdayEligibleFrom:c.crmPreferences?.birthdayEligibleFrom || null }, offers:(db.crm?.offers || []).filter(o => o.customerId === c.id && o.expiresAt > now).map(o => ({ id:o.id, title:o.title, discountPercent:o.discountPercent, minSubtotal:o.minSubtotal, expiresAt:o.expiresAt, status:offerStatus(db,o,now) })) };
 }
 function bestOffer(db, c, subtotal, baseRate, now = Date.now()) {
   return customerState(db,c,now).offers.filter(o => o.status === 'available' && subtotal >= o.minSubtotal && o.discountPercent / 100 > baseRate).sort((a,b) => b.discountPercent - a.discountPercent || a.expiresAt - b.expiresAt)[0] || null;
