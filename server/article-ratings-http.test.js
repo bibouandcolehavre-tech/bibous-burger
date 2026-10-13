@@ -6,13 +6,13 @@ test('new customer services HTTP: authenticated votes, private ownership, catego
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-customer-next-')), file = path.join(dir, 'data.json');
   const cart = validateAndPriceOrderItems([{ productId: 'drink-coca', quantity: 2, selections: [] }]);
   const order = id => ({ id, number: 1, customerId: 'c1', customerName: 'Client fictif', method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', status: id === 'rated' ? 'delivered' : 'confirmed', createdAt: new Date().toISOString(), items: cart.items, subtotal: cart.subtotal, total: cart.subtotal, discountRate: 0, deliveryFee: 0, payment: { status: 'PAID' } });
-  const customers = [{ id: 'c1', name: 'Client fictif', points: 230, phone: '+33600000001' }, { id: 'c2', name: 'Autre compte', points: 40 }];
-  await fs.writeFile(file, JSON.stringify({ customers, orders: [order('rated'), order('replace')], reservations: [], nextOrderNumber: 3 }));
+  const customers = [{ id: 'c1', firstName: 'Client', lastName: 'Fictif', name: 'Client fictif', points: 230, phone: '+33600000001' }, { id: 'c2', name: 'Autre compte', points: 40 }];
+  await fs.writeFile(file, JSON.stringify({ customers, orders: [order('rated'), { ...order('replace'), replacementChoicesVersion: 1 }, order('legacy')], reservations: [], nextOrderNumber: 4 }));
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], { cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: file, SESSION_SECRET: 'next-release-fixture-only', RESTAURANT_DASHBOARD_PASSWORD: 'fixture-admin-only' }, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
   let output = '', errors = ''; child.stderr.on('data', data => errors += data);
   const base = await new Promise((resolve, reject) => { child.stdout.on('data', data => { output += data; const match = output.match(/http:\/\/localhost:\d+/); if (match) resolve(match[0] + '/api'); }); child.on('error', reject); child.on('exit', () => reject(Error(errors))); });
-  const request = async (route, token = '', method = 'GET', body) => { const r = await fetch(base + route, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }); return { status: r.status, body: await r.json() }; };
+  const request = async (route, token = '', method = 'GET', body, extraHeaders = {}) => { const r = await fetch(base + route, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', ...extraHeaders }, ...(body ? { body: JSON.stringify(body) } : {}) }); return { status: r.status, body: await r.json(), headers: r.headers }; };
   const customer = createCustomerSession('c1', 'next-release-fixture-only'), other = createCustomerSession('c2', 'next-release-fixture-only');
   const admin = (await request('/dashboard/auth/login', '', 'POST', { password: 'fixture-admin-only' })).body.token;
   assert.equal((await request('/customer/orders/rated/ratings')).status, 401);
@@ -25,6 +25,10 @@ test('new customer services HTTP: authenticated votes, private ownership, catego
   assert(!JSON.stringify(publicProduct.satisfaction).includes('c1'));
   assert.equal((await request('/dashboard/orders/replace/replacement-targets', customer)).status, 401);
   const input = { revision: 0, reason: 'Coca indisponible', targets: ['0:product'] };
+  const legacyTargets = await request('/dashboard/orders/legacy/replacement-targets', admin);
+  assert.equal(legacyTargets.body.clientSupportsChoices, false);
+  assert.equal((await request('/dashboard/orders/legacy/replacement-request', admin, 'POST', input)).status, 409);
+  assert.equal((await request('/dashboard/orders/replace/replacement-targets', admin)).body.clientSupportsChoices, true);
   assert.equal((await request('/dashboard/orders/replace/replacement-request', admin, 'POST', input)).status, 200);
   assert.equal((await request('/customer/orders/replace/replacement-options', other)).status, 404);
   const offered = (await request('/customer/orders/replace/replacement-options', customer)).body;
@@ -36,4 +40,10 @@ test('new customer services HTTP: authenticated votes, private ownership, catego
   const saved = JSON.parse(await fs.readFile(file, 'utf8'));
   assert.equal(saved.orders[1].items[0].productId, 'drink-perrier'); assert.equal(saved.orders[1].items[0].quantity, 2);
   assert.equal(saved.articleRatings.length, 1); assert.equal(saved.customers[0].points, 230); assert.equal(saved.customers[0].name, customers[0].name);
+  const cartInput = { customerId: 'c1', method: 'pickup', serviceDate: order('new').serviceDate, slot: '19:00', items: [{ productId: 'drink-coca', quantity: 2, selections: [] }], requestId: 'compatibility-old-client-001', replacementChoicesVersion: 1 };
+  const oldClient = await request('/orders', customer, 'POST', cartInput);
+  assert.equal(oldClient.status, 201, JSON.stringify(oldClient.body)); assert.equal(oldClient.body.order.replacementChoicesVersion, undefined, 'A JSON field cannot claim the new UI capability');
+  const nextClient = await request('/orders', customer, 'POST', { ...cartInput, requestId: 'compatibility-next-client-001' }, { 'X-Bibou-Replacement-Choices': '1' });
+  assert.equal(nextClient.status, 201, JSON.stringify(nextClient.body)); assert.equal(nextClient.body.order.replacementChoicesVersion, 1);
+  assert.match(nextClient.headers.get('access-control-allow-headers'), /X-Bibou-Replacement-Choices/);
 });

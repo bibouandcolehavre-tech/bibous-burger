@@ -179,7 +179,7 @@ const backupStore = createBackupStore({
   }
 });
 const send = (response, status, payload) => {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Bibou-Platform, X-Bibou-Replacement-Choices" });
   response.end(JSON.stringify(payload));
 };
 
@@ -1441,12 +1441,15 @@ const server = http.createServer(async (request, response) => {
       if (scope === 'dashboard' ? !authenticatedDashboard(request) : !customer) return send(response, 401, { error: 'Connexion requise.' });
       const order = database.orders.find(o => o.id === id && (scope === 'dashboard' || o.customerId === customer.id && orderInKioskSession(o, request.kioskSession)));
       if (!order) return send(response, 404, { error: 'Commande introuvable.' });
-      if (scope === 'dashboard' && action === 'replacement-targets' && request.method === 'GET') return send(response, 200, { revision: order.amendment?.revision || 0, targets: replacements.targets(order) });
+      if (scope === 'dashboard' && action === 'replacement-targets' && request.method === 'GET') return send(response, 200, { revision: order.amendment?.revision || 0, clientSupportsChoices: order.replacementChoicesVersion === 1, targets: replacements.targets(order) });
       if (scope === 'customer' && action === 'replacement-options' && request.method === 'GET') return send(response, 200, replacements.options(order, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id, true)));
       if (request.method !== 'POST') return send(response, 405, { error: 'Action indisponible.' });
       const input = await readBody(request), stock = quantityStock.effectiveFlags(database, await productStockStore.read(), order.id, true);
       const previousItems = structuredClone(order.items);
-      if (scope === 'dashboard' && action === 'replacement-request') replacements.requestReplacement(order, input);
+      if (scope === 'dashboard' && action === 'replacement-request') {
+        if (order.replacementChoicesVersion !== 1) return send(response, 409, { error: 'La version utilisée pour cette commande ne permet pas encore le choix des remplacements. Utilisez la proposition manuelle compatible avec le client.' });
+        replacements.requestReplacement(order, input);
+      }
       else if (scope === 'customer' && action === 'replacement-choice') {
         replacements.submit(order, input, stock);
         quantityStock.assertChange(database, order, order.amendment.proposal.items);
@@ -1868,6 +1871,7 @@ const server = http.createServer(async (request, response) => {
         createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
         if (immediate) Object.assign(createdOrder, immediate, { kioskGuest:Boolean(customer.isKioskGuest), slotDurationMinutes:0 });
         createdOrder.requestId = requestId;
+        if (request.headers['x-bibou-replacement-choices'] === '1' && !request.kioskSession && !promotionContext.isKiosk) createdOrder.replacementChoicesVersion = 1;
         if (request.kioskSession) { createdOrder.kioskSessionId = request.kioskSession.id; createdOrder.kioskDeviceDigest = request.kioskSession.deviceDigest; }
         if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
         if (activePromotion?.sourceContestPrize) { createdOrder.contestPrizePlatform = promotionContext.appPlatform; createdOrder.discountLabel = 'Menus gagnés au concours'; contestPrizes.reserve(latestDatabase, createdOrder); }

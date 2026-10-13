@@ -107,6 +107,11 @@ window.BibouAmendments = (() => {
       } else {
         const data = await request(`/dashboard/orders/${encodeURIComponent(order.id)}/replacement-targets`);
         if (!modal.isConnected) return;
+        if (data.clientSupportsChoices !== true) {
+          content.innerHTML = '<h3>Version client à mettre à jour</h3><p>Cette commande a été passée avec une version qui ne sait pas encore afficher les choix par catégorie. Pour ne pas bloquer le client, proposez un panier corrigé avec le parcours manuel compatible. Aucun supplément ne sera débité.</p><button data-manual class="primary-button">Proposer un panier corrigé au client</button>';
+          content.querySelector('[data-manual]').onclick = () => { clear(); void openLegacy(order, options); };
+          return;
+        }
         content.innerHTML = `<p>Cochez uniquement les articles indisponibles. Le client recevra les alternatives de leur catégorie : boissons, frites, desserts, cheese naans, menus ou burgers seuls.</p><p>Choisissez un article entier OU ses composants, pas les deux.</p>${data.targets.map(t => `<label class="amendment-choice"><input type="checkbox" data-target value="${esc(t.key)}" />${esc(t.label)}</label>`).join('')}<label>Message au client<textarea data-reason maxlength="300">Un article de ta commande est indisponible. Choisis un remplacement ou annule ta commande.</textarea></label><p>Le panier initial reste inchangé. Aucun supplément ne sera débité. Tout remboursement devra être effectué dans SumUp puis enregistré dans le back-office.</p><button data-send class="primary-button">Demander au client de choisir</button><button data-manual>Autre modification du panier · proposition manuelle</button>`;
         content.querySelector('[data-send]').onclick = e => action(e.target, () => request(`/dashboard/orders/${encodeURIComponent(order.id)}/replacement-request`, { revision: data.revision, targets: [...content.querySelectorAll('[data-target]:checked')].map(el => el.value), reason: content.querySelector('[data-reason]').value }));
         content.querySelector('[data-manual]').onclick = () => { clear(); void openLegacy(order, options); };
