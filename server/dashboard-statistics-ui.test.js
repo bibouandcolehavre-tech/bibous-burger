@@ -17,7 +17,7 @@ test('statistics UI: owner GET requests only, zero stays zero, presentation uses
   const h = harness(); await h.panel.load();
   assert.equal(h.calls.length, 1); assert.equal(h.calls[0].options.method, undefined); assert.equal(h.calls[0].options.cache, 'no-store');
   assert(h.calls[0].url.includes('/dashboard/statistics?')); assert.equal(h.root.querySelector('#statistics-present').disabled, false);
-  const actual = h.root.querySelector('#statistics-content').innerHTML; assert(actual.includes('0,00')); assert(actual.includes('pas le bénéfice'));
+  const actual = h.root.querySelector('#statistics-content').innerHTML; assert(actual.includes('0,00')); assert(actual.includes('Chiffre d’affaires')); assert(!/bénéfice|commissions|coûts produits|charges et impôts/i.test(actual));
   h.root.querySelector('#statistics-present').handlers.click(); assert.equal(h.root.querySelector('#statistics-presentation').innerHTML, actual); assert.equal(h.root.querySelector('#statistics-dialog').open, true);
   h.panel.clear(); assert.equal(h.root.querySelector('#statistics-presentation').innerHTML, ''); assert.equal(h.root.querySelector('#statistics-dialog').open, false);
 });

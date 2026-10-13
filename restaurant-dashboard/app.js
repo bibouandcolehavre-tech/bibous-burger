@@ -974,7 +974,7 @@ function showView(view) {
   const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing','marketing-sms':'marketing',backups:'settings'}[view] || view;
   document.querySelectorAll('.sidebar nav .nav-item, .mobile-view-switch .nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === group));
   if (view === "schedule") void schedulePanel?.load();
-  if (view === 'statistics') { document.querySelector('#dashboard-title').textContent = 'Vos statistiques réelles'; updateText('#view-description', 'Encaissements enregistrés et clients qui reviennent, sans chiffre fictif.'); void statisticsPanel?.load(); }
+  if (view === 'statistics') { document.querySelector('#dashboard-title').textContent = 'Vos statistiques réelles'; updateText('#view-description', 'Chiffre d’affaires et clients qui reviennent.'); void statisticsPanel?.load(); }
   if (view === "dispatch") void dispatchPanel?.load();
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
