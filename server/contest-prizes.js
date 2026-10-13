@@ -6,6 +6,9 @@ const fail = (message, statusCode = 400) => { throw Object.assign(new Error(mess
 const DAY = 86400000;
 const validMonth = value => typeof value === 'string' && /^\d{4}-(?:0[1-9]|1[0-2])$/.test(value) && value >= '2026-01' && value <= '2099-12';
 const currentMonth = now => parisDateKey(new Date(now)).slice(0, 7);
+// Winners may be confirmed on the first Paris day of the prize month. A later
+// confirmation must not silently consume a partial month or backdate a code.
+const earliestFullMonth = now => parisDateKey(new Date(now)).endsWith('-01') ? currentMonth(now) : addMonths(currentMonth(now), 1);
 function addMonths(month, count) {
   if (!validMonth(month) || !Number.isInteger(count)) fail('Mois du lot invalide.');
   return new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)) - 1 + count, 1)).toISOString().slice(0, 7);
@@ -40,7 +43,7 @@ function finalizationPreview(db, now = new Date()) {
   const ranking = contestRanking(db, contest), winners = ranking.slice(0, 3);
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify([contest.id, contest.revision, ranking])).digest('hex');
   return { contestId: contest.id, rankingFingerprint: fingerprint, winners, tied: winners.some(winner => winner.tied),
-    minimumStartMonth: addMonths(currentMonth(now), 1), eligibleMenus: eligibleMenuIds().map(id => ({ id, name: PRODUCT_CATALOG[id].name })), rules: CONTEST_PRIZE_RULES };
+    minimumStartMonth: earliestFullMonth(now), eligibleMenus: eligibleMenuIds().map(id => ({ id, name: PRODUCT_CATALOG[id].name })), rules: CONTEST_PRIZE_RULES };
 }
 function finalize(db, input, now = new Date()) {
   if (!input || input.confirmation !== 'VALIDER LES LOTS DU CONCOURS' || !/^[a-f0-9-]{36}$/i.test(input.requestId || '') ||

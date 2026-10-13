@@ -84,6 +84,7 @@ let smsPanel = null;
 let crmPanel = null;
 let schedulePanel = null;
 let dispatchPanel = null;
+let statisticsPanel = null;
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
 const serviceDateLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "Date non précisée";
 const receivedTimeLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
@@ -96,7 +97,7 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
@@ -944,13 +945,14 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
   document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications','marketing-sms'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
   document.querySelector("#schedule-view").hidden = view !== "schedule";
+  document.querySelector('#statistics-view').hidden = view !== 'statistics';
   document.querySelector("#dispatch-view").hidden = view !== "dispatch";
   document.querySelector("#orders-view").hidden = view !== "orders";
   document.querySelector("#orders-metrics").hidden = view !== "orders";
@@ -972,6 +974,7 @@ function showView(view) {
   const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing','marketing-sms':'marketing',backups:'settings'}[view] || view;
   document.querySelectorAll('.sidebar nav .nav-item, .mobile-view-switch .nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === group));
   if (view === "schedule") void schedulePanel?.load();
+  if (view === 'statistics') { document.querySelector('#dashboard-title').textContent = 'Vos statistiques réelles'; updateText('#view-description', 'Encaissements enregistrés et clients qui reviennent, sans chiffre fictif.'); void statisticsPanel?.load(); }
   if (view === "dispatch") void dispatchPanel?.load();
   if (view === "menu") { renderMenu(); void loadMenu(); }
   if (view === "backups") void loadBackups();
@@ -1055,6 +1058,7 @@ document.querySelectorAll(".nav-item").forEach((button) => button.addEventListen
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
   if (["crm", "settings"].includes(currentView)) return crmPanel?.load();
   if (currentView === "schedule") return schedulePanel?.load();
+  if (currentView === 'statistics') return statisticsPanel?.load();
   if (currentView === "dispatch") return dispatchPanel?.load();
   if (currentView === "marketing") return marketingPanel?.load();
   if (currentView === "notifications") return notificationsPanel?.load();
@@ -1095,6 +1099,7 @@ document.querySelector("#dashboard-login").addEventListener("click", async () =>
 });
 document.querySelector("#dashboard-password").addEventListener("keydown", (event) => { if (event.key === "Enter") document.querySelector("#dashboard-login").click(); });
 
+if (typeof window.BibouStatistics === 'function') statisticsPanel = window.BibouStatistics({ root: document.querySelector('#statistics-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouMarketing === 'function') marketingPanel = window.BibouMarketing({ root: document.querySelector('#marketing-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouPromotions === 'function') promotionsPanel = window.BibouPromotions({ root: document.querySelector('#promotions-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });
 if (typeof window.BibouNotifications === 'function') notificationsPanel = window.BibouNotifications({ root: document.querySelector('#notifications-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.') });

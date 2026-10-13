@@ -25,6 +25,32 @@ test('lots : aucune finalisation avant clôture, ni attribution sans confirmatio
   assert.throws(() => prizes.finalize(db, {}, finalizedAt)); assert.deepEqual(db, before);
   db.referralContest.status = 'draft'; assert.throws(() => prizes.finalizationPreview(db, finalizedAt), { statusCode: 409 });
 });
+test('lots : clôture le 31 octobre, codes de novembre possibles le 1er novembre en heure de Paris', () => {
+  const db = fixture();
+  db.referralContest.startDate = '2026-10-15'; db.referralContest.endDate = '2026-10-31';
+  for (const entry of db.referralContest.entries) entry.joinedAt = '2026-10-15T09:00:00Z';
+  for (const order of db.orders) order.createdAt = order.payment.paidAt = '2026-10-15T10:00:00Z';
+  const before = structuredClone(db);
+  assert.throws(() => prizes.finalizationPreview(db, new Date('2026-10-31T22:59:59.999Z')), { statusCode: 409 });
+  assert.deepEqual(db, before);
+  assert.equal(prizes.finalizationPreview(db, new Date('2026-10-31T23:00:00Z')).minimumStartMonth, '2026-11');
+  const instant = new Date('2026-11-01T09:00:00Z');
+  const { input } = confirm(db, instant);
+  assert.equal(prizes.issueCurrentMonth(db, instant), true);
+  assert.equal(db.contestPrizes.vouchers.length, 3);
+  assert(db.contestPrizes.vouchers.every(voucher => voucher.month === '2026-11' && voucher.expiresAt === '2026-11-30T23:00:00.000Z'));
+  assert.equal(prizes.finalize(db, input, instant).changed, false);
+  assert.equal(prizes.issueCurrentMonth(db, instant), false);
+});
+test('lots : après le premier jour de Paris, un premier mois déjà commencé reste interdit', () => {
+  const db = fixture();
+  assert.equal(prizes.finalizationPreview(db, new Date('2026-11-01T22:59:59.999Z')).minimumStartMonth, '2026-11');
+  const late = new Date('2026-11-01T23:00:00Z');
+  assert.equal(prizes.finalizationPreview(db, late).minimumStartMonth, '2026-12');
+  const before = structuredClone(db);
+  assert.throws(() => confirm(db, late), /premier mois complet/);
+  assert.deepEqual(db, before);
+});
 test('lots : 24, 6 et 2 menus ; classement figé, mois complet, double confirmation idempotente', () => {
   const { db, input } = confirm();
   assert.deepEqual(db.contestPrizes.grants.map(g => [g.rank, g.menus * g.months, g.lastMonth]), [[1, 24, '2027-10'], [2, 6, '2027-04'], [3, 2, '2026-11']]);

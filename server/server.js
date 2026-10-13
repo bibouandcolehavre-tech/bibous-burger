@@ -59,6 +59,7 @@ const kroklyDrivers = require('./krokly-drivers');
 const kroklyWebPush = require('./krokly-web-push');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
+const { statistics: dashboardStatistics } = require('./dashboard-statistics');
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 const { destinationForLegacyPath } = require('./domain-forwarding');
 const wheelGame = require('./wheel');
@@ -871,6 +872,14 @@ const server = http.createServer(async (request, response) => {
       return response.end(`<!doctype html><html lang="fr"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>SMS · Bibou's Burgers</title><style>body{background:#faf1e3;color:#25473b;font:18px system-ui;padding:24px}main{max-width:560px;margin:40px auto;background:#d6eee3;padding:24px;border-radius:20px}button{background:#315b4b;color:white;font:700 18px system-ui;border:0;border-radius:12px;padding:18px;width:100%}p{line-height:1.6}</style><main><h1>Les SMS de Bibou</h1>${request.method === 'POST' ? '<p>Tu es désinscrit des SMS promotionnels. Les SMS nécessaires à la connexion ne sont pas concernés.</p>' : `<p>Tu peux arrêter les SMS promotionnels en appuyant ci-dessous. Cela ne change pas tes commandes ni tes points fidélité.</p><form method="post" action="/sms-stop/${token}?confirm=1"><button>Ne plus recevoir les SMS promotionnels</button></form>`}</main></html>`);
     }
 
+    // Financial reporting is read-only, before all legacy read-time migrations.
+    if (url.pathname === '/api/dashboard/statistics') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      if (request.method !== 'GET') return send(response, 405, { error: 'Consultation uniquement.' });
+      if ([...url.searchParams.keys()].some(key => !['date', 'granularity'].includes(key))) return send(response, 400, { error: 'Filtre de statistiques invalide.' });
+      releaseDatabase = await acquireDatabase();
+      return send(response, 200, dashboardStatistics(await readDatabase(), { date: url.searchParams.get('date') || undefined, granularity: url.searchParams.get('granularity') || undefined }));
+    }
     // This reporting route is read-only, before the legacy read-time migrations.
     if (['/api/news', '/api/contest', '/api/dashboard/news', '/api/dashboard/contest'].includes(url.pathname)) {
       const privateRoute = url.pathname.startsWith('/api/dashboard/');
