@@ -38,7 +38,7 @@ test('Déconnexion : effacement et réponse tardive écartée ; aucun export sur
   assert.equal(h.downloads.length, 0);
 });
 test('Intégration des deux interfaces : liste commune et heure de début, aucun bouton de tirage automatique', () => {
-  for (const file of ['index.html','ancienne-interface.html']) assert(fs.readFileSync(path.join(__dirname, '../restaurant-dashboard', file), 'utf8').includes('./contest-periods.js?v=crossplay-quinzaines-20261014'));
+  for (const file of ['index.html','ancienne-interface.html']) assert(fs.readFileSync(path.join(__dirname, '../restaurant-dashboard', file), 'utf8').includes('./contest-periods.js?v=crossplay-quinzaines-30j-20261014'));
   const marketing = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/marketing.js'), 'utf8');
   assert(marketing.includes("['startTime','Heure de début (heure de Paris)',5]")); assert(marketing.includes('periodPanel?.clear()'));
   assert(!fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/contest-periods.js'), 'utf8').includes('Math.random'));

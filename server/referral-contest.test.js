@@ -66,7 +66,7 @@ test('Les anciens comptes participent mais ne génèrent pas de nouvelle inscrip
   const db=fixture();joinContest(db,db.customers[1],input(),'secret',now);
   joinContest(db,db.customers[0],input('BIBOU-2'),'secret',now);
   assert.equal(customerContest(db,db.customers[1],now).participation.referrals,0);
-  assert.equal(dashboardContest(db,now).ranking[0].tied,true);
+  assert.equal(dashboardContest(db,now).ranking[0].tied,false,'Le compte le plus ancien départage une égalité parfaite');
 });
 test('Classement provisoire : achat payé et filleul vérifié, sans tirage ni achat obligatoire',()=>{
   const db=fixture();

@@ -63,7 +63,7 @@ test('lots : résultats modifiés et ex æquo bloquent la distribution', () => {
   const db = fixture(), preview = prizes.finalizationPreview(db, finalizedAt);
   const input = { confirmation: 'VALIDER LES LOTS DU CONCOURS', requestId: crypto.randomUUID(), rankingFingerprint: preview.rankingFingerprint, startMonth: '2026-11', eligibleMenuIds: ['classique-menu'] };
   db.orders[0].status = 'cancelled'; assert.throws(() => prizes.finalize(db, input, finalizedAt), { statusCode: 409 });
-  const tied = fixture(); tied.orders[1].total = tied.orders[0].total;
+  const tied = fixture(); tied.orders[1].total = tied.orders[0].total; tied.referralContest.entries[1].joinedAt = tied.referralContest.entries[0].joinedAt;
   const tiePreview = prizes.finalizationPreview(tied, finalizedAt); assert.equal(tiePreview.tied, true);
   assert.throws(() => prizes.finalize(tied, { ...input, rankingFingerprint: tiePreview.rankingFingerprint }, finalizedAt), { statusCode: 409 });
   assert.equal(tied.contestPrizes, undefined);

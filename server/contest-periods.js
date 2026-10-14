@@ -57,7 +57,7 @@ function dashboardContestPeriods(database, requestedPeriod, now = new Date()) {
   const period = selected ? { ...selected, status: phase(selected) } : null;
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify([contest.id, contest.revision, selected || null, participants.map(({ customerName, ...row }) => row)])).digest('hex');
   return { contestId: contest.id || null, contestRevision: contest.revision ?? 0, generatedAt: now.toISOString(), readOnly: true, externalDraw: true,
-    periods: periods.map(p => ({ ...p, status: phase(p) })), period, participants, total: participants.length, fingerprint,
+    periods: periods.map(p => ({ ...p, status: phase(p) })), period, participants, total: participants.length, fingerprint, bonusPrize: { menus: 1, validDays: 30 },
     exportReady: Boolean(period?.status === 'complete'), actionLabels: ACTION_LABELS,
     excludedTail: selected && periods.length && periods.at(-1).endDate < contest.endDate ? { startDate: shiftDate(periods.at(-1).endDate, 1), endDate: contest.endDate } : null,
     rules: 'Une chance par compte inscrit ayant une activité enregistrée dans cette quinzaine, avec ou sans achat. Les tours de roue ne donnent ni chance supplémentaire ni activité éligible. Aucun gagnant n’est choisi ici.' };

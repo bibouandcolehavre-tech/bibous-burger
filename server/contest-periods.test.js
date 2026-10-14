@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { defaultContest, saveContestDraft, publishContest, publicContest, contestStatus, joinContest, customerContest } = require('./referral-contest');
+const { defaultContest, saveContestDraft, publishContest, publicContest, contestStatus, joinContest, customerContest, contestRanking } = require('./referral-contest');
 const { dashboardContestPeriods, periodsFor } = require('./contest-periods');
 const { contestWindow, withinContest } = require('./contest-window');
 const fixture = () => ({ customers: ['a','b','c','d','e'].map(id => ({ id, name: 'Client fictif ' + id, phone: 'PRIVATE-PHONE', points: 200 })), orders: [], wheelSpins: [],
@@ -43,6 +43,7 @@ test('Inscription gratuite : une chance, pas de nécessité de commande ni gain 
   assert.deepEqual(report.participants.map(row => [row.customerId, row.chances]), [['a',1],['b',1],['c',1],['d',1]]);
   assert(report.participants.every(row => row.actions.includes('registration')));
   assert.equal(report.exportReady, true);
+  assert.deepEqual(report.bonusPrize, { menus: 1, validDays: 30 });
   assert.deepEqual(report.excludedTail, { startDate: '2026-12-29', endDate: '2026-12-31' });
   assert(!JSON.stringify(report).includes('PRIVATE-PHONE'));
   assert.equal(JSON.stringify(db), original);
@@ -94,4 +95,17 @@ test('Filtres invalides rejetés ; liste vide sans calendrier valide ; liste pro
   assert.equal(dashboardContestPeriods(db, 2, new Date('2026-11-01T12:00:00Z')).exportReady, false);
   assert.equal(dashboardContestPeriods(db, undefined, new Date('2026-12-30T12:00:00Z')).period.number, 5);
   assert(!dashboardContestPeriods(db, undefined, new Date('2026-12-30T12:00:00Z')).periods.some(p => p.startDate === '2026-12-29'));
+});
+test('Égalité : atteinte du score, inscription puis ancienneté du compte ; âge inconnu reste à vérifier', () => {
+  const db = fixture(); db.referralContest.entries = db.referralContest.entries.slice(0, 2);
+  db.customers[0].createdAt = '2026-10-01T12:00:00Z'; db.customers[1].createdAt = '2026-01-01T12:00:00Z';
+  const ranked = contestRanking(db, db.referralContest);
+  assert.deepEqual(ranked.map(row => [row.customerId, row.rank, row.tied]), [['b',1,false],['a',2,false]]);
+  db.referralContest.entries[0].joinedAt = '2026-10-15T09:59:59Z';
+  assert.equal(contestRanking(db, db.referralContest)[0].customerId, 'a', 'L’ancienneté du compte ne passe pas avant l’inscription au concours');
+  db.referralContest.entries[0].joinedAt = db.referralContest.entries[1].joinedAt;
+  delete db.customers[0].createdAt;
+  assert(contestRanking(db, db.referralContest).every(row => row.tied), 'Une ancienneté manquante ne départage pas artificiellement');
+  const exposed = JSON.stringify(customerContest(db, db.customers[1], readAt).leaderboard);
+  assert(!exposed.includes('accountCreatedAt'));
 });

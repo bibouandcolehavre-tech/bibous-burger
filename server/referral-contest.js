@@ -82,6 +82,7 @@ function referralCount(database, contest, sponsorId) {
 
 function contestRanking(database, contest) {
   const participants = activeEntries(database, contest);
+  const customersById = new Map(database.customers.map(customer => [customer.id, customer]));
   const scoreEvents = new Map(participants.map(entry => [entry.customerId, []]));
   for (const entry of participants) if (entry.sponsorId && entry.newCustomer && scoreEvents.has(entry.sponsorId)) {
     scoreEvents.get(entry.sponsorId).push({ at: entry.joinedAt, kind: 'referral', amount: SCORE_PER_REFERRAL });
@@ -112,15 +113,22 @@ function contestRanking(database, contest) {
       if (nextScore > score) reachedAt = event.at;
       score = nextScore;
     }
-    return { alias: entry.alias, customerId: entry.customerId, referrals, sharePoints: shares, purchasePoints: Math.floor(cents / 100), score, joinedAt: entry.joinedAt, reachedAt };
-  }).sort((a, b) => b.score - a.score || a.reachedAt.localeCompare(b.reachedAt) || a.joinedAt.localeCompare(b.joinedAt) || a.customerId.localeCompare(b.customerId));
+    const accountDate = Date.parse(customersById.get(entry.customerId)?.createdAt);
+    return { alias: entry.alias, customerId: entry.customerId, referrals, sharePoints: shares, purchasePoints: Math.floor(cents / 100), score, joinedAt: entry.joinedAt, reachedAt,
+      accountCreatedAt: Number.isFinite(accountDate) ? new Date(accountDate).toISOString() : null };
+  }).sort((a, b) => b.score - a.score || a.reachedAt.localeCompare(b.reachedAt) || a.joinedAt.localeCompare(b.joinedAt) ||
+    (a.accountCreatedAt || '9999').localeCompare(b.accountCreatedAt || '9999') || a.customerId.localeCompare(b.customerId));
+  const primaryKey = row => `${row.score}:${row.reachedAt}:${row.joinedAt}`;
+  // Missing legacy creation dates are not fabricated or used to award a prize.
+  const unknownAgeGroups = new Set(ranking.filter(row => !row.accountCreatedAt).map(primaryKey));
+  const tieKey = row => `${primaryKey(row)}:${unknownAgeGroups.has(primaryKey(row)) ? 'unknown-age' : row.accountCreatedAt}`;
   const counts = new Map(), ranks = new Map();
   ranking.forEach((entry, index) => {
-    const key = `${entry.score}:${entry.reachedAt}`;
+    const key = tieKey(entry);
     counts.set(key, (counts.get(key) || 0) + 1);
     if (!ranks.has(key)) ranks.set(key, index + 1);
   });
-  return ranking.map(entry => ({ ...entry, rank: ranks.get(`${entry.score}:${entry.reachedAt}`), tied: counts.get(`${entry.score}:${entry.reachedAt}`) > 1 }));
+  return ranking.map(entry => ({ ...entry, rank: ranks.get(tieKey(entry)), tied: counts.get(tieKey(entry)) > 1 }));
 }
 
 function customerContest(database, customer, now = new Date()) {
