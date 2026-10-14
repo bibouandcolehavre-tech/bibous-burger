@@ -2,7 +2,7 @@ const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 const { normalizeReferralCode } = require('./referrals');
 const { CONTEST_PRIZE_RULES } = require('../contest-prize-policy');
-const { dateValid, timeValid, contestWindow, withinContest } = require('./contest-window');
+const { dateValid, timeValid, contestWindow, withinContest, createContestDateFilter } = require('./contest-window');
 const { CONTEST_WHEEL_BONUS_RULES, wheelBonusEnabled, wheelRulesConflict, wheelBonusDeclared, contestWheelEvents } = require('./contest-wheel-points');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -89,6 +89,7 @@ function referralCount(database, contest, sponsorId) {
 }
 
 function contestRanking(database, contest, now = new Date()) {
+  const inContest = createContestDateFilter(contest);
   const participants = activeEntries(database, contest);
   const customersById = new Map(database.customers.map(customer => [customer.id, customer]));
   const scoreEvents = new Map(participants.map(entry => [entry.customerId, []]));
@@ -101,7 +102,7 @@ function contestRanking(database, contest, now = new Date()) {
     }
   }
   for (const order of database.orders || []) {
-    if (!scoreEvents.has(order.customerId) || order.payment?.status !== 'PAID' || order.status === 'cancelled' || !withinDates(contest, order.payment.paidAt || order.createdAt)) continue;
+    if (!scoreEvents.has(order.customerId) || order.payment?.status !== 'PAID' || order.status === 'cancelled' || !inContest(order.payment.paidAt || order.createdAt)) continue;
     const total = Number(order.total);
     if (!Number.isFinite(total) || total <= 0) continue;
     const original = Number(order.paidTotal);
@@ -223,11 +224,12 @@ function purgeExpiredContestEntries(database, now = new Date()) {
 
 function dashboardContest(database, now = new Date()) {
   const contest = contestFor(database);
+  const inContest = createContestDateFilter(contest);
   const { entries, ...draft } = contest;
   const participants = activeEntries(database, contest);
   const ranking = contestRanking(database, contest, now);
   const participantIds = new Set(participants.map(entry => entry.customerId));
-  const eligibleOrders = (database.orders || []).filter(order => participantIds.has(order.customerId) && order.payment?.status === 'PAID' && order.status !== 'cancelled' && withinDates(contest, order.payment.paidAt || order.createdAt));
+  const eligibleOrders = (database.orders || []).filter(order => participantIds.has(order.customerId) && order.payment?.status === 'PAID' && order.status !== 'cancelled' && inContest(order.payment.paidAt || order.createdAt));
   const paid = new Set(eligibleOrders.map(order => order.customerId));
   const paidRevenueCents = eligibleOrders.reduce((sum, order) => {
     const total = Number(order.total), original = Number(order.paidTotal);

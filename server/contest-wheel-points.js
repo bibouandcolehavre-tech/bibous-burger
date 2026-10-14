@@ -1,6 +1,6 @@
 // Read-only projection of authoritative wheel awards, never a loyalty credit.
 const { WHEEL_PRIZES, eligibleOrderTurns } = require('./wheel');
-const { withinContest } = require('./contest-window');
+const { createContestDateFilter } = require('./contest-window');
 
 const CONTEST_WHEEL_BONUS_RULES = 'Bonus roue du classement : 1 point réellement gagné à la roue pendant la période du concours donne aussi 1 point au classement, sans retirer son crédit au Club Bibou. Le solde de fidélité et les points habituels de commandes ne sont pas transférés au classement. Seuls les tours valides issus d’un achat réellement payé ou d’un parrainage validé sont retenus, une seule fois. Les tours fictifs ou offerts de test, cadeaux, remises et gains annulés ou devenus injustifiés ne donnent pas ce bonus. Le total et le rang des applications existantes incluent le bonus ; leur détail achats/partages/parrainages n’affiche pas encore une ligne roue. Le détail des points de roue figure dans le back-office.';
 const wheelBonusEnabled = contest => contest?.wheelPointsInRanking === true;
@@ -11,6 +11,7 @@ const wideWindow = { startDate: '1900-01-01', endDate: '2999-12-31' };
 
 function contestWheelEvents(database, contest, now = new Date()) {
   if (!wheelBonusEnabled(contest) || contest.status !== 'published' || !Number.isFinite(new Date(now).getTime())) return [];
+  const inContest = createContestDateFilter(contest), nowMs = new Date(now).getTime();
   const orders = new Map((database.orders || []).map(order => [order.id, order]));
   const customers = new Map((database.customers || []).map(customer => [customer.id, customer]));
   const seenIds = new Set(), seenRequests = new Set(), spins = [];
@@ -31,7 +32,7 @@ function contestWheelEvents(database, contest, now = new Date()) {
     if (referralKey) consumedReferrals.add(referralKey);
     const at = Date.parse(spin.awardedAt), points = pointPrizes.get(spin.prizeId);
     if (!points || spin.pointsAdded !== points || spin.revokedAt || spin.reviewMode ||
-        !Number.isFinite(at) || at > new Date(now).getTime() || !withinContest(contest, spin.awardedAt)) continue;
+        !Number.isFinite(at) || at > nowMs || !inContest(spin.awardedAt)) continue;
     if (Boolean(spin.orderId) === Boolean(spin.referralCustomerId)) continue;
     if (spin.orderId) {
       const order = orders.get(spin.orderId), paidAt = Date.parse(order?.payment?.paidAt);

@@ -10,8 +10,9 @@ function contestWindow(contest = {}) {
   return { startsAt: serviceSlotInstant(contest.startDate, startTime).toISOString(),
     endsAt: serviceSlotInstant(shiftDate(contest.endDate, 1), '00:00').toISOString() };
 }
-function withinContest(contest, value) {
-  const window = contestWindow(contest), at = Date.parse(value);
-  return Boolean(window && Number.isFinite(at) && at >= Date.parse(window.startsAt) && at < Date.parse(window.endsAt));
+function createContestDateFilter(contest) {
+  const window = contestWindow(contest), start = Date.parse(window?.startsAt), end = Date.parse(window?.endsAt);
+  return value => { const at = Date.parse(value); return Number.isFinite(at) && at >= start && at < end; };
 }
-module.exports = { dateValid, timeValid, shiftDate, contestWindow, withinContest };
+function withinContest(contest, value) { return createContestDateFilter(contest)(value); }
+module.exports = { dateValid, timeValid, shiftDate, contestWindow, withinContest, createContestDateFilter };

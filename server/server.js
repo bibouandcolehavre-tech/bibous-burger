@@ -1108,6 +1108,9 @@ const server = http.createServer(async (request, response) => {
       if (request.method !== 'POST' || url.pathname !== '/api/customer/wheel/spin')
         return send(response, 405, { error: 'Action non disponible.' });
       const spinInput = await readBody(request);
+      if (!spinInput || typeof spinInput !== 'object' || Array.isArray(spinInput) ||
+          Object.keys(spinInput).some(key => !['orderId', 'requestId'].includes(key)))
+        return send(response, 400, { error: 'Seules les références de la commande et du tour peuvent être envoyées. Le résultat est choisi par le serveur.' });
       if (request.kioskSession && !database.orders.some(order => order.id === spinInput.orderId && orderInKioskSession(order, request.kioskSession))) return send(response, 403, { error: 'Seuls les tours de cette commande sont utilisables sur la borne.' });
       if (request.kioskSession && (database.wheelSpins || []).some(spin => spin.customerId === customer.id && spin.requestId === spinInput.requestId && !database.orders.some(order => order.id === spin.orderId && orderInKioskSession(order, request.kioskSession)))) return send(response, 403, { error:'Ce tour appartient à une autre session.' });
       const result = wheelGame.spinWheel(database, customer.id, spinInput);

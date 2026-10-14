@@ -47,12 +47,14 @@ test('Programmation UI : annonce et brouillon sauvegardés, confirmation indispe
   const h = harness(); await h.panel.load(); await h.q('#contest-prepare').onclick();
   h.q('#news-save').onclick(); await tick(); h.q('#contest-form').onsubmit({ preventDefault() {} }); await tick();
   assert.equal(h.db.referralContest.status, 'draft'); assert.equal(h.q('#contest-publish').disabled, false);
+  assert.match(h.q('#contest-action-feedback').textContent, /Brouillon enregistré/);
   await h.q('#contest-publish').onclick(); assert(!h.calls.some(c => c.method === 'POST'));
   h.approve(true); await h.q('#contest-publish').onclick();
   assert.equal(h.calls.filter(c => c.method === 'POST').length, 1);
   assert.equal(h.db.referralContest.status, 'published'); assert.equal(publicContest(h.db, h.now).status, 'scheduled');
   assert.equal(publicContest(h.db, h.now).startTime, '11:00'); assert.equal(h.q('#contest-publish').disabled, true);
   assert.equal(publicContest(h.db, h.now).scoring.pointsPerAwardedWheelPoint, 1);
+  assert.match(h.q('#contest-action-feedback').textContent, /ouverture est programmée/);
   await h.q('#contest-publish').onclick(); assert.equal(h.calls.filter(c => c.method === 'POST').length, 1);
   assert(!h.calls.some(c => /finalize|spin|sms|push|payment|orders/.test(c.url))); assert.equal(h.db.orders.length, 0);
 });

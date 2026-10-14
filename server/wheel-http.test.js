@@ -43,6 +43,12 @@ test('roue web : uniquement après paiement, deux tours maximum et demande rejou
   };
   assert.equal((await request('/customer/wheel', 'GET', undefined, '')).status, 401);
   assert.equal((await request('/customer/wheel')).data.orderTurns[0].available, 2);
+  const beforeInvalidSpins = await fs.readFile(file, 'utf8');
+  for (const extra of [{ now: now.toISOString() }, { randomInt: 75 }, { prizeId: 'points-60' }, { customerId: 'someone-else' }]) {
+    const invalid = await request('/customer/wheel/spin', 'POST', { orderId: 'paid-1', requestId: 'forged-fixture-spin-01', ...extra });
+    assert.equal(invalid.status, 400, JSON.stringify(extra));
+  }
+  assert.equal(await fs.readFile(file, 'utf8'), beforeInvalidSpins, 'Client-controlled internal options must not consume a turn or write a reward');
   assert.equal((await request('/customer/wheel/spin', 'POST', { orderId: 'unpaid-1', requestId: 'wheel-http-attempt-01' })).status, 409);
   const first = await request('/customer/wheel/spin', 'POST', { orderId: 'paid-1', requestId: 'wheel-http-attempt-01' });
   assert.equal(first.status, 200, JSON.stringify(first.data));
