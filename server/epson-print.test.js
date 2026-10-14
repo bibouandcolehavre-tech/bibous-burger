@@ -153,3 +153,44 @@ test('les intitulés MENU et BURGER SEUL suivent les produits et non le nom libr
   assert.match(request, /<text>MENU&#10;<\/text><text>1 x Taurus/);
   assert.match(request, /<text>BURGER SEUL&#10;<\/text><text>1 x Classique/);
 });
+
+const orderWithRemark = comment => ({
+  id: 'remark-fixture', number: 999, method: 'pickup', status: 'confirmed',
+  serviceDate: '2026-10-14', slot: '19:20', payment: { status: 'PAID' },
+  customerName: 'Client fictif', comment, total: 20,
+  items: [{ name: 'Burger exemple', quantity: 2, price: 10, options: [{ label: 'Fromage habituel' }] }],
+});
+
+for (const [name, render] of [['préparation', printer.preparationEnvelope], ['récapitulatif', printer.orderReceiptEnvelope]]) {
+  test(`${name} : remarque globale en gras avant les articles, une seule fois et sans modifier la commande`, () => {
+    const order = orderWithRemark('Remplacer le cheddar par du chèvre sur le burger exemple.');
+    const original = JSON.stringify(order);
+    const request = render(order);
+    assert.match(request, /<text align="left" dw="false" dh="true" em="true"\/><text>REMARQUE CLIENT&#10;<\/text>/);
+    assert.match(request, /Remplacer le cheddar par du chèvre sur le burger exemple\./);
+    assert.equal((request.match(/REMARQUE CLIENT/g) || []).length, 1);
+    assert.ok(request.indexOf('REMARQUE CLIENT') < request.indexOf('2 x Burger exemple'));
+    assert.equal((request.match(/Remplacer le cheddar/g) || []).length, 1);
+    assert.equal(JSON.stringify(order), original);
+    assert.match(request, /<text align="left" dw="false" dh="false" em="false"\/>/);
+  });
+
+  test(`${name} : retours à la ligne conservés, caractères échappés et aucune coupure injectée`, () => {
+    const request = render(orderWithRemark('Chèvre & sauce à part\r\nSans oignons\n<cut type="feed"/>\u0000 merci'));
+    assert.match(request, /<text>Chèvre &amp; sauce à part&#10;<\/text><text>Sans oignons&#10;<\/text>/);
+    assert.match(request, /&lt;cut type=&quot;feed&quot;\/&gt;  merci/);
+    assert.equal((request.match(/<cut type="feed"\/>/g) || []).length, 1);
+    assert.doesNotMatch(request, /\u0000|\r/);
+  });
+
+  test(`${name} : aucune rubrique vide et aucune remarque longue tronquée`, () => {
+    for (const comment of [undefined, null, '', '  \r\n\t ', { note: 'Pas une remarque texte' }]) {
+      const request = render(orderWithRemark(comment));
+      assert.doesNotMatch(request, /REMARQUE CLIENT|\[object Object\]/);
+    }
+    const long = 'Remplacer le fromage. '.repeat(22) + 'FIN-DE-LA-REMARQUE';
+    const request = render(orderWithRemark(long));
+    assert.ok(request.includes(long));
+    assert.ok(request.indexOf('FIN-DE-LA-REMARQUE') < request.indexOf('2 x Burger exemple'));
+  });
+}

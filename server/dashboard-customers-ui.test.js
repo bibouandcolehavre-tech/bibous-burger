@@ -154,6 +154,39 @@ test('une nouvelle commande réclamée est imprimée sans clic puis acquittée u
   assert.match(h.element('#printer-status').textContent, /prête/);
 });
 
+test('remarque globale conservée sur les vrais documents des chemins manuel et automatique, Epson simulée uniquement', async () => {
+  const printer = require('../restaurant-dashboard/epson-print');
+  const order = { id: 'remark-path-fixture', number: 999, status: 'confirmed', method: 'pickup',
+    serviceDate: '2026-10-14', slot: '19:20', payment: { status: 'PAID' },
+    items: [{ name: 'Burger exemple', quantity: 1, price: 10 }], total: 10,
+    comment: 'Chèvre à la place du cheddar & sauce à part' };
+  for (const path of ['manual', 'auto']) {
+    const h = await harness();
+    let sent = 0, finished = 0;
+    h.context.window.BibouEpsonPrint = {
+      probe: async () => ({ success: true }),
+      orderReceiptEnvelope: printer.orderReceiptEnvelope,
+      send: async (host, documentXml) => {
+        assert.equal(host, '192.168.192.50');
+        assert.match(documentXml, /REMARQUE CLIENT/);
+        assert.match(documentXml, /Chèvre à la place du cheddar &amp; sauce à part/);
+        assert.ok(documentXml.indexOf('REMARQUE CLIENT') < documentXml.indexOf('1 x Burger exemple'));
+        sent++; return { success: true };
+      }
+    };
+    h.context.fetch = async (url, options) => {
+      if (url.endsWith('/manual') || url.endsWith('/claim')) return result({ job: { order, claimId: 'remark-test' } });
+      if (url.endsWith('/result')) { assert.equal(JSON.parse(options.body).status, 'printed'); finished++; return result({ status: 'printed' }); }
+      throw new Error('Unexpected fixture route');
+    };
+    if (path === 'manual') {
+      h.context.remarkButton = { dataset: { printOrder: order.id }, disabled: false, textContent: 'Imprimer', closest: () => ({ querySelector: () => ({ textContent: '' }) }) };
+      await h.run('printOrder(remarkButton)');
+    } else await h.run('dispatchAutoPrint()');
+    assert.equal(sent, 1); assert.equal(finished, 1);
+  }
+});
+
 test('impression automatique : le statut indique le point de panne sans réclamer de commande', async () => {
   const h = await harness();
   h.context.fetch = async () => { throw new Error('Aucune commande ne doit être réclamée'); };
