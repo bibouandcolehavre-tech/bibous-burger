@@ -8,13 +8,4 @@ function validateIdentity(input = {}) {
   return { firstName, lastName, name: `${firstName} ${lastName}` };
 }
 const hasCompleteIdentity = customer => Boolean(customer && !validateIdentity(customer).error);
-function profileAddressChange(customer, input, editing) {
-  const fields = ['address', 'postalCode', 'city'];
-  if (!editing || fields.every(key => input[key] === (customer[key] || ''))) return { changed: false, payload: {} };
-  if (fields.some(key => typeof input[key] !== 'string')) return { error: 'Vérifie ton adresse.' };
-  const payload = Object.fromEntries(fields.map(key => [key, input[key].trim()]));
-  if (payload.address.length > 200 || payload.city.length > 80 || payload.postalCode.length > 5) return { error: 'Vérifie la longueur de ton adresse.' };
-  if ((payload.address || payload.postalCode) && (!payload.address || !/^\d{5}$/.test(payload.postalCode) || !payload.city)) return { error: 'Renseigne la rue, le code postal à cinq chiffres et la ville.' };
-  return { changed: true, payload };
-}
-module.exports = { MAX_NAME_LENGTH, normalizeName, validateIdentity, hasCompleteIdentity, profileAddressChange };
+module.exports = { MAX_NAME_LENGTH, normalizeName, validateIdentity, hasCompleteIdentity };

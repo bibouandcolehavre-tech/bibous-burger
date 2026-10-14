@@ -1,10 +1,9 @@
 import OrderAmendments from "./OrderAmendments";
-import ArticleReviews from './ArticleReviews';
 import PromoCodeField from './PromoCodeField';
 const { previewPromotion, differentPendingPromo } = require('./promo-client');
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, Share, StatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { SafeAreaProvider, SafeAreaView as DeviceSafeAreaView, initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView as DeviceSafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
 import NewsCarousel from "./NewsCarousel";
 import WelcomeCarousel from "./WelcomeCarousel";
 import ContestScreen from "./ContestScreen";
@@ -14,7 +13,6 @@ import CustomBurgerPreview from "./CustomBurgerPreview";
 import CustomerOffers from "./CustomerOffers";
 import StoreReviewLogin from "./StoreReviewLogin";
 import CustomerIdentityScreen from './CustomerIdentityScreen';
-import { CustomerJourneyHome, CustomerJourneyFrame, CustomerJourneyLegacyContext, CustomerServiceScreen, CustomerCategoriesScreen, CustomerCatalogScreen, CustomerPartnersScreen, CustomerLoyaltyStrip } from './CustomerJourneyScreens';
 import KioskPhoneApproval from './KioskPhoneApproval';
 const { kioskPairingFromLocation } = require('./kiosk-qr-client');
 const PHONE_PAIRING = Platform.OS === 'web' && typeof window !== 'undefined' ? kioskPairingFromLocation(window.location.href) : null;
@@ -33,17 +31,12 @@ const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 const { slotAlreadyStarted } = require('./client-slots');
 const { repriceOfferCart } = require('./product-offer');
-const { quantityOf, cartUnitCount, cartTotal, changeCartQuantity, replaceCartLine, choicesFromLine, serializeCartItems } = require('./cart-client');
 const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
-const { kioskRecipeChoices, vegetarianInstruction } = require('./consumer-recipe');
-const { consumerRecipeGroup, naanOptionGroups, clearNaanChoices, customerProducts, cartMealFacts, customerServiceSlots, customerNavigationTab } = require('./customer-journey');
-const { ABSOLUTE_FILL_STYLE, productChoiceStage } = require('./customer-display-layout');
-const { CHEESE_NAANS } = require('./cheese-naans');
-const NEW_PROTEIN_CHOICES = ['web', 'android', 'ios'].includes(Platform.OS);
+const { kioskRecipeGroup, kioskRecipeChoices, vegetarianInstruction } = require('./server/kiosk-recipe');
+const NEW_PROTEIN_CHOICES = Platform.OS === 'web'; // Native consumer releases remain unchanged until approved.
 const { shouldShowPartnerLaunch } = require('./partner-launch-policy');
-const { supportsNewCustomerJourneys, supportsRankingContest, supportsCustomerJourneyShell } = require('./customer-experience-policy');
-const CUSTOMER_JOURNEY_SHELL = supportsCustomerJourneyShell(Platform.OS);
+const { supportsNewCustomerJourneys, supportsRankingContest } = require('./customer-experience-policy');
 
 const taurusPhoto = require("./assets/taurus.jpg");
 const headerWordmark = require("./assets/bibous-wordmark-white.png");
@@ -77,7 +70,6 @@ const WELCOME_DISCOUNT_RATE = 0.1;
 const POINT_EARNING_RULES = [
   { emoji: "🍔", title: "Burger seul", points: "+10 points", detail: "À chaque burger seul payé" },
   { emoji: "🍟", title: "Menu complet", points: "+15 points", detail: "Burger, frites et boisson" },
-  { emoji: "🫓", title: "Cheese naan", points: "+10 / +15 points", detail: "10 points seul, 15 points en menu, après paiement" },
   { emoji: "🏠", title: "Retrait anticipé", points: "Points ×2", detail: "Commande en click & collect enregistrée au moins 30 min avant le retrait" },
   { emoji: "🎁", title: "Parrainage validé", points: "+100 points", detail: "Après la première commande payée du filleul" },
   { emoji: "⚡", title: "Bonus de la semaine", points: "×2 puis ×3", detail: "Selon le nombre de commandes de la semaine" },
@@ -289,8 +281,6 @@ const DRINK_PRODUCTS = [
   { id: "drink-tropico", name: "Tropico", price: 1.8, kind: "drink", emoji: "🥤", image: drinkTropicoPhoto, description: "Boisson aux fruits bien fraîche." },
 ];
 const DESSERT_PRODUCTS = SNACK_PRODUCTS.filter(product => product.id.startsWith('dessert-'));
-const NAAN_IMAGES = { 'naan-poulet': require('./assets/cheese-naans/poulet.jpg'), 'naan-boeuf': require('./assets/cheese-naans/boeuf.jpg'), 'naan-canard': require('./assets/cheese-naans/canard.jpg') };
-const NAAN_PRODUCTS = Object.entries(CHEESE_NAANS).map(([id, p]) => ({ ...p, id, image: NAAN_IMAGES[id], detail: p.description }));
 const RESTAURANT_ADDRESS = "153 quai Georges V, 76600 Le Havre";
 const DELIVERY_ZONE = "Rayon de 5 km autour de Bibou's Burgers";
 const DELIVERY_SCHEDULE = [
@@ -315,8 +305,6 @@ const UPCOMING_DELIVERY_DAYS = Array.from({ length: 7 }, (_, index) => {
 const DEFAULT_DELIVERY_DAY = UPCOMING_DELIVERY_DAYS[0];
 function Header({ onBack, right, onRight }) {
   const { width } = useWindowDimensions();
-  const sharedChrome = useContext(CustomerJourneyLegacyContext);
-  if (sharedChrome) return null;
   const desktop = width >= 900;
   const welcomeStrip = !onBack && <View accessibilityRole="text" accessibilityLabel="Cadeau de bienvenue : crée ton compte et profite de 10 % sur ta première commande" style={styles.welcomeSignupStrip}><Text style={styles.welcomeSignupStripIcon}>🎁</Text><View style={styles.welcomeSignupStripCopy}><Text style={styles.welcomeSignupStripTitle}>Crée ton compte : −10 %</Text><Text style={styles.welcomeSignupStripText}>sur ta première commande · remise automatique</Text></View></View>;
   const navigation = <View style={[styles.header, desktop && styles.headerDesktop]}>
@@ -405,11 +393,11 @@ function MenuScreen({ onOpenContest, onOpenProduct, onQuickAdd, onOpenCustomBurg
   return <ScrollView ref={scrollRef} contentContainerStyle={[styles.scrollContent, desktop && styles.scrollContentDesktop]} showsVerticalScrollIndicator={false}><Header right={cartCount ? `🛍  ${cartCount}` : "🛍"} onRight={onOpenCart} /><>{pendingPayment && <Pressable accessibilityRole="button" onPress={onResumePayment} style={styles.statusCard}><Text style={styles.statusTitle}>Retrouver mon paiement en cours ›</Text><Text style={styles.statusDescription}>Vérifie cette tentative avant de repasser commande.</Text></Pressable>}</>{reservationDraft && <View style={[styles.reservationInfo, { marginTop: 16, backgroundColor: '#D9EEE5', borderColor: '#9CCDB8', borderWidth: 1 }]}><Text style={styles.reservationInfoTitle}>🍽 Repas pour ta table</Text><Text style={styles.reservationInfoText}>{reservationDraft.dayLabel} · {reservationDraft.slot} · {reservationDraft.guests} personne{reservationDraft.guests > 1 ? 's' : ''}. Choisis tes plats dans la carte ci-dessous.</Text><Pressable onPress={onCancelReservationMeal}><Text style={styles.cartRemove}>Annuler cette précommande</Text></Pressable></View>}<View style={[styles.homeTopRow, desktop && styles.homeTopRowDesktop]}><View style={styles.addressBox}><Text style={styles.addressLabel}>Zone de livraison</Text><Text style={styles.addressValue}>{DELIVERY_ZONE}</Text></View><Pressable onPress={onOpenAccount} style={[styles.accountShortcut, desktop && styles.accountShortcutDesktop]}><Text style={styles.accountShortcutIcon}>👤</Text><Text style={styles.accountShortcutText}>{customer.name ? customer.name.split(" ")[0] : "Mon compte"}</Text></Pressable></View><Text style={styles.serviceTitle}>Que souhaites-tu faire ?</Text><View style={[styles.serviceActions, desktop && styles.serviceActionsDesktop]}><Pressable onPress={() => chooseOrderMethod("pickup")} style={[styles.serviceAction, preferredMethod === "pickup" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛍</Text><Text style={styles.serviceActionTitle}>Click & Collect</Text><Text style={styles.serviceActionText}>Retrait sur place</Text></Pressable><Pressable onPress={() => chooseOrderMethod("delivery")} style={[styles.serviceAction, preferredMethod === "delivery" && styles.serviceActionSelected]}><Text style={styles.serviceActionIcon}>🛵</Text><Text style={styles.serviceActionTitle}>Livraison</Text><Text style={styles.serviceActionText}>Chez toi</Text></Pressable><Pressable onPress={onOpenReservation} style={[styles.serviceAction, styles.serviceActionReservation]}><Text style={styles.serviceActionIcon}>🍽</Text><Text style={styles.serviceActionTitle}>Réserver</Text><Text style={styles.serviceActionText}>Une table</Text></Pressable></View><BibouPlusHomeCard active={bibouPlusActive} customer={customer} onPress={onOpenBibouPlus} />{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎁</Text><View style={styles.welcomeRewardCopy}><Text style={styles.welcomeRewardTitle}>Bienvenue ! −10 %</Text><Text style={styles.welcomeRewardDetail}>sur ta première commande</Text><Text style={styles.welcomeRewardText}>Remise automatique au paiement.</Text></View></View>}<Pressable onPress={onOpenLoyalty} style={[styles.loyaltyShortcut, desktop && styles.loyaltyShortcutDesktop]}><View><Text style={styles.loyaltyShortcutEyebrow}>CLUB BIBOU</Text><Text style={styles.loyaltyShortcutTitle}>★ {loyaltyPoints} points disponibles</Text></View><Text style={styles.loyaltyShortcutArrow}>›</Text></Pressable><NewsCarousel apiBaseUrl={API_BASE_URL} onOpenContest={onOpenContest} /><GoogleReviewsCarousel />{stockMessage ? <Text style={styles.stockNotice}>{stockMessage}</Text> : null}{showCustomBurgerPreview && <Pressable accessibilityRole="button" onPress={onOpenCustomBurger} style={{ backgroundColor: '#D9EEE5', borderColor: '#A9D2C1', borderWidth: 1, borderRadius: 22, padding: 20, marginTop: 18, marginBottom: 22 }}><Text style={{ color: '#315B4B', fontSize: 13, fontWeight: '900', letterSpacing: 1 }}>TON BURGER, TES CHOIX</Text><Text style={{ color: '#263D34', fontSize: 25, fontWeight: '900', marginTop: 6 }}>Compose ton burger</Text><Text style={{ color: '#315B4B', fontSize: 15, lineHeight: 22, marginTop: 6 }}>Pain, viande, fromage, sauce, crudités et suppléments · dès 9,90 €.</Text><Text style={{ color: '#315B4B', fontSize: 16, fontWeight: '900', marginTop: 11 }}>Composer mon burger →</Text></Pressable>}<View onLayout={(event) => setMenuPosition(event.nativeEvent.layout.y)}><CategoryHeader title="Nos menus" subtitle="Burger + frites et boisson" size="menu" /></View><View style={desktop && styles.productGrid}>{menus.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Nos burgers" subtitle="Burgers seuls" size="burgers" /><View style={desktop && styles.productGrid}>{burgers.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><ProductCard product={product} onPress={onOpenProduct} /></View>)}</View><CategoryHeader title="Petites faims" subtitle="À partager… ou à garder rien que pour soi." size="snacks" /><View style={desktop && styles.productGrid}>{snacks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={["duo", "solo"].includes(product.kind) ? onOpenProduct : onQuickAdd} /></View>)}</View><CategoryHeader title="Nos desserts" subtitle="Les trois tiramisus à la carte · 3,90 € chacun." /><View style={desktop && styles.productGrid}>{desserts.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={onQuickAdd} /></View>)}</View><CategoryHeader title="Boissons" subtitle="Une boisson fraîche pour compléter ta commande." /><View style={desktop && styles.productGrid}>{drinks.map((product) => <View key={product.id} style={desktop && styles.productGridItem}><AccessoryCard product={product} onPress={onQuickAdd} /></View>)}</View>{desktop && <View style={styles.siteFooter}><View><Text style={styles.siteFooterTitle}>Bibou's Burgers</Text><Text style={styles.siteFooterText}>153 quai Georges V, 76600 Le Havre{"\n"}Livraison dans un rayon de 5 km · Retrait au restaurant</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.siteFooterButton}><Text style={styles.siteFooterButtonText}>Voir les avis Google ↗</Text></Pressable></View>}<RestaurantInfo /><Pressable onPress={onOpenPrivacy} style={styles.homePrivacyLink}><Text style={styles.homePrivacyLinkText}>Confidentialité et données personnelles</Text></Pressable><Pressable onPress={onOpenCart} style={[styles.floatingCart, desktop && styles.floatingCartDesktop]}><Text style={styles.floatingCartText}>Panier{cartCount ? ` · ${cartCount}` : ""}</Text><Text style={styles.floatingCartIcon}>🛍</Text></Pressable></ScrollView>;
 }
 
-function AccountScreen({ onOpenOffers, onOpenContest, onOpenNotifications, customer, loyalty, orders, reservations, onBack, onOpenOrders, onOpenReservations, onOpenLoyalty, onOpenBibouPlus, onOpenPrivacy, onDeleteAccount, onLogout, onEditIdentity }) {
+function AccountScreen({ onOpenOffers, onOpenNotifications, customer, loyalty, orders, reservations, onBack, onOpenOrders, onOpenReservations, onOpenLoyalty, onOpenBibouPlus, onOpenPrivacy, onDeleteAccount, onLogout }) {
   const activeOrder = orders.find((order) => order.progress < ORDER_STEPS.length - 1);
   const customerName = customer.name || "Client Bibou";
   const bibouPlusActive = customerHasBibouPlus(customer);
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.accountHero}><View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{customerName.slice(0, 1).toUpperCase()}</Text></View><View><Text style={styles.accountGreeting}>Bonjour, {customerName.split(" ")[0]} !</Text><Text style={styles.accountContact}>{customer.phone || "Ajoute ton téléphone lors de ta première commande"}</Text></View></View>{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎁</Text><View style={styles.welcomeRewardCopy}><Text style={styles.welcomeRewardTitle}>Ton cadeau de bienvenue est prêt</Text><Text style={styles.welcomeRewardDetail}>−10 % sur ta première commande</Text><Text style={styles.welcomeRewardText}>Remise automatique au paiement.</Text></View></View>}{activeOrder && <Pressable onPress={onOpenOrders} style={styles.currentOrderCard}><View><Text style={styles.currentOrderEyebrow}>COMMANDE EN COURS</Text><Text style={styles.currentOrderTitle}>{activeOrder.product}</Text><Text style={styles.currentOrderText}>{ORDER_STEPS[activeOrder.progress]} · {activeOrder.slot}</Text></View><Text style={styles.currentOrderArrow}>›</Text></Pressable>}<Text style={styles.sectionTitle}>Mon espace</Text>{onEditIdentity && <Pressable accessibilityRole="button" onPress={onEditIdentity} style={styles.accountAction}><Text style={styles.accountActionTitle}>Mon profil et mon adresse</Text></Pressable>}<Pressable onPress={onOpenBibouPlus} style={[styles.accountAction, bibouPlusActive && styles.accountActionPlusActive]}><View style={[styles.accountActionIcon, styles.accountActionPlusIcon]}><Text>✦</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Bibou +</Text><Text style={styles.accountActionText}>{bibouPlusActive ? `Actif jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Livraison offerte, −5 % et points ×2"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOrders} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🧾</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes commandes</Text><Text style={styles.accountActionText}>{orders.length} commande{orders.length > 1 ? "s" : ""} dans ton historique</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenReservations} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🍽</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes réservations</Text><Text style={styles.accountActionText}>{reservations.length ? `${reservations.length} réservation${reservations.length > 1 ? "s" : ""} retrouvée${reservations.length > 1 ? "s" : ""}` : "Suis ici la confirmation de ta table"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenLoyalty} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>★</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Club Bibou</Text><Text style={styles.accountActionText}>{loyalty.points} points disponibles</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable accessibilityRole="button" onPress={onOpenContest} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🎁</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes menus gagnés</Text><Text style={styles.accountActionText}>Concours · codes personnels du mois</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOffers} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🎁</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes offres</Text><Text style={styles.accountActionText}>Bons personnels et anniversaire facultatif</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenNotifications} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>◉</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes notifications</Text><Text style={styles.accountActionText}>Suivi des commandes et promotions : à toi de choisir</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenPrivacy} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🔒</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Confidentialité</Text><Text style={styles.accountActionText}>Tes données et tes choix</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable accessibilityRole="button" onPress={onLogout} style={styles.accountAction}><Text style={styles.accountActionTitle}>Me déconnecter</Text></Pressable><Pressable onPress={onDeleteAccount} style={styles.accountDeleteAction}><Text style={styles.accountDeleteText}>Supprimer mon compte</Text></Pressable><View style={styles.accountAddress}><Text style={styles.accountAddressTitle}>Adresse enregistrée</Text><Text style={styles.accountAddressText}>{customer.address ? `${customer.address}, ${customer.postalCode} ${customer.city}` : "Elle sera enregistrée lors de ta première livraison."}</Text></View><Text style={styles.accountFinePrint}>{customer.reviewMode ? "Compte fictif isolé · accès de validation des boutiques" : "Ton espace est sécurisé par ta connexion SMS."}</Text></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><View style={styles.accountHero}><View style={styles.accountAvatar}><Text style={styles.accountAvatarText}>{customerName.slice(0, 1).toUpperCase()}</Text></View><View><Text style={styles.accountGreeting}>Bonjour, {customerName.split(" ")[0]} !</Text><Text style={styles.accountContact}>{customer.phone || "Ajoute ton téléphone lors de ta première commande"}</Text></View></View>{customerHasWelcomeReward(customer) && <View style={styles.welcomeRewardBanner}><Text style={styles.welcomeRewardIcon}>🎁</Text><View style={styles.welcomeRewardCopy}><Text style={styles.welcomeRewardTitle}>Ton cadeau de bienvenue est prêt</Text><Text style={styles.welcomeRewardDetail}>−10 % sur ta première commande</Text><Text style={styles.welcomeRewardText}>Remise automatique au paiement.</Text></View></View>}{activeOrder && <Pressable onPress={onOpenOrders} style={styles.currentOrderCard}><View><Text style={styles.currentOrderEyebrow}>COMMANDE EN COURS</Text><Text style={styles.currentOrderTitle}>{activeOrder.product}</Text><Text style={styles.currentOrderText}>{ORDER_STEPS[activeOrder.progress]} · {activeOrder.slot}</Text></View><Text style={styles.currentOrderArrow}>›</Text></Pressable>}<Text style={styles.sectionTitle}>Mon espace</Text><Pressable onPress={onOpenBibouPlus} style={[styles.accountAction, bibouPlusActive && styles.accountActionPlusActive]}><View style={[styles.accountActionIcon, styles.accountActionPlusIcon]}><Text>✦</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Bibou +</Text><Text style={styles.accountActionText}>{bibouPlusActive ? `Actif jusqu’au ${new Date(customer.bibouPlusExpiresAt).toLocaleDateString("fr-FR")}` : "Livraison offerte, −5 % et points ×2"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOrders} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🧾</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes commandes</Text><Text style={styles.accountActionText}>{orders.length} commande{orders.length > 1 ? "s" : ""} dans ton historique</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenReservations} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🍽</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes réservations</Text><Text style={styles.accountActionText}>{reservations.length ? `${reservations.length} réservation${reservations.length > 1 ? "s" : ""} retrouvée${reservations.length > 1 ? "s" : ""}` : "Suis ici la confirmation de ta table"}</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenLoyalty} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>★</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Club Bibou</Text><Text style={styles.accountActionText}>{loyalty.points} points disponibles</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenOffers} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🎁</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes offres</Text><Text style={styles.accountActionText}>Bons personnels et anniversaire facultatif</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenNotifications} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>◉</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Mes notifications</Text><Text style={styles.accountActionText}>Suivi des commandes et promotions : à toi de choisir</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable onPress={onOpenPrivacy} style={styles.accountAction}><View style={styles.accountActionIcon}><Text>🔒</Text></View><View style={styles.accountActionCopy}><Text style={styles.accountActionTitle}>Confidentialité</Text><Text style={styles.accountActionText}>Tes données et tes choix</Text></View><Text style={styles.accountActionArrow}>›</Text></Pressable><Pressable accessibilityRole="button" onPress={onLogout} style={styles.accountAction}><Text style={styles.accountActionTitle}>Me déconnecter</Text></Pressable><Pressable onPress={onDeleteAccount} style={styles.accountDeleteAction}><Text style={styles.accountDeleteText}>Supprimer mon compte</Text></Pressable><View style={styles.accountAddress}><Text style={styles.accountAddressTitle}>Adresse enregistrée</Text><Text style={styles.accountAddressText}>{customer.address ? `${customer.address}, ${customer.postalCode} ${customer.city}` : "Elle sera enregistrée lors de ta première livraison."}</Text></View><Text style={styles.accountFinePrint}>{customer.reviewMode ? "Compte fictif isolé · accès de validation des boutiques" : "Ton espace est sécurisé par ta connexion SMS."}</Text></ScrollView></SafeAreaView>;
 }
 
 function BibouPlusScreen({ customer, authToken, loading, onBack, onLogin, onSubscribe }) {
@@ -422,8 +410,7 @@ function BibouPlusPendingScreen({ onCheckPayment, onBack }) {
 }
 
 function PrivacyScreen({ onBack, onDeleteAccount }) {
-  const { PRIVACY_POLICY } = require('./privacy-policy');
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.legalContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Confidentialité</Text><Text style={styles.legalUpdated}>Politique mise à jour le {PRIVACY_POLICY.updated}</Text><Text style={styles.legalIntro}>{PRIVACY_POLICY.intro}</Text>{PRIVACY_POLICY.sections.map(section => <LegalSection key={section.title} title={section.title} text={section.text} />)}<Pressable onPress={onDeleteAccount} style={styles.legalDeleteLink}><Text style={styles.legalDeleteLinkText}>Demander la suppression de mon compte ›</Text></Pressable><Text style={styles.legalFootnote}>Cette page est accessible publiquement à l’adresse bibous-burger.onrender.com/privacy.</Text></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.legalContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Confidentialité</Text><Text style={styles.legalUpdated}>Politique mise à jour le 8 octobre 2026</Text><Text style={styles.legalIntro}>Bibou & Co utilise uniquement les informations nécessaires pour prendre les commandes, livrer, réserver une table et faire fonctionner le programme de fidélité Bibou’s Burgers.</Text><LegalSection title="Livraison avec Uber Direct" text="Le restaurant peut confier ta livraison à Uber Direct. Les adresses servent à obtenir un devis ; après confirmation, ton nom, ton téléphone et les articles nécessaires sont transmis à Uber pour la livraison. Le suivi est visible dans Mes commandes. Les commentaires libres ne sont pas transmis automatiquement." /><LegalSection title="Données utilisées" text="Nom, numéro de téléphone, adresse de livraison, commandes, réservations, solde fidélité et statut Bibou +. L’application ne contient ni publicité tierce ni suivi publicitaire tiers." /><LegalSection title="Pourquoi ces données ?" text="Elles servent à sécuriser la connexion par SMS, préparer et livrer les commandes, gérer les réservations, calculer les avantages fidélité et répondre aux demandes du client." /><LegalSection title="Services partenaires" text="Twilio envoie les codes de connexion et, seulement sur un accord distinct, les SMS promotionnels. SumUp traite les paiements par carte : Bibou & Co ne reçoit jamais le numéro complet de la carte. Google aide à calculer la distance de livraison et à afficher les avis publics." /><LegalSection title="Conservation et sécurité" text="Les données du compte sont conservées tant que le compte est actif. Après suppression, les coordonnées personnelles sont effacées ou anonymisées. Les informations strictement nécessaires aux obligations comptables peuvent être conservées sans profil client identifiable." /><LegalSection title="Notifications" text="Le suivi des commandes et les promotions sont deux choix distincts, désactivés par défaut. Expo, Apple et Google transmettent les notifications aux appareils autorisés. Nous conservons l’identifiant technique de notification et les préférences, sans publicité tierce. Les appareils inactifs sont retirés après 90 jours ; l’historique technique des envois est conservé 7 jours. Tu peux désactiver chaque catégorie dans Mon compte > Mes notifications. La déconnexion retire cet appareil ; la suppression du compte retire toutes ses associations." /><LegalSection title="Offres personnalisées" text="Sur ton accord facultatif, ton historique de commandes (fréquence et montants) et ton anniversaire (jour et mois seulement) peuvent servir à t’attribuer des bons personnels. Aucun ancien compte n’est inscrit automatiquement. Tu peux modifier ou retirer ton accord et effacer ton anniversaire dans Mon compte > Mes offres. Les données de ciblage et les bons personnels sont supprimés avec le compte. Les promotions push restent un choix séparé. Les bons déjà accordés restent valables si tu retires ton accord." /><LegalSection title="SMS promotionnels · facultatifs" text="Sur la web app, tu peux accepter séparément les offres par SMS dans Mon compte > Mes offres et lors du parcours après inscription. Ce choix est désactivé par défaut ; un accord aux offres personnalisées ou aux notifications ne vaut pas un accord SMS. Ton numéro est transmis à Twilio uniquement pour les messages autorisés. Chaque SMS comprend un lien personnel STOP ; tu peux aussi retirer ton choix dans ton compte. Les dates et la preuve de ton choix sont conservées dans ton compte. Les campagnes et journaux techniques SMS sont conservés 30 jours, sans mesure de lecture. Les envois encore en attente sont bloqués après désinscription ; un message déjà transmis ne peut pas être rappelé. Ces préférences et les associations SMS sont supprimées avec ton compte." /><LegalSection title="Tes choix" text="Tu peux consulter et corriger tes coordonnées depuis ton compte. Tu peux aussi supprimer définitivement ton compte et ses données personnelles depuis l’application ou la version web." /><LegalSection title="Responsable" text="Bibou & Co · Bibou’s Burgers · 153 quai Georges V, 76600 Le Havre, France." /><Pressable onPress={onDeleteAccount} style={styles.legalDeleteLink}><Text style={styles.legalDeleteLinkText}>Demander la suppression de mon compte ›</Text></Pressable><Text style={styles.legalFootnote}>Cette page est accessible publiquement à l’adresse bibous-burger-app.onrender.com/?legal=privacy.</Text></ScrollView></SafeAreaView>;
 }
 
 function LegalSection({ title, text }) {
@@ -524,15 +511,12 @@ function SmsLoginScreen({ onBack, onAuthenticated, accountFirst = false, onPriva
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled"><Header onBack={onBack} /><View style={styles.loginIcon}><Text style={styles.loginIconText}>✉</Text></View><Text style={styles.title}>{step === "phone" ? accountFirst ? "Ton compte Bibou" : "Bienvenue" : "Vérifie ton numéro"}</Text><Text style={styles.loginIntro}>{step === "phone" ? accountFirst ? "Crée ton compte ou reconnecte-toi avec ton numéro de téléphone pour profiter de tes avantages." : "Connecte-toi avec ton numéro de téléphone pour retrouver tes commandes et tes points fidélité." : `Un code a été envoyé au ${phone}.`}</Text><View style={styles.loginCard}>{step === "phone" ? <><Text style={styles.deliveryLabel}>NUMÉRO DE TÉLÉPHONE</Text><TextInput value={phone} onChangeText={(value) => { setPhone(value); setFeedback(""); }} placeholder="06 12 34 56 78" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" /><Text style={feedback ? styles.loginError : styles.loginFinePrint}>{feedback || "Un code à usage unique te sera envoyé par SMS. Aucun mot de passe à retenir."}</Text><Pressable disabled={loading} onPress={sendCode} style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Envoi en cours…" : "Recevoir mon code"}</Text></Pressable></> : <><Text style={styles.deliveryLabel}>CODE REÇU PAR SMS</Text><TextInput value={code} onChangeText={setCode} placeholder="123456" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} />{feedback ? <Text style={styles.loginError}>{feedback}</Text> : null}<Pressable disabled={code.length < 4 || loading} onPress={checkCode} style={[styles.primaryButton, (code.length < 4 || loading) && styles.primaryButtonDisabled]}><Text style={styles.primaryButtonText}>{loading ? "Vérification…" : "Valider le code"}</Text></Pressable><Pressable onPress={() => { setCode(""); setFeedback(""); setStep("phone"); }} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon numéro</Text></Pressable></>}</View><Text style={styles.loginLegal}>En te connectant, tu acceptes de recevoir ce SMS de vérification nécessaire à la sécurisation de ton compte.</Text>{onPrivacy && <Pressable accessibilityRole="button" onPress={onPrivacy} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Confidentialité et données personnelles</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => setReviewLogin(true)} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Accès de vérification des boutiques</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
-function OrdersScreen(props) {
-  return <View style={{ flex: 1 }}><View style={{ flex: 1 }}><OrdersTrackingScreen {...props} /></View>{props.orders.some(order => order.status === 'delivered') && <ScrollView horizontal style={{ maxHeight: 78, backgroundColor: '#FBF3E6' }} contentContainerStyle={{ padding: 10, gap: 10 }}>{props.orders.filter(order => order.status === 'delivered').map(order => <Pressable key={order.apiId} style={styles.simulateButton} onPress={() => props.onReview(order)}><Text style={styles.simulateButtonText}>Noter mes articles · {order.id}</Text></Pressable>)}</ScrollView>}</View>;
-}
-function OrdersTrackingScreen({ orders, onBack, onRefresh, onDecide, busy, api, token }) {
+function OrdersScreen({ orders, onBack, onRefresh, onDecide, busy }) {
   const activeOrder = orders.find((order) => !["delivered", "cancelled"].includes(order.status));
-  const activeMessage = activeOrder?.status === "awaiting_customer" ? activeOrder.amendment?.mode === 'category-choice' ? activeOrder.amendment.phase === 'submitted' ? 'Tes nouveaux choix attendent la confirmation du restaurant.' : 'Un article est indisponible : choisis son remplacement ou annule la commande.' : "Le restaurant attend ton accord sur le nouveau panier." : activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? activeOrder.dineIn ? "Ton repas est prêt pour ta table." : "Ta commande est prête : le livreur arrive." : activeOrder?.dineIn ? "Ton repas est servi à table." : "Ton livreur est en route.";
+  const activeMessage = activeOrder?.status === "awaiting_customer" ? "Le restaurant attend ton accord sur le nouveau panier." : activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? activeOrder.dineIn ? "Ton repas est prêt pour ta table." : "Ta commande est prête : le livreur arrive." : activeOrder?.dineIn ? "Ton repas est servi à table." : "Ton livreur est en route.";
   const activeSteps = activeOrder?.dineIn ? ["Confirmée", "En préparation", "Prête", "Servie"] : ORDER_STEPS;
   const labelForOrder = (order) => order.status === "cancelled" ? "Annulée" : order.status === "awaiting_customer" ? "Ton accord est attendu" : ORDER_STEPS[order.progress];
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy} api={api} token={token} onUpdated={onRefresh}/>{orders.filter(o=>o.uberDelivery).map(order=><View key={order.apiId} style={styles.trackingCard}><Text style={styles.trackingOrder}>{order.id} · Livraison Uber Direct</Text><Text style={styles.trackingMessage}>{{pending:"Recherche de coursier",pickup:"Le coursier arrive au restaurant",pickup_complete:"Commande récupérée",dropoff:"Le coursier est en route",delivered:"Livraison terminée",canceled:"Course annulée : contacte le restaurant",returned:"Commande retournée au restaurant"}[order.uberDelivery.status] || "Suivi en cours"}</Text>{order.uberDelivery.dropoffEta && <Text>Arrivée estimée : {new Date(order.uberDelivery.dropoffEta).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</Text>}{order.uberDelivery.trackingUrl && <Pressable accessibilityRole="link" onPress={()=>Linking.openURL(order.uberDelivery.trackingUrl).catch(()=>Alert.alert("Suivi indisponible","Réessaie dans un instant."))} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Suivre mon coursier Uber</Text></Pressable>}</View>)}{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.dineIn ? "Repas à table" : activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{activeSteps.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text></View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy}/>{orders.filter(o=>o.uberDelivery).map(order=><View key={order.apiId} style={styles.trackingCard}><Text style={styles.trackingOrder}>{order.id} · Livraison Uber Direct</Text><Text style={styles.trackingMessage}>{{pending:"Recherche de coursier",pickup:"Le coursier arrive au restaurant",pickup_complete:"Commande récupérée",dropoff:"Le coursier est en route",delivered:"Livraison terminée",canceled:"Course annulée : contacte le restaurant",returned:"Commande retournée au restaurant"}[order.uberDelivery.status] || "Suivi en cours"}</Text>{order.uberDelivery.dropoffEta && <Text>Arrivée estimée : {new Date(order.uberDelivery.dropoffEta).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</Text>}{order.uberDelivery.trackingUrl && <Pressable accessibilityRole="link" onPress={()=>Linking.openURL(order.uberDelivery.trackingUrl).catch(()=>Alert.alert("Suivi indisponible","Réessaie dans un instant."))} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Suivre mon coursier Uber</Text></Pressable>}</View>)}{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.dineIn ? "Repas à table" : activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{activeSteps.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text></View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
 }
 
 function ReservationsScreen({ reservations, onBack, onRefresh, onCancel }) {
@@ -553,17 +537,13 @@ function ReservationsScreen({ reservations, onBack, onRefresh, onCancel }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes réservations</Text><Text style={styles.deliveryIntro}>Retrouve ici les demandes associées à ton numéro de téléphone. Leur statut s’actualise automatiquement.</Text><Pressable onPress={() => onRefresh(false)} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser maintenant</Text><Text style={styles.simulateHint}>Mise à jour automatique toutes les 10 secondes</Text></Pressable><Text style={styles.sectionTitle}>À venir</Text>{upcoming.length ? upcoming.map(card) : <View style={styles.emptyReservationState}><Text style={styles.emptyIcon}>🍽</Text><Text style={styles.emptyTitle}>Aucune table à venir</Text><Text style={styles.emptyText}>Tu peux réserver depuis l’accueil.</Text></View>}{history.length > 0 && <><Text style={styles.sectionTitle}>Historique</Text>{history.map(card)}</>}</ScrollView></SafeAreaView>;
 }
 
-function ProductScreen({ product, catalog, onBack, onAdd, initialItem }) {
-  const [stage, setStage] = useState(0);
-  const productScrollRef = useRef(null);
-  const optionStepOffset = useRef(0);
+function ProductScreen({ product, catalog, onBack, onAdd }) {
   const fixedSauce = fixedSauceForProduct(product);
-  const [choices, setChoices] = useState(() => initialItem ? choicesFromLine(initialItem) : product.isMenu ? { 'menu-fries': ['maison'] } : product.kind === 'solo' ? { 'solo-fries': ['maison'] } : product.kind === 'duo' ? { 'duo-fries-one': ['maison'], 'duo-fries-two': ['maison'] } : {});
+  const [choices, setChoices] = useState(() => product.isMenu ? { 'menu-fries': ['maison'] } : product.kind === 'solo' ? { 'solo-fries': ['maison'] } : product.kind === 'duo' ? { 'duo-fries-one': ['maison'], 'duo-fries-two': ['maison'] } : {});
   const hasPork = containsPork(product);
   const halalChosen = choices['meat-type']?.includes('halal');
-  const initialGroups = product.kind === 'naan' ? naanOptionGroups(choices, MENU_OPTION_GROUPS.find(g => g.id === 'drink'), MENU_OPTION_GROUPS.find(g => g.id === 'menu-desserts').options) : (product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS));
-  const optionGroups = availableOptionGroups(initialGroups.map(group => {
-    if (NEW_PROTEIN_CHOICES) { group = consumerRecipeGroup(group, choices, product); if (group.id === 'protein') return group; }
+  const optionGroups = availableOptionGroups((product.optionGroups || (product.isMenu ? MENU_OPTION_GROUPS : BURGER_OPTION_GROUPS)).map(group => {
+    if (NEW_PROTEIN_CHOICES) { group = kioskRecipeGroup(group, choices); if (group.id === 'protein') return group; }
     if (group.id === 'salad') return saladGroupForProduct(product);
     if (group.id === 'protein' && hasPork) return { ...group, options: group.options.filter(option => option.id === 'viande') };
     if (group.id === 'meat-type' && hasPork) return { ...group, options: group.options.filter(option => option.id === 'non-halal') };
@@ -581,17 +561,6 @@ function ProductScreen({ product, catalog, onBack, onAdd, initialItem }) {
   const total = product.price + selectedOptions.reduce((sum, option) => sum + option.price, 0);
   const stockProblem = cartStockProblem([{ product, selections: selectedOptions }], catalog);
   const hasRequiredChoices = !stockProblem && optionGroups.filter(group => group.required).every(group => (choices[group.id] || []).length >= group.min);
-  const stageState = productChoiceStage(optionGroups, choices, stage);
-  const choiceHint = CUSTOMER_JOURNEY_SHELL && !stageState.finalStep ? stageState.hint : !hasRequiredChoices
-    ? (product.isMenu || product.kind === 'solo') && !choices.drink?.length
-      ? 'Choisis la boisson incluse dans ton menu pour continuer.'
-      : 'Choisis les options marquées « requis » pour continuer.'
-    : '';
-  useEffect(() => {
-    if (CUSTOMER_JOURNEY_SHELL && optionStepOffset.current > 0) {
-      productScrollRef.current?.scrollTo({ y: Math.max(0, optionStepOffset.current - 12), animated: false });
-    }
-  }, [stageState.index]);
   const toggleChoice = (group, option) => {
     const current = choices[group.id] || [];
     const isSelected = current.includes(option.id);
@@ -601,7 +570,7 @@ function ProductScreen({ product, catalog, onBack, onAdd, initialItem }) {
     else if (option.soldOut || option.unavailableForHalal || option.unavailableForVegetarian) return;
     else if (option.exclusive) next = [option.id];
     else { const withoutExclusive = current.filter((id) => !group.options.find((item) => item.id === id)?.exclusive); next = group.max === 1 ? [option.id] : [...withoutExclusive, option.id]; if (group.max && next.length > group.max) return; }
-    const updated = product.kind === 'naan' ? clearNaanChoices(choices, group.id, next) : NEW_PROTEIN_CHOICES ? kioskRecipeChoices(choices, group.id, next) : { ...choices, [group.id]: next };
+    const updated = NEW_PROTEIN_CHOICES ? kioskRecipeChoices(choices, group.id, next) : { ...choices, [group.id]: next };
     if (group.id === 'protein' && next.includes('galette')) {
       delete updated['meat-type'];
       updated['menu-fries'] = ['maison'];
@@ -613,29 +582,21 @@ function ProductScreen({ product, catalog, onBack, onAdd, initialItem }) {
     setChoices(updated);
   };
   return <SafeAreaView style={styles.safeArea}>
-    <ScrollView ref={productScrollRef} style={styles.productStepScroll} contentContainerStyle={[styles.detailContent, CUSTOMER_JOURNEY_SHELL && styles.productStepContent]} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
       <Header onBack={onBack} />
-      <Image source={product.image} resizeMode="contain" style={[styles.detailImage, product.kind === 'solo' && styles.detailImageSolo, product.kind === 'naan' && { height: undefined, aspectRatio: 3 / 4 }]} />
+      <Image source={product.image} style={[styles.detailImage, product.kind === 'solo' && styles.detailImageSolo]} />
       <View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View>
       <Text style={styles.detailDescription}>{NEW_PROTEIN_CHOICES && choices.protein?.includes('vegetarian') ? vegetarianInstruction : product.detail}</Text>
       {hasPork && !(NEW_PROTEIN_CHOICES && choices.protein?.includes('vegetarian')) && <View accessibilityRole="alert" style={styles.porkNotice}><Text style={styles.dietaryNoticeTitle}>CONTIENT DU PORC</Text><Text style={styles.dietaryNoticeText}>Cette recette n’existe pas en version halal.</Text></View>}
       {product.isMenu && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>MENU COMPLET</Text><Text style={styles.menuIncludedText}>Burger + frites + boisson inclus dans ce prix.</Text></View>}
       {product.kind === 'solo' && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>MENU SOLO COMPLET</Text><Text style={styles.menuIncludedText}>3 tenders XL + 1 portion de frites + 1 boisson au choix. Frites maison incluses ; cheddar bacon en remplacement pour +2,50 €.</Text></View>}
-      {product.kind === 'naan' && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>UNE RECETTE FIXE · UNIQUEMENT LE MIDI</Text><Text style={styles.menuIncludedText}>Seul 7,90 € · menu 10,90 € : naan + boisson + frites OU dessert. La garniture du naan ne se modifie pas.</Text></View>}
-      <View onLayout={({ nativeEvent }) => { optionStepOffset.current = nativeEvent.layout.y; }}>
-      {product.kind !== 'solo' && <Text style={styles.sectionTitle}>{product.kind === 'naan' ? 'Naan seul ou en menu' : product.kind === 'duo' ? 'Compose ton Menu Duo' : product.isMenu ? 'Compose ton menu' : 'Compose ton burger'}</Text>}
+      {product.kind !== 'solo' && <Text style={styles.sectionTitle}>{product.kind === 'duo' ? 'Compose ton Menu Duo' : product.isMenu ? 'Compose ton menu' : 'Compose ton burger'}</Text>}
       {fixedSauce && <View style={styles.fixedSauceNotice}><Text style={styles.fixedSauceEyebrow}>SAUCE IMPOSÉE</Text><Text style={styles.fixedSauceName}>{fixedSauce.label}</Text><Text style={styles.fixedSauceText}>Cette sauce fait partie de la recette et ne peut pas être remplacée.</Text></View>}
-      {CUSTOMER_JOURNEY_SHELL && <Text style={styles.requiredHint}>Étape {stageState.index + 1} sur {optionGroups.length + 1}</Text>}
-      {(CUSTOMER_JOURNEY_SHELL ? optionGroups.slice(stageState.index, stageState.index + 1) : optionGroups).map(group => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} onToggleChoice={option => toggleChoice(group, option)} />)}
-      {CUSTOMER_JOURNEY_SHELL && stageState.finalStep && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>VÉRIFIE TA COMPOSITION</Text>{selectedOptions.map(option => <Text key={option.groupId + ':' + option.id} style={styles.menuIncludedText}>{option.label}</Text>)}</View>}
-      </View>
+      {optionGroups.map(group => <OptionGroup key={group.id} group={group} selectedIds={choices[group.id] || []} onToggleChoice={option => toggleChoice(group, option)} />)}
     </ScrollView>
-    <View style={CUSTOMER_JOURNEY_SHELL ? styles.productStepActions : styles.stickyAction}>
-      {stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !!choiceHint && <Text style={styles.requiredHint}>{choiceHint}</Text>}
-      <View style={CUSTOMER_JOURNEY_SHELL ? styles.productStepActionRow : undefined}>
-        {CUSTOMER_JOURNEY_SHELL && stageState.index > 0 && <Pressable accessibilityRole="button" accessibilityLabel="Étape précédente" onPress={() => setStage(stageState.index - 1)} style={styles.productStepBack}><Text style={styles.simulateButtonText}>Précédent</Text></Pressable>}
-        {CUSTOMER_JOURNEY_SHELL && !stageState.finalStep ? <Pressable accessibilityRole="button" disabled={!stageState.complete} style={[styles.primaryButton, styles.productStepNext, !stageState.complete && styles.primaryButtonDisabled]} onPress={() => setStage(stageState.index + 1)}><Text style={styles.primaryButtonText}>{stageState.index === optionGroups.length - 1 ? 'Voir mon récapitulatif' : 'Continuer'}</Text></Pressable> : <Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, CUSTOMER_JOURNEY_SHELL && styles.productStepNext, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: product.kind === 'solo' ? ['3 tenders XL', ...selectedOptions.map(option => option.label)] : selectedOptions.map(option => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>{initialItem ? 'Enregistrer mes modifications' : 'Ajouter au panier'} · {money(total * quantityOf(initialItem))}</Text></Pressable>}
-      </View>
+    <View style={styles.stickyAction}>
+      {stockProblem ? <Text style={styles.stockNotice}>{stockProblem}</Text> : !hasRequiredChoices && <Text style={styles.requiredHint}>{(product.isMenu || product.kind === 'solo') && !choices.drink?.length ? "Choisis la boisson incluse dans ton menu pour continuer." : "Choisis les options marquées « requis » pour continuer."}</Text>}
+      <Pressable disabled={!hasRequiredChoices} style={[styles.primaryButton, !hasRequiredChoices && styles.primaryButtonDisabled]} onPress={() => onAdd({ product, total, options: product.kind === 'solo' ? ['3 tenders XL', ...selectedOptions.map(option => option.label)] : selectedOptions.map(option => option.label), selections: selectedOptions.map(({ groupId, id }) => ({ groupId, id })) })}><Text style={styles.primaryButtonText}>Ajouter au panier · {money(total)}</Text></Pressable>
     </View>
   </SafeAreaView>;
 }
@@ -659,17 +620,25 @@ function OptionRow({ groupId, option, selected, onPress }) {
 
 function ReceiptLine({ label, value, strong }) { return <View style={styles.receiptLine}><Text style={strong && styles.strong}>{label}</Text><Text style={strong && styles.strong}>{value}</Text></View>; }
 
-function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheckout, onAddMore, onRemove, onQuickAdd, onOpenProduct, onQuantity, onEdit }) {
-  const [expanded, setExpanded] = useState({});
-  const [extraCategory, setExtraCategory] = useState('fries');
+function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheckout, onAddMore, onRemove, onQuickAdd, onOpenProduct }) {
   const standardFee = cart ? (cart.delivery.fee ?? deliveryCost(cart.delivery.method)) : 0;
   const pricing = cart ? customerOrderPricing(cart.total, standardFee, customer, cart.delivery.method === "delivery") : { total: 0, deliveryFee: 0, discount: 0, bibouPlus: false };
   const hasExactFee = cart?.delivery.fee !== undefined || pricing.bibouPlus;
   const productIds = new Set(cart?.items?.map((item) => item.product.id) || []);
   const stockProblem = cartStockProblem(cart?.items, catalog);
-  const { missingMenuDrink, incompleteNaan } = cartMealFacts(cart?.items);
-  const suggestions = (extraCategory === 'drinks' ? DRINK_PRODUCTS : extraCategory === 'desserts' ? DESSERT_PRODUCTS : SNACK_PRODUCTS.filter(product => product.id.startsWith('frites-')))
-    .map(product => applyProductStock(product, catalog)).filter(product => !product.soldOut);
+  const missingMenuDrink = cart?.items?.some(item => (item.product.isMenu || item.product.kind === 'solo') && !item.selections?.some(choice => choice.groupId === "drink"));
+  const hasMenu = cart?.items?.some(item => item.product.isMenu || item.product.kind === 'solo' || item.product.id === 'taurus');
+  const hasDessert = cart?.items?.some(item => item.product.id.startsWith('dessert-') || item.selections?.some(choice => ['desserts', 'menu-desserts', 'solo-dessert', 'duo-dessert-one', 'duo-dessert-two'].includes(choice.groupId)));
+  const hasDrink = cart?.items?.some(item => item.product.id.startsWith('drink-'));
+  const hasSide = cart?.items?.some(item => ['frites-maison', 'frites-cheddar', 'frites-cheddar-bacon', 'tenders-xl-3'].includes(item.product.id));
+  const suggestions = [
+    ...SNACK_PRODUCTS.filter(product => product.id === 'menu-solo-tenders'),
+    ...(!hasMenu && !hasDessert ? DESSERT_PRODUCTS.slice(0, 1) : []),
+    ...(!hasMenu && !hasDrink ? DRINK_PRODUCTS.slice(0, 1) : []),
+    ...(!hasMenu && !hasSide ? SNACK_PRODUCTS.filter(product => product.kind === 'simple').slice(0, 1) : []),
+    ...(hasMenu && !hasSide ? SNACK_PRODUCTS.filter(product => ['tenders-xl-3', 'frites-cheddar', 'frites-cheddar-bacon'].includes(product.id)) : []),
+    ...(!hasMenu && !hasDessert ? DESSERT_PRODUCTS.slice(1) : []),
+  ].map(product => applyProductStock(product, catalog)).filter(product => !product.soldOut && !productIds.has(product.id)).slice(0, 4);
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
       <Header onBack={onBack} />
@@ -678,19 +647,19 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
       {reservationDraft && <Text style={styles.deliveryIntro}>{reservationDraft.dayLabel} · {reservationDraft.slot} · {reservationDraft.guests} personne{reservationDraft.guests > 1 ? 's' : ''}. Le restaurant recevra tes choix pour les préparer à ton arrivée, après paiement confirmé.</Text>}
       {!cart ? <View style={styles.emptyState}><Text style={styles.emptyIcon}>🛍</Text><Text style={styles.emptyTitle}>Ton panier est vide</Text><Text style={styles.emptyText}>Ajoute un burger qui te fait envie.</Text></View> : <>
         <View style={styles.cartItems}>{cart.items.map((item) => <View key={item.lineId} style={styles.cartItem}>
-          {item.product.image ? <Image source={item.product.image} resizeMode="contain" style={[styles.cartImage, item.product.kind === "drink" && styles.drinkCartImage]} /> : <View style={styles.cartEmoji}><Text style={styles.cartEmojiText}>{item.product.emoji}</Text></View>}
-          <View style={styles.productInfo}><Pressable accessibilityRole="button" accessibilityState={{ expanded: Boolean(expanded[item.lineId]) }} onPress={() => setExpanded(current => ({ ...current, [item.lineId]: !current[item.lineId] }))}><Text style={styles.productName}>{quantityOf(item)} × {item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name}{item.options.length > 0 ? expanded[item.lineId] ? ' ▴' : ' ▾' : ''}</Text></Pressable>{expanded[item.lineId] && item.options.length > 0 && <Text style={styles.productDescription}>{item.options.join(", ")}</Text>}<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}><Pressable accessibilityRole="button" accessibilityLabel={'Retirer une unité de ' + item.product.name} onPress={() => onQuantity(item.lineId, -1)} style={styles.choiceChip}><Text>−</Text></Pressable><Text>{quantityOf(item)}</Text><Pressable accessibilityRole="button" accessibilityLabel={'Ajouter une unité de ' + item.product.name} disabled={quantityOf(item) >= 20} onPress={() => onQuantity(item.lineId, 1)} style={styles.choiceChip}><Text>+</Text></Pressable>{(item.product.isMenu || ['naan', 'solo', 'duo'].includes(item.product.kind) || item.product.id === 'custom-burger' || PRODUCTS.some(p => p.id === item.product.id)) && <Pressable accessibilityRole="button" onPress={() => onEdit(item)}><Text style={styles.cartRemove}>Modifier</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => onRemove(item.lineId)}><Text style={styles.cartRemove}>Retirer</Text></Pressable></View></View>
-          <Text style={styles.productPrice}>{money(item.total * quantityOf(item))}</Text>
+          {item.product.image ? <Image source={item.product.image} style={[styles.cartImage, item.product.kind === "drink" && styles.drinkCartImage]} /> : <View style={styles.cartEmoji}><Text style={styles.cartEmojiText}>{item.product.emoji}</Text></View>}
+          <View style={styles.productInfo}><Text style={styles.productName}>{item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name}</Text>{item.options.length > 0 && <Text numberOfLines={3} style={styles.productDescription}>{item.options.join(", ")}</Text>}<Pressable onPress={() => onRemove(item.lineId)}><Text style={styles.cartRemove}>Retirer</Text></Pressable></View>
+          <Text style={styles.productPrice}>{money(item.total)}</Text>
         </View>)}</View>
         <Pressable onPress={onAddMore} style={styles.addMoreButton}><Text style={styles.addMoreButtonText}>＋ Ajouter autre chose</Text></Pressable>
-        <View style={styles.cartSuggestions}><Text style={styles.cartSuggestionsTitle}>Un petit plus ?</Text><Text style={styles.cartSuggestionsIntro}>Frites, boissons et desserts à la carte, en supplément de ton repas.</Text><View style={styles.methodRow}>{[['fries', 'Frites'], ['drinks', 'Boissons'], ['desserts', 'Desserts à la carte']].map(([id, label]) => <ChoiceChip key={id} label={label} selected={extraCategory === id} onPress={() => setExtraCategory(id)} />)}</View>{suggestions.map((product) => <Pressable key={product.id} onPress={() => onQuickAdd(product)} style={styles.cartSuggestion}><View style={styles.cartSuggestionVisual}>{product.image ? <Image source={product.image} resizeMode="contain" style={[styles.cartSuggestionImage, product.kind === "drink" && styles.drinkSuggestionImage]} /> : <Text style={styles.cartSuggestionEmoji}>{product.emoji}</Text>}</View><View style={styles.cartSuggestionCopy}><Text style={styles.cartSuggestionName}>{product.name}</Text><Text style={styles.cartSuggestionPrice}>{money(product.price)}</Text></View><View style={styles.cartSuggestionAdd}><Text style={styles.cartSuggestionAddText}>+ Ajouter</Text></View></Pressable>)}{!suggestions.length && <Text style={styles.cartSuggestionsIntro}>Aucun article disponible dans cette rubrique.</Text>}</View>
+        {suggestions.length > 0 && <View style={styles.cartSuggestions}><Text style={styles.cartSuggestionsTitle}>Un petit plus ?</Text><Text style={styles.cartSuggestionsIntro}>Complète ta commande avec une suggestion.</Text>{suggestions.map((product) => <Pressable key={product.id} onPress={() => product.kind === "solo" ? onOpenProduct(product) : onQuickAdd(product)} style={styles.cartSuggestion}><View style={styles.cartSuggestionVisual}>{product.image ? <Image source={product.image} style={[styles.cartSuggestionImage, product.kind === "drink" && styles.drinkSuggestionImage]} /> : <Text style={styles.cartSuggestionEmoji}>{product.emoji}</Text>}</View><View style={styles.cartSuggestionCopy}><Text style={styles.cartSuggestionName}>{product.name}</Text><Text style={styles.cartSuggestionPrice}>{money(product.price)}</Text></View><View style={styles.cartSuggestionAdd}><Text style={styles.cartSuggestionAddText}>+ Ajouter</Text></View></Pressable>)}</View>}
         <View style={styles.receipt}><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={reservationDraft ? 'À table' : cart.delivery.method === "delivery" && !hasExactFee ? "Livraison (dès)" : cart.delivery.method === "delivery" ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} /><View style={styles.receiptDivider} /><ReceiptLine label={cart.delivery.method === "delivery" && !hasExactFee ? "Total estimé" : "Total"} value={money(pricing.total)} strong /></View>
         {pricing.bibouPlus && cart.delivery.method === "delivery" && <Text style={styles.bibouPlusApplied}>✦ Livraison offerte avec Bibou +</Text>}
         {cart.delivery.method === "delivery" && !hasExactFee && <Text style={styles.cartFeeHint}>Les frais exacts seront calculés selon l’adresse, dans un rayon de 5 km.</Text>}
         <Text style={styles.eta}>{reservationDraft ? '● Heure d’arrivée choisie pour la table' : '● Choisis ton créneau avant le paiement'}</Text>
       </>}
     </ScrollView>
-    {cart && <View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem} Retire cet article puis choisis un remplacement.</Text> : missingMenuDrink || incompleteNaan ? <Text style={styles.requiredHint}>Un menu est incomplet. Retire-le et ajoute-le à nouveau avec tous les choix requis.</Text> : null}<Pressable disabled={!!stockProblem || missingMenuDrink || incompleteNaan} style={[styles.primaryButton, (stockProblem || missingMenuDrink || incompleteNaan) && styles.primaryButtonDisabled]} onPress={onCheckout}><Text style={styles.primaryButtonText}>{reservationDraft ? 'Continuer avec ma table' : 'Choisir mon créneau'} · {hasExactFee ? "" : "dès "}{money(pricing.total)}</Text></Pressable></View>}
+    {cart && <View style={styles.stickyAction}>{stockProblem ? <Text style={styles.stockNotice}>{stockProblem} Retire cet article puis choisis un remplacement.</Text> : missingMenuDrink ? <Text style={styles.requiredHint}>Un menu n’a pas de boisson. Retire-le et ajoute-le à nouveau en choisissant ta boisson.</Text> : null}<Pressable disabled={!!stockProblem || !!missingMenuDrink} style={[styles.primaryButton, (stockProblem || missingMenuDrink) && styles.primaryButtonDisabled]} onPress={onCheckout}><Text style={styles.primaryButtonText}>{reservationDraft ? 'Continuer avec ma table' : 'Choisir mon créneau'} · {hasExactFee ? "" : "dès "}{money(pricing.total)}</Text></Pressable></View>}
   </SafeAreaView>;
 }
 
@@ -883,14 +852,14 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
     return () => clearInterval(timer);
   }, []);
   const slotsReady = availabilityStatus === "ready" && availabilityKey === delivery.method + selectedDay.date;
-  const offeredSlots = customerServiceSlots(cart.items, slotsReady ? Object.keys(availability).sort() : selectedDay.slots);
+  const offeredSlots = slotsReady ? Object.keys(availability).sort() : selectedDay.slots;
   const selectedSlot = slotsReady && availability[delivery.slot];
   const selectedSlotStarted = delivery.slot && slotAlreadyStarted(selectedDay.date, delivery.slot, clockNow);
-  const canContinue = Boolean(selectedSlot && offeredSlots.includes(delivery.slot) && !selectedSlot.full && !selectedSlot.unavailable && !selectedSlotStarted);
+  const canContinue = Boolean(selectedSlot && !selectedSlot.full && !selectedSlot.unavailable && !selectedSlotStarted);
 
   useEffect(() => {
-    if (slotsReady && delivery.slot && (!selectedSlot || !offeredSlots.includes(delivery.slot) || selectedSlot.full || selectedSlot.unavailable || selectedSlotStarted)) onChange({ ...delivery, slot: null });
-  }, [availability, availabilityStatus, availabilityKey, delivery.slot, selectedDay.date, clockNow, cart.items]);
+    if (slotsReady && delivery.slot && (!selectedSlot || selectedSlot.full || selectedSlot.unavailable || selectedSlotStarted)) onChange({ ...delivery, slot: null });
+  }, [availability, availabilityStatus, availabilityKey, delivery.slot, selectedDay.date, clockNow]);
 
 
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
@@ -959,7 +928,7 @@ function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onVali
   const [promotion, setPromotion] = useState(null);
   const [promoPending, setPromoPending] = useState(false);
   const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, promotion?.id ? { ...customer, crmOffers: [] } : customer, isDelivery), cart.total, promotion, cart.delivery.method);
-  const gifted = Boolean(promotion && !promotion.id && pricing.total === 0);
+  const gifted = Boolean(promotion && !promotion.id);
   const [paying, setPaying] = useState(false);
   const paymentInFlight = useRef(false);
   const submitPayment = async () => {
@@ -982,7 +951,7 @@ function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onVali
         {isDelivery && standardFee > 0 && pricing.deliveryFee < standardFee && <ReceiptLine label={promotion?.type === 'free_delivery' || gifted ? 'Livraison offerte avec le code' : 'Économie livraison Bibou +'} value={`− ${money(standardFee - pricing.deliveryFee)}`} />}
         <View style={styles.receiptDivider} /><ReceiptLine label={promotion ? 'Total à payer' : 'Total débité par SumUp'} value={money(pricing.total)} strong />
       </View>
-      {promotion?.sourceContestPrize ? <Text style={styles.detailsFinePrint}>Ces menus sont gagnés au concours : ils ne consomment pas ton cadeau de bienvenue et ne génèrent pas de points fidélité ou de bonus parrainage. Les frais de livraison éventuels restent à payer.</Text> : gifted ? <Text style={styles.detailsFinePrint}>Cette commande offerte ne consomme pas tes autres remises et ne génère pas de points de fidélité ni de bonus parrainage.</Text> : promotion?.id ? <Text style={styles.detailsFinePrint}>Le code se cumule avec les 10 % de bienvenue sur les produits restant à payer, si ce cadeau est encore disponible. Le serveur vérifie le total avant le paiement.</Text> : pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après validation.</Text></View>}
+      {gifted ? <Text style={styles.detailsFinePrint}>Cette commande offerte ne consomme pas tes autres remises et ne génère pas de points de fidélité ni de bonus parrainage.</Text> : promotion?.id ? <Text style={styles.detailsFinePrint}>Le code se cumule avec les 10 % de bienvenue sur les produits restant à payer, si ce cadeau est encore disponible. Le serveur vérifie le total avant le paiement.</Text> : pricing.bibouPlus && <View style={styles.bibouPlusPaymentNote}><Text style={styles.bibouPlusPaymentNoteText}>✦ Tes points seront également doublés après validation.</Text></View>}
       <View style={styles.customerSummary}><Text style={styles.customerSummaryTitle}>{reservationDraft ? 'Table au nom de' : isDelivery ? 'Livrer à' : 'Retrait par'}</Text><Text style={styles.customerSummaryText}>{customer.name} · {customer.phone}</Text>{isDelivery && <Text style={styles.customerSummaryText}>{customer.address}, {customer.postalCode} {customer.city}</Text>}</View>
       <View style={styles.securePayment}><Text style={styles.securePaymentIcon}>{gifted ? '🎁' : '🔒'}</Text><View style={{ flex: 1 }}><Text style={styles.securePaymentTitle}>{customer.reviewMode ? 'Commande de vérification' : gifted ? 'Commande offerte' : 'Paiement sécurisé avec SumUp'}</Text><Text style={styles.securePaymentText}>{customer.reviewMode ? 'Aucune carte demandée. Le restaurant ne reçoit pas cette commande.' : gifted ? 'Aucune carte demandée et aucun débit. Ta commande sera envoyée au restaurant après confirmation.' : 'Carte bancaire · le paiement sera ouvert par SumUp.'}</Text></View></View>
     </ScrollView>
@@ -1011,7 +980,7 @@ function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onR
 
 function SuccessScreen({ order, token, api, onHome, onReview, onTrack }) {
   const label = order?.dineIn ? "Table et repas" : order?.method === "delivery" ? "Livraison" : "Retrait";
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={{ alignItems: 'center', justifyContent: 'flex-start', padding: 28, flexGrow: 1 }}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion && !order.promotion.id && order.total === 0 ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><WheelAfterPayment api={api} token={token} order={order} /><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={{ alignItems: 'center', justifyContent: 'flex-start', padding: 28, flexGrow: 1 }}><Text style={styles.successEmoji}>🎉</Text><Text style={styles.successTitle}>{order?.reviewMode ? "Simulation réussie !" : order?.promotion && !order.promotion.id ? "Commande offerte confirmée !" : "Paiement confirmé !"}</Text><Text style={styles.successText}>{order?.reviewMode ? "Commande fictive uniquement : aucun débit, aucune transmission au restaurant. L’historique ci-dessous sert à vérifier le parcours." : "Ta commande a été transmise au restaurant. Tu peux suivre son acceptation et sa préparation."}</Text><WheelAfterPayment api={api} token={token} order={order} /><View style={styles.statusCard}><Text style={styles.statusTitle}>● Commande #{order?.number}</Text><Text style={styles.statusDescription}>{label} le {order?.serviceDate} · {order?.slot}.</Text></View><Pressable style={styles.trackOrderButton} onPress={onTrack}><Text style={styles.trackOrderButtonText}>Suivre ma commande ›</Text></Pressable><Pressable style={styles.reviewPrompt} onPress={onReview}><Text style={styles.reviewPromptTitle}>Ton avis compte pour nous</Text><Text style={styles.reviewPromptText}>Raconte-nous ton expérience après la dégustation.</Text><Text style={styles.reviewPromptLink}>Laisser un avis ›</Text></Pressable><Pressable style={styles.primaryButton} onPress={onHome}><Text style={styles.primaryButtonText}>Retour à l’accueil</Text></Pressable></ScrollView></SafeAreaView>;
 }
 
 function ReservationDepositSuccessScreen({ reservation, onHome, onTrack }) {
@@ -1138,14 +1107,13 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
 
 function PartnerLaunch({ onReady, onError }) {
   const { height } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const compact = height - insets.top - insets.bottom < 700;
+  const compact = height < 700;
   return <View style={styles.partnerLaunch} accessible accessibilityLabel="Bibou’s Burgers, partenaire officiel du STB Le Havre. Ouverture de l’application.">
     <StatusBar barStyle="light-content" backgroundColor="#204F42" />
     <View style={[styles.partnerLaunchHero, compact && styles.partnerLaunchHeroCompact]}>
       <Image source={officialWordmarkPreview} resizeMode="contain" style={[styles.partnerLaunchWordmark, compact && styles.partnerLaunchWordmarkCompact]} />
     </View>
-    <View style={[styles.partnerLaunchBody, compact && styles.partnerLaunchBodyCompact]}>
+    <View style={styles.partnerLaunchBody}>
       <Text style={styles.partnerLaunchEyebrow}>PARTENAIRE OFFICIEL DU</Text>
       <View style={[styles.partnerLaunchLogoFrame, compact && styles.partnerLaunchLogoFrameCompact]}>
         <Image source={require('./assets/stb-le-havre-logo.jpg')} resizeMode="contain" style={styles.partnerLaunchLogo} onLoad={onReady} onError={onError} />
@@ -1189,20 +1157,17 @@ export default function App() {
 
 function AppContent({ onReviewModeChange }) {
   const [phonePairing, setPhonePairing] = useState(PHONE_PAIRING);
-  const [authToken, setAuthToken] = useState("");
   const [catalog, setCatalog] = useState(null);
   const [stockMessage, setStockMessage] = useState("Vérification des disponibilités…");
   const [stockFeedback, setStockFeedback] = useState("");
   useEffect(() => {
     let stopped = false;
     let loading = false;
-    setCatalog(null);
-    setStockMessage("Vérification des disponibilités…");
     const refresh = async () => {
       if (loading) return;
       loading = true;
       try {
-        const response = await customerFetch(`${API_BASE_URL}/catalog`, { headers: isReviewToken(authToken) ? { Authorization: `Bearer ${authToken}` } : {} });
+        const response = await customerFetch(`${API_BASE_URL}/catalog`);
         const payload = await response.json();
         if (!response.ok || !Array.isArray(payload.products) || !payload.options) throw new Error("Catalogue indisponible");
         if (!stopped) { setCatalog(payload); setStockMessage(""); }
@@ -1216,7 +1181,7 @@ function AppContent({ onReviewModeChange }) {
     const onFocus = () => { void refresh(); };
     const stopBrowserFocus = observeBrowserFocus(Platform.OS, onFocus);
     return () => { stopped = true; clearInterval(timer); subscription.remove(); stopBrowserFocus(); };
-  }, [authToken]);
+  }, []);
   const [screen, setScreen] = useState(initialScreenFromUrl);
   const [sessionRestored, setSessionRestored] = useState(!welcomeEnabled);
   const [showNativeWelcome, setShowNativeWelcome] = useState(welcomeEnabled);
@@ -1227,17 +1192,16 @@ function AppContent({ onReviewModeChange }) {
   const [welcomeMarketingNotifications, setWelcomeMarketingNotifications] = useState(false);
   const [crmWelcomeDestination, setCrmWelcomeDestination] = useState('account');
   const [activeProduct, setActiveProduct] = useState(null);
-  const [editingCartLine, setEditingCartLine] = useState('');
   const [productReturnScreen, setProductReturnScreen] = useState('menu');
   const [cart, setCart] = useState(null);
   const [reservationDraft, setReservationDraft] = useState(null);
   const [customer, setCustomer] = useState({ name: "", phone: "", address: "", postalCode: "", city: "Le Havre", distance: "", sponsorCode: referralCodeFromUrl() });
   const [loyalty, setLoyalty] = useState({ points: 0, orders: 0 });
   const [orders, setOrders] = useState([]);
-  const [ratingOrderId, setRatingOrderId] = useState(null);
   const [reservations, setReservations] = useState([]);
   const [rewardClaims, setRewardClaims] = useState([]);
   const [rewardLoading, setRewardLoading] = useState("");
+  const [authToken, setAuthToken] = useState("");
   useEffect(() => { onReviewModeChange(isReviewToken(authToken)); }, [authToken, onReviewModeChange]);
   const sessionTokenRef = useRef('');
   const sessionEpoch = useRef(0);
@@ -1254,9 +1218,7 @@ function AppContent({ onReviewModeChange }) {
   const [bibouPlusReturnScreen, setBibouPlusReturnScreen] = useState("menu");
   const [loginDestination, setLoginDestination] = useState(nativeAccountFirst ? "menu" : "account");
   const [preferredMethod, setPreferredMethod] = useState("delivery");
-  const [customerCategory, setCustomerCategory] = useState('menus');
-  const [identityReturnScreen, setIdentityReturnScreen] = useState('details');
-  const cartCount = useMemo(() => cartUnitCount(cart), [cart]);
+  const cartCount = useMemo(() => cart?.items?.length || 0, [cart]);
   const seenAmendments = useRef(new Set());
   const orderLoadSequence = useRef(0);
   const [amendmentBusy, setAmendmentBusy] = useState(false);
@@ -1277,7 +1239,7 @@ function AppContent({ onReviewModeChange }) {
         if (!seenAmendments.current.has(key)) {
           seenAmendments.current.add(key);
           setScreen('orders');
-          Alert.alert(order.amendment.mode === 'category-choice' ? 'Un article est indisponible' : 'Commande modifiée : ton accord est nécessaire', order.amendment.mode === 'category-choice' ? 'Va dans Mes commandes pour choisir un article de la même catégorie ou annuler la commande. Le restaurant doit confirmer tes nouveaux choix.' : 'Le restaurant propose un nouveau panier. Vérifie les changements dans Mes commandes pour accepter ou refuser.');
+          Alert.alert('Commande modifiée : ton accord est nécessaire', 'Le restaurant propose un nouveau panier. Vérifie les changements dans Mes commandes pour accepter ou refuser.');
         }
       }
     } catch (error) {
@@ -1420,7 +1382,7 @@ function AppContent({ onReviewModeChange }) {
     sync();
     const stop = observePush(data => {
       if (sessionTokenRef.current !== authToken || data.accountId !== customer.id) return;
-      if (!['menu', 'orders', 'reservations', 'loyalty', 'bibou-plus', 'reservation', 'account', 'offers', 'contest'].includes(data.screen)) return;
+      if (!['menu', 'orders', 'reservations', 'loyalty', 'bibou-plus', 'reservation', 'account', 'offers'].includes(data.screen)) return;
       if (data.screen === 'orders') void loadCustomerOrders(authToken);
       if (data.screen === 'reservations') void loadCustomerReservations({ token: authToken });
       if (data.screen === 'bibou-plus') setBibouPlusReturnScreen('menu');
@@ -1444,33 +1406,23 @@ function AppContent({ onReviewModeChange }) {
   const openProduct = (product) => {
     const current = applyProductStock(product, catalog);
     if (current.soldOut) { setStockFeedback(current.stockReason || "Ce produit est momentanément indisponible."); return; }
-    setEditingCartLine(''); setStockFeedback(""); setActiveProduct(current); setProductReturnScreen(screen); setScreen("product");
+    setStockFeedback(""); setActiveProduct(current); setProductReturnScreen(screen); setScreen("product");
   };
-  const addToCart = (item, destination = 'cart', replaceLineId = '') => {
+  const addToCart = (item, destination = 'cart') => {
     const problem = cartStockProblem([item], catalog);
     if (problem) { setStockFeedback(problem); return; }
     setStockFeedback("");
     setCart((current) => {
-      if (replaceLineId) return repriceOfferCart(replaceCartLine(current, replaceLineId, item));
       const items = [...(current?.items || []), { ...item, lineId: `${Date.now()}-${Math.random().toString(36).slice(2)}` }];
       return repriceOfferCart({ items, total: Math.round(items.reduce((sum, entry) => sum + entry.total, 0) * 100) / 100, comment: current?.comment || "", delivery: current?.delivery || (reservationDraft ? { method: 'pickup', fee: 0, day: reservationDraft.serviceDate, date: reservationDraft.serviceDate, dayLabel: reservationDraft.dayLabel, slot: reservationDraft.slot } : { method: preferredMethod, fee: preferredMethod === "pickup" ? 0 : undefined, day: DEFAULT_DELIVERY_DAY.id, date: DEFAULT_DELIVERY_DAY.date, dayLabel: DEFAULT_DELIVERY_DAY.dayLabel, slot: null }) });
     });
-    setEditingCartLine('');
     setScreen(destination);
   };
   const addSimpleToCart = (product, destination = 'cart') => addToCart({ product, total: product.price, options: [], selections: [] }, destination);
   const removeFromCart = (lineId) => setCart((current) => {
-    if (!current) return null;
     const items = current.items.filter((item) => item.lineId !== lineId);
-    return items.length ? repriceOfferCart({ ...current, items, total: cartTotal(items) }) : null;
+    return items.length ? { ...current, items, total: Math.round(items.reduce((sum, item) => sum + item.total, 0) * 100) / 100 } : null;
   });
-  const adjustCartQuantity = (lineId, delta) => setCart(current => repriceOfferCart(changeCartQuantity(current, lineId, delta)));
-  const editCartItem = item => {
-    const product = applyProductStock(item.product, catalog);
-    if (product.soldOut) { setStockFeedback(product.stockReason || 'Cet article est indisponible. Choisis un remplacement.'); return; }
-    setEditingCartLine(item.lineId); setProductReturnScreen('cart'); setActiveProduct(product);
-    setScreen(product.id === 'custom-burger' ? 'custom-burger-preview' : 'product');
-  };
   const updateDelivery = (delivery) => setCart(repriceOfferCart({ ...cart, delivery }));
   const continueWithCustomer = async (deliveryFee) => {
     if (!authToken) {
@@ -1502,7 +1454,7 @@ function AppContent({ onReviewModeChange }) {
     try {
       const response = await customerFetch(`${API_BASE_URL}${route}`, {
         method: body === undefined ? "GET" : "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, 'X-Bibou-Replacement-Choices': '1', ...(Platform.OS === 'web' ? {} : { 'X-Bibou-Platform': Platform.OS }) },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: controller.signal,
       });
@@ -1624,9 +1576,6 @@ function AppContent({ onReviewModeChange }) {
     paymentAttempt.current = attempt;
     // Legal links remain readable even when a payment needs checking.
     if (['privacy', 'delete-account'].includes(initialScreenFromUrl())) return;
-    // In the next native journey, signing in must never reopen an old checkout.
-    // Keep the saved reference and let the customer request verification explicitly.
-    if (CUSTOMER_JOURNEY_SHELL) { setStockFeedback('Une tentative sauvegardée peut être vérifiée depuis l’accueil, sans bloquer la carte.'); return; }
     await runPayment(attempt, token);
   };
   const beginPayment = async (kind, input) => {
@@ -1663,7 +1612,7 @@ function AppContent({ onReviewModeChange }) {
     } finally { paymentStartRef.current = false; }
   };
   const validatePromo = async code => {
-    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code, method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, items: serializeCartItems(cart) });
+    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code, method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })) });
     if (!ok) throw new Error(payload.error || 'Impossible de vérifier ce code. Réessaie.');
     previewPromotion({}, cart.total, payload.promotion, cart.delivery.method);
     if (!payload.promotion) throw new Error('Code promo non confirmé.');
@@ -1688,7 +1637,7 @@ function AppContent({ onReviewModeChange }) {
       Alert.alert('Réservation momentanément indisponible', 'Le serveur ne peut pas encore associer ton repas à une table. Aucun paiement n’a été lancé. Réessaie dans un instant.');
       return;
     }
-    const input = { customerId: customer.id, items: serializeCartItems(cart), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, slotGrid: 20, comment: cart.comment?.trim() || "" };
+    const input = { customerId: customer.id, items: cart.items.map(item => ({ productId: item.product.id, quantity: 1, selections: item.selections })), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, slotGrid: 20, comment: cart.comment?.trim() || "" };
     if (reservationDraft) input.tableReservation = { guests: reservationDraft.guests, note: reservationDraft.note || '' };
     if (promoCode) input.promoCode = promoCode;
     await beginPayment('order', input);
@@ -1723,7 +1672,7 @@ function AppContent({ onReviewModeChange }) {
     setReservationDraft(draft);
     setCustomer((current) => ({ ...current, name: draft.name, phone: draft.phone }));
     setPreferredMethod('pickup');
-    setScreen(CUSTOMER_JOURNEY_SHELL ? 'customer-categories' : 'reservation-meal');
+    setScreen('reservation-meal');
   };
   const startBibouPlus = async () => {
     if (!authToken) { setLoginDestination('bibou-plus'); setScreen('login'); return; }
@@ -1822,47 +1771,27 @@ function AppContent({ onReviewModeChange }) {
       if (error?.name !== "AbortError") Alert.alert("Ton code de parrainage", `${customer.referralCode}\n\n${referralUrl}`);
     }
   };
-  const openCustomerArea = destination => {
-    if (!authToken) { setLoginDestination(destination); setScreen('login'); return; }
-    if (destination === 'orders') void loadCustomerOrders();
-    if (destination === 'reservations') void loadCustomerReservations();
-    setScreen(destination);
-  };
-  const chooseCustomerService = method => {
-    if (reservationDraft) { setReservationDraft(null); setCart(null); }
-    setPreferredMethod(method); setScreen('customer-categories');
-  };
-  const customerFrame = { currentNav: customerNavigationTab(screen), onHome: () => setScreen('menu'), onCard: () => setScreen('customer-categories'), onOrders: () => openCustomerArea('orders'), onAccount: () => openCustomerArea('account'), onCart: () => setScreen('cart'), cartCount };
-  const customerLoyaltyStrip = <CustomerLoyaltyStrip signedIn={Boolean(authToken)} points={loyalty.points} rewards={REWARDS} onLogin={() => openCustomerArea('account')} onRewards={() => openCustomerArea('loyalty')} />;
-  const customerCollections = { products: PRODUCTS, snacks: SNACK_PRODUCTS.filter(p => !p.id.startsWith('dessert-')), desserts: DESSERT_PRODUCTS, drinks: DRINK_PRODUCTS, naans: NAAN_PRODUCTS };
   if (phonePairing) {
     const closePairing = () => { setPhonePairing(null); window.history?.replaceState(null, '', '/'); setScreen('menu'); };
     return authToken && !isReviewToken(authToken) ? <KioskPhoneApproval api={API_BASE_URL} authToken={authToken} pairing={phonePairing} onBack={closePairing} /> : <SmsLoginScreen onBack={closePairing} onAuthenticated={authenticate} />;
   }
   if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
-if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (CUSTOMER_JOURNEY_SHELL || Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
+  if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending', 'reservation-payment-pending', 'reservation-deposit-success'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
-  const renderJourneyScreen = () => {
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'menu') return <CustomerJourneyHome frame={customerFrame} loyalty={customerLoyaltyStrip} customer={customer} onOrder={() => setScreen('customer-service')} onReserve={() => openCustomerArea('reservation')} onClub={() => openCustomerArea('loyalty')} onPlus={() => { setBibouPlusReturnScreen('menu'); openCustomerArea('bibou-plus'); }} onNews={() => setScreen('customer-news')} onPartners={() => setScreen('partners')} pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} reviews={<GoogleReviewsCarousel />} stockMessage={stockFeedback || stockMessage} />;
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-service') return <CustomerServiceScreen frame={{ ...customerFrame, onBack: () => setScreen('menu') }} loyalty={customerLoyaltyStrip} onSelect={chooseCustomerService} onReserve={() => openCustomerArea('reservation')} />;
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-categories') return <CustomerCategoriesScreen frame={{ ...customerFrame, onBack: () => setScreen(reservationDraft ? 'reservation' : 'customer-service') }} loyalty={customerLoyaltyStrip} service={preferredMethod} reservation={reservationDraft} showNaans={customerProducts('naans', customerCollections, catalog).length > 0} onCategory={category => { setCustomerCategory(category); setScreen('customer-catalog'); }} onCustom={() => setScreen('custom-burger-preview')} />;
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-catalog') return <CustomerCatalogScreen frame={{ ...customerFrame, onBack: () => setScreen('customer-categories') }} loyalty={customerLoyaltyStrip} category={customerCategory} products={customerProducts(customerCategory, customerCollections, catalog)} stockMessage={stockFeedback || stockMessage} onProduct={openProduct} onQuickAdd={product => addSimpleToCart(product, 'cart')} />;
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'partners') return <CustomerPartnersScreen frame={customerFrame} />;
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-news') return <CustomerJourneyFrame {...customerFrame} title="Nos actualités"><NewsCarousel apiBaseUrl={API_BASE_URL} onOpenContest={() => setScreen('contest')} /><GoogleReviewsCarousel /></CustomerJourneyFrame>;
-  if (screen === "contest" && supportsRankingContest(Platform.OS)) return <ContestScreen onOrderPrize={() => { setCustomerCategory("menus"); setScreen(CUSTOMER_JOURNEY_SHELL ? "customer-catalog" : "menu"); }} apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
-  if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview key={editingCartLine || 'new-custom-burger'} initialItem={cart?.items.find(item => item.lineId === editingCartLine)} hideBack={CUSTOMER_JOURNEY_SHELL} catalog={catalog} onAdd={(item) => addToCart(item, CUSTOMER_JOURNEY_SHELL ? 'cart' : reservationDraft ? 'reservation-meal' : 'cart', editingCartLine)} onBack={() => setScreen(CUSTOMER_JOURNEY_SHELL ? 'customer-categories' : reservationDraft ? 'reservation-meal' : 'menu')} />;
-  if (screen === "product") return <ProductScreen key={editingCartLine || activeProduct.id} initialItem={cart?.items.find(item => item.lineId === editingCartLine)} product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen(productReturnScreen)} onAdd={(item) => addToCart(item, CUSTOMER_JOURNEY_SHELL ? 'cart' : reservationDraft ? 'reservation-meal' : 'cart', editingCartLine)} />;
+  if (screen === "contest" && supportsRankingContest(Platform.OS)) return <ContestScreen apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} sponsorCode={referralCodeFromUrl()} onBack={() => setScreen("menu")} onLogin={() => { setLoginDestination("contest"); setScreen("login"); }} />;
+  if (screen === "custom-burger-preview" && webCustomBurgerPreview) return <CustomBurgerPreview catalog={catalog} onAdd={(item) => addToCart(item, reservationDraft ? 'reservation-meal' : 'cart')} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} />;
+  if (screen === "product") return <ProductScreen product={applyProductStock(activeProduct, catalog)} catalog={catalog} onBack={() => setScreen(productReturnScreen)} onAdd={(item) => addToCart(item, reservationDraft ? 'reservation-meal' : 'cart')} />;
   if (screen === 'reservation-meal' && reservationDraft) return <ReservationMealScreen draft={reservationDraft} cart={cart} customer={customer} catalog={catalog} stockMessage={stockFeedback || stockMessage} onBack={() => setScreen('reservation')} onProduct={openProduct} onQuickAdd={(product) => addSimpleToCart(product, 'reservation-meal')} onCustomBurger={webCustomBurgerPreview ? () => setScreen('custom-burger-preview') : null} onCart={() => setScreen('cart')} />;
-  if (screen === "cart") return <CartScreen onQuantity={adjustCartQuantity} onEdit={editCartItem} catalog={catalog} cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen(CUSTOMER_JOURNEY_SHELL ? 'customer-categories' : reservationDraft ? 'reservation-meal' : 'menu')} onAddMore={() => setScreen(CUSTOMER_JOURNEY_SHELL ? 'customer-categories' : reservationDraft ? 'reservation-meal' : 'menu')} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onOpenProduct={openProduct} onCheckout={() => setScreen(reservationDraft ? (authToken ? "details" : "login") : "delivery")} />;
+  if (screen === "cart") return <CartScreen catalog={catalog} cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} onAddMore={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} onRemove={removeFromCart} onQuickAdd={addSimpleToCart} onOpenProduct={openProduct} onCheckout={() => setScreen(reservationDraft ? (authToken ? "details" : "login") : "delivery")} />;
   if (screen === "delivery") return <DeliveryScreen cart={cart} customer={customer} onBack={() => setScreen("cart")} onChange={updateDelivery} onContinue={() => { if (authToken) setScreen("details"); else { setLoginDestination("details"); setScreen("login"); } }} onOpenBibouPlus={() => { setBibouPlusReturnScreen("delivery"); setScreen("bibou-plus"); }} />;
-  if (screen === "identity" && authToken) return <CustomerIdentityScreen api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} customer={customer} editing onExit={() => setScreen(identityReturnScreen)} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) { setCustomer(current => ({ ...current, ...saved })); setScreen(identityReturnScreen); } }} />;
-  if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} dineIn={Boolean(reservationDraft)} authToken={authToken} onChange={setCustomer} onCommentChange={(comment) => setCart((current) => ({ ...current, comment }))} onBack={() => setScreen(reservationDraft ? "cart" : "delivery")} onContinue={continueWithCustomer} onEditIdentity={() => { setIdentityReturnScreen('details'); setScreen("identity"); }} />;
+  if (screen === "identity" && authToken && !isReviewToken(authToken)) return <CustomerIdentityScreen api={API_BASE_URL} authToken={authToken} customer={customer} editing onExit={() => setScreen("details")} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) { setCustomer(current => ({ ...current, ...saved })); setScreen("details"); } }} />;
+  if (screen === "details") return <CheckoutDetailsScreen cart={cart} customer={customer} dineIn={Boolean(reservationDraft)} authToken={authToken} onChange={setCustomer} onCommentChange={(comment) => setCart((current) => ({ ...current, comment }))} onBack={() => setScreen(reservationDraft ? "cart" : "delivery")} onContinue={continueWithCustomer} onEditIdentity={() => setScreen("identity")} />;
   if (screen === "payment") return <PaymentScreen cart={cart} customer={customer} reservationDraft={reservationDraft} onBack={() => setScreen("details")} onPay={pay} onValidatePromo={validatePromo} />;
   if (screen === "payment-pending") return <PaymentPendingScreen kind="order" record={pendingOrder} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen(reservationDraft ? 'reservation-meal' : 'menu')} />;
   if (screen === 'reservation-payment-pending') return <PaymentPendingScreen kind="reservation" record={pendingDepositReservation} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen('menu')} />;
   if (screen === 'reservation-deposit-success') return <ReservationDepositSuccessScreen reservation={pendingDepositReservation} onTrack={() => setScreen('reservations')} onHome={() => setScreen('menu')} />;
-  if (screen === "success") return <SuccessScreen order={pendingOrder} token={authToken} api={reviewApiBase(API_BASE_URL, authToken)} onReview={() => { setRatingOrderId(pendingOrder?.id); setScreen("review"); }} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
-  if (screen === "review") return <ArticleReviews key={authToken + ':' + ratingOrderId} api={reviewApiBase(API_BASE_URL, authToken)} token={authToken} orderId={ratingOrderId} googleUrl={GOOGLE_REVIEW_URL} onBack={() => setScreen("orders")} />;
+  if (screen === "success") return <SuccessScreen order={pendingOrder} token={authToken} api={API_BASE_URL} onReview={() => setScreen("review")} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
+  if (screen === "review") return <ReviewScreen onBack={() => setScreen("success")} />;
   if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;
   if (screen === "bibou-plus-pending") return <PaymentPendingScreen kind="bibou-plus" record={pendingBibouPlus} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
@@ -1873,16 +1802,10 @@ if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (CUSTOMER_JOURNE
   if (screen === "delete-account") return <DeleteAccountScreen authToken={authToken} loading={accountDeletionLoading} onBack={() => setScreen(authToken ? "account" : "privacy")} onLogin={() => { setLoginDestination("delete-account"); setScreen("login"); }} onDelete={deleteCustomerAccount} />;
   if (screen === "reservation") return <ReservationScreen customer={customer} authToken={authToken} initialDraft={reservationDraft} onBack={() => { if (reservationDraft) { setReservationDraft(null); setCart(null); } setScreen("menu"); }} onCreated={(reservation) => { setReservationDraft(null); setCart(null); setReservations((current) => [reservationFromApi(reservation), ...current.filter((item) => item.id !== reservation.id)]); }} onOpenReservations={() => setScreen("reservations")} onChooseMeal={chooseReservationMeal} onPayDeposit={payTableDeposit} />;
   if (screen === "login") return <SmsLoginScreen accountFirst={loginFromWelcome} onBack={() => { if (loginStartedFromWelcome) { setLoginStartedFromWelcome(false); setLoginFromWelcome(false); setShowNativeWelcome(true); setScreen('menu'); } else setScreen(loginDestination === "account" ? "menu" : loginDestination); }} onAuthenticated={authenticate} />;
-if (screen === "account") return authToken ? <AccountScreen onOpenContest={() => setScreen("contest")} onEditIdentity={() => { setIdentityReturnScreen('account'); setScreen('identity'); }} onOpenOffers={() => setScreen("offers")} onOpenNotifications={() => setScreen("notifications")} onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
-  if (screen === "orders") return <OrdersScreen orders={orders} api={reviewApiBase(API_BASE_URL, authToken)} token={authToken} onDecide={decideAmendment} busy={amendmentBusy} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} onReview={order => { setRatingOrderId(order.apiId); setScreen('review'); }} />;
+  if (screen === "account") return authToken ? <AccountScreen onOpenOffers={() => setScreen("offers")} onOpenNotifications={() => setScreen("notifications")} onLogout={logoutCustomer} customer={customer} loyalty={loyalty} orders={orders} reservations={reservations} onBack={() => setScreen("menu")} onOpenOrders={() => { void loadCustomerOrders(); setScreen("orders"); }} onOpenReservations={() => { void loadCustomerReservations(); setScreen("reservations"); }} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("account"); setScreen("bibou-plus"); }} onOpenPrivacy={() => setScreen("privacy")} onDeleteAccount={() => setScreen("delete-account")} /> : <SmsLoginScreen onBack={() => setScreen("menu")} onAuthenticated={authenticate} />;
+  if (screen === "orders") return <OrdersScreen orders={orders} onDecide={decideAmendment} busy={amendmentBusy} onBack={() => setScreen("account")} onRefresh={() => void loadCustomerOrders()} />;
   if (screen === "reservations") return <ReservationsScreen reservations={reservations} onBack={() => setScreen("account")} onRefresh={(silent = false) => void loadCustomerReservations({ silent })} onCancel={cancelCustomerTableReservation} />;
   return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen reservationDraft={reservationDraft} onCancelReservationMeal={() => { setReservationDraft(null); setCart(null); }} showCustomBurgerPreview={webCustomBurgerPreview} onOpenCustomBurger={() => setScreen('custom-burger-preview')} onOpenContest={() => setScreen("contest")} pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} catalog={catalog} stockMessage={stockFeedback || stockMessage} cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={(method) => { if (reservationDraft) { setReservationDraft(null); setCart(null); } setPreferredMethod(method); }} onOpenReservation={() => { if (reservationDraft) { setReservationDraft(null); setCart(null); } if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
-};
-  const content = renderJourneyScreen();
-  if (!CUSTOMER_JOURNEY_SHELL || ['menu', 'customer-service', 'customer-categories', 'customer-catalog', 'customer-news', 'partners'].includes(screen)) return content;
-  const backDestinations = { product: productReturnScreen, cart: reservationDraft ? 'reservation' : 'customer-categories', 'custom-burger-preview': editingCartLine ? 'cart' : 'customer-categories', delivery: 'cart', identity: identityReturnScreen, details: reservationDraft ? 'cart' : 'delivery', payment: 'details', review: 'orders', orders: 'account', reservations: 'account', notifications: 'account', offers: 'account', 'bibou-plus': bibouPlusReturnScreen, 'delete-account': authToken ? 'account' : 'privacy' };
-  const sharedBack = () => { if (screen === 'reservation' && reservationDraft) { setReservationDraft(null); setCart(null); } setScreen(backDestinations[screen] || 'menu'); };
-  return <CustomerJourneyFrame {...customerFrame} embedded onBack={sharedBack}><CustomerJourneyLegacyContext.Provider value={true}>{content}</CustomerJourneyLegacyContext.Provider></CustomerJourneyFrame>;
 }
 
 const APP_PALETTE = {
@@ -1983,15 +1906,14 @@ const applyAppPalette = (styleSheet) => Object.fromEntries(Object.entries(styleS
 
 const styles = StyleSheet.create(applyAppPalette({
   launchSafeArea: { backgroundColor: "#CC8066" },
-  launchOverlay: { ...ABSOLUTE_FILL_STYLE, backgroundColor: "#CC8066" },
+  launchOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "#CC8066" },
   launchImage: { width: "100%", height: "100%" },
-  partnerLaunch: { ...ABSOLUTE_FILL_STYLE, backgroundColor: '#FBF5E9' },
+  partnerLaunch: { ...StyleSheet.absoluteFillObject, backgroundColor: '#FBF5E9' },
   partnerLaunchHero: { height: 235, backgroundColor: '#204F42', borderBottomLeftRadius: 70, borderBottomRightRadius: 70, alignItems: 'center', justifyContent: 'center' },
   partnerLaunchHeroCompact: { height: 188 },
   partnerLaunchWordmark: { width: 252, height: 126 },
   partnerLaunchWordmarkCompact: { width: 208, height: 104 },
   partnerLaunchBody: { flex: 1, width: '100%', maxWidth: 430, alignSelf: 'center', alignItems: 'center', paddingHorizontal: 22, paddingTop: 23, paddingBottom: 26 },
-  partnerLaunchBodyCompact: { paddingTop: 14, paddingBottom: 14 },
   partnerLaunchEyebrow: { color: '#204F42', fontSize: 13, fontWeight: '800', letterSpacing: 2.1, textAlign: 'center' },
   partnerLaunchLogoFrame: { width: 208, height: 208, padding: 11, borderRadius: 104, backgroundColor: '#FFFFFF', borderWidth: 4, borderColor: '#C5795D', alignItems: 'center', justifyContent: 'center', marginTop: 18, shadowColor: '#204F42', shadowOpacity: 0.14, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   partnerLaunchLogoFrameCompact: { width: 166, height: 166, borderRadius: 83, marginTop: 12 },
@@ -2002,12 +1924,6 @@ const styles = StyleSheet.create(applyAppPalette({
   partnerLaunchProgress: { width: 118, height: 5, borderRadius: 5, backgroundColor: '#DFEBE5', overflow: 'hidden' },
   partnerLaunchProgressFill: { width: '52%', height: '100%', backgroundColor: '#C5795D' },
   partnerLaunchLoading: { color: '#496B5B', fontSize: 12, textAlign: 'center', marginTop: 12 },
-  productStepScroll: { flex: 1, minHeight: 0 },
-  productStepContent: { paddingBottom: 24 },
-  productStepActions: { flexShrink: 0, padding: 12, paddingBottom: 14, backgroundColor: '#FBF3E6', borderTopColor: '#C1D7CB', borderTopWidth: 1 },
-  productStepActionRow: { flexDirection: 'row', alignItems: 'stretch', gap: 10 },
-  productStepNext: { flex: 1.6, minHeight: 52, minWidth: 0, justifyContent: 'center' },
-  productStepBack: { flex: 1, minHeight: 52, minWidth: 0, borderRadius: 14, borderWidth: 1.5, borderColor: '#BB7258', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 10 },
   paymentRecoveryText: { color: '#25120B' },
   paymentRecoveryPrimary: { backgroundColor: '#191919', width: '100%' },
   paymentRecoverySecondary: { borderColor: '#25120B', backgroundColor: '#FFEBDC', width: '100%' },

@@ -36,6 +36,6 @@ function repriceOfferCart(cart, now = new Date()) {
     const total = (cents(item.total) - cents(item.product.price) + cents(price)) / 100;
     return { ...item, total, product: { ...item.product, price, regularPrice, productOffer: offer ? { ...offer } : null } };
   });
-  return { ...cart, items, total: items.reduce((sum, item) => sum + cents(item.total) * (item.quantity || 1), 0) / 100 };
+  return { ...cart, items, total: items.reduce((sum, item) => sum + cents(item.total), 0) / 100 };
 }
 module.exports = { DYNAMITE_OFFER, displayedProductOffer, productOfferForService, offerCatalogProduct, repriceOfferCart };

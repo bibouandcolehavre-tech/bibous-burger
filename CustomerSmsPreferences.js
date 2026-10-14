@@ -5,12 +5,9 @@ export default function CustomerSmsPreferences({ api, authToken }) {
   const [data, setData] = useState(null), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const generation = useRef(0), working = useRef(false);
   async function request(body) {
-    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
-    try {
-      const r = await fetch(api + '/customer/marketing-sms', { method: body ? 'PATCH' : 'GET', headers: { Authorization: 'Bearer ' + authToken, 'Content-Type': 'application/json' }, cache: 'no-store', signal: controller.signal, ...(body ? { body: JSON.stringify(body) } : {}) });
-      const result = await r.json().catch(() => { throw Error('Le serveur ne répond pas correctement. Réessaie.'); });
-      if (!r.ok) throw Error(result.error || 'Ton choix SMS n’a pas été enregistré.'); return result;
-    } finally { clearTimeout(timer); }
+    const r = await fetch(api + '/customer/marketing-sms', { method: body ? 'PATCH' : 'GET', headers: { Authorization: 'Bearer ' + authToken, 'Content-Type': 'application/json' }, cache: 'no-store', signal: AbortSignal.timeout(15000), ...(body ? { body: JSON.stringify(body) } : {}) });
+    const result = await r.json().catch(() => { throw Error('Le serveur ne répond pas correctement. Réessaie.'); });
+    if (!r.ok) throw Error(result.error || 'Ton choix SMS n’a pas été enregistré.'); return result;
   }
   async function load() {
     const id = generation.current;

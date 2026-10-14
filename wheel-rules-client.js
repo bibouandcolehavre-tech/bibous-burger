@@ -1,4 +1,3 @@
-const { GAME_ORGANIZER_NOTICE } = require('./game-organizer-notice');
 const prizeLabels = {
   none: 'aucun gain',
   'points-20': '20 points Club Bibou',
@@ -10,7 +9,6 @@ const prizeLabels = {
   'discount-1': 'une remise de 1 %',
   'discount-2': 'une remise de 2 %',
   'discount-5': 'une remise de 5 %',
-  'stb-tickets': 'un lot de deux places STB',
 };
 const tierLabels = {
   small: 'Commande de 15 € à moins de 30 € (et tours de parrainage ou de test)',
@@ -20,13 +18,12 @@ const tierLabels = {
 
 function fullWheelRules(rules, segments) {
   if (!rules) return null;
-  const notice = `\n\n${GAME_ORGANIZER_NOTICE}`;
-  if (!segments || !Object.keys(tierLabels).every(tier => Array.isArray(segments[tier]))) return rules + notice;
+  if (!segments || !Object.keys(tierLabels).every(tier => Array.isArray(segments[tier]))) return rules;
   const odds = Object.entries(tierLabels).map(([tier, heading]) => {
     const rewards = segments[tier].map(([id, chance]) => `${prizeLabels[id] || id} : ${chance} %`);
     return `${heading} : ${rewards.join(' ; ')}.`;
   });
-  return `${rules}\n\nProbabilités de chaque résultat par tour pour les nouvelles commandes :\n${odds.join('\n')}${notice}`;
+  return `${rules}\n\nProbabilités de chaque résultat par tour pour les nouvelles commandes :\n${odds.join('\n')}`;
 }
 
 module.exports = { fullWheelRules };

@@ -1,4 +1,4 @@
 const shouldShowPartnerLaunch = (platform, initialScreen) =>
-  ['android', 'ios'].includes(platform) || (platform === 'web' && initialScreen === 'menu');
+  platform === 'android' || (platform === 'web' && initialScreen === 'menu');
 
 module.exports = { shouldShowPartnerLaunch };

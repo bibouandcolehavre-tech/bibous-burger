@@ -76,8 +76,8 @@ function supportPage() {
 }
 function installPage() {
   const androidUrl = 'https://play.google.com/store/apps/details?id=com.krokly.bibousburgers&hl=fr';
-  // Public App Store listing verified on 13 October 2026.
-  const iphoneUrl = 'https://apps.apple.com/fr/app/bibous-burgers/id6817744169';
+  // Apple ne référence pas encore cette app publiquement. Changer uniquement cette cible après sa publication.
+  const iphoneUrl = `${info.origin}/`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Installer Bibou's Burgers</title><meta name="description" content="Ouvrez Bibou's Burgers sur votre téléphone.">
   <meta name="robots" content="noindex, follow"><meta name="theme-color" content="#267e79">
