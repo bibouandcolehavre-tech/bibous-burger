@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import ReplacementChoices from './ReplacementChoices';
 const money = n => Number(n).toFixed(2).replace('.', ',') + ' €';
 function Basket({ title, basket }) {
   return <View style={s.basket}><Text style={s.bold}>{title}</Text>{basket.items.map((item,i)=><View key={i} style={s.line}><Text>{item.quantity} × {item.name} · {money(item.quantity*item.price)}</Text>{item.options?.length>0 && <Text style={s.small}>{item.options.map(o=>o.label).join(' · ')}</Text>}</View>)}<Text>Articles : {money(basket.subtotal)} · Réduction : {money(basket.discount || 0)}</Text><Text>Livraison : {money(basket.deliveryFee || 0)}</Text><Text style={s.bold}>Total : {money(basket.total)}</Text></View>;
 }
-export default function OrderAmendments({ orders, onDecide, busy }) {
+export default function OrderAmendments({ orders, onDecide, busy, api, token, onUpdated }) {
+  return <><LegacyAmendments orders={orders.filter(order => order.amendment?.mode !== 'category-choice' || order.amendment.status !== 'pending')} onDecide={onDecide} busy={busy} />{orders.filter(order => order.amendment?.mode === 'category-choice' && order.amendment.status === 'pending').map(order => <ReplacementChoices key={order.apiId + ':' + order.amendment.revision} order={order} api={api} token={token} onUpdated={onUpdated} onCancel={() => onDecide(order, 'refuse')} />)}</>;
+}
+function LegacyAmendments({ orders, onDecide, busy }) {
   const [refusing, setRefusing] = useState(null);
   return <>{orders.filter(o=>o.amendment).map(order=>{
     const a=order.amendment, pending=order.status==='awaiting_customer' && a.status==='pending';

@@ -1,17 +1,67 @@
-/* Desktop-only presentation adjustments. No DOM or application logic changes. */
+/* Same customer journeys as the apps. Desktop presentation only: below 900px
+   the shared mobile layout, pictures, controls and navigation stay unchanged. */
 @media (min-width: 900px) {
-  /* Same content column and same order as the existing mobile application. */
-  .r-1fkl15p > .r-1cmskyw,
-  .r-1fkl15p > .r-1vamr63 {
-    max-width: none !important;
+  [data-bibou="journey"] {
+    display: grid !important;
+    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-rows: 84px minmax(0, 1fr);
+    min-height: 0;
+  }
+  [data-bibou="header"] {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding-inline: 28px !important;
+  }
+  [data-bibou="journey-scroll"], [data-bibou="embedded"] {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    min-height: 0;
     width: 100% !important;
+    max-width: none !important;
   }
-  /* Keep the existing three service choices, with readable desktop labels. */
-  .r-1fkl15p > .r-1vamr63 > div > .css-146c3p1:nth-child(2) {
-    font-size: 16px !important;
+  [data-bibou="embedded"] {
+    max-width: 860px !important;
+    height: 100%;
+    max-height: 100%;
+    align-self: stretch !important;
+    justify-self: center;
+    overflow: hidden;
   }
-  .r-1fkl15p > .r-1vamr63 > div > .css-146c3p1:nth-child(3) {
-    font-size: 12px !important;
+  [data-bibou="content"] {
+    width: 100% !important;
+    max-width: 1120px !important;
+    padding: 32px !important;
   }
-  /* Product list, personalization controls, prices and photographs unchanged. */
+  [data-bibou="title"] { font-size: 34px !important; }
+  [data-bibou="navigation"] {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100% !important;
+    max-width: none !important;
+    align-self: stretch !important;
+    flex-direction: column !important;
+    padding: 24px 14px !important;
+    gap: 12px !important;
+    border-top-width: 0 !important;
+    border-right: 1px solid #D9DCCD;
+  }
+  [data-bibou="navigation-button"] {
+    flex: 0 0 auto !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    min-height: 60px !important;
+    padding-inline: 18px !important;
+    gap: 12px !important;
+  }
+  [data-bibou="navigation-button"] > div { font-size: 15px !important; }
+  [data-bibou="tile"] { width: calc(33.333% - 12px) !important; min-height: 144px !important; }
+  [data-bibou="wide-tile"] { min-height: 144px !important; }
+  [data-bibou="tile-label"] { font-size: 20px !important; }
+  [data-bibou="catalogue"] {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  [data-bibou="catalogue"] > div { margin-block: 0 !important; }
 }

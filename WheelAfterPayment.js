@@ -3,6 +3,7 @@ import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, Vie
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 const { supportsNewCustomerJourneys } = require('./customer-experience-policy');
 const { fullWheelRules } = require('./wheel-rules-client');
+const { isReviewToken } = require('./review-client');
 
 const polar = (angle, radius = 105) => ({ x: 110 + radius * Math.cos((angle - 90) * Math.PI / 180), y: 110 + radius * Math.sin((angle - 90) * Math.PI / 180) });
 const sector = (start, end) => {
@@ -10,7 +11,7 @@ const sector = (start, end) => {
   return `M 110 110 L ${first.x} ${first.y} A 105 105 0 ${end - start > 180 ? 1 : 0} 1 ${last.x} ${last.y} Z`;
 };
 const colors = { none: '#E5C7B5', 'points-20': '#A8D3C4', 'points-30': '#A8D3C4', 'points-40': '#86BDA9', 'points-60': '#6AA58D', drink: '#C37559', fries: '#E7A87D', 'discount-1': '#668F80', 'discount-2': '#4F7D69', 'discount-5': '#315B4B' };
-const label = id => id === 'none' ? '•' : id.startsWith('points') ? '★' : id === 'drink' ? '🥤' : id === 'fries' ? '🍟' : '%';
+const label = id => id === 'none' ? '•' : id.startsWith('points') ? '★' : id === 'drink' ? '🥤' : id === 'fries' ? '🍟' : id === 'stb-tickets' ? 'STB' : '%';
 
 function WheelRules({ rules, open, onOpen, onClose }) {
   if (!rules) return null;
@@ -41,14 +42,15 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const rotation = useRef(new Animated.Value(0)).current;
   const rotationDegrees = useRef(0);
   const checkoutEligible = supportsNewCustomerJourneys(Platform.OS) && !!token && !!order?.id && order?.payment?.status === 'PAID' &&
-    !order?.reviewMode && (order?.payment?.provider !== 'promotion' || order?.promotion?.code === 'CHORUS');
+    (!order?.reviewMode || isReviewToken(token)) && (order?.payment?.provider !== 'promotion' || order?.promotion?.code === 'CHORUS');
   // A new CHORUS checkout must still show an unused test turn earned on an
   // earlier CHORUS order; it must not create another turn for the same account.
   const orderTurns = order?.id
     ? state?.orderTurns?.find(item => item.orderId === order.id) || state?.orderTurns?.[0]
     : state?.orderTurns?.[0];
   const turns = Math.min(state?.available || 0, (orderTurns?.available || 0) + (state?.availableFromReferrals || 0));
-  const segments = state?.segments?.[orderTurns?.tier || 'small'] || [];
+  const ticketEligible = !orderTurns || orderTurns.stbEligible !== false;
+  const segments = (ticketEligible ? state?.segments : state?.baseSegments || state?.segments)?.[orderTurns?.tier || 'small'] || [];
   const activePrizes = (state?.prizes || []).filter(prize => prize.code && prize.redemptionStatus === 'active' && Date.parse(prize.expiresAt) > Date.now());
   const canSpin = state?.status === 'active' && turns > 0;
   const chorusCheckout = !accountMode && order?.promotion?.code === 'CHORUS';
@@ -118,6 +120,8 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   return <View style={styles.card}>
     <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'TA COMMANDE EST CONFIRMÉE'}</Text>
     <Text style={styles.title}>{canSpin ? accountMode ? 'Tourne la roue' : 'Ton tour de roue est prêt !' : chorusCheckout ? 'Ton essai CHORUS est terminé' : 'Tes gains de la roue'}</Text>
+    {ticketEligible && state.stbTickets?.nextPrize && <Text style={styles.description}>🏀 Un lot de deux places STB contre {state.stbTickets.nextPrize.opponent} · match du {new Date(state.stbTickets.nextPrize.matchAt).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })}. Un seul gagnant, 1 % de chance par tour éligible, puis tirage de rattrapage si nécessaire. Attribution au moins cinq jours avant le match. Les tours fictifs CHORUS ne participent pas.</Text>}
+    {state.stbTickets?.awards?.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>🏀 Tes deux places STB · {prize.opponent}</Text><Text style={styles.prizeHint}>Match du {new Date(prize.matchAt).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })} · {prize.fulfillment === 'delivered' ? 'Places remises par le restaurant.' : 'Contacte le restaurant pour récupérer les deux places.'}</Text><Text selectable style={styles.prizeCode}>{prize.claimCode}</Text></View>)}
     {chorusCheckout && !canSpin ? <Text style={styles.description}>{state.status === 'active' ? 'Les deux tours d’essai CHORUS de ce compte ont déjà été joués. Tes gains restent dans Mon compte → Mes offres ; aucune nouvelle commande n’est nécessaire.' : 'La roue n’est pas ouverte actuellement. Ta commande reste confirmée.'}</Text> : null}
     {canSpin ? <><Text style={styles.description}>{order?.promotion?.code === 'CHORUS' && orderTurns?.available ? orderTurns.orderId === order.id ? 'Un tour de test offert avec cette commande CHORUS, dans la limite de deux tours par compte.' : 'Un tour gagné sur une commande précédente est encore disponible ici, sans nouvelle commande.' : `${turns} tour${turns > 1 ? 's' : ''} disponible${turns > 1 ? 's' : ''} grâce à une commande ou à un parrainage validé.`}</Text>
       <Pressable accessibilityRole="button" disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue maintenant'}</Text></Pressable>

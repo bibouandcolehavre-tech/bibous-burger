@@ -26,7 +26,7 @@ test('Accueil SEO : français, canonical stable et contenu public sans JavaScrip
   assert.throws(() => enrichIndex('<html></html>'), /Structure Expo/);
   assert.throws(() => enrichIndex(html), /Structure Expo/);
 });
-test('Affichage paysage validé : CSS du site uniquement, sans modifier le parcours ou le mobile', () => {
+test('Affichage ordinateur : mêmes parcours, CSS limitée aux grands écrans et hooks stables', () => {
   const css = fs.readFileSync(path.join(__dirname, '../web/desktop-layout.css'), 'utf8');
   const html = enrichIndex(sample);
   assert.equal((html.match(/id="bibou-desktop-layout"/g) || []).length, 1);
@@ -35,10 +35,29 @@ test('Affichage paysage validé : CSS du site uniquement, sans modifier le parco
   assert.match(rules, /^@media \(min-width: 900px\) \{/);
   assert.match(css, /max-width: none !important/);
   assert.match(css, /width: 100% !important/);
-  assert.match(css, /font-size: 16px !important/);
-  assert.match(css, /font-size: 12px !important/);
-  assert.doesNotMatch(css, /url\(|@import|display:|position:|order:|visibility:|content:/);
+  assert.match(css, /data-bibou="navigation"/);
+  assert.match(css, /grid-template-columns: 210px minmax\(0, 1fr\)/);
+  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(css, /max-height: 100%/);
+  assert.match(css, /align-self: stretch !important/);
+  assert.doesNotMatch(css, /url\(|@import|position:\s*(fixed|absolute)|order:|visibility:|\.r-[\w-]+/);
   assert.match(html, /<script src="\/app.js" defer><\/script>/, 'Le JavaScript existant reste le même.');
+});
+test('Web mobile : le même shell que les apps, sans modifier la politique des binaires natifs', () => {
+  const webPolicy = require('../customer-experience-policy.web.js');
+  const nativePolicy = require('../customer-experience-policy.js');
+  assert.equal(webPolicy.supportsCustomerJourneyShell('web'), true);
+  assert.equal(nativePolicy.supportsCustomerJourneyShell('web'), false);
+  for (const platform of ['android', 'ios']) {
+    assert.equal(webPolicy.supportsCustomerJourneyShell(platform), nativePolicy.supportsCustomerJourneyShell(platform));
+  }
+  assert.equal(webPolicy.supportsCustomerJourneyShell('unknown'), false);
+  const source = fs.readFileSync(path.join(__dirname, '../CustomerJourneyScreens.js'), 'utf8');
+  assert.match(source, /Platform\.OS === 'web' \? \{ bibou: name \} : undefined/);
+  for (const part of ['journey', 'header', 'journey-scroll', 'embedded', 'content', 'navigation', 'navigation-button', 'catalogue']) {
+    assert.ok(source.includes(`webPart('${part}')`));
+  }
+  assert.match(source, /maxWidth: 430/, 'Le cadrage mobile commun reste inchangé.');
 });
 test('Le restaurant possède une vraie page HTML publique et les données structurées correspondantes', () => {
   const page = restaurantPage();
@@ -81,7 +100,7 @@ test('Le générateur complète le vrai export sans modifier le JavaScript ou co
   assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
   assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
 });
-test('Lien intelligent : Android vers Google Play, iPhone vers la web app tant que l’App Store n’est pas public', () => {
+test('Lien intelligent : Android et iPhone vers leurs fiches publiques vérifiées', () => {
   const page = installPage();
   assert.match(page, /com\.krokly\.bibousburgers/);
   assert.match(page, /Android/);
@@ -89,8 +108,7 @@ test('Lien intelligent : Android vers Google Play, iPhone vers la web app tant q
   assert.match(page, /MacIntel/);
   assert.match(page, /window\.location\.replace/);
   assert.match(page, /Ouvrir sur iPhone/);
-  assert.match(page, /https:\/\/bibous-burger-app\.onrender\.com\//);
-  assert.doesNotMatch(page, /apps\.apple\.com|6817744169/, 'Ne pas envoyer vers une fiche Apple non publiée.');
+  assert.match(page, /https:\/\/apps\.apple\.com\/fr\/app\/bibous-burgers\/id6817744169/);
 });
 test('Assistance publique : contacts et liens utiles sans données privées', () => {
   const page = supportPage();
