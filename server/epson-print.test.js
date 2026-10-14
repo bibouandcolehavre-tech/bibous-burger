@@ -172,6 +172,8 @@ for (const [name, render] of [['préparation', printer.preparationEnvelope], ['r
     ] };
     const original = JSON.stringify(order), request = render(order);
     assert.equal((request.match(/Ce menu contient 3 tenders\./g) || []).length, 1);
+    assert.match(request, /<text em="true"\/><text>&#32;&#32;Ce menu contient 3 tenders\.&#10;<\/text><text em="false"\/>/,
+      'La mention seule est mise en gras, puis le style normal est rétabli.');
     assert.ok(request.indexOf('Ce menu contient 3 tenders.') > request.indexOf('Boisson exemple'));
     assert.ok(request.indexOf('Ce menu contient 3 tenders.') < request.indexOf('1 x Burger suivant'));
     if (name === 'récapitulatif') assert.ok(request.indexOf('Ce menu contient 3 tenders.') < request.indexOf('Prix article'));

@@ -84,7 +84,7 @@
       for (const option of item.options || []) {
         if (option?.label) parts.push(line(`  - ${option.label}`));
       }
-      if (item.productId === 'menu-solo-tenders') parts.push(indentedLine('Ce menu contient 3 tenders.'));
+      if (item.productId === 'menu-solo-tenders') parts.push('<text em="true"/>', indentedLine('Ce menu contient 3 tenders.'), '<text em="false"/>');
     }
     parts.push(line('--------------------------------'), line('TICKET CUISINE - PAS UNE FACTURE'));
     if (duplicateTest) parts.push(line('DUPLICATA TEST - NE PAS PREPARER'));
@@ -150,7 +150,7 @@
         const title = optionTitle[option.groupId];
         parts.push(indentedLine(`${title ? `${title} : ` : '- '}${option.label}`));
       }
-      if (item.productId === 'menu-solo-tenders') parts.push(indentedLine('Ce menu contient 3 tenders.'));
+      if (item.productId === 'menu-solo-tenders') parts.push('<text em="true"/>', indentedLine('Ce menu contient 3 tenders.'), '<text em="false"/>');
       parts.push(line(''), '<text em="true"/>', line(`Prix article : ${amount(Number(item.price) * quantity)}`), '<text em="false"/>', line(''));
       parts.push(line('--------------------------------'));
     }
