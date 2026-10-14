@@ -20,8 +20,21 @@ test('Listes UI : lecture seule, HTML échappé, export revérifié et CSV prot�
   h.root.querySelector('#period-export').onclick(); await tick();
   assert.equal(h.calls.length, 2); assert.equal(h.calls[1].method, 'GET'); assert(h.calls[1].url.endsWith('?period=1'));
   assert.equal(h.downloads.length, 1); assert.match(h.downloads[0].name, /quinzaine-1-2026-10-15-2026-10-29\.csv$/);
-  const csv = await h.blobs[0].text(); assert(csv.includes("'=FORMULA<script>")); assert(!csv.includes('onerror')); assert(csv.includes('fictitious-fingerprint'));
+  const csv = await h.blobs[0].text(); assert(csv.includes('Bibou — pas Instagram')); assert(!csv.includes('"Chances"')); assert(csv.includes("'=FORMULA<script>")); assert(!csv.includes('onerror')); assert(csv.includes('fictitious-fingerprint'));
   assert(!h.calls.some(call => /publish|finalize|news|sms/.test(call.url)));
+});
+test('Le relevé Bibou n’est jamais présenté comme une liste de tirage Instagram', async () => {
+  const h = harness(); await h.panel.load();
+  assert.match(h.root.innerHTML, /Activité Bibou · par quinzaine/);
+  assert.match(h.root.innerHTML, /Cette liste n’est pas celle du tirage Instagram/);
+  assert.match(h.root.innerHTML, /Aucun commentaire Instagram n’est importé ici/);
+  assert.doesNotMatch(h.root.querySelector('#period-participants').innerHTML, /1 chance/);
+  h.root.querySelector('#period-export').onclick(); await tick();
+  assert.equal(h.downloads.length, 1);
+  assert.match(h.downloads[0].name, /^bibou-activites-/);
+  const csv = await h.blobs[0].text();
+  assert(csv.includes('Source du relevé')); assert(csv.includes('Bibou — pas Instagram'));
+  assert(!csv.includes('"Chances"'));
 });
 test('Quinzaine provisoire : aucun fichier ; liste modifiée lors de la vérification : relecture requise', async () => {
   const h = harness(); h.data.exportReady = false; h.data.period.status = 'active'; await h.panel.load();
@@ -38,7 +51,7 @@ test('Déconnexion : effacement et réponse tardive écartée ; aucun export sur
   assert.equal(h.downloads.length, 0);
 });
 test('Intégration des deux interfaces : liste commune et heure de début, aucun bouton de tirage automatique', () => {
-  for (const file of ['index.html','ancienne-interface.html']) assert(fs.readFileSync(path.join(__dirname, '../restaurant-dashboard', file), 'utf8').includes('./contest-periods.js?v=crossplay-quinzaines-30j-20261014'));
+  for (const file of ['index.html','ancienne-interface.html']) assert(fs.readFileSync(path.join(__dirname, '../restaurant-dashboard', file), 'utf8').includes('./contest-periods.js?v=activite-bibou-hors-tirage-20261015'));
   const marketing = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/marketing.js'), 'utf8');
   assert(marketing.includes("['startTime','Heure de début (heure de Paris)',5]")); assert(marketing.includes('periodPanel?.clear()'));
   assert(!fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/contest-periods.js'), 'utf8').includes('Math.random'));

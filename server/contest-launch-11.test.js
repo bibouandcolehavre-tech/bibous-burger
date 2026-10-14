@@ -48,3 +48,29 @@ test('Une fermeture du restaurant ne masque plus le concours publié, sans masqu
   assert(items.some(item => item.kind === 'contest' && /31 décembre/.test(item.title)));
   assert.equal(new Set(items.map(item => item.id)).size, items.length);
 });
+
+
+test('Règlement préparé : classement partagé inchangé, cinq bonus réservés aux commentaires Instagram de chaque quinzaine', () => {
+  const preset = require('../restaurant-dashboard/contest-launch-20261015.json');
+  assert.equal(preset.startDate, '2026-10-15');
+  assert.equal(preset.startTime, '11:00');
+  assert.equal(preset.endDate, '2026-12-31');
+  assert(preset.rules.length <= 12000);
+  const scoring = preset.rules.split('3. Points du classement\n')[1].split('\n\n4.')[0];
+  assert.match(scoring, /20 points à son parrain/);
+  assert.match(scoring, /1 point par jour civil/);
+  assert.match(scoring, /1 point par euro effectivement payé/);
+  assert.match(scoring, /commentaires et mentions Instagram n’ajoutent aucun point/);
+  assert.match(scoring, /points gagnés à la roue.*ne sont pas ajoutés au classement/);
+  const bonus = preset.rules.split('7. Cinq tirages bonus réservés à Instagram\n')[1].split('\n\n10.')[0];
+  assert.match(bonus, /trois autres comptes Instagram différents/);
+  assert.match(bonus, /Une seule chance par compte Instagram et par quinzaine/);
+  assert.match(bonus, /aucun commentaire antérieur n’est reporté automatiquement/);
+  assert.match(bonus, /achats, parrainages, points du classement et tours de roue ne donnent pas d’entrée/);
+  assert.match(bonus, /données accessibles sont incomplètes.*tirage est suspendu/);
+  assert.match(bonus, /valable 30 jours à partir de la date du tirage/);
+  assert.match(bonus, /Aucun tirage bonus n’est organisé pour les 29, 30 et 31 décembre/);
+  assert.doesNotMatch(bonus, /liste commune|compte inscrit au concours ayant au moins une activité/);
+  assert.match(preset.rules, /commentaire Instagram n’est pas nécessaire pour participer au classement/);
+  assert.match(preset.rules, /compte Bibou n’est requis pour un gagnant Instagram qu’au moment/);
+});
