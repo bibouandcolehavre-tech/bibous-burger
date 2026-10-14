@@ -17,7 +17,7 @@ const publicNews = (database, now = new Date(), modernContestClient = true) => {
   const contest = modernContestClient ? publicContest(database, now) : { status: 'inactive' };
   const items = dashboardNews(database).items.filter(item => item.enabled && item.kind !== 'product').map(item => {
     if (item.kind !== 'contest' || contest.status === 'inactive') return item;
-    if (contest.status === 'scheduled') return { ...item, title: 'Le concours Bibou arrive', subtitle: `Ouverture le ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(`${contest.startDate}T12:00:00Z`))} · 3 gagnants · participation gratuite` };
+    if (contest.status === 'scheduled') return { ...item, title: 'Le concours Bibou arrive', subtitle: `Ouverture le ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(`${contest.startDate}T12:00:00Z`))}${contest.startTime !== '00:00' ? ` à ${contest.startTime}` : ''} · 3 gagnants · participation gratuite` };
     if (contest.status === 'closed') return { ...item, title: 'Le concours Bibou est terminé', subtitle: 'Le classement final est en cours de vérification.' };
     return { ...item, title: 'Le concours Bibou est ouvert', subtitle: '24 menus pour la 1re place · 20 points par ami inscrit · 1 point par partage du jour · 1 point par € payé · sans achat obligatoire' };
   });

@@ -198,6 +198,7 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .marketing-stats p { flex: 1; min-width: 140px; padding: 16px; background: #f4f5f0; border-radius: 12px; }
 .marketing-stats strong { display: block; font-size: 30px; color: #273126; }
 #marketing-feedback { min-height: 22px; color: #494d36; font-weight: 650; }
+#contest-periods-root li { overflow-wrap: anywhere; margin: 10px 0; }
 @media(max-width: 700px) { .marketing-panel { padding: 16px; } .marketing-grid { grid-template-columns: minmax(0,1fr); } .news-editor { padding: 12px; } }
 /* Notifications: readable previews and explicit two-stage sending. */
 .push-layout { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:22px; align-items:start; }

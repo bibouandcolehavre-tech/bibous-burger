@@ -17,6 +17,7 @@ const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
 const { dashboardContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, purgeExpiredContestEntries } = require('./referral-contest');
+const { dashboardContestPeriods } = require('./contest-periods');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { terminalDeviceSecret, authorizeTerminal, claimTerminalLaunch, verifyTerminalOrder } = require('./kiosk-terminal-service');
 const { reconcileTerminalPayment } = require('./kiosk-terminal-api');
@@ -884,6 +885,14 @@ const server = http.createServer(async (request, response) => {
       if ([...url.searchParams.keys()].some(key => !['date', 'granularity'].includes(key))) return send(response, 400, { error: 'Filtre de statistiques invalide.' });
       releaseDatabase = await acquireDatabase();
       return send(response, 200, dashboardStatistics(await readDatabase(), { date: url.searchParams.get('date') || undefined, granularity: url.searchParams.get('granularity') || undefined }));
+    }
+    // Read-only external draw lists; never run legacy migrations or expose them publicly.
+    if (url.pathname === '/api/dashboard/contest/periods') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      if (request.method !== 'GET') return send(response, 405, { error: 'Consultation uniquement.' });
+      if ([...url.searchParams.keys()].some(key => key !== 'period') || url.searchParams.getAll('period').length > 1) return send(response, 400, { error: 'Filtre de quinzaine invalide.' });
+      releaseDatabase = await acquireDatabase();
+      return send(response, 200, dashboardContestPeriods(await readDatabase(), url.searchParams.get('period') ?? undefined));
     }
     // This reporting route is read-only, before the legacy read-time migrations.
     if (['/api/news', '/api/contest', '/api/dashboard/news', '/api/dashboard/contest'].includes(url.pathname)) {
