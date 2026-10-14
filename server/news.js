@@ -15,17 +15,23 @@ const closedTonight = (database, now) => {
 };
 const publicNews = (database, now = new Date(), modernContestClient = true) => {
   const contest = modernContestClient ? publicContest(database, now) : { status: 'inactive' };
+  const dateLabelFor = value => new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(`${value}T12:00:00Z`));
   const items = dashboardNews(database).items.filter(item => item.enabled && item.kind !== 'product').map(item => {
     if (item.kind !== 'contest' || contest.status === 'inactive') return item;
-    if (contest.status === 'scheduled') return { ...item, title: 'Le concours Bibou arrive', subtitle: `Ouverture le ${new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(`${contest.startDate}T12:00:00Z`))}${contest.startTime !== '00:00' ? ` à ${contest.startTime}` : ''} · 3 gagnants · participation gratuite` };
+    if (contest.status === 'scheduled') return { ...item, title: `Le concours Bibou arrive · jusqu’au ${dateLabelFor(contest.endDate)}`, subtitle: `Ouverture le ${dateLabelFor(contest.startDate)}${contest.startTime !== '00:00' ? ` à ${contest.startTime}` : ''} · Participation gratuite · Consulte les règles et les lots.` };
     if (contest.status === 'closed') return { ...item, title: 'Le concours Bibou est terminé', subtitle: 'Le classement final est en cours de vérification.' };
-    return { ...item, title: 'Le concours Bibou est ouvert', subtitle: '24 menus pour la 1re place · 20 points par ami inscrit · 1 point par partage du jour · 1 point par € payé · sans achat obligatoire' };
+    return { ...item, title: `Concours Bibou ouvert · jusqu’au ${dateLabelFor(contest.endDate)}`, subtitle: 'Participation gratuite · 24 menus pour la 1re place · Lis le règlement et participe ici.' };
   });
-  if (!closedTonight(database, now)) return { items: promotionNews(database, now, items) };
+  if (!closedTonight(database, now)) {
+    const visible = promotionNews(database, now, items);
+    return { items: ['scheduled', 'active'].includes(contest.status) ? [...visible.filter(item => item.kind === 'contest'), ...visible.filter(item => item.kind !== 'contest')] : visible };
+  }
   const dateLabel = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(now);
-  return { items: [{ id: 'contest', kind: 'note', enabled: true, title: 'Fermé exceptionnellement ce soir',
+  // Preserve the existing closure notice without hiding a published contest.
+  const closureId = ['scheduled', 'active'].includes(contest.status) && items.some(item => item.kind === 'contest') ? 'exceptional-closure' : 'contest';
+  return { items: [{ id: closureId, kind: 'note', enabled: true, title: 'Fermé exceptionnellement ce soir',
     subtitle: `Ce ${dateLabel} : pas de click & collect, de livraison ni de réservation de table. La carte reste consultable.`, url: '', imageUrl: '' },
-    ...items.filter(item => item.id !== 'contest')] };
+    ...items.filter(item => item.id !== closureId)] };
 };
 function saveNews(database, input, now = new Date()) {
   if (!input || input.revision !== dashboardNews(database).revision) throw error('Les actualités ont changé. Actualisez avant de réessayer.', 409);
