@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import SocialLinks from './SocialLinks';
 const { DEFAULT_NEWS, safePublicUrl } = require('./news-config');
+const { ABSOLUTE_FILL_STYLE } = require('./customer-display-layout');
 const { supportsRankingContest } = require('./customer-experience-policy');
 const newsForPlatform = (items, platform) => supportsRankingContest(platform) ? items : items.filter(item => item.kind !== 'contest');
 const duoPreview = Platform.OS === 'android' || (Platform.OS === 'web' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') !== 'ancien');
@@ -66,7 +67,7 @@ const s = StyleSheet.create({
   section: { marginTop: 12 }, heading: { color: '#fff', fontSize: 27, fontWeight: '900' }, intro: { color: '#fff', fontSize: 14, marginTop: 3, marginBottom: 15 },
   headingOnLight: { color: '#25473B' }, introOnLight: { color: '#405447' },
   card: { height: 190, borderRadius: 22, overflow: 'hidden', backgroundColor: '#171a19', justifyContent: 'flex-end' }, contest: { backgroundColor: '#26251e', borderColor: '#ffd07b', borderWidth: 1 },
-  photo: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%', resizeMode: 'cover' }, shade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,.48)' },
+  photo: { ...ABSOLUTE_FILL_STYLE, width: '100%', height: '100%', resizeMode: 'cover' }, shade: { ...ABSOLUTE_FILL_STYLE, backgroundColor: 'rgba(0,0,0,.48)' },
   copy: { padding: 20 }, tag: { fontSize: 10, letterSpacing: 2, fontWeight: '800', color: '#ffd07b', marginBottom: 8 }, title: { fontSize: 24, fontWeight: '900', color: '#fff' }, subtitle: { fontSize: 13, lineHeight: 19, color: '#fff', marginTop: 8 },
   decor: { position: 'absolute', right: 14, top: -23, fontSize: 132, color: '#ffd07b', opacity: .17 },
   play: { position: 'absolute', right: 19, top: 16, fontSize: 27, color: '#ffd07b' },

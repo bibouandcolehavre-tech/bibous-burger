@@ -1,14 +1,14 @@
 import { useRef, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-const { BASE_CENTS, PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, EXTRA_STOCK_IDS, initialBurger, priceCents, pricedOptions, selectionEntries, stockAvailable } = require('./custom-burger-preview');
+const { BASE_CENTS, PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, EXTRA_STOCK_IDS, initialBurger, priceCents, pricedOptions, selectionEntries, parseSelectionEntries, stockAvailable } = require('./custom-burger-preview');
 
 const euro = (cents) => `${(cents / 100).toFixed(2).replace('.', ',')} €`;
 const steps = ['La garniture principale', 'Pain et fromage', 'Sauce', 'Crudités', 'Suppléments', 'Ton burger'];
 const signatureBreadIncluded = (protein) => ['canard', 'agneau', 'pork', 'hambagu'].includes(protein);
 const nameOf = (options, id) => options.find((option) => option.id === id)?.label || '';
 
-export default function CustomBurgerPreview({ catalog, onBack, onAdd }) {
-  const [selection, setSelection] = useState(initialBurger);
+export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialItem, hideBack = false }) {
+  const [selection, setSelection] = useState(() => initialItem ? parseSelectionEntries(initialItem.selections) : initialBurger());
   const [step, setStep] = useState(0);
   const scrollRef = useRef(null);
   const protein = PROTEINS.find((option) => option.id === selection.protein);
@@ -92,7 +92,7 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd }) {
   };
 
   return <SafeAreaView style={s.safe}><ScrollView ref={scrollRef} contentContainerStyle={s.content}>
-    <Pressable accessibilityRole="button" accessibilityLabel="Retour à la carte" onPress={onBack} style={s.back}><Text style={s.backText}>‹</Text></Pressable>
+    {!hideBack && <Pressable accessibilityRole="button" accessibilityLabel="Retour à la carte" onPress={onBack} style={s.back}><Text style={s.backText}>‹</Text></Pressable>}
     <Text style={s.eyebrow}>TON BURGER, TES CHOIX</Text>
     <Text style={s.title}>Compose ton burger</Text>
     <View style={s.progressLabels}><Text style={s.progressText}>Étape {step + 1} sur 6</Text><Text style={s.progressText}>{steps[step]}</Text></View>

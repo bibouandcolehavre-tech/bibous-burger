@@ -1,17 +1,20 @@
 import { useRef, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-const { validateIdentity, MAX_NAME_LENGTH } = require('./customer-identity');
+const { validateIdentity, profileAddressChange, MAX_NAME_LENGTH } = require('./customer-identity');
 
 export default function CustomerIdentityScreen({ api, registrationToken, authToken, customer = {}, onComplete, onExit, onPrivacy, onDelete, editing = false }) {
   const [firstName, setFirstName] = useState(customer.firstName || '');
   const [lastName, setLastName] = useState(customer.lastName || '');
+  const [address, setAddress] = useState(customer.address || ''), [postalCode, setPostalCode] = useState(customer.postalCode || ''), [city, setCity] = useState(customer.city || '');
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('');
   const working = useRef(false);
   const identity = validateIdentity({ firstName, lastName });
-  const visibleError = message || (firstName.trim() && lastName.trim() ? identity.error : '');
+  const addressChange = profileAddressChange(customer, { address, postalCode, city }, editing);
+  const visibleError = message || addressChange.error || (firstName.trim() && lastName.trim() ? identity.error : '');
   const save = async () => {
     if (working.current) return;
     if (identity.error) { setMessage(identity.error); return; }
+    if (addressChange.error) { setMessage(addressChange.error); return; }
     working.current = true; setBusy(true); setMessage('');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000);
     try {
@@ -19,7 +22,7 @@ export default function CustomerIdentityScreen({ api, registrationToken, authTok
       const response = await fetch(`${api}${registering ? '/auth/sms/register' : `/customers/${encodeURIComponent(customer.id)}`}`, {
         method: registering ? 'POST' : 'PATCH', signal: controller.signal,
         headers: { 'Content-Type': 'application/json', ...(!registering ? { Authorization: `Bearer ${authToken}` } : {}) },
-        body: JSON.stringify({ firstName: identity.firstName, lastName: identity.lastName, ...(registering ? { registrationToken } : {}) }),
+        body: JSON.stringify({ firstName: identity.firstName, lastName: identity.lastName, ...addressChange.payload, ...(registering ? { registrationToken } : {}) }),
       });
       const result = await response.json();
       if (!response.ok || !result.customer) throw new Error(result.error || 'Impossible d’enregistrer tes informations.');
@@ -38,8 +41,17 @@ export default function CustomerIdentityScreen({ api, registrationToken, authTok
       <Text style={s.label}>Nom de famille · obligatoire</Text>
       <TextInput accessibilityLabel="Nom de famille obligatoire" value={lastName} onChangeText={value => { setLastName(value); setMessage(''); }} autoComplete="family-name" textContentType="familyName" autoCapitalize="words" autoCorrect={false} maxLength={MAX_NAME_LENGTH} editable={!busy} placeholder="Ton nom de famille" placeholderTextColor="#77645A" style={s.input} onSubmitEditing={save} />
       <Text style={s.note}>Les deux champs sont obligatoires. L’anniversaire restera facultatif.</Text>
+      {editing && <>
+        <Text style={s.label}>Adresse de livraison · facultative</Text>
+        <TextInput accessibilityLabel="Adresse de livraison" value={address} onChangeText={value => { setAddress(value); setMessage(''); }} autoComplete="street-address" textContentType="fullStreetAddress" maxLength={200} editable={!busy} placeholder="Numéro et rue" style={s.input} />
+        <Text style={s.label}>Code postal</Text>
+        <TextInput accessibilityLabel="Code postal" value={postalCode} onChangeText={value => { setPostalCode(value); setMessage(''); }} keyboardType="number-pad" autoComplete="postal-code" textContentType="postalCode" maxLength={5} editable={!busy} placeholder="76600" style={s.input} />
+        <Text style={s.label}>Ville</Text>
+        <TextInput accessibilityLabel="Ville" value={city} onChangeText={value => { setCity(value); setMessage(''); }} autoComplete="postal-address-locality" textContentType="addressCity" maxLength={80} editable={!busy} placeholder="Le Havre" style={s.input} />
+        <Text style={s.note}>Le téléphone, les points et tes commandes ne sont pas modifiés.</Text>
+      </>}
       {!!visibleError && <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={s.error}>{visibleError}</Text>}
-      <Pressable accessibilityRole="button" disabled={busy || !!identity.error} onPress={save} style={[s.button, (busy || !!identity.error) && s.dim]}><Text style={s.buttonText}>{busy ? 'Enregistrement…' : registrationToken ? 'Créer mon compte' : 'Enregistrer et continuer'}</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={busy || !!identity.error || !!addressChange.error} onPress={save} style={[s.button, (busy || !!identity.error || !!addressChange.error) && s.dim]}><Text style={s.buttonText}>{busy ? 'Enregistrement…' : registrationToken ? 'Créer mon compte' : 'Enregistrer et continuer'}</Text></Pressable>
     </View>
     <Pressable accessibilityRole="button" disabled={busy} onPress={onExit} style={s.link}><Text style={s.linkText}>{registrationToken ? 'Annuler l’inscription' : editing ? 'Annuler' : 'Me déconnecter'}</Text></Pressable>
     {!!onPrivacy && <Pressable accessibilityRole="button" onPress={onPrivacy} style={s.link}><Text style={s.linkText}>Confidentialité</Text></Pressable>}
