@@ -40,7 +40,7 @@ function finalizationPreview(db, now = new Date()) {
   const contest = db.referralContest;
   const { contestStatus, contestRanking } = require('./referral-contest');
   if (!contest || contestStatus(contest, new Date(now)) !== 'closed') fail('Les lots ne peuvent être validés qu’après la clôture du concours.', 409);
-  const ranking = contestRanking(db, contest), winners = ranking.slice(0, 3);
+  const ranking = contestRanking(db, contest, new Date(now)), winners = ranking.slice(0, 3);
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify([contest.id, contest.revision, ranking])).digest('hex');
   return { contestId: contest.id, rankingFingerprint: fingerprint, winners, tied: winners.some(winner => winner.tied),
     minimumStartMonth: earliestFullMonth(now), eligibleMenus: eligibleMenuIds().map(id => ({ id, name: PRODUCT_CATALOG[id].name })), rules: CONTEST_PRIZE_RULES };

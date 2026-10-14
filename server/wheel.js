@@ -90,6 +90,12 @@ function referralTurns(database, sponsorId, wheel) { return eligibleReferrals(da
 
 function customerWheelState(database, customerId, now = new Date()) {
   const wheel = database.wheel || defaultWheel();
+  const rankingBonus = database.referralContest?.status === 'published' && database.referralContest.wheelPointsInRanking === true;
+  // The owner opts into the ranking bonus by publishing that contest's rules.
+  // Do not change the wheel's odds, credit, turns or historical stored rules.
+  const baseRules = typeof wheel.officialRules === 'string' ? wheel.officialRules : '';
+  const officialRules = rankingBonus ? baseRules.replace('Le concours de classement est distinct et reste fermé.', 'Le concours de classement reste un jeu distinct.') +
+    ' Si tu participes au concours de classement Bibou, chaque point réellement gagné à la roue pendant sa période ajoute aussi un point au classement, sans retirer le gain de fidélité. Seuls les tours valides sont retenus, une fois ; cadeaux, remises et tours fictifs sont exclus du bonus. Consulte les dates, les conditions et le règlement complet dans le concours.' : baseRules;
   const orders = (database.orders || []).filter(order => order.customerId === customerId);
   const earnedFromReferrals = referralTurns(database, customerId, wheel);
   const spins = (database.wheelSpins || []).filter(spin => spin.customerId === customerId);
@@ -122,7 +128,7 @@ function customerWheelState(database, customerId, now = new Date()) {
     stbTickets: stb.customerState(database, customerId, now),
     baseSegments: WHEEL_TIERS,
     segments: stb.availableMatch(database, now) ? Object.fromEntries(Object.entries(WHEEL_TIERS).map(([tier, segments]) => [tier, [...segments.map(([id, weight]) => [id, id === 'none' ? weight - 1 : weight]), ['stb-tickets', 1]]])) : WHEEL_TIERS,
-    rules: activeWheel(wheel, now) ? wheel.officialRules + (stb.availableMatch(database, now) ? ' Pendant la disponibilité du lot STB, 1 % des tours remplace un résultat sans gain par un lot unique de deux places : la probabilité sans gain passe alors de 50 % à 49 %. Le lot est attribué au plus tard cinq jours avant le match ; si nécessaire, un tirage de rattrapage est effectué parmi les participants éligibles, une chance par client. ' + stb.config(database).rules : '') : null,
+    rules: activeWheel(wheel, now) ? officialRules + (stb.availableMatch(database, now) ? ' Pendant la disponibilité du lot STB, 1 % des tours remplace un résultat sans gain par un lot unique de deux places : la probabilité sans gain passe alors de 50 % à 49 %. Le lot est attribué au plus tard cinq jours avant le match ; si nécessaire, un tirage de rattrapage est effectué parmi les participants éligibles, une chance par client. ' + stb.config(database).rules : '') : null,
     prizes: spins.filter(spin => !spin.revokedAt).map(spin => ({ id: spin.id, prizeId: spin.prizeId, label: spin.label, code: spin.code || null,
       redemptionStatus: spin.redemptionStatus || null, awardedAt: spin.awardedAt, expiresAt: spin.expiresAt || null })),
   };

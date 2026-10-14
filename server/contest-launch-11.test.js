@@ -61,7 +61,8 @@ test('Règlement préparé : classement partagé inchangé, cinq bonus réservé
   assert.match(scoring, /1 point par jour civil/);
   assert.match(scoring, /1 point par euro effectivement payé/);
   assert.match(scoring, /commentaires et mentions Instagram n’ajoutent aucun point/);
-  assert.match(scoring, /points gagnés à la roue.*ne sont pas ajoutés au classement/);
+  assert.equal(preset.wheelPointsInRanking, true);
+  assert.match(scoring, /points effectivement gagnés à la roue.*rapportent le même nombre de points au classement/);
   const bonus = preset.rules.split('7. Cinq tirages bonus réservés à Instagram\n')[1].split('\n\n10.')[0];
   assert.match(bonus, /trois autres comptes Instagram différents/);
   assert.match(bonus, /Une seule chance par compte Instagram et par quinzaine/);

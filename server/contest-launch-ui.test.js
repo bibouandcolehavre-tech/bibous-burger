@@ -38,7 +38,9 @@ test('Préparation propriétaire : 11 h, fin décembre, règles inchangées et a
   assert.equal(h.q('#contest-form [name="endDate"]').value, '2026-12-31');
   assert.match(h.q('#news-cards').innerHTML, /31 décembre/); assert.equal(h.q('#contest-publish').disabled, true);
   assert(h.calls.every(c => c.method === 'GET')); assert.equal(h.db.referralContest, undefined);
-  assert(preset.rules.length < 12000); assert.match(preset.rules, /Les points fidélité,|points fidélité, les points gagnés à la roue/);
+  assert(preset.rules.length < 12000); assert.match(preset.rules, /points de fidélité habituels restent séparés/);
+  assert.equal(h.q('#contest-form [name="wheelPointsInRanking"]').checked, true);
+  assert.match(preset.rules, /gagner 40 points à la roue ajoute 40 points de fidélité et 40 points au classement/);
   assert.match(preset.rules, /1 point par euro/); assert.match(preset.rules, /30 jours à partir de la date du tirage/);
 });
 test('Programmation UI : annonce et brouillon sauvegardés, confirmation indispensable, une publication et zéro notification', async () => {
@@ -50,6 +52,7 @@ test('Programmation UI : annonce et brouillon sauvegardés, confirmation indispe
   assert.equal(h.calls.filter(c => c.method === 'POST').length, 1);
   assert.equal(h.db.referralContest.status, 'published'); assert.equal(publicContest(h.db, h.now).status, 'scheduled');
   assert.equal(publicContest(h.db, h.now).startTime, '11:00'); assert.equal(h.q('#contest-publish').disabled, true);
+  assert.equal(publicContest(h.db, h.now).scoring.pointsPerAwardedWheelPoint, 1);
   await h.q('#contest-publish').onclick(); assert.equal(h.calls.filter(c => c.method === 'POST').length, 1);
   assert(!h.calls.some(c => /finalize|spin|sms|push|payment|orders/.test(c.url))); assert.equal(h.db.orders.length, 0);
 });
