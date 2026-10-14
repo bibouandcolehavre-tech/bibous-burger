@@ -46,6 +46,7 @@ const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, re
 const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance, cancelDepositReservation } = require('./reservation-deposit');
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
+const welcomeRewardHistory = require('./welcome-reward-history');
 const { applySupportCredits } = require("./support-credits");
 const serviceSchedule = require("./service-schedule");
 const amendments = require("./order-amendments");
@@ -1032,7 +1033,8 @@ const server = http.createServer(async (request, response) => {
     const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
     const stbChanged = wheelGame.reconcileStbTickets(database);
     const quantityChanged = quantityStock.reconcile(database);
-    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || stbChanged || quantityChanged) await writeDatabase(database);
+    const welcomeHistoryChanged = welcomeRewardHistory.reconcile(database, customerSessionSecret);
+    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || stbChanged || quantityChanged || welcomeHistoryChanged) await writeDatabase(database);
 
     if (url.pathname === '/api/dashboard/stb-tickets') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -1321,6 +1323,7 @@ const server = http.createServer(async (request, response) => {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
         ensureReferralCode(customer, database);
         grantWelcomeReward(customer);
+        welcomeRewardHistory.applyToCustomer(database, customer, customerSessionSecret);
         database.customers.push(customer);
       }
       customer.phone = normalizedPhone;
@@ -1346,6 +1349,7 @@ const server = http.createServer(async (request, response) => {
         customer = { id: `customer-${database.nextCustomerId++}`, ...identity, phone: proof.phone, address: '', postalCode: '', city: 'Le Havre', points: 0, weeklyOrders: 0, createdAt: now };
         ensureReferralCode(customer, database);
         grantWelcomeReward(customer);
+        welcomeRewardHistory.applyToCustomer(database, customer, customerSessionSecret);
         database.customers.push(customer);
       }
       // A retry/concurrent registration never renames an already completed account.
@@ -1390,6 +1394,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "DELETE" && url.pathname === "/api/customer/account") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Reconnecte-toi pour supprimer ton compte." });
+      welcomeRewardHistory.rememberBeforeDeletion(database, customer, customerSessionSecret);
       const deletion = anonymizeCustomerAccount(database, customer);
       await writeDatabase(database);
       return send(response, 200, { deleted: true, deletion });
@@ -2245,7 +2250,12 @@ if (orderSms.configured(orderSmsConfig)) {
 }
 const maintainContestPrivacy = async () => {
   const release = await acquireDatabase();
-  try { const database = await readDatabase(); if (purgeExpiredContestEntries(database)) await writeDatabase(database); }
+  try {
+    const database = await readDatabase();
+    const contestPurged = purgeExpiredContestEntries(database);
+    const welcomePurged = welcomeRewardHistory.reconcile(database, customerSessionSecret);
+    if (contestPurged || welcomePurged) await writeDatabase(database);
+  }
   catch { console.error('Entretien des données du concours : échec, nouvelle tentative dans une heure.'); }
   finally { release(); }
 };
