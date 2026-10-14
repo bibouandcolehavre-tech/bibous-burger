@@ -115,6 +115,23 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .customer-favorites span,.customer-favorites small { display:block; color:var(--muted); font-size:11px; }
 .customer-favorites strong { display:block; margin:5px 0; }
 .customer-detail .menu-note { margin-top:12px; font-size:11px; }
+.customer-points-sources { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.customer-points-sources > div { border:1px solid var(--line); border-radius:12px; padding:14px; }
+.customer-points-sources span { display:block; font-size:11px; color:var(--muted); }
+.customer-points-sources strong { display:block; font-size:22px; margin-top:6px; }
+.customer-gains-confirmed,.customer-gains-warning { border-radius:10px; padding:12px; font-size:12px; line-height:1.6; }
+.customer-gains-confirmed { color:#256547; background:#edf7ef; }
+.customer-gains-warning { color:#7a4415; background:#fff2df; }
+.customer-wheel-summary { display:flex; flex-wrap:wrap; gap:10px 18px; padding:14px; border:1px solid var(--line); border-radius:12px; font-size:13px; }
+.customer-gains-history { border:1px solid var(--line); border-radius:12px; margin:12px 0; overflow:hidden; }
+.customer-gains-history > summary { padding:14px; font-size:12px; font-weight:700; cursor:pointer; }
+.customer-gains-history > p { padding:0 14px 14px; }
+.customer-gains-history > ul,.customer-gift-history { list-style:none; margin:0; padding:0 14px; max-height:360px; overflow-y:auto; }
+.customer-gains li { display:flex; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--line); font-size:12px; overflow-wrap:anywhere; }
+.customer-gains li > div { min-width:0; flex:1; }
+.customer-gains li > span { min-width:90px; max-width:38%; text-align:right; }
+.customer-gains li small { display:block; color:var(--muted); font-size:11px; margin-top:5px; line-height:1.5; }
+@media (max-width:430px) { .customer-gains li { gap:8px; } .customer-gains li > span { min-width:75px; } .customer-points-sources > div { padding:10px; } }
 @media (max-width:1100px) { .customers-layout { grid-template-columns:1fr; } .customer-detail { padding:20px; } }
 .backup-section { margin-top:30px; }
 .backup-section[hidden] { display:none; }

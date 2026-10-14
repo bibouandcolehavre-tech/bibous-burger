@@ -2,6 +2,7 @@ const { REWARD_DEFINITIONS } = require("./rewards");
 const { bibouPlusStatus } = require("./bibou-plus");
 const { weekStartKey } = require("./loyalty");
 const { orderProductInsights } = require("./order-insights");
+const { customerGains } = require("./customer-gains");
 
 const PRESTIGES = REWARD_DEFINITIONS.map((reward, index) => ({
   level: index + 1, points: reward.points,
@@ -91,6 +92,7 @@ function dashboardCustomerDetail(database, id, now = new Date()) {
   const favoriteProducts = orderProductInsights(paidOrders.filter((order) => order.status !== "cancelled")).slice(0, 3);
   return {
     customer: summary,
+    gains: customerGains(database, customer, now),
     favoriteProducts,
     rewards: REWARD_DEFINITIONS.map((reward) => {
       const claim = claims.find((item) => item.rewardId === reward.id);
