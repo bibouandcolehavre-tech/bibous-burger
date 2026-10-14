@@ -162,6 +162,33 @@ const orderWithRemark = comment => ({
 });
 
 for (const [name, render] of [['préparation', printer.preparationEnvelope], ['récapitulatif', printer.orderReceiptEnvelope]]) {
+  test(`${name} : le Menu Solo contient 3 tenders, précisé après ses choix sans modifier la commande`, () => {
+    const order = { ...orderWithRemark('Sauce à part'), items: [
+      { productId: 'menu-solo-tenders', name: 'Menu Solo', quantity: 1, price: 10.9, options: [
+        { groupId: 'solo-fries', label: 'Menu Solo : frites cheddar sans bacon en remplacement', price: 1 },
+        { groupId: 'drink', label: 'Boisson exemple', price: 0 },
+      ] },
+      { productId: 'classique', name: 'Burger suivant', quantity: 1, price: 9.9, options: [] },
+    ] };
+    const original = JSON.stringify(order), request = render(order);
+    assert.equal((request.match(/Ce menu contient 3 tenders\./g) || []).length, 1);
+    assert.ok(request.indexOf('Ce menu contient 3 tenders.') > request.indexOf('Boisson exemple'));
+    assert.ok(request.indexOf('Ce menu contient 3 tenders.') < request.indexOf('1 x Burger suivant'));
+    if (name === 'récapitulatif') assert.ok(request.indexOf('Ce menu contient 3 tenders.') < request.indexOf('Prix article'));
+    assert.match(request, /frites cheddar sans bacon en remplacement/);
+    assert.match(request, /REMARQUE CLIENT/);
+    assert.equal(JSON.stringify(order), original);
+  });
+
+  test(`${name} : mention des 3 tenders uniquement pour le produit Menu Solo, même en plusieurs exemplaires`, () => {
+    const item = { productId: 'menu-solo-tenders', name: 'Nom ancien', quantity: 2, price: 9.9, options: [] };
+    assert.equal((render({ ...orderWithRemark(''), items: [item] }).match(/Ce menu contient 3 tenders\./g) || []).length, 1);
+    for (const productId of ['menu-duo-tenders', 'tenders-xl-3', 'classique-menu', 'dynamite-menu', 'unknown']) {
+      const request = render({ ...orderWithRemark(''), items: [{ ...item, productId, name: 'Menu Solo' }] });
+      assert.doesNotMatch(request, /Ce menu contient 3 tenders\./, productId);
+    }
+  });
+
   test(`${name} : remarque globale en gras avant les articles, une seule fois et sans modifier la commande`, () => {
     const order = orderWithRemark('Remplacer le cheddar par du chèvre sur le burger exemple.');
     const original = JSON.stringify(order);
