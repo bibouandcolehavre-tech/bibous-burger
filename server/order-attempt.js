@@ -10,12 +10,14 @@ function validateRequestId(value) {
 }
 
 function orderFingerprint(input) {
-  const selection = item => ({ groupId: item.groupId, id: item.id });
+  // Keep malformed entries intact enough for catalogue validation to reject
+  // them with a 400, instead of throwing before that validation can run.
+  const selection = item => ({ groupId: item?.groupId, id: item?.id });
   const canonical = {
     customerId: input.customerId, method: input.method, serviceDate: input.serviceDate, slot: input.slot,
     items: Array.isArray(input.items) ? input.items.map(item => ({
-      productId: item.productId, quantity: item.quantity,
-      selections: Array.isArray(item.selections) ? item.selections.map(selection) : item.selections,
+      productId: item?.productId, quantity: item?.quantity,
+      selections: Array.isArray(item?.selections) ? item.selections.map(selection) : item?.selections,
     })) : input.items,
   };
   if (typeof input.comment === 'string' && input.comment.trim()) canonical.comment = input.comment.trim();

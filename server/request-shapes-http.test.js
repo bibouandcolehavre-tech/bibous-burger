@@ -39,3 +39,20 @@ test('HTTP livraison : pas de distance inventée lorsque Google ne trouve aucun 
     assert.equal(result.status, 200); assert.equal(result.body.deliveryFee, fee); assert.equal(result.body.withinZone, fee !== null);
   }
 });
+
+test('HTTP : paniers ou options incomplets sont refusés sans panne et sans commande créée', { timeout: 20000 }, async t => {
+  const fx = await fixture(t), failures = [];
+  for (const items of [[null], [false], [7], ['invalid'], [[]],
+    [{ productId: 'classique', quantity: 1, selections: [null] }],
+    [{ productId: 'classique', quantity: 1, selections: [false] }],
+    [{ productId: 'classique', quantity: 1, selections: [[]] }],
+    [{ productId: 'classique', quantity: 1, selections: [{ groupId: { toString: null }, id: 'viande' }] }],
+    [{ productId: { toString: null }, quantity: 1, selections: [] }]
+  ]) {
+    const result = await fx.request('/orders', { customerId: fx.customer.id, requestId: 'fictitious-incomplete-cart',
+      method: 'pickup', serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00', items });
+    if (result.status !== 400) failures.push({ items, status: result.status });
+  }
+  assert.deepEqual(failures, []);
+  assert.deepEqual(JSON.parse(await fs.readFile(fx.file, 'utf8')).orders, []);
+});
