@@ -13,6 +13,7 @@ const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../cus
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
 const merchantPromotions = require('./merchant-promotions');
+const personalMenuGifts = require('./personal-menu-gifts');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
@@ -2300,6 +2301,13 @@ if (keyyo.configured(keyyoConfig)) {
   keyyoWorker.unref();
   server.once('close', () => clearInterval(keyyoWorker));
 }
+server.once('listening', async () => {
+  if (!personalMenuGifts.configuredCount) return;
+  try {
+    const summary = personalMenuGifts.readiness(await readDatabase());
+    console.log(`Menus offerts personnels vérifiés : ${summary.available} disponible(s), ${summary.configured} configuré(s).`);
+  } catch { console.error('Menus offerts personnels : vérification indisponible.'); }
+});
 const onListen = () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`);
 if (process.env.LISTEN_HOST) server.listen(port, process.env.LISTEN_HOST, onListen);
 else server.listen(port, onListen);
