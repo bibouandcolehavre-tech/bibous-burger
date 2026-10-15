@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { RESTAURANT } = require('../restaurant-info');
 const { enrichIndex, restaurantPage, supportPage, installPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
 const sample = '<!DOCTYPE html><html lang="en"><head><title>Bibou</title></head><body><noscript>You need JavaScript</noscript><div id="root"></div><script src="/app.js" defer></script></body></html>';
@@ -81,16 +82,48 @@ test('Le générateur complète le vrai export sans modifier le JavaScript ou co
   assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
   assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
 });
-test('Lien intelligent : Android vers Google Play, iPhone vers la web app tant que l’App Store n’est pas public', () => {
+test('Lien intelligent : Android vers Google Play, iPhone et iPad vers la fiche App Store publiée', () => {
   const page = installPage();
   assert.match(page, /com\.krokly\.bibousburgers/);
   assert.match(page, /Android/);
   assert.match(page, /iPhone\|iPad\|iPod/);
   assert.match(page, /MacIntel/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /Ouvrir sur iPhone/);
-  assert.match(page, /https:\/\/bibous-burger-app\.onrender\.com\//);
-  assert.doesNotMatch(page, /apps\.apple\.com|6817744169/, 'Ne pas envoyer vers une fiche Apple non publiée.');
+  assert.match(page, /Télécharger sur l’App Store/);
+  assert.match(page, /https:\/\/apps\.apple\.com\/fr\/app\/bibous-burgers\/id6817744169/);
+  assert.doesNotMatch(page, /Ouvrir sur iPhone|pendant la préparation|pas encore/);
+  const iphoneButton = page.match(/<a class="button secondary" href="([^"]+)"/)[1];
+  assert.equal(iphoneButton, 'https://apps.apple.com/fr/app/bibous-burgers/id6817744169');
+  const androidButton = page.match(/<a class="button" href="([^"]+)"/)[1].replaceAll('&amp;', '&');
+  assert.equal(androidButton, 'https://play.google.com/store/apps/details?id=com.krokly.bibousburgers&hl=fr');
+});
+test('SmartLink: real generated script redirects iOS and Android, while desktop keeps both buttons', () => {
+  const script = installPage().match(/<script>([\s\S]*?)<\/script>/)[1];
+  const apple = 'https://apps.apple.com/fr/app/bibous-burgers/id6817744169';
+  const google = 'https://play.google.com/store/apps/details?id=com.krokly.bibousburgers&hl=fr';
+  const cases = [
+    { name: 'iPhone', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', expected: apple },
+    { name: 'iPad', userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)', expected: apple },
+    { name: 'iPod', userAgent: 'Mozilla/5.0 (iPod touch)', expected: apple },
+    { name: 'desktop-class iPad', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', platform: 'MacIntel', maxTouchPoints: 5, expected: apple },
+    { name: 'Android', userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 8)', expected: google },
+    { name: 'Instagram iPhone browser', userAgent: 'Mozilla/5.0 (iPhone) Instagram 402.0.0', expected: apple },
+    { name: 'SMS iPhone browser', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) AppleWebKit/605.1.15 Mobile/15E148', expected: apple },
+    { name: 'Mac', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', platform: 'MacIntel', maxTouchPoints: 0, expected: null },
+    { name: 'Windows', userAgent: 'Mozilla/5.0 (Windows NT 10.0)', expected: null },
+    { name: 'unknown', userAgent: '', expected: null },
+  ];
+  for (const item of cases) {
+    const destinations = [], status = { textContent: '' };
+    vm.runInNewContext(script, {
+      navigator: { userAgent: item.userAgent, platform: item.platform || '', maxTouchPoints: item.maxTouchPoints || 0 },
+      window: { location: { replace: target => destinations.push(target) } },
+      document: { getElementById: id => { assert.equal(id, 'status'); return status; } },
+      setTimeout: (callback, delay) => { assert.equal(delay, 900); callback(); },
+    }, { timeout: 1000 });
+    assert.deepEqual(destinations, item.expected ? [item.expected] : [], item.name);
+    if (!item.expected) assert.equal(status.textContent, 'Choisis la version de ton appareil.');
+  }
 });
 test('Assistance publique : contacts et liens utiles sans données privées', () => {
   const page = supportPage();
