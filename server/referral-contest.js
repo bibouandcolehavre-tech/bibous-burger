@@ -77,7 +77,8 @@ function publicContest(database, now = new Date()) {
   const status = contestStatus(contest, now);
   if (status === 'inactive') return { status };
   const { id, revision, title, startDate, endDate, region, firstPrize, secondPrize, thirdPrize, rules } = contest;
-  return { id, revision, title, startDate, startTime: contest.startTime || '00:00', endDate, region, firstPrize, secondPrize, thirdPrize, rules: `${rules}${wheelBonusEnabled(contest) ? '\n\n' + CONTEST_WHEEL_BONUS_RULES : ''}\n\nConditions d’utilisation des menus gagnés\n${CONTEST_PRIZE_RULES}`, status, scoring: scoringFor(contest) };
+  const { clarifyContestRules, RULES_CLARIFICATION_VERSION } = require('./contest-rules-clarifications');
+  return { id, revision, title, startDate, startTime: contest.startTime || '00:00', endDate, region, firstPrize, secondPrize, thirdPrize, rules: `${clarifyContestRules(rules)}${wheelBonusEnabled(contest) ? '\n\n' + CONTEST_WHEEL_BONUS_RULES : ''}\n\nConditions d’utilisation des lots du classement uniquement\n${CONTEST_PRIZE_RULES}`, rulesClarificationVersion: RULES_CLARIFICATION_VERSION, status, scoring: scoringFor(contest) };
 }
 
 const verifiedPhone = customer => /^\+33[67]\d{8}$/.test(customer?.phone || '') && customer.verifiedPhone === customer.phone && Number.isFinite(Date.parse(customer.phoneVerifiedAt));
@@ -241,6 +242,7 @@ function dashboardContest(database, now = new Date()) {
     const retained = Number.isFinite(original) && Number.isFinite(refunded) ? Math.min(total, Math.max(0, original - refunded)) : total;
     return sum + Math.round(retained * 100);
   }, 0);
+  if (contest.status === 'published') draft.rules = require('./contest-rules-clarifications').clarifyContestRules(draft.rules);
   return { draft, status: contestStatus(contest, now), missing: readiness(contest), launchLocked: contest.status === 'draft', scoring: scoringFor(contest), statistics: { participants: participants.length, newReferrals: participants.filter(entry => entry.sponsorId && entry.newCustomer).length, paidCustomers: paid.size, paidOrders: eligibleOrders.length, paidRevenue: paidRevenueCents / 100 }, ranking: ranking.slice(0, 100), rankingTotal: ranking.length };
 }
 

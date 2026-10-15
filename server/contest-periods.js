@@ -60,6 +60,6 @@ function dashboardContestPeriods(database, requestedPeriod, now = new Date()) {
     periods: periods.map(p => ({ ...p, status: phase(p) })), period, participants, total: participants.length, fingerprint, bonusPrize: { menus: 1, validDays: 30 },
     exportReady: Boolean(period?.status === 'complete'), actionLabels: ACTION_LABELS,
     excludedTail: selected && periods.length && periods.at(-1).endDate < contest.endDate ? { startDate: shiftDate(periods.at(-1).endDate, 1), endDate: contest.endDate } : null,
-    rules: 'Une chance par compte inscrit ayant une activité enregistrée dans cette quinzaine, avec ou sans achat. Les tours de roue ne donnent ni chance supplémentaire ni activité éligible. Aucun gagnant n’est choisi ici.' };
+    rules: 'Relevé des activités Bibou uniquement, pas une liste de tirage Instagram. Les commentaires Instagram admissibles doivent être vérifiés séparément sur la publication de chaque quinzaine : trois autres comptes mentionnés, une chance par compte Instagram, nouveau commentaire requis à chaque période. Aucun gagnant n’est choisi ici.' };
 }
 module.exports = { periodsFor, dashboardContestPeriods, ACTION_LABELS };
