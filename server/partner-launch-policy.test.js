@@ -7,8 +7,8 @@ test('STB opening appears on Android and the public web home', () => {
   assert.equal(shouldShowPartnerLaunch('web', 'menu'), true);
 });
 
-test('STB opening stays off iPhone and direct legal or contest pages', () => {
-  assert.equal(shouldShowPartnerLaunch('ios', 'menu'), false);
+test('STB opening is preserved on iPhone; direct web legal and contest pages bypass it', () => {
+  assert.equal(shouldShowPartnerLaunch('ios', 'menu'), true);
   assert.equal(shouldShowPartnerLaunch('web', 'privacy'), false);
   assert.equal(shouldShowPartnerLaunch('web', 'contest'), false);
 });

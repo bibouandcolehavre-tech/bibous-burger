@@ -27,7 +27,7 @@ test('Accueil SEO : français, canonical stable et contenu public sans JavaScrip
   assert.throws(() => enrichIndex('<html></html>'), /Structure Expo/);
   assert.throws(() => enrichIndex(html), /Structure Expo/);
 });
-test('Affichage paysage validé : CSS du site uniquement, sans modifier le parcours ou le mobile', () => {
+test('Responsive desktop uses the shared journeys and leaves mobile rules untouched', () => {
   const css = fs.readFileSync(path.join(__dirname, '../web/desktop-layout.css'), 'utf8');
   const html = enrichIndex(sample);
   assert.equal((html.match(/id="bibou-desktop-layout"/g) || []).length, 1);
@@ -36,9 +36,11 @@ test('Affichage paysage validé : CSS du site uniquement, sans modifier le parco
   assert.match(rules, /^@media \(min-width: 900px\) \{/);
   assert.match(css, /max-width: none !important/);
   assert.match(css, /width: 100% !important/);
-  assert.match(css, /font-size: 16px !important/);
-  assert.match(css, /font-size: 12px !important/);
-  assert.doesNotMatch(css, /url\(|@import|display:|position:|order:|visibility:|content:/);
+  assert.match(css, /\[data-bibou="journey"\]/);
+  assert.match(css, /grid-template-columns: 210px minmax\(0, 1fr\)/);
+  assert.match(css, /\[data-bibou="navigation"\]/);
+  assert.match(css, /\[data-bibou="catalogue"\]/);
+  assert.doesNotMatch(css, /url\(|@import|visibility:\s*hidden/);
   assert.match(html, /<script src="\/app.js" defer><\/script>/, 'Le JavaScript existant reste le même.');
 });
 test('Le restaurant possède une vraie page HTML publique et les données structurées correspondantes', () => {

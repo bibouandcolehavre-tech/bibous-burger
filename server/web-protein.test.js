@@ -11,9 +11,9 @@ test('web protein options are neutral, real vegetarian removes meat and is recor
     assert.equal(cart.subtotal,product.price);
   }
 });
-test('new consumer protein interface is web only; Android and iOS UI stays gated off',()=>{
+test('the approved consumer protein interface remains shared on all platforms',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
-  assert.match(source,/const NEW_PROTEIN_CHOICES = Platform.OS === 'web';/);
+  assert.match(source,/const NEW_PROTEIN_CHOICES = \['web', 'android', 'ios'\]\.includes\(Platform.OS\);/);
   assert.match(source,/if \(NEW_PROTEIN_CHOICES\) \{ group = kioskRecipeGroup/);
   assert.match(source,/NEW_PROTEIN_CHOICES \? kioskRecipeChoices/);
   assert.match(source,/group.helper \|\|/);
