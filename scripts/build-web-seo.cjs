@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { APP_STORE_LINKS } = require('../app-store-links');
 const { RESTAURANT: info } = require('../restaurant-info');
 // The approved landscape preview is presentation-only and web-only. Keep its
 // stylesheet outside App.js so native applications and their builds are unchanged.
@@ -75,17 +76,15 @@ function supportPage() {
   <footer><a href="/">Retour à l'application</a> · <a href="/?legal=privacy">Confidentialité</a></footer></body></html>`;
 }
 function installPage() {
-  const androidUrl = 'https://play.google.com/store/apps/details?id=com.krokly.bibousburgers&hl=fr';
-  // Public App Store listing verified on 13 October 2026.
-  const iphoneUrl = 'https://apps.apple.com/fr/app/bibous-burgers/id6817744169';
+  const androidUrl = APP_STORE_LINKS.android, iphoneUrl = APP_STORE_LINKS.ios;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Installer Bibou's Burgers</title><meta name="description" content="Ouvrez Bibou's Burgers sur votre téléphone.">
-  <meta name="robots" content="noindex, follow"><meta name="theme-color" content="#267e79">
-  <style>:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(145deg,#cf8269 0%,#a97e72 42%,#287f79 100%);color:#fff9ef;font:17px/1.5 system-ui,sans-serif;display:grid;place-items:center;padding:24px}main{width:min(100%,440px);text-align:center}.logo{display:block;width:140px;height:140px;object-fit:cover;border-radius:32px;margin:0 auto 24px;box-shadow:0 15px 35px #173b3760}h1{font-size:clamp(31px,8vw,42px);line-height:1.1;margin:0 0 12px}p{margin:0 0 24px}.choices{display:grid;gap:12px;margin-top:28px}.button{display:block;min-height:54px;padding:14px 18px;border-radius:15px;background:#fff9ef;color:#1b605c;font-weight:800;text-decoration:none}.button.secondary{background:#174f4bcc;color:#fff9ef;border:1px solid #fff9ef88}.note{font-size:14px;color:#fff9efdd;margin-top:25px}a:focus-visible{outline:3px solid white;outline-offset:4px}</style></head><body>
-  <main><img class="logo" src="/seo/bibou-icon.png" alt="Logo Bibou's Burgers" width="140" height="140">
+  <meta name="robots" content="noindex, follow"><meta name="theme-color" content="#315B4B">
+  <style>:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#315B4B;color:#fff9ef;font:17px/1.5 system-ui,sans-serif;display:grid;place-items:center;padding:24px}main{width:min(100%,440px);text-align:center}.logo{display:block;width:min(260px,75vw);height:130px;object-fit:contain;margin:0 auto 24px}h1{font-size:clamp(31px,8vw,42px);line-height:1.1;margin:0 0 12px}p{margin:0 0 24px}.choices{display:grid;gap:12px;margin-top:28px}.button{display:block;min-height:54px;padding:14px 18px;border-radius:15px;background:#fff9ef;color:#1b605c;font-weight:800;text-decoration:none}.button.secondary{background:#174f4bcc;color:#fff9ef;border:1px solid #fff9ef88}.note{font-size:14px;color:#fff9efdd;margin-top:25px}a:focus-visible{outline:3px solid white;outline-offset:4px}</style></head><body>
+  <main><img class="logo" src="/seo/bibou-icon.png" alt="Logo Bibou's Burgers" width="260" height="130">
   <h1>Bibou's Burgers sur ton téléphone</h1><p id="status" role="status">On ouvre la bonne version pour toi…</p>
-  <div class="choices"><a class="button" href="${escape(androidUrl)}">Télécharger sur Google Play</a><a class="button secondary" href="${escape(iphoneUrl)}">Ouvrir sur iPhone</a></div>
-  <p class="note">Sur iPhone, la version web est disponible pendant la préparation de l'application App Store.</p></main>
+  <div class="choices"><a class="button" href="${escape(androidUrl)}">Télécharger sur Google Play</a><a class="button secondary" href="${escape(iphoneUrl)}">Télécharger sur l’App Store</a></div>
+  <p class="note">L’application est disponible sur iPhone et Android. <a href="/" style="color:inherit;text-underline-offset:3px">Continuer sur le site sans installer</a>.</p></main>
   <script>(function(){var ua=navigator.userAgent||'';var ipad=navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1;var target=/Android/i.test(ua)?${json(androidUrl)}:(/iPhone|iPad|iPod/i.test(ua)||ipad?${json(iphoneUrl)}:null);if(target){setTimeout(function(){window.location.replace(target)},900)}else{document.getElementById('status').textContent='Choisis la version de ton appareil.'}})();</script>
   </body></html>`;
 }
@@ -112,7 +111,7 @@ function build(directory = path.resolve(__dirname, '../dist')) {
   fs.mkdirSync(path.join(directory, 'app'), { recursive: true });
   fs.writeFileSync(path.join(directory, 'app/index.html'), installPage());
   fs.writeFileSync(path.join(directory, 'seo/restaurant.css'), css);
-  fs.copyFileSync(path.resolve(__dirname, '../assets/android-icon-gradient.png'), path.join(directory, 'seo/bibou-icon.png'));
+  fs.copyFileSync(path.resolve(__dirname, '../assets/bibous-official-wordmark-preview.png'), path.join(directory, 'seo/bibou-icon.png'));
   fs.copyFileSync(path.resolve(__dirname, '../assets/taurus.jpg'), path.join(directory, 'seo/taurus.jpg'));
   fs.writeFileSync(path.join(directory, 'robots.txt'), robots);
   fs.writeFileSync(path.join(directory, 'sitemap.xml'), sitemap);

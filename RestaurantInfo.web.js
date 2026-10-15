@@ -5,5 +5,6 @@ const { RESTAURANT: info } = require('./restaurant-info');
 export default function RestaurantInfo() {
   return <nav aria-label="Informations du restaurant" style={{ padding: '8px 0 0', textAlign: 'center', fontFamily: 'system-ui, sans-serif' }}>
     <a href={info.page} style={{ color: '#251914', fontSize: 13, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 3, display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 12px' }}>Infos pratiques</a>
+    <a href="/app/" style={{ color: '#315B4B', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 12px' }}>Télécharger l’application</a>
   </nav>;
 }

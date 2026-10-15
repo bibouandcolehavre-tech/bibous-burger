@@ -23,6 +23,7 @@ const { hasCompleteIdentity } = require('./customer-identity');
 const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
 const { readAuthResponse } = require("./auth-response");
 import RestaurantInfo from "./RestaurantInfo";
+import AppDownloadLinks from './AppDownloadLinks';
 const { bestClientOffer } = require('./crm-client');
 const { observeBrowserFocus } = require('./browser-focus');
 import { syncPushDevice, detachPushDevice, observePush } from "./push-client";
@@ -450,6 +451,7 @@ function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy,
     <StatusBar barStyle="dark-content" />
     <ScrollView contentContainerStyle={styles.nativeWelcome} showsVerticalScrollIndicator={false}>
       <View style={styles.nativeWelcomeBrand}><Image accessibilityLabel="Bibou’s Burgers" source={officialWordmarkPreview} resizeMode="contain" style={[styles.nativeWelcomeLogo, compactWelcome && styles.nativeWelcomeLogoCompact]} /></View>
+      <AppDownloadLinks />
       <View style={[styles.nativeWelcomeMain, animatedWelcome && styles.nativeWelcomeMainWeb]}>
         {animatedWelcome ? <WelcomeCarousel /> : <>
           <Text style={styles.nativeWelcomeEyebrow}>BIENVENUE CHEZ BIBOU</Text>

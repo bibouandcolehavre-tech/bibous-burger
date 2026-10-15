@@ -107,8 +107,27 @@ test('Lien intelligent : Android et iPhone vers leurs fiches publiques vérifié
   assert.match(page, /iPhone\|iPad\|iPod/);
   assert.match(page, /MacIntel/);
   assert.match(page, /window\.location\.replace/);
-  assert.match(page, /Ouvrir sur iPhone/);
+  assert.match(page, /Télécharger sur l’App Store/);
+  assert.match(page, /L’application est disponible sur iPhone et Android/);
+  assert.match(page, /Continuer sur le site sans installer/);
+  assert.doesNotMatch(page, /pendant la préparation|linear-gradient/);
   assert.match(page, /https:\/\/apps\.apple\.com\/fr\/app\/bibous-burgers\/id6817744169/);
+});
+test('Téléchargement web : liens présents dès l’accueil, destinations communes, aucune publicité dans les apps installées', () => {
+  const { APP_STORE_LINKS }=require('../app-store-links');
+  const web=fs.readFileSync(path.join(__dirname,'../AppDownloadLinks.web.js'),'utf8');
+  assert.match(web,/href=\{APP_STORE_LINKS.ios\}/);assert.match(web,/href=\{APP_STORE_LINKS.android\}/);
+  assert.match(web,/Télécharger sur iPhone/);assert.match(web,/Télécharger sur Android/);
+  assert.match(web,/sans installer/);assert.match(web,/minHeight: 46/);
+  assert.match(fs.readFileSync(path.join(__dirname,'../AppDownloadLinks.native.js'),'utf8'),/return null/);
+  const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
+  assert.match(source,/<AppDownloadLinks \/>/);
+  assert(source.indexOf('<AppDownloadLinks />')<source.indexOf('<View style={[styles.nativeWelcomeMain'));
+  assert(installPage().includes(APP_STORE_LINKS.ios));assert(installPage().includes(escape(APP_STORE_LINKS.android)));
+});
+test('Informations indexables : ne pas promettre une réservation sans paiement ni un pas de créneau obsolète', () => {
+  assert.doesNotMatch(restaurantPage(),/Aucun paiement n’est demandé|toutes les 15 minutes/);
+  assert.match(restaurantPage(),/conditions de réservation et tout paiement éventuel/);
 });
 test('Assistance publique : contacts et liens utiles sans données privées', () => {
   const page = supportPage();

@@ -14,8 +14,8 @@ const RESTAURANT = {
   ],
   services: [
     { title: 'Livraison au Havre', text: 'Nous livrons nous-mêmes dans un rayon de 5 km autour du restaurant. Les frais sont de 3,99 € jusqu’à 1,5 km, 4,99 € au-delà de 1,5 km et jusqu’à 3 km, puis 5,99 € au-delà de 3 km et jusqu’à 5 km. L’adresse et les créneaux disponibles sont vérifiés avant le paiement.' },
-    { title: 'Click & collect', text: 'Commandez en ligne et retirez votre repas au 153 quai Georges V. Choisissez une heure de retrait précise, toutes les 15 minutes, selon les disponibilités du service. Aucun frais de livraison pour le retrait.' },
-    { title: 'Réservation de table', text: 'Demandez une table pour 1 à 4 personnes et choisissez votre heure d’arrivée. La réservation est confirmée lorsque le restaurant accepte la demande. Aucun paiement n’est demandé pour réserver.' },
+    { title: 'Click & collect', text: 'Commandez en ligne et retirez votre repas au 153 quai Georges V. Choisissez une heure de retrait parmi les créneaux disponibles du service. Aucun frais de livraison pour le retrait.' },
+    { title: 'Réservation de table', text: 'Demandez une table pour 1 à 4 personnes et choisissez votre heure d’arrivée. Les conditions de réservation et tout paiement éventuel sont précisés avant validation. La réservation est confirmée lorsque le restaurant accepte la demande.' },
   ],
   socials: [
     { name: 'Instagram', url: 'https://www.instagram.com/bibousburgers/' },
