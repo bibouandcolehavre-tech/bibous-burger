@@ -12,4 +12,8 @@ assert.match(read('App.js'), /<ContestWelcome /);
 assert.match(read('ContestEntry.web.js'), /ContestEntryCard/);
 assert.match(read('ContestEntry.native.js'), /ContestEntryCard/);
 assert.match(read('app-store-links.js'), /id6817744169/);
+assert.equal(read('ContestRegistration.native.js'), read('ContestRegistration.web.js'), 'Native and web contest registration must share the approved component.');
+assert.match(read('ContestRegistration.native.js'), /ContestRegistrationContent/);
+assert.match(read('ContestRegistrationContent.js'), /Ce bouton ne t’inscrit pas encore au concours/);
+assert.match(read('ContestRegistrationContent.js'), /Confirmer mon inscription au concours/);
 console.log('Shared customer interface and contest entry verified.');
