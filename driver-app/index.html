@@ -12,6 +12,7 @@
   <link rel="apple-touch-icon" href="/driver/apple-touch-icon.png" sizes="180x180">
   <link rel="manifest" href="/driver/manifest.webmanifest">
   <link rel="stylesheet" href="/driver/style.css">
+  <script defer src="/driver/gps.js"></script>
   <script defer src="/driver/app.js"></script>
 </head>
 <body>
@@ -44,6 +45,15 @@
       </section>
       <section id="workspace" hidden>
         <div class="workspace-head"><div><p class="eyebrow" id="role-label"></p><h2 id="welcome"></h2></div><div class="actions"><button id="refresh" class="secondary" type="button">Actualiser les courses</button><button id="logout" class="quiet" type="button">Se déconnecter</button></div></div>
+        <section id="gps-pilot" class="card" hidden aria-labelledby="gps-heading">
+          <p class="eyebrow">Essai facultatif · 30 minutes maximum</p><h3 id="gps-heading">Partager ma position avec Bibou</h3>
+          <p>Uniquement pendant l’essai, avec cette page au premier plan. En passant dans Plans, en verrouillant le téléphone ou en fermant la page, le suivi s’interrompt. Aucun historique des trajets n’est conservé.</p>
+          <p>Seule l’équipe connectée du restaurant voit ta dernière position reçue ; les clients ne la voient pas. Elle disparaît au plus tard après 90 secondes sans réception. Cet essai ne bloque aucune étape de livraison.</p>
+          <label class="password-toggle"><input type="checkbox" id="gps-consent">J’ai compris et je souhaite partager ma position pendant cet essai.</label>
+          <div class="actions"><button id="gps-start" class="primary" type="button">Démarrer l’essai GPS</button><button id="gps-stop" class="danger" type="button" hidden>Arrêter le partage GPS</button></div>
+          <p id="gps-status" role="status" aria-live="polite">GPS facultatif · aucune position partagée.</p>
+          <p class="muted">Fais les réglages à l’arrêt, jamais en roulant. En cas de problème, continue avec le fonctionnement habituel ou contacte le restaurant.</p>
+        </section>
         <div id="content"></div>
       </section>
     </main>

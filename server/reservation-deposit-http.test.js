@@ -34,8 +34,17 @@ test('réservation sans repas : 10 € par personne, vérification SumUp, rembou
     return { status: response.status, data: response.status === 204 ? {} : await response.json() };
   };
   const admin = (await request('/dashboard/auth/login', { method: 'POST', body: { password: 'test-only' } })).data.token;
-  const serviceDate = parisDateKey(new Date(Date.now() + 86400000));
-  const distantServiceDate = parisDateKey(new Date(Date.now() + 2 * 86400000));
+  // Pick open table-service evenings; this test must not fail every Friday
+  // merely because its second relative fixture lands on a closed Sunday.
+  const nextOpenDate = days => {
+    for (; days < 10; days++) {
+      const key = parisDateKey(new Date(Date.now() + days * 86400000));
+      if (new Date(`${key}T12:00:00Z`).getUTCDay() !== 0) return key;
+    }
+    throw Error('No open fixture date');
+  };
+  const serviceDate = nextOpenDate(1);
+  const distantServiceDate = nextOpenDate(2);
   const body = { requestId: 'reservation-deposit-test-0001', name: 'Camille Test', phone: '0600000000', guests: 2, serviceDate, slot: '19:00', slotGrid: 20, note: '', depositTermsAccepted: true };
   assert.equal((await request('/health')).data.capabilities.reservationDeposits, 1);
   assert.equal((await request('/reservations/deposit-checkout', { method: 'POST', body: { ...body, depositTermsAccepted: false } })).status, 400);

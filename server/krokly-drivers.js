@@ -174,6 +174,8 @@ function project(order) {
     id: order.id, number: order.number, status: order.kroklyDriver.status,
     restaurant: "Bibou's Burgers", pickupAddress: '153 Quai Georges V, 76600 Le Havre',
     distanceKm: order.distanceKm || null, slot: order.slot, serviceDate: order.serviceDate,
+    orderTotal: Number.isFinite(order.total) ? order.total : null,
+    courierPay: [3.99, 4.99, 5.99].includes(order.deliveryFee) ? order.deliveryFee : null,
     deliveryCity: order.deliveryAddress?.city || null,
     expiresAt: order.kroklyDriver.expiresAt,
     ...(accepted ? {

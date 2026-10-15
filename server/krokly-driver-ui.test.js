@@ -14,7 +14,7 @@ function harness(initialToken = 'driver-only-fake', initialMode = 'driver') {
   const hooks = {}, context = vm.createContext({ hooks, console, Date, Error, JSON, Promise, AbortSignal, AbortController, setTimeout, clearTimeout, setInterval() {}, Uint8Array, atob,
     FormData: class { [Symbol.iterator]() { return [['name', 'Fictif'], ['username', 'fictif']][Symbol.iterator](); } },
     localStorage: { getItem: key => stored.get(key) || null, setItem: (key, value) => stored.set(key, value), removeItem: key => stored.delete(key) },
-    document: { querySelector: el, querySelectorAll: selector => selector === '[data-mode]' ? modeButtons : selector === '[data-expiry]' ? [] : controls, addEventListener: (event, fn) => { handlers[event] = fn; } },
+    document: { querySelector: el, querySelectorAll: selector => selector === '[data-mode]' ? modeButtons : ['[data-expiry]', '[data-gps-expiry]'].includes(selector) ? [] : controls, addEventListener: (event, fn) => { handlers[event] = fn; } },
     window: { confirm: () => true, addEventListener: (event, fn) => { windowHandlers[event] = fn; } }, navigator: { onLine: true }, fetch: async (url, options) => { calls.push({ url, options }); return result(initialMode === 'owner' ? { orders: [], drivers: [] } : state()); }
   });
   vm.runInContext(source + '\nObject.assign(hooks, {refresh, signOut, api, isAppleMobile, isStandalone, token: () => token});', context);

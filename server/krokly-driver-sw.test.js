@@ -6,7 +6,7 @@ function harness() {
   let networkFails = false;
   vm.runInNewContext(source, {
     URL, Promise, fetch: async () => { if (networkFails) throw Error('Réseau fictif coupé'); return { ok: true }; },
-    caches: { keys: async () => ['bibou-client-shell', 'other-restaurant-cache', 'krokly-driver-shell-v4', 'krokly-driver-shell-v5'], delete: async name => { deleted.push(name); }, open: async name => ({ addAll: async paths => cached.push(...paths), match: async request => { reads.push({ name, url: request.url }); return { ok: true }; } }) },
+    caches: { keys: async () => ['bibou-client-shell', 'other-restaurant-cache', 'krokly-driver-shell-v5', 'krokly-driver-shell-v6'], delete: async name => { deleted.push(name); }, open: async name => ({ addAll: async paths => cached.push(...paths), match: async request => { reads.push({ name, url: request.url }); return { ok: true }; } }) },
     self: { location: { origin: 'https://example.test' }, addEventListener: (event, fn) => { handlers[event] = fn; }, skipWaiting: async () => {}, clients: { claim: async () => {} }, registration: { showNotification: async (title, options) => notifications.push({ title, options }) } }
   });
   return { handlers, deleted, cached, notifications, reads, offline: () => { networkFails = true; } };
@@ -14,7 +14,7 @@ function harness() {
 test('le cache livreur ne supprime pas les caches des autres applications', async () => {
   const h = harness(); let ready;
   h.handlers.activate({ waitUntil: promise => { ready = promise; } }); await ready;
-  assert.deepEqual(h.deleted, ['krokly-driver-shell-v4']);
+  assert.deepEqual(h.deleted, ['krokly-driver-shell-v5']);
 });
 test('aucune API authentifiée ni donnée client ne passe par le cache livreur', async () => {
   const h = harness(); let install;
@@ -36,5 +36,5 @@ test('hors ligne, le shell public est lu uniquement dans le cache Krokli actif',
   const h = harness(); h.offline(); let response;
   h.handlers.fetch({ request: { method: 'GET', url: 'https://example.test/driver/', headers: { has: () => false } }, respondWith: promise => { response = promise; } });
   assert.equal((await response).ok, true);
-  assert.deepEqual(h.reads, [{ name: 'krokly-driver-shell-v5', url: 'https://example.test/driver/' }]);
+  assert.deepEqual(h.reads, [{ name: 'krokly-driver-shell-v6', url: 'https://example.test/driver/' }]);
 });

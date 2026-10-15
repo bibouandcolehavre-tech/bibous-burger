@@ -16,6 +16,50 @@ let issuedSecret = null;
 let serviceWorkerReady = null;
 let installPrompt = null;
 let lastCheckedAt = null;
+let gpsPilot = null;
+
+function updateGpsPanel() {
+  document.querySelector('#gps-pilot').hidden = !token || mode !== 'driver';
+  const state = gpsPilot?.snapshot();
+  document.querySelector('#gps-status').textContent = state?.message || 'GPS facultatif · aucune position partagée.';
+  document.querySelector('#gps-start').hidden = Boolean(state?.active || state?.pending);
+  document.querySelector('#gps-start').disabled = busy || loading || !fresh || navigator.onLine === false;
+  document.querySelector('#gps-stop').hidden = !state?.active && !state?.pending;
+  document.querySelector('#gps-consent').disabled = Boolean(state?.active || state?.pending);
+}
+
+function stopGps(message) {
+  if (gpsPilot) void gpsPilot.stop(message);
+  document.querySelector('#gps-consent').checked = false;
+  updateGpsPanel();
+}
+
+document.querySelector('#gps-start').addEventListener('click', () => {
+  if (!token || mode !== 'driver' || busy || loading || !fresh || navigator.onLine === false || document.hidden) return;
+  const auth = token, current = generation;
+  if (!gpsPilot || (!gpsPilot.snapshot().active && !gpsPilot.snapshot().pending)) {
+    // Capture this exact login; a late GPS callback must never use another account.
+    const controller = window.KrokliGps?.createGpsPilot({
+      geolocation: navigator.geolocation,
+      send: async (action, data) => {
+        const timeout = requestTimeout(8000);
+        try {
+          const response = await fetch(`/api/krokly-driver/gps/${action}`, {
+            method: 'POST', headers: { Authorization: `Bearer ${auth}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(data), cache: 'no-store', signal: timeout.signal, keepalive: action === 'stop'
+          });
+          if (!response.ok) throw Error('Partage GPS indisponible.');
+          return await response.json();
+        } finally { timeout.cancel(); }
+      },
+      onChange: () => { if (generation === current && gpsPilot === controller) updateGpsPanel(); }
+    });
+    gpsPilot = controller || null;
+  }
+  if (!gpsPilot) { document.querySelector('#gps-status').textContent = 'Essai GPS indisponible. Actualise la page ; tes courses restent accessibles.'; return; }
+  void gpsPilot.start(document.querySelector('#gps-consent').checked);
+});
+document.querySelector('#gps-stop').addEventListener('click', () => stopGps());
 
 function isStandalone() {
   return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -138,6 +182,8 @@ function requestTimeout(milliseconds) {
 }
 
 function signOut(showMessage = true) {
+  stopGps();
+  gpsPilot = null;
   generation++;
   busy = loading = fresh = false;
   token = '';
@@ -163,6 +209,7 @@ function updateControls() {
   const refreshButton = document.querySelector('#refresh');
   if (refreshButton) refreshButton.disabled = busy || loading;
   updateConnectionStatus();
+  updateGpsPanel();
 }
 
 async function readyWorker() {
@@ -195,7 +242,8 @@ function driverCard(order) {
   return `<article class="order ${order.status === 'offered' ? 'offer' : ''}"><div class="order-head"><div><span class="order-number">COMMANDE #${Number(order.number)}</span><h3>${escapeHtml(order.restaurant)}</h3></div><span class="status ${escapeHtml(order.status)}">${escapeHtml(statusLabel(order.status))}</span></div>
     <div class="route"><div><small>DÉPART</small><strong>${escapeHtml(order.pickupAddress)}</strong></div><div><small>DESTINATION</small><strong>${accepted ? escapeHtml(addressText(order.deliveryAddress)) : escapeHtml(order.deliveryCity || 'Adresse complète après acceptation')}</strong></div></div>
     <div class="info">${order.distanceKm ? `${escapeHtml(order.distanceKm)} km · ` : ''}Créneau ${escapeHtml(order.serviceDate || '')} ${escapeHtml(order.slot || '')}
-      ${accepted ? `<br><strong>${escapeHtml(order.customerName || 'Client')}</strong>${order.customerPhone ? ` · <a href="tel:${escapeHtml(order.customerPhone)}">${escapeHtml(order.customerPhone)}</a>` : ''}${order.comment ? `<br>Instruction : ${escapeHtml(order.comment)}` : ''}` : ''}</div>${action}</article>`;
+      ${accepted ? `<br><strong>${escapeHtml(order.customerName || 'Client')}</strong>${order.customerPhone ? ` · <a href="tel:${escapeHtml(order.customerPhone)}">${escapeHtml(order.customerPhone)}</a>` : ''}${order.comment ? `<br>Instruction : ${escapeHtml(order.comment)}` : ''}` : ''}</div>
+      ${accepted && addressText(order.deliveryAddress) ? `<div class="actions"><a class="secondary navigation" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/dir/?api=1&amp;destination=${encodeURIComponent(addressText(order.deliveryAddress))}&amp;travelmode=driving">Naviguer · Google Maps</a><a class="secondary navigation" target="_blank" rel="noopener noreferrer" href="https://maps.apple.com/?daddr=${encodeURIComponent(addressText(order.deliveryAddress))}&amp;dirflg=d">Naviguer · Plans</a></div>` : ''}${action}</article>`;
 }
 
 function renderDriver() {
@@ -229,12 +277,22 @@ function renderOwner() {
   const ready = currentState.orders.filter(o => o.status === 'ready' && o.eligible);
   const assigned = currentState.orders.filter(o => o.assignment && ['offered', 'accepted', 'picked_up', 'issue'].includes(o.assignment.status));
   content.innerHTML = `<div class="hint">Une course doit être <strong>payée et marquée prête</strong> avant attribution. Une commande confiée à Uber ne peut pas être attribuée en parallèle à Krokli.</div>
+    ${ownerGps()}
     <div class="metrics"><div class="metric"><strong>${ready.length}</strong><span>à attribuer</span></div><div class="metric"><strong>${assigned.length}</strong><span>attribuée(s)</span></div><div class="metric"><strong>${currentState.drivers.filter(d => d.active).length}</strong><span>livreur(s) actifs</span></div></div>
     <h3 class="section-title">Commandes en livraison</h3>${currentState.orders.length ? `<div class="grid">${currentState.orders.map(ownerOrder).join('')}</div>` : '<div class="empty"><strong>Aucune livraison à répartir</strong>Les commandes payées et prêtes apparaîtront ici.</div>'}
     <h3 class="section-title">Comptes livreurs</h3><div class="card"><form id="create-form" class="create"><label>Nom du livreur<input name="name" required maxlength="60" placeholder="Ex. : Lina"></label><label>Identifiant<input name="username" required maxlength="32" placeholder="Ex. : lina"></label><button class="primary" type="submit">Créer le compte</button></form>
       <div id="secret"></div><div class="drivers">${currentState.drivers.map(ownerDriver).join('') || '<p class="muted">Aucun livreur créé pour le moment.</p>'}</div>
       <p class="muted">Le mot de passe généré n’apparaît qu’une fois. Transmets-le toi-même au livreur par un canal privé ; il ne donne pas accès au back-office.</p></div>`;
   if (issuedSecret) showSecret(issuedSecret);
+}
+
+function ownerGps() {
+  const positions = (currentState.gpsPositions || []).filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude) && Math.abs(p.latitude) <= 90 && Math.abs(p.longitude) <= 180 && Date.parse(p.expiresAt) > Date.now());
+  return `<section class="card"><h3>Positions GPS · essai facultatif</h3><p class="muted">Dernière position reçue, réception non garantie. Le pilote web doit rester au premier plan. Mise à jour avec les courses ; aucun historique.</p>
+    ${positions.length ? positions.map(p => {
+      const driver = currentState.drivers.find(d => d.id === p.driverId);
+      return `<div class="driver gps-position" data-gps-expiry="${escapeHtml(p.expiresAt)}"><div><strong>${escapeHtml(driver?.name || 'Livreur')}</strong><small>Reçue à ${escapeHtml(new Date(p.receivedAt).toLocaleTimeString('fr-FR'))} · précision ±${Math.ceil(Number(p.accuracy))} m</small></div><a class="secondary navigation" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&amp;query=${p.latitude},${p.longitude}">Voir la dernière position</a></div>`;
+    }).join('') : '<p>Aucune position récente partagée. Le fonctionnement habituel des livraisons reste disponible.</p>'}</section>`;
 }
 
 function showSecret(data) {
@@ -320,6 +378,12 @@ async function refresh(force = false) {
 }
 
 function updateTimers() {
+  for (const element of document.querySelectorAll('[data-gps-expiry]')) {
+    if (Date.parse(element.dataset.gpsExpiry) <= Date.now()) {
+      element.innerHTML = '<p>Position expirée · aucun suivi récent. Actualise pour vérifier.</p>';
+      delete element.dataset.gpsExpiry;
+    }
+  }
   for (const element of document.querySelectorAll('[data-expiry]')) {
     const seconds = Math.max(0, Math.ceil((Date.parse(element.dataset.expiry) - Date.now()) / 1000));
     element.textContent = seconds ? `Répondre sous ${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s` : 'Offre expirée · actualisation en cours';
@@ -364,10 +428,14 @@ form.addEventListener('submit', async event => {
 
 document.querySelector('#logout').addEventListener('click', () => { void unregisterNotifications(); signOut(); });
 document.querySelector('#refresh')?.addEventListener('click', () => { void refresh(true); });
-window.addEventListener('offline', () => { fresh = false; updateControls(); });
+window.addEventListener('offline', () => { stopGps('Réseau coupé. GPS arrêté ; les positions expirent sous 90 secondes.'); fresh = false; updateControls(); });
+window.addEventListener('pagehide', () => stopGps('Page fermée. GPS arrêté.'));
 window.addEventListener('online', () => { fresh = false; updateControls(); void refresh(true); });
 window.addEventListener('pageshow', event => { if (event.persisted && token) { fresh = false; updateControls(); void refresh(true); } });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { fresh = false; updateControls(); void refresh(true); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopGps('Page passée en arrière-plan. GPS arrêté : relance-le à l’arrêt en revenant ici.');
+  else { fresh = false; updateControls(); void refresh(true); }
+});
 
 document.addEventListener('submit', async event => {
   if (event.target.id !== 'create-form') return;

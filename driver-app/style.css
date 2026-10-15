@@ -110,6 +110,14 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .push-card .muted { margin-top: 10px; }
 .login label.password-toggle { display: flex; align-items: center; gap: 9px; min-height: 44px; font-weight: 600; }
 .login .password-toggle input { width: 20px; min-height: 20px; margin: 0; padding: 0; accent-color: var(--green); }
+#gps-pilot { margin-bottom: 20px; }
+#gps-pilot h3 { margin-top: 0; }
+#gps-pilot p { line-height: 1.5; font-size: 14px; }
+#gps-pilot .password-toggle { display: flex; align-items: start; gap: 10px; font-weight: 700; line-height: 1.4; }
+#gps-pilot input[type="checkbox"] { width: 22px; min-height: 22px; flex: 0 0 22px; margin: 0; accent-color: var(--green); }
+#gps-status { color: var(--green); font-weight: 700; }
+.navigation { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border-radius: 12px; padding: 12px 14px; min-height: 44px; font-size: 14px; font-weight: 700; border: 1px solid var(--green); }
+.actions .navigation { flex: 1; text-align: center; }
 footer { border-top: 1px solid var(--line); padding: 22px 0; margin-top: 35px; color: var(--muted); font-size: 11px; }
 @media (max-width: 700px) {
   .grid, .installation-guides, .create { grid-template-columns: 1fr; }

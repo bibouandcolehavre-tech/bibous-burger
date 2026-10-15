@@ -59,6 +59,7 @@ const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
 const orderSms = require('./order-sms');
 const kroklyDrivers = require('./krokly-drivers');
+const krokliGpsPilot = require('./krokli-gps-pilot').createGpsPilot();
 const kroklyWebPush = require('./krokly-web-push');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
@@ -529,6 +530,7 @@ const server = http.createServer(async (request, response) => {
     const kroklyFile = ({
       '/driver/': ['index.html', 'text/html; charset=utf-8'],
       '/driver/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+      '/driver/gps.js': ['gps.js', 'text/javascript; charset=utf-8'],
       '/driver/style.css': ['style.css', 'text/css; charset=utf-8'],
       '/driver/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
       '/driver/icon.svg': ['icon.svg', 'image/svg+xml'],
@@ -553,6 +555,11 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname.startsWith('/api/krokly-driver/') || url.pathname.startsWith('/api/dashboard/krokly-drivers')) {
       try {
+        if (url.pathname === '/api/krokly-driver/capabilities' && request.method === 'GET') return send(response, 200, {
+          protocol: 'krokli-bibou-live-v1', restaurant: 'bibou-le-havre', sharedDriverAccounts: true,
+          manualDispatch: true, gpsPilot: { optional: true, durationMinutes: 30, visibleTo: 'restaurant-only', historyStored: false },
+          automaticNearestDispatch: false, groupedRouting: false, customerTracking: false
+        });
         const admin = url.pathname.startsWith('/api/dashboard/');
         if (admin && !authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
         const input = ['POST', 'PATCH'].includes(request.method) ? await readBody(request) : {};
@@ -586,6 +593,13 @@ const server = http.createServer(async (request, response) => {
             await writeDatabase(database);
             return send(response, 200, result);
           }
+          const gpsAction = /^\/api\/krokly-driver\/gps\/(start|position|stop)$/.exec(url.pathname);
+          if (gpsAction && request.method === 'POST') {
+            const result = gpsAction[1] === 'start' ? krokliGpsPilot.start(database, driver, input)
+              : gpsAction[1] === 'stop' ? krokliGpsPilot.stop(database, driver.id, input)
+                : krokliGpsPilot.update(database, driver.id, input);
+            return send(response, 200, result);
+          }
           if (url.pathname === '/api/krokly-driver/push/unsubscribe' && request.method === 'POST') {
             const result = kroklyWebPush.unregister(database, driver.id, input.endpoint);
             await writeDatabase(database);
@@ -608,7 +622,7 @@ const server = http.createServer(async (request, response) => {
         }
         const expired = kroklyDrivers.expireOffers(database);
         if (expired) await writeDatabase(database);
-        if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'GET') return send(response, 200, kroklyDrivers.dispatchState(database));
+        if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'GET') return send(response, 200, { ...kroklyDrivers.dispatchState(database), gpsPositions: krokliGpsPilot.locations(database) });
         if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'POST') {
           const created = kroklyDrivers.createDriver(database, input);
           await writeDatabase(database);
