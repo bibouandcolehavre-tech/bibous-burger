@@ -208,7 +208,12 @@ const readBody = (request) => {
       clearTimeout(timeout);
       if (failed) return;
       const raw = Buffer.concat(chunks); rawRequestBodies.set(request, raw);
-      try { resolve(raw.length ? JSON.parse(raw.toString("utf8")) : {}); } catch { reject(new Error("Invalid JSON")); }
+      let input;
+      try { input = raw.length ? JSON.parse(raw.toString("utf8")) : {}; } catch { reject(new Error("Invalid JSON")); return; }
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        reject(Object.assign(new Error('Informations de requête invalides.'), { statusCode: 400 })); return;
+      }
+      resolve(input);
     });
     request.on("error", fail);
     request.on("aborted", () => fail(new Error("Request aborted")));
@@ -250,7 +255,8 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
     throw new Error("Cette adresse n’a pas pu être localisée.");
   }
   const route = (await routeResponse.json()).routes?.[0];
-  const distanceKm = Number(route?.distanceMeters ?? 0) / 1000;
+  if (typeof route?.distanceMeters !== 'number' || !Number.isFinite(route.distanceMeters) || route.distanceMeters < 0) throw new Error("Cette adresse n’a pas pu être localisée.");
+  const distanceKm = route.distanceMeters / 1000;
   if (!Number.isFinite(distanceKm)) throw new Error("Cette adresse n’a pas pu être localisée.");
   const roundedDistanceKm = Math.round(distanceKm * 100) / 100;
   return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm) };

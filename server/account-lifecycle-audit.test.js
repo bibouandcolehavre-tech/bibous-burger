@@ -5,6 +5,12 @@ const { grantWelcomeReward } = require('./welcome-reward');
 const crm = require('./crm');
 const preset = require('../restaurant-dashboard/contest-launch-20261015.json');
 const now = new Date('2026-10-15T10:00:00Z'), secret = 'fictitious-lifecycle-key';
+test('cycle compte : un ancien bon sans offre ni paiement enregistré ne bloque pas la suppression', () => {
+  const customer = { id: 'fictitious', phone: '+33600000000' };
+  const db = { customers: [customer], orders: [{ id: 'unopened-checkout', customerId: customer.id, crmRuleId: 'birthday' }] };
+  assert.doesNotThrow(() => history.rememberBeforeDeletion(db, customer, secret, now));
+  assert.equal(db.birthdayRewardHistory, undefined);
+});
 const person = (id, phone, createdAt = '2025-01-01T12:00:00Z') => ({ id, phone, verifiedPhone: phone, phoneVerifiedAt: createdAt, firstPhoneVerifiedAt: createdAt, createdAt, name: 'Fictif', points: 0 });
 function fixture() {
   const sponsor = person('sponsor', '+33700000000'), friend = person('friend', '+33600000000');

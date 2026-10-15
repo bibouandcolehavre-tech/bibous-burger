@@ -40,7 +40,7 @@ function rememberBeforeDeletion(db, customer, secret, now = new Date()) {
     const offer = db.crm?.offers?.find(offer => offer.id === order.crmOfferId);
     if (order.crmRuleId !== 'birthday' && offer?.ruleId !== 'birthday') continue;
     const usedYear = /^birthday:(\d{4})$/.exec(offer?.eventKey || '')?.[1] ||
-      (Number.isFinite(Date.parse(order.payment.paidAt)) ? parisDateKey(new Date(order.payment.paidAt)).slice(0, 4) : null);
+      (Number.isFinite(Date.parse(order.payment?.paidAt)) ? parisDateKey(new Date(order.payment.paidAt)).slice(0, 4) : null);
     // A legitimate eve-of-birthday offer on 31 December can belong to the
     // following benefit year. Preserve that year, not the payment's year.
     if (![year, String(Number(year) + 1)].includes(usedYear)) continue;
