@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const contest = require('./referral-contest');
 const prizes = require('./contest-prizes');
 const wheel = require('./wheel');
+const wheelRewardsPolicy = require('./wheel-rewards-policy');
 const { availabilityCatalog, validateAndPriceOrderItems } = require('./catalog');
 const { publicArticleRatings } = require('./article-ratings');
 const { parisDateKey } = require('./availability');
@@ -13,6 +14,8 @@ function prepareReviewScenarios(db, customer, date) {
   Object.assign(customer, { firstName: 'Équipe', lastName: 'de validation', verifiedPhone: customer.phone, phoneVerifiedAt: date.toISOString(), firstPhoneVerifiedAt: date.toISOString(), createdAt: date.toISOString() });
   db.referralContest = { ...contest.defaultContest(), id: 'isolated-review-contest', status: 'published', revision: 1, startDate: `${year}-01-01`, endDate: `${year}-12-31`, rules: 'Démonstration réservée aux vérificateurs : concours, points et lots fictifs, sans envoi au restaurant ni gain utilisable. Aucun achat ou SMS réel. Les règles client restent distinctes et le concours public n’est pas activé.' };
   db.wheel = { ...wheel.defaultWheel(), startDate: `${year}-01-01`, endDate: `${year}-12-31`, officialRules: 'Démonstration privée de la roue : aucun gain réel. ' + wheel.defaultWheel().officialRules };
+  wheelRewardsPolicy.activate(db, { rewardsVersion: 2, monthlyClassicEnabled: true, confirmation: 'ACTIVER LA ROUE 80' }, date);
+  db.wheel.officialRules = 'Démonstration privée : aucun gain réel. ' + db.wheel.officialRules;
   db.contestPrizes = { version: 1, smsJobs: [], vouchers: [], grants: [{ id: `review-grant-${customer.id}`, customerId: customer.id, contestId: 'isolated-previous-contest', rank: 1, menus: 2, months: 12, startMonth: month, lastMonth: prizes.addMonths(month, 11), eligibleMenuIds: ['classique-menu', 'montagnes-menu'], status: 'confirmed', alertsEnabled: false, singleOrder: false }] };
   prizes.issueCurrentMonth(db, date);
   // A separate fictional order lets reviewers try a missing drink immediately.

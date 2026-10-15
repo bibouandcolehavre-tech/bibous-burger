@@ -8,7 +8,7 @@ function previewPromotion(base, subtotal, promotion, method) {
     return { ...base, discountRate: 1, discount: subtotal, discountLabel: 'Menus gagnés au concours', deliveryFee: fee, total: fee };
   }
   if (promotion.id) {
-    if (typeof promotion.code !== 'string' || !['percent_order','percent_burger','bogo_burger','buy3_get1_burger','buy3_get1_menu','free_delivery'].includes(promotion.type)) throw new Error('Réponse de code promo invalide.');
+    if (typeof promotion.code !== 'string' || !['percent_order','percent_burger','bogo_burger','buy3_get1_burger','buy3_get1_menu','free_delivery','free_drink','free_fries','free_dessert','free_classic'].includes(promotion.type)) throw new Error('Réponse de code promo invalide.');
     const productDiscount = Number(promotion.previewProductDiscount);
     if (!Number.isFinite(productDiscount) || productDiscount < 0 || productDiscount > subtotal) throw new Error('Remise du code promo invalide.');
     const round = value => Math.round((value + Number.EPSILON) * 100) / 100;

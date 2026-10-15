@@ -1043,6 +1043,17 @@ const server = http.createServer(async (request, response) => {
     const welcomeHistoryChanged = welcomeRewardHistory.reconcile(database, customerSessionSecret);
     if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || stbChanged || quantityChanged || welcomeHistoryChanged) await writeDatabase(database);
 
+    if (url.pathname === '/api/dashboard/wheel-rewards') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
+      const policy = require('./wheel-rewards-policy');
+      if (request.method === 'PATCH') {
+        if (policy.activate(database, await readBody(request))) await writeDatabase(database);
+      } else if (request.method !== 'GET') return send(response, 405, { error: 'Action indisponible.' });
+      const preview = { ...(database.wheel || wheelGame.defaultWheel()), rewardsVersion: 2, monthlyClassicEnabled: true };
+      return send(response, 200, { rewardsVersion: database.wheel?.rewardsVersion || 1, monthlyClassicEnabled: database.wheel?.monthlyClassicEnabled === true,
+        currentMonth: policy.monthKey(new Date()), monthlyClassicAvailable: policy.classicAvailable(database),
+        previewRules: policy.officialRules(preview), previewSegments: policy.segments({ classic: true }), publishedAt: database.wheel?.rewardsPublishedAt || null });
+    }
     if (url.pathname === '/api/dashboard/stb-tickets') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
       if (request.method === 'PATCH') { stbTickets.configure(database, await readBody(request)); await writeDatabase(database); }
@@ -1816,7 +1827,7 @@ const server = http.createServer(async (request, response) => {
           promotion.previewBaseRate = promotion.combineWelcome !== false && welcomeRewardAvailable(customer, database.orders, new Date(), PENDING_RESERVATION_MS) ? WELCOME_DISCOUNT_RATE : bibouPlusStatus(customer).active ? BIBOU_PLUS_DISCOUNT_RATE : 0;
         }
       }
-      return send(response, 200, { promotion });
+      return send(response, 200, { promotion: merchantPromotions.compatiblePreview(promotion, url.searchParams.get('promoApi')) });
     }
 
     if (request.method === "POST" && url.pathname === "/api/orders") {

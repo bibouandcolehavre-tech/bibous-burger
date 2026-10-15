@@ -965,7 +965,7 @@ function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onVali
   const [promotion, setPromotion] = useState(null);
   const [promoPending, setPromoPending] = useState(false);
   const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, promotion?.id ? { ...customer, crmOffers: [] } : customer, isDelivery), cart.total, promotion, cart.delivery.method);
-  const gifted = Boolean(promotion && !promotion.id && pricing.total === 0);
+  const gifted = Boolean(promotion && pricing.total === 0);
   const [paying, setPaying] = useState(false);
   const paymentInFlight = useRef(false);
   const submitPayment = async () => {
@@ -1039,7 +1039,7 @@ function ReviewScreen({ onBack }) {
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.reviewContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Votre avis compte</Text><Text style={styles.reviewIntro}>Partagez votre expérience avec Bibou’s Burgers directement sur notre page Google.</Text><View style={styles.reviewCard}><Text style={styles.reviewQuestion}>Merci pour votre commande !</Text><Text style={styles.ratingHelper}>Votre avis Google aide d’autres gourmands à nous découvrir.</Text></View><Pressable onPress={() => Linking.openURL(GOOGLE_REVIEW_URL)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Laisser mon avis sur Google ↗</Text></Pressable><Text style={styles.reviewFinePrint}>Google ouvrira sa page officielle. Vous restez libre de publier ou non votre avis.</Text></ScrollView></SafeAreaView>;
 }
 
-function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack, onRefer, onClaimReward }) {
+function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack, onRefer, onClaimReward, wheel }) {
   const multiplier = loyalty.orders ? Math.min(loyalty.orders, 3) : 1;
   const weeklyPoints = loyalty.weeklyProgramPoints || 0;
   const nextReward = REWARDS.find((reward) => loyalty.points < reward.points);
@@ -1054,6 +1054,7 @@ function LoyaltyScreen({ loyalty, customer, rewardClaims, rewardLoading, onBack,
       <ScrollView contentContainerStyle={styles.loyaltyContent} showsVerticalScrollIndicator={false}>
         <Header onBack={onBack} />
         <Text style={styles.title}>Club Bibou</Text>
+        {wheel}
         <Text style={styles.loyaltyIntro}>Tes points restent acquis. Seul ton bonus de la semaine repart à zéro le lundi.</Text>
         <View style={styles.pointsCard}>
           <Text style={styles.pointsEyebrow}>TON SOLDE FIDÉLITÉ</Text>
@@ -1523,6 +1524,16 @@ function AppContent({ onReviewModeChange }) {
     else setPendingBibouPlus(record);
     setScreen(attempt.kind === 'order' ? 'payment-pending' : attempt.kind === 'reservation' ? 'reservation-payment-pending' : 'bibou-plus-pending');
   };
+  const refreshWheelBalance = async () => {
+    const token = authToken;
+    if (!token) return;
+    try {
+      const { ok, payload } = await apiRequest('/auth/me', token);
+      if (!ok || !payload.customer || sessionTokenRef.current !== token) return;
+      setCustomer(current => ({ ...current, ...payload.customer }));
+      setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
+    } catch { /* The confirmed spin remains valid even if the balance refresh is delayed. */ }
+  };
   const finishPayment = async (attempt, record, token) => {
     const state = paymentState(record, attempt.kind);
     showPaymentRecord(attempt, record);
@@ -1671,7 +1682,7 @@ function AppContent({ onReviewModeChange }) {
     } finally { paymentStartRef.current = false; }
   };
   const validatePromo = async code => {
-    const { ok, payload } = await apiRequest('/promotions/validate', authToken, { code, method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, items: serializeCartItems(cart) });
+    const { ok, payload } = await apiRequest('/promotions/validate?promoApi=2', authToken, { code, method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, items: serializeCartItems(cart) });
     if (!ok) throw new Error(payload.error || 'Impossible de vérifier ce code. Réessaie.');
     previewPromotion({}, cart.total, payload.promotion, cart.delivery.method);
     if (!payload.promotion) throw new Error('Code promo non confirmé.');
@@ -1872,7 +1883,7 @@ if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (CUSTOMER_JOURNE
   if (screen === 'reservation-deposit-success') return <ReservationDepositSuccessScreen reservation={pendingDepositReservation} onTrack={() => setScreen('reservations')} onHome={() => setScreen('menu')} />;
   if (screen === "success") return <SuccessScreen onOpenContest={() => setScreen("contest")} order={pendingOrder} token={authToken} api={reviewApiBase(API_BASE_URL, authToken)} onReview={() => { setRatingOrderId(pendingOrder?.id); setScreen("review"); }} onTrack={() => setScreen("orders")} onHome={() => { setCart(null); setScreen("menu"); }} />;
   if (screen === "review") return <ArticleReviews key={authToken + ':' + ratingOrderId} api={reviewApiBase(API_BASE_URL, authToken)} token={authToken} orderId={ratingOrderId} googleUrl={GOOGLE_REVIEW_URL} onBack={() => setScreen("orders")} />;
-  if (screen === "loyalty") return <LoyaltyScreen loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
+  if (screen === "loyalty") return <LoyaltyScreen wheel={<WheelAfterPayment api={reviewApiBase(API_BASE_URL, authToken)} token={authToken} accountMode onUpdate={() => void refreshWheelBalance()} />} loyalty={loyalty} customer={customer} rewardClaims={rewardClaims} rewardLoading={rewardLoading} onBack={() => setScreen("menu")} onRefer={referFriend} onClaimReward={claimLoyaltyReward} />;
   if (screen === "bibou-plus") return <BibouPlusScreen customer={customer} authToken={authToken} loading={bibouPlusLoading} onBack={() => setScreen(bibouPlusReturnScreen)} onLogin={() => { setLoginDestination("bibou-plus"); setScreen("login"); }} onSubscribe={startBibouPlus} />;
   if (screen === "bibou-plus-pending") return <PaymentPendingScreen kind="bibou-plus" record={pendingBibouPlus} message={paymentMessage} busy={paymentBusy} onCheckPayment={checkPayment} onResume={resumePayment} onBack={() => setScreen("menu")} />;
   if (screen === "notifications") return <NotificationSettings key={authToken} api={reviewApiBase(API_BASE_URL, authToken)} authToken={authToken} onBack={() => setScreen("account")} />;

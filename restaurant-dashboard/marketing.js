@@ -11,10 +11,11 @@ window.BibouMarketing = function ({ root, api, token, onUnauthorized }) {
     <label class="inline-check"><input name="wheelPointsInRanking" type="checkbox" /> Compter aussi les points réellement gagnés à la roue dans le classement</label><p>Un point de roue valide = un point de classement en plus, sans retirer le gain de fidélité. Le règlement doit l’annoncer. Les cadeaux, remises et tours fictifs ne comptent pas. Les anciennes applications affichent le total et le rang ; le détail roue figure ici et dans le règlement complet.</p>
     <label>Règlement complet<textarea name="rules" rows="9" maxlength="12000" placeholder="À finaliser avant lancement : organisateur, dates et heure, majorité, zone, barème, lots, tirages bonus, départage, remise des lots, protection des données…"></textarea></label><p>Une participation par numéro vérifié ; majorité et résidence déclarées. Aucun achat, avis Google ni abonnement publicitaire obligatoire. Le règlement doit décrire les contrôles anti-abus et la remise des lots.</p><button class="login-button" type="submit">Enregistrer le brouillon</button></form>
     <p id="contest-action-feedback"></p><div id="contest-readiness"></div><div class="marketing-actions"><button type="button" id="contest-prepare" class="secondary-button">Préparer le 15 octobre à 11 h · sans publier</button><button type="button" id="contest-publish" class="login-button" disabled>Publier le règlement et programmer l’ouverture</button></div><p>La préparation remplit seulement le formulaire. Enregistrez le brouillon, relisez-le, puis confirmez séparément sa publication. Cette action ne choisit aucun gagnant et n’envoie aucune notification.</p><h3>Aperçu de la carte</h3><div id="contest-preview" class="marketing-preview"></div><h3>Suivi du concours</h3><div id="contest-statistics"></div><div id="contest-ranking"></div><p>Les nombres affichés sont des inscriptions participantes, pas des téléchargements mesurés par Apple ou Google. Aucun gagnant n’est automatiquement désigné ; les ex æquo sont signalés.</p></section>
-    <div id="contest-periods-root"></div><div id="contest-prizes-root"></div><button type="button" id="marketing-reset" class="secondary-button">Recharger la version enregistrée</button>`;
+    <div id="contest-periods-root"></div><div id="contest-prizes-root"></div><div id="wheel-rewards-root"></div><button type="button" id="marketing-reset" class="secondary-button">Recharger la version enregistrée</button>`;
   const q = selector => root.querySelector(selector);
   const prizePanel = window.BibouContestPrizes?.({ root: q('#contest-prizes-root'), api, token, onUnauthorized });
   const periodPanel = window.BibouContestPeriods?.({ root: q('#contest-periods-root'), api, token, onUnauthorized });
+  const wheelPanel = window.BibouWheelRewards?.({ root: q('#wheel-rewards-root'), api, token, onUnauthorized });
   // Keep one live announcement, and a visible copy beside the mobile actions.
   const message = text => { q('#marketing-feedback').textContent = text; q('#contest-action-feedback').textContent = text; };
   const freeze = value => { busy = value; root.querySelectorAll('button,input,textarea,select').forEach(el => { if (!el.closest('#contest-periods-root')) el.disabled = value || (!!contest && contest.draft.status !== 'draft' && (!!el.closest('#contest-form') || ['contest-prepare','contest-publish'].includes(el.id))); }); q('#contest-publish').disabled = value || !contest || contest.draft.status !== 'draft' || dirtyContest || dirtyNews || contest.missing.length > 0 || !news?.items.some(item => item.kind === 'contest' && item.enabled); };
@@ -54,7 +55,7 @@ window.BibouMarketing = function ({ root, api, token, onUnauthorized }) {
     try {
       const [n,c] = await Promise.all([request('/dashboard/news'), request('/dashboard/contest')]);
       if (id !== epoch) return;
-      news=n; contest=c; dirtyNews=dirtyContest=false; renderNews(); renderContest(); message(contest.draft.status === 'draft' ? 'Actualités chargées. Le concours n’est pas lancé.' : 'Actualités et concours chargés.'); void prizePanel?.load(); void periodPanel?.load();
+      news=n; contest=c; dirtyNews=dirtyContest=false; renderNews(); renderContest(); message(contest.draft.status === 'draft' ? 'Actualités chargées. Le concours n’est pas lancé.' : 'Actualités et concours chargés.'); void prizePanel?.load(); void periodPanel?.load(); void wheelPanel?.load();
     } catch (err) { if (id === epoch) message(err.name === 'AbortError' ? 'Connexion trop lente. Réessayez.' : err.message); }
     finally { if (id === epoch) freeze(false); }
   }
@@ -124,5 +125,5 @@ window.BibouMarketing = function ({ root, api, token, onUnauthorized }) {
   q('#news-save').onclick=()=>void save('news');
   q('#contest-form').onsubmit=event=>{event.preventDefault();void save('contest');};
   q('#marketing-reset').onclick=()=>{if(!(dirtyNews||dirtyContest)||window.confirm('Abandonner vos modifications non enregistrées ?'))void load(true);};
-  return {load, clear(){epoch++;news=contest=null;dirtyNews=dirtyContest=false;busy=false;prizePanel?.clear();periodPanel?.clear();q('#news-cards').innerHTML='';q('#contest-form').reset();q('#contest-ranking').innerHTML='';q('#contest-statistics').innerHTML='';q('#contest-readiness').innerHTML='';q('#contest-preview').innerHTML='';message('');freeze(false);}};
+  return {load, clear(){epoch++;news=contest=null;dirtyNews=dirtyContest=false;busy=false;prizePanel?.clear();periodPanel?.clear();wheelPanel?.clear();q('#news-cards').innerHTML='';q('#contest-form').reset();q('#contest-ranking').innerHTML='';q('#contest-statistics').innerHTML='';q('#contest-readiness').innerHTML='';q('#contest-preview').innerHTML='';message('');freeze(false);}};
 };

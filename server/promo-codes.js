@@ -75,7 +75,18 @@ const applyPromotion = (pricing, promotion, method, items = [], context = {}) =>
 };
 const settlePromotionalOrder = (order, now = new Date(), database) => {
   if (!order.promotion || order.status !== 'awaiting_payment' || order.payment) return false;
-  if (order.promotion.id) return false;
+  if (order.promotion.id) {
+    if (order.total !== 0) return false;
+    const current = merchant.findByCode(database || {}, order.promotion.code, now.getTime());
+    if (!current || current.id !== order.promotion.id || current.type !== 'free_classic' || !current.sourceWheelSpinId || current.ownerCustomerId !== order.customerId)
+      throw new Error('Cadeau Classique non confirmé.');
+    merchant.assertAvailable({ ...database, orders: (database.orders || []).filter(item => item.id !== order.id) }, current, order.customerId, now.getTime());
+    const expected = merchant.discountFor(current, order.items, order.subtotal, order.deliveryFee);
+    if (order.deliveryFee !== 0 || order.discount !== order.subtotal || expected.products !== order.subtotal)
+      throw new Error('Total du Classique offert incohérent.');
+    order.payment = { provider: 'promotion', status: 'PAID', amount: 0, paidAt: now.toISOString() };
+    return true;
+  }
   if (order.promotion.sourceContestPrize) {
     const voucher = contestPrizes.findVoucher(database || {}, order.promotion.code);
     const allocation = voucher?.allocations.find(a => a.orderId === order.id);

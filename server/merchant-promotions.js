@@ -7,7 +7,7 @@ const money = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const burgerIds = Object.keys(PRODUCT_CATALOG).filter(id => !PRODUCT_CATALOG[id].menu && !PRODUCT_CATALOG[id].kind);
 const burgerPriceForPromotion = item => item.basePrice ?? (item.productId === 'custom-burger' ? item.price : PRODUCT_CATALOG[item.productId].price);
-const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery', 'free_drink', 'free_fries'];
+const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery', 'free_drink', 'free_fries', 'free_dessert', 'free_classic'];
 const normalizeCode = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
 const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filter(order => {
   if (order.promotion?.id !== promotion.id) return false;
@@ -58,6 +58,9 @@ function validate(input, existing = []) {
   if (!/^[A-Z0-9_-]{4,40}$/.test(code)) fail('Le code doit contenir 4 à 40 lettres, chiffres, tirets ou tirets bas.');
   if (['CHORUS', 'GROSLARD'].includes(code) || existing.some(item => item.id !== id && item.code === code)) fail('Ce code est déjà utilisé.', 409);
   if (!types.includes(input.type)) fail('Choisis un type de promotion.');
+  // This zero-payment award is issued only by the atomic monthly wheel path.
+  // A manually created coupon must not look usable but fail at free checkout.
+  if (input.type === 'free_classic') fail('Le Classique mensuel est attribué uniquement par la roue, pas par un code manuel.');
   const percent = input.type.startsWith('percent_') ? Number(input.percent) : 0;
   if (input.type.startsWith('percent_') && (!Number.isInteger(percent) || percent < 1 || percent > 50)) fail('Choisis une remise de 1 à 50 %.');
   const productId = input.type === 'percent_burger' ? input.productId : null;
@@ -184,6 +187,17 @@ function discountFor(promotion, items, subtotal, deliveryFee = 0) {
     if (!items.some(item => item.productId === 'frites-maison')) fail('Ajoute une portion de frites maison à ta commande pour profiter de ce gain.');
     products = PRODUCT_CATALOG['frites-maison'].price;
   }
+  if (promotion.type === 'free_dessert') {
+    const desserts = items.filter(item => PRODUCT_CATALOG[item.productId]?.category === 'desserts')
+      .map(item => Math.min(item.price, PRODUCT_CATALOG[item.productId].price)).sort((a, b) => a - b);
+    if (!desserts.length) fail('Ajoute un dessert de la carte à ta commande pour utiliser ce gain.');
+    products = desserts[0]; // One dessert, never every unit in the basket.
+  }
+  if (promotion.type === 'free_classic') {
+    const classic = items.find(item => item.productId === 'classique' && !item.options?.some(option => option.price > 0));
+    if (!classic) fail('Ajoute un burger Classique seul, sauce et crudités au choix, sans supplément payant. Les menus ne comptent pas.');
+    products = Math.min(classic.price, PRODUCT_CATALOG.classique.price);
+  }
   return { products, delivery };
 }
 
@@ -206,4 +220,10 @@ function dashboard(db) {
     burgers: burgerIds.map(id => ({ id, name: PRODUCT_CATALOG[id].name, price: id === 'custom-burger' ? 9.9 : PRODUCT_CATALOG[id].price })) };
 }
 
-module.exports = { validate, save, findByCode, assertAvailable, assertServiceConditions, discountFor, apply, dashboard, publicView };
+// Installed versions only understand the generic promotion preview. Adapt the
+// response shape, not the stored offer or its server-side eligibility/discount.
+function compatiblePreview(promotion, apiVersion) {
+  return Number(apiVersion) !== 2 && ['free_drink', 'free_fries', 'free_dessert', 'free_classic'].includes(promotion?.type)
+    ? { ...promotion, type: 'percent_order', originalType: promotion.type } : promotion;
+}
+module.exports = { validate, save, findByCode, assertAvailable, assertServiceConditions, discountFor, apply, dashboard, publicView, compatiblePreview };

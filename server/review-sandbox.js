@@ -75,7 +75,14 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         if (!promotion) throw fail('Saisis un code promo.');
         availablePromotion(promotion);
         assertPromotionMethod(promotion, input.method, promotionContext, { preview: true });
-        if (promotion.requiredMenuCount || promotion.sourceContestPrize) assertPromotionCart(promotion, validateAndPriceOrderItems(input.items, {}, input, date).items);
+        if (promotion.requiredMenuCount || promotion.sourceContestPrize || promotion.id) {
+          const cart = validateAndPriceOrderItems(input.items, {}, input, date);
+          assertPromotionCart(promotion, cart.items);
+          if (promotion.id) {
+            promotion.previewProductDiscount = require('./merchant-promotions').discountFor(promotion, cart.items, cart.subtotal, input.method === 'delivery' ? 3.99 : 0).products;
+            promotion.previewBaseRate = bibouPlusStatus(customer, date).active ? .05 : 0;
+          }
+        }
         return { promotion };
       }
       if (route === '/customer/account' && method === 'DELETE') { sessions.delete(token); return { deleted: true }; }

@@ -7,6 +7,8 @@ const prizeLabels = {
   'points-60': '60 points Club Bibou',
   drink: 'une boisson offerte',
   fries: 'des frites maison offertes',
+  dessert: 'un dessert offert',
+  classic: 'le burger Classique seul du mois',
   'discount-1': 'une remise de 1 %',
   'discount-2': 'une remise de 2 %',
   'discount-5': 'une remise de 5 %',
@@ -26,7 +28,7 @@ function fullWheelRules(rules, segments) {
     const rewards = segments[tier].map(([id, chance]) => `${prizeLabels[id] || id} : ${chance} %`);
     return `${heading} : ${rewards.join(' ; ')}.`;
   });
-  return `${rules}\n\nProbabilités de chaque résultat par tour pour les nouvelles commandes :\n${odds.join('\n')}${notice}`;
+  return `${rules}\n\nProbabilités de chaque résultat par tour pour les nouvelles commandes :\n${odds.join('\n')}\nLes cadeaux ou remises déjà détenus peuvent être remplacés par les points du palier, selon les conditions ci-dessus ; ils ne deviennent pas des résultats sans gain.${notice}`;
 }
 
 module.exports = { fullWheelRules };
