@@ -26,6 +26,8 @@ const { readAuthResponse } = require("./auth-response");
 import RestaurantInfo from "./RestaurantInfo";
 import AppDownloadLinks from './AppDownloadLinks';
 import ContestEntry from './ContestEntry';
+import ContestWelcome from './ContestWelcome';
+const { authDestination } = require('./contest-presentation');
 const { bestClientOffer } = require('./crm-client');
 const { observeBrowserFocus } = require('./browser-focus');
 import { syncPushDevice, detachPushDevice, observePush } from "./push-client";
@@ -453,7 +455,6 @@ function NativeWelcomeChoice({ onCreateAccount, onSignIn, onViewMenu, onPrivacy,
     <StatusBar barStyle="dark-content" />
     <ScrollView contentContainerStyle={styles.nativeWelcome} showsVerticalScrollIndicator={false}>
       <View style={styles.nativeWelcomeBrand}><Image accessibilityLabel="Bibou’s Burgers" source={officialWordmarkPreview} resizeMode="contain" style={[styles.nativeWelcomeLogo, compactWelcome && styles.nativeWelcomeLogoCompact]} /></View>
-      <ContestEntry apiBaseUrl={API_BASE_URL} onOpenContest={onOpenContest} />
       <AppDownloadLinks />
       <View style={[styles.nativeWelcomeMain, animatedWelcome && styles.nativeWelcomeMainWeb]}>
         {animatedWelcome ? <WelcomeCarousel /> : <>
@@ -1181,6 +1182,7 @@ export default function App() {
   };
   return <SafeAreaProvider initialMetrics={initialWindowMetrics}>
     <DeviceSafeAreaView style={[styles.safeArea, showLaunch && styles.launchSafeArea]}>
+      <StatusBar barStyle={showLaunch ? "light-content" : "dark-content"} backgroundColor={showLaunch ? "#204F42" : "#FBF3E6"} />
       <View style={{ flex: 1 }}>
         {reviewMode && <View style={{ backgroundColor: "#315B4B", padding: 10 }}><Text style={{ color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" }}>MODE DE TEST · Aucun paiement ni commande réelle</Text></View>}
         <View style={{ flex: 1 }} importantForAccessibility={showLaunch ? "no-hide-descendants" : "auto"}><AppContent onReviewModeChange={setReviewMode} /></View>
@@ -1225,6 +1227,7 @@ function AppContent({ onReviewModeChange }) {
   const [screen, setScreen] = useState(initialScreenFromUrl);
   const [sessionRestored, setSessionRestored] = useState(!welcomeEnabled);
   const [showNativeWelcome, setShowNativeWelcome] = useState(welcomeEnabled);
+  const [showContestWelcome, setShowContestWelcome] = useState(welcomeEnabled);
   const [loginFromWelcome, setLoginFromWelcome] = useState(false);
   const [loginStartedFromWelcome, setLoginStartedFromWelcome] = useState(false);
   const [welcomePersonalizedOffers, setWelcomePersonalizedOffers] = useState(false);
@@ -1387,7 +1390,7 @@ function AppContent({ onReviewModeChange }) {
     void loadCustomerRewards({ token });
     setCrmWelcomeDestination(loginDestination);
     const preferencesChosen = loginStartedFromWelcome && (welcomePersonalizedOffers || welcomeOrderNotifications || welcomeMarketingNotifications);
-    setScreen(phonePairing ? 'kiosk-phone-approval' : isNewCustomer || preferencesChosen ? (nativeAccountFirst ? 'notifications-welcome' : 'crm-welcome') : loginDestination);
+    setScreen(authDestination({ phonePairing, loginDestination, isNewCustomer, preferencesChosen, nativeAccountFirst }));
     setLoginDestination("account");
     void recoverPayment(token, savedCustomer.id).catch(() => setStockFeedback('Impossible de lire le suivi du paiement sur cet appareil.'));
   };
@@ -1845,10 +1848,11 @@ function AppContent({ onReviewModeChange }) {
     return authToken && !isReviewToken(authToken) ? <KioskPhoneApproval api={API_BASE_URL} authToken={authToken} pairing={phonePairing} onBack={closePairing} /> : <SmsLoginScreen onBack={closePairing} onAuthenticated={authenticate} />;
   }
   if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
+  if (welcomeEnabled && showContestWelcome && screen === 'menu') return <ContestWelcome apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} onOpenContest={() => { setShowContestWelcome(false); setShowNativeWelcome(false); setScreen('contest'); }} onContinue={() => setShowContestWelcome(false)} />;
 if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (CUSTOMER_JOURNEY_SHELL || Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice onOpenContest={() => { setShowNativeWelcome(false); setScreen("contest"); }} signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending', 'reservation-payment-pending', 'reservation-deposit-success'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
   const renderJourneyScreen = () => {
-  if (CUSTOMER_JOURNEY_SHELL && screen === 'menu') return <CustomerJourneyHome frame={customerFrame} contestEntry={<ContestEntry apiBaseUrl={API_BASE_URL} onOpenContest={() => setScreen("contest")} />} loyalty={customerLoyaltyStrip} customer={customer} onOrder={() => setScreen('customer-service')} onReserve={() => openCustomerArea('reservation')} onClub={() => openCustomerArea('loyalty')} onPlus={() => { setBibouPlusReturnScreen('menu'); openCustomerArea('bibou-plus'); }} onNews={() => setScreen('customer-news')} onPartners={() => setScreen('partners')} pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} reviews={<GoogleReviewsCarousel />} stockMessage={stockFeedback || stockMessage} />;
+  if (CUSTOMER_JOURNEY_SHELL && screen === 'menu') return <CustomerJourneyHome frame={customerFrame} contestEntry={<ContestEntry apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} onOpenContest={() => setScreen("contest")} />} loyalty={customerLoyaltyStrip} customer={customer} onOrder={() => setScreen('customer-service')} onReserve={() => openCustomerArea('reservation')} onClub={() => openCustomerArea('loyalty')} onPlus={() => { setBibouPlusReturnScreen('menu'); openCustomerArea('bibou-plus'); }} onNews={() => setScreen('customer-news')} onPartners={() => setScreen('partners')} pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} reviews={<GoogleReviewsCarousel />} stockMessage={stockFeedback || stockMessage} />;
   if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-service') return <CustomerServiceScreen frame={{ ...customerFrame, onBack: () => setScreen('menu') }} loyalty={customerLoyaltyStrip} onSelect={chooseCustomerService} onReserve={() => openCustomerArea('reservation')} />;
   if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-categories') return <CustomerCategoriesScreen frame={{ ...customerFrame, onBack: () => setScreen(reservationDraft ? 'reservation' : 'customer-service') }} loyalty={customerLoyaltyStrip} service={preferredMethod} reservation={reservationDraft} showNaans={customerProducts('naans', customerCollections, catalog).length > 0} onCategory={category => { setCustomerCategory(category); setScreen('customer-catalog'); }} onCustom={() => setScreen('custom-burger-preview')} />;
   if (CUSTOMER_JOURNEY_SHELL && screen === 'customer-catalog') return <CustomerCatalogScreen frame={{ ...customerFrame, onBack: () => setScreen('customer-categories') }} loyalty={customerLoyaltyStrip} category={customerCategory} products={customerProducts(customerCategory, customerCollections, catalog)} stockMessage={stockFeedback || stockMessage} onProduct={openProduct} onQuickAdd={product => addSimpleToCart(product, 'cart')} />;

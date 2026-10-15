@@ -16,6 +16,7 @@ Dockerfile
 render.yaml
 scripts/
 store-assets/
+work/
 
 # Signing credentials use the dedicated EAS credential channel, not the source archive.
 credentials.json

@@ -29,15 +29,17 @@ test('contest welcome: closure uses Paris midnight and overrides stale active st
   assert.equal(contestEntry(active, Date.parse('2026-12-31T23:00:00Z')).action, 'Consulter le concours');
   assert.equal(contestEntry({ ...active, status: 'closed' }, now).action, 'Consulter le concours');
 });
-test('contest welcome: web-only component makes public GETs and preserves explicit join/login flow', () => {
+test('contest welcome: all platforms use a read-only entry and preserve explicit join/login flow', () => {
   const root = path.resolve(__dirname, '..');
   const web = fs.readFileSync(path.join(root, 'ContestEntry.web.js'), 'utf8');
-  assert.match(web, /\/contest\?contestApi=2/);
+  assert.match(web, /ContestEntryCard/);
   assert.doesNotMatch(web, /method:\s*['"](?:POST|PATCH|PUT|DELETE)/);
   assert.doesNotMatch(web, /Authorization|localStorage|sessionStorage|acceptRules|\/join/);
-  assert.match(web, /onClick=\{onOpenContest\}/);
-  assert.match(web, /document\.removeEventListener/);
-  assert.match(fs.readFileSync(path.join(root, 'ContestEntry.native.js'), 'utf8'), /return null/);
+  const overview = fs.readFileSync(path.join(root, 'useContestOverview.js'), 'utf8');
+  assert.match(overview, /contestApi=2/);
+  assert.doesNotMatch(overview, /method:\s*['"](?:POST|PATCH|PUT|DELETE)/);
+  assert.match(overview, /document\.removeEventListener/);
+  assert.match(fs.readFileSync(path.join(root, 'ContestEntry.native.js'), 'utf8'), /ContestEntryCard/);
   const app = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
   assert.match(app, /<NativeWelcomeChoice onOpenContest=\{\(\) => \{ setShowNativeWelcome\(false\); setScreen\("contest"\); \}\}/);
   assert.match(app, /onLogin=\{\(\) => \{ setLoginDestination\("contest"\); setScreen\("login"\); \}\}/);
