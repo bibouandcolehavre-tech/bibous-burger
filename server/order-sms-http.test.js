@@ -29,14 +29,16 @@ test('Staff SMS HTTP: payment verification and gifted orders alert both staff, n
   assert.deepEqual((await request('/dashboard/order-sms',null,admin)).data,{enabled:true,configured:true,recipientCount:2,counts:{},queueErrors:0});
   const serviceDate=parisDateKey(new Date(Date.now()+86400000));
   const cart=(method,promoCode)=>({customerId:customer.id,method,serviceDate,slot:method==='delivery'?'19:00 – 19:30':'19:00',promoCode,items:[{productId:'classique',quantity:1,selections:[{groupId:'protein',id:'viande'},{groupId:'salad',id:'roquette'},{groupId:'sauces',id:'mayo'}]}]});
-  const pending=await request('/orders',cart('pickup'));assert.equal(pending.status,201,JSON.stringify(pending.data));
+  const pending=await request('/orders',cart('delivery'));assert.equal(pending.status,201,JSON.stringify(pending.data));
   const payment=await request('/payments/sumup-checkout',{orderId:pending.data.order.id});assert.equal(payment.status,201);
   const callback=()=>request('/payments/sumup-return',{id:payment.data.checkoutId,event_type:'CHECKOUT_STATUS_CHANGED',status:'PAID'},'');
   await callback(); assert.equal((await db()).restaurantOrderSms,undefined); // Forged webhook status is ignored.
   const provider=JSON.parse(await fs.readFile(providerFile,'utf8'));provider.checkouts[payment.data.checkoutId].status='PAID';await fs.writeFile(providerFile,JSON.stringify(provider));
   await Promise.all([callback(),callback(),request('/payments/sumup-checkout/'+pending.data.order.id)]);
   assert.equal((await db()).restaurantOrderSms.jobs.length,2);
-  const gifted=await request('/orders',cart('delivery','CHORUS'));assert.equal(gifted.status,201,JSON.stringify(gifted.data));
+  const giftInput=cart('pickup','GROSLARD');
+  giftInput.items=[{...giftInput.items[0],productId:'classique-menu',quantity:2,selections:[...giftInput.items[0].selections,{groupId:'drink',id:'coca'}]}];
+  const gifted=await request('/orders',giftInput);assert.equal(gifted.status,201,JSON.stringify(gifted.data));
   assert.equal(gifted.data.order.total,0);assert.equal((await db()).restaurantOrderSms.jobs.length,4);
   const subscription=await request('/bibou-plus/checkout',{});assert.equal(subscription.status,201);
   const state=JSON.parse(await fs.readFile(providerFile,'utf8'));state.checkouts[subscription.data.purchase.payment.checkoutId].status='PAID';await fs.writeFile(providerFile,JSON.stringify(state));

@@ -1,5 +1,5 @@
 // Merchant-authorized codes stay on the server. Never trust a client-supplied
-// discount, price or payment state. CHORUS has no usage cap or expiry by request.
+// discount, price or payment state. Retired test codes must never create real orders.
 const { PRODUCT_CATALOG } = require('./catalog');
 const merchant = require('./merchant-promotions');
 const contestPrizes = require('./contest-prizes');
@@ -11,7 +11,8 @@ const normalizePromoCode = value => {
 const promotionForCode = (value, database) => {
   const code = normalizePromoCode(value);
   if (!code) return null;
-  if (code === 'CHORUS') return { code, discountPercent: 100, freeDelivery: true };
+  // Retire before personal/configured offers too, including stale stored entries.
+  if (code === 'CHORUS') throw Object.assign(new Error('Ce code promo n’est plus disponible.'), { statusCode: 400 });
   if (code === 'GROSLARD') return { code, discountPercent: 100, freeDelivery: false, pickupOnly: true, requiredMenuCount: 2, singleUse: true,
     message: 'Ce code promo vous permet de bénéficier de deux menus offerts, au choix. Choisissez le retrait en Click & Collect ; vous pouvez aussi déguster vos menus sur place. Hors suppléments payants.' };
   if (database) {
