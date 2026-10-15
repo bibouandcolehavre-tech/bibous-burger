@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { previousAccount } = require('./welcome-reward-history');
 const { parisDateKey } = require('./availability');
 const { normalizeReferralCode } = require('./referrals');
 const { CONTEST_PRIZE_RULES } = require('../contest-prize-policy');
@@ -180,7 +181,9 @@ function joinContest(database, customer, input, secret, now = new Date()) {
     if (sponsor.id === customer.id || sponsor.phone === customer.phone) throw fail('Tu ne peux pas te parrainer toi-même.');
     sponsorId = sponsor.id;
   }
-  const newCustomer = withinDates(contest, customer.createdAt) && withinDates(contest, customer.firstPhoneVerifiedAt);
+  const previous = previousAccount(database, customer, secret, now);
+  const newCustomer = withinDates(contest, previous ? previous.firstSeenAt : customer.createdAt) &&
+    withinDates(contest, previous ? previous.firstVerifiedAt : customer.firstPhoneVerifiedAt);
   contest.entries.push({ customerId: customer.id, phoneHash, alias: `Participant ${crypto.randomBytes(4).toString('hex').toUpperCase()}`, sponsorId, newCustomer, joinedAt: now.toISOString(), rulesRevision: contest.revision, shareEvents: [], prizeAlerts: input.acceptPrizeAlerts === true, prizeAlertsUpdatedAt: now.toISOString() });
   return { changed: true, ...customerContest(database, customer, now) };
 }
