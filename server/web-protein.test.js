@@ -14,7 +14,7 @@ test('web protein options are neutral, real vegetarian removes meat and is recor
 test('the approved consumer protein interface remains shared on all platforms',()=>{
   const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
   assert.match(source,/const NEW_PROTEIN_CHOICES = \['web', 'android', 'ios'\]\.includes\(Platform.OS\);/);
-  assert.match(source,/if \(NEW_PROTEIN_CHOICES\) \{ group = kioskRecipeGroup/);
+  assert.match(source,/if \(NEW_PROTEIN_CHOICES\) \{ group = consumerRecipeGroup/);
   assert.match(source,/NEW_PROTEIN_CHOICES \? kioskRecipeChoices/);
   assert.match(source,/group.helper \|\|/);
 });
