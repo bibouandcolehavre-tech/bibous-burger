@@ -265,6 +265,9 @@ const assertStoredOrderAvailable = (items, overrides = {}) => {
 
 const validatedSelections = (product, selections, productId) => {
   if (!Array.isArray(selections)) throw orderInputError("Actualise l’application avant de commander.");
+  if (selections.some(selection => !selection || typeof selection !== 'object' || Array.isArray(selection) ||
+      typeof selection.groupId !== 'string' || typeof selection.id !== 'string'))
+    throw orderInputError("Une option de la commande est invalide.");
   if (product.custom) {
     try { return pricedOptions(parseSelectionEntries(selections)); }
     catch (error) { throw orderInputError(error.message); }
@@ -321,6 +324,8 @@ const priceOrderItems = (inputItems, overrides, context, now, checkNaanService) 
   if (!Array.isArray(inputItems) || !inputItems.length || inputItems.length > 20) throw orderInputError("Le panier est invalide.");
   let subtotalCents = 0;
   const items = inputItems.map((input) => {
+    if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.productId !== 'string')
+      throw orderInputError("Un produit du panier est invalide. Actualise ton panier.");
     const productId = String(input?.productId || "");
     const product = Object.hasOwn(PRODUCT_CATALOG, productId) ? PRODUCT_CATALOG[productId] : null;
     if (!product) throw orderInputError("Un produit du panier n’existe plus.");

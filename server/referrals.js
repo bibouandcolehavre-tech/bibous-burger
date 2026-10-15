@@ -34,6 +34,7 @@ const referralError = (message) => Object.assign(new Error(message), { statusCod
 const applyReferralCode = (database, customer, value, now = new Date()) => {
   const code = normalizeReferralCode(value);
   if (!code) return { changed: false, sponsor: null };
+  if (customer.referralBenefitsBlocked) throw referralError('Ce numéro a déjà effectué une première commande payée : un compte recréé ne donne pas un nouveau parrainage.');
 
   const sponsor = (database.customers || []).find((item) => normalizeReferralCode(item.referralCode) === code);
   if (!sponsor) throw referralError("Ce code de parrainage n’existe pas.");
@@ -60,7 +61,7 @@ const grantReferralReward = (order, database, now = new Date()) => {
   if (order.payment?.status !== "PAID" || order.payment.provider === 'promotion' || order.status === "cancelled" || order.referralRewardGrantedAt) return { changed: false, pointsAdded: 0, sponsor: null };
 
   const referredCustomer = (database.customers || []).find((customer) => customer.id === order.customerId);
-  if (!referredCustomer?.referredByCustomerId || referredCustomer.referralRewardGrantedAt) return { changed: false, pointsAdded: 0, sponsor: null };
+  if (!referredCustomer?.referredByCustomerId || referredCustomer.referralRewardGrantedAt || referredCustomer.referralBenefitsBlocked) return { changed: false, pointsAdded: 0, sponsor: null };
 
   const firstPaidOrder = paidActiveOrdersFor(database, referredCustomer.id)[0];
   if (!firstPaidOrder || firstPaidOrder.id !== order.id) return { changed: false, pointsAdded: 0, sponsor: null };

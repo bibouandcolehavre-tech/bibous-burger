@@ -1,40 +1,48 @@
 const crypto = require('node:crypto');
+const { previousAccount } = require('./welcome-reward-history');
 const { parisDateKey } = require('./availability');
 const { normalizeReferralCode } = require('./referrals');
 const { CONTEST_PRIZE_RULES } = require('../contest-prize-policy');
+const { dateValid, timeValid, contestWindow, withinContest, createContestDateFilter } = require('./contest-window');
+const { CONTEST_WHEEL_BONUS_RULES, wheelBonusEnabled, wheelRulesConflict, wheelBonusDeclared, contestWheelEvents } = require('./contest-wheel-points');
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 // Approved scoring and dates remain a private draft until the rules are finalized.
 const SCORE_PER_REFERRAL = 20;
-const defaultContest = () => ({ id: 'bibou-launch', status: 'draft', revision: 0, title: 'Les ambassadeurs Bibou', startDate: '', endDate: '', region: 'France métropolitaine', firstPrize: '2 menus par mois pendant 12 mois (24 menus)', secondPrize: '1 menu par mois pendant 6 mois (6 menus)', thirdPrize: '2 menus en une seule fois', rules: '', entries: [] });
+const defaultContest = () => ({ id: 'bibou-launch', status: 'draft', revision: 0, title: 'Les ambassadeurs Bibou', startDate: '', startTime: '00:00', endDate: '', region: 'France métropolitaine', firstPrize: '2 menus par mois pendant 12 mois (24 menus)', secondPrize: '1 menu par mois pendant 6 mois (6 menus)', thirdPrize: '2 menus en une seule fois', rules: '', wheelPointsInRanking: false, entries: [] });
+const scoringFor = contest => ({ pointsPerEuro: 1, pointsPerVerifiedReferral: SCORE_PER_REFERRAL, pointsPerDailyShareAction: 1, ...(wheelBonusEnabled(contest) ? { pointsPerAwardedWheelPoint: 1 } : {}) });
 const contestFor = database => database.referralContest || defaultContest();
-const dateValid = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T12:00:00Z`)) && new Date(`${value}T12:00:00Z`).toISOString().slice(0, 10) === value;
-const withinDates = (contest, value) => {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) && parisDateKey(date) >= contest.startDate && parisDateKey(date) <= contest.endDate;
-};
+const withinDates = withinContest;
 const readiness = contest => [
   !contest.startDate && 'Choisir la date de début',
   !contest.endDate && 'Choisir la date de fin',
+  !timeValid(contest.startTime || '00:00') && 'Choisir une heure de début valide',
   !contest.firstPrize && 'Confirmer le lot de la 1re place',
   !contest.secondPrize && 'Confirmer le lot de la 2e place',
   !contest.thirdPrize && 'Confirmer le lot de la 3e place',
   !contest.rules && 'Finaliser le règlement : éligibilité, calcul des points, départage, remise des lots et données personnelles',
+  wheelBonusEnabled(contest) && wheelRulesConflict(contest.rules) && 'Corriger le règlement : le bonus de points de roue est coché mais le texte l’exclut du classement',
+  !wheelBonusEnabled(contest) && wheelBonusDeclared(contest.rules) && 'Corriger le règlement ou cocher le bonus roue : le texte l’annonce mais le calcul ne l’inclut pas',
 ].filter(Boolean);
 
 function saveContestDraft(database, input, now = new Date()) {
   const previous = contestFor(database);
   if (previous.status !== 'draft') throw fail('Un concours publié ne peut plus être modifié ici.', 409);
   if (!input || Array.isArray(input) || input.revision !== previous.revision) throw fail('Ce brouillon a changé. Actualisez avant de réessayer.', 409);
-  const fields = { title: 120, startDate: 10, endDate: 10, region: 160, firstPrize: 400, secondPrize: 400, thirdPrize: 400, rules: 12000 };
+  const fields = { title: 120, startDate: 10, startTime: 5, endDate: 10, region: 160, firstPrize: 400, secondPrize: 400, thirdPrize: 400, rules: 12000, wheelPointsInRanking: true };
   if (Object.keys(input).some(key => key !== 'revision' && !Object.hasOwn(fields, key))) throw fail('Seuls les champs du brouillon peuvent être enregistrés. Aucune activation possible ici.');
   const next = { ...previous };
   for (const [key, max] of Object.entries(fields)) if (Object.hasOwn(input, key)) {
+    if (key === 'wheelPointsInRanking') {
+      if (typeof input[key] !== 'boolean') throw fail('Le choix du bonus roue doit être oui ou non.');
+      next[key] = input[key]; continue;
+    }
     if (typeof input[key] !== 'string' || input[key].length > max) throw fail(`Champ invalide : ${key}.`);
     next[key] = input[key].trim();
   }
   if (!next.title || !next.region) throw fail('Le titre et la zone du concours sont requis.');
   if ((next.startDate && !dateValid(next.startDate)) || (next.endDate && !dateValid(next.endDate))) throw fail('Indiquez des dates valides.');
+  if ((Object.hasOwn(input, 'startTime') && !timeValid(next.startTime)) || !timeValid(next.startTime || '00:00')) throw fail('Indiquez une heure de début valide, au format HH:MM.');
   if (next.startDate && next.endDate && next.endDate < next.startDate) throw fail('La fin doit être postérieure ou égale au début.');
   next.revision += 1;
   next.updatedAt = now.toISOString();
@@ -57,9 +65,10 @@ function publishContest(database, input, now = new Date()) {
 
 function contestStatus(contest, now = new Date()) {
   if (contest.status !== 'published' || readiness(contest).length) return 'inactive';
-  const day = parisDateKey(now);
-  if (day < contest.startDate) return 'scheduled';
-  if (day > contest.endDate) return 'closed';
+  const window = contestWindow(contest);
+  if (!window || !Number.isFinite(now.getTime())) return 'inactive';
+  if (now.getTime() < Date.parse(window.startsAt)) return 'scheduled';
+  if (now.getTime() >= Date.parse(window.endsAt)) return 'closed';
   return 'active';
 }
 
@@ -68,7 +77,8 @@ function publicContest(database, now = new Date()) {
   const status = contestStatus(contest, now);
   if (status === 'inactive') return { status };
   const { id, revision, title, startDate, endDate, region, firstPrize, secondPrize, thirdPrize, rules } = contest;
-  return { id, revision, title, startDate, endDate, region, firstPrize, secondPrize, thirdPrize, rules: `${rules}\n\nConditions d’utilisation des menus gagnés\n${CONTEST_PRIZE_RULES}`, status, scoring: { pointsPerEuro: 1, pointsPerVerifiedReferral: SCORE_PER_REFERRAL, pointsPerDailyShareAction: 1 } };
+  const { clarifyContestRules, RULES_CLARIFICATION_VERSION } = require('./contest-rules-clarifications');
+  return { id, revision, title, startDate, startTime: contest.startTime || '00:00', endDate, region, firstPrize, secondPrize, thirdPrize, rules: `${clarifyContestRules(rules)}${wheelBonusEnabled(contest) ? '\n\n' + CONTEST_WHEEL_BONUS_RULES : ''}\n\nConditions d’utilisation des lots du classement uniquement\n${CONTEST_PRIZE_RULES}`, rulesClarificationVersion: RULES_CLARIFICATION_VERSION, status, scoring: scoringFor(contest) };
 }
 
 const verifiedPhone = customer => /^\+33[67]\d{8}$/.test(customer?.phone || '') && customer.verifiedPhone === customer.phone && Number.isFinite(Date.parse(customer.phoneVerifiedAt));
@@ -80,8 +90,10 @@ function referralCount(database, contest, sponsorId) {
   return activeEntries(database, contest).filter(entry => entry.sponsorId === sponsorId && entry.newCustomer).length;
 }
 
-function contestRanking(database, contest) {
+function contestRanking(database, contest, now = new Date()) {
+  const inContest = createContestDateFilter(contest);
   const participants = activeEntries(database, contest);
+  const customersById = new Map(database.customers.map(customer => [customer.id, customer]));
   const scoreEvents = new Map(participants.map(entry => [entry.customerId, []]));
   for (const entry of participants) if (entry.sponsorId && entry.newCustomer && scoreEvents.has(entry.sponsorId)) {
     scoreEvents.get(entry.sponsorId).push({ at: entry.joinedAt, kind: 'referral', amount: SCORE_PER_REFERRAL });
@@ -92,7 +104,7 @@ function contestRanking(database, contest) {
     }
   }
   for (const order of database.orders || []) {
-    if (!scoreEvents.has(order.customerId) || order.payment?.status !== 'PAID' || order.status === 'cancelled' || !withinDates(contest, order.payment.paidAt || order.createdAt)) continue;
+    if (!scoreEvents.has(order.customerId) || order.payment?.status !== 'PAID' || order.status === 'cancelled' || !inContest(order.payment.paidAt || order.createdAt)) continue;
     const total = Number(order.total);
     if (!Number.isFinite(total) || total <= 0) continue;
     const original = Number(order.paidTotal);
@@ -100,27 +112,38 @@ function contestRanking(database, contest) {
     const retained = Number.isFinite(original) && Number.isFinite(refunded) ? Math.min(total, Math.max(0, original - refunded)) : total;
     if (retained > 0) scoreEvents.get(order.customerId).push({ at: order.payment.paidAt || order.createdAt, kind: 'order', amount: Math.round(retained * 100) });
   }
+  for (const event of contestWheelEvents(database, contest, now)) {
+    if (scoreEvents.has(event.customerId)) scoreEvents.get(event.customerId).push(event);
+  }
   const ranking = participants.map(entry => {
-    let referrals = 0, shares = 0, cents = 0, score = 0, reachedAt = entry.joinedAt;
+    let referrals = 0, shares = 0, cents = 0, wheelPoints = 0, score = 0, reachedAt = entry.joinedAt;
     const events = scoreEvents.get(entry.customerId).map(event => ({ ...event, at: event.at < entry.joinedAt ? entry.joinedAt : event.at }));
     events.sort((a, b) => a.at.localeCompare(b.at));
     for (const event of events) {
       if (event.kind === 'referral') referrals += 1;
       else if (event.kind === 'share') shares += 1;
+      else if (event.kind === 'wheel') wheelPoints += event.amount;
       else cents += event.amount;
-      const nextScore = referrals * SCORE_PER_REFERRAL + shares + Math.floor(cents / 100);
+      const nextScore = referrals * SCORE_PER_REFERRAL + shares + Math.floor(cents / 100) + wheelPoints;
       if (nextScore > score) reachedAt = event.at;
       score = nextScore;
     }
-    return { alias: entry.alias, customerId: entry.customerId, referrals, sharePoints: shares, purchasePoints: Math.floor(cents / 100), score, joinedAt: entry.joinedAt, reachedAt };
-  }).sort((a, b) => b.score - a.score || a.reachedAt.localeCompare(b.reachedAt) || a.joinedAt.localeCompare(b.joinedAt) || a.customerId.localeCompare(b.customerId));
+    const accountDate = Date.parse(customersById.get(entry.customerId)?.createdAt);
+    return { alias: entry.alias, customerId: entry.customerId, referrals, sharePoints: shares, purchasePoints: Math.floor(cents / 100), ...(wheelBonusEnabled(contest) ? { wheelPoints } : {}), score, joinedAt: entry.joinedAt, reachedAt,
+      accountCreatedAt: Number.isFinite(accountDate) ? new Date(accountDate).toISOString() : null };
+  }).sort((a, b) => b.score - a.score || a.reachedAt.localeCompare(b.reachedAt) || a.joinedAt.localeCompare(b.joinedAt) ||
+    (a.accountCreatedAt || '9999').localeCompare(b.accountCreatedAt || '9999') || a.customerId.localeCompare(b.customerId));
+  const primaryKey = row => `${row.score}:${row.reachedAt}:${row.joinedAt}`;
+  // Missing legacy creation dates are not fabricated or used to award a prize.
+  const unknownAgeGroups = new Set(ranking.filter(row => !row.accountCreatedAt).map(primaryKey));
+  const tieKey = row => `${primaryKey(row)}:${unknownAgeGroups.has(primaryKey(row)) ? 'unknown-age' : row.accountCreatedAt}`;
   const counts = new Map(), ranks = new Map();
   ranking.forEach((entry, index) => {
-    const key = `${entry.score}:${entry.reachedAt}`;
+    const key = tieKey(entry);
     counts.set(key, (counts.get(key) || 0) + 1);
     if (!ranks.has(key)) ranks.set(key, index + 1);
   });
-  return ranking.map(entry => ({ ...entry, rank: ranks.get(`${entry.score}:${entry.reachedAt}`), tied: counts.get(`${entry.score}:${entry.reachedAt}`) > 1 }));
+  return ranking.map(entry => ({ ...entry, rank: ranks.get(tieKey(entry)), tied: counts.get(tieKey(entry)) > 1 }));
 }
 
 function customerContest(database, customer, now = new Date()) {
@@ -128,13 +151,13 @@ function customerContest(database, customer, now = new Date()) {
   if (publicData.status === 'inactive') return { contest: publicData, participation: null };
   const contest = contestFor(database);
   const entry = activeEntries(database, contest).find(item => item.customerId === customer.id);
-  const ranking = contestRanking(database, contest);
+  const ranking = contestRanking(database, contest, now);
   const ownRank = ranking.find(item => item.customerId === customer.id);
   return {
     contest: publicData,
     needsPhoneVerification: !verifiedPhone(customer),
     leaderboard: ranking.slice(0, 10).map(({ alias, score, rank, tied }) => ({ alias, score, rank, tied })),
-    participation: entry ? { code: customer.referralCode, alias: entry.alias, joinedAt: entry.joinedAt, referrals: ownRank?.referrals || 0, sharePoints: ownRank?.sharePoints || 0, sharedToday: (entry.shareEvents || []).some(share => share.date === parisDateKey(now)), purchasePoints: ownRank?.purchasePoints || 0, score: ownRank?.score || 0, rank: ownRank?.rank, tied: ownRank?.tied || false, shareUrl: `https://bibous-burger-app.onrender.com/?contest=${encodeURIComponent(contest.id)}&ref=${encodeURIComponent(customer.referralCode)}` } : null,
+    participation: entry ? { code: customer.referralCode, alias: entry.alias, joinedAt: entry.joinedAt, referrals: ownRank?.referrals || 0, sharePoints: ownRank?.sharePoints || 0, sharedToday: (entry.shareEvents || []).some(share => share.date === parisDateKey(now)), purchasePoints: ownRank?.purchasePoints || 0, ...(wheelBonusEnabled(contest) ? { wheelPoints: ownRank?.wheelPoints || 0 } : {}), score: ownRank?.score || 0, rank: ownRank?.rank, tied: ownRank?.tied || false, shareUrl: `https://bibous-burger-app.onrender.com/?contest=${encodeURIComponent(contest.id)}&ref=${encodeURIComponent(customer.referralCode)}` } : null,
   };
 }
 
@@ -159,7 +182,9 @@ function joinContest(database, customer, input, secret, now = new Date()) {
     if (sponsor.id === customer.id || sponsor.phone === customer.phone) throw fail('Tu ne peux pas te parrainer toi-même.');
     sponsorId = sponsor.id;
   }
-  const newCustomer = withinDates(contest, customer.createdAt) && withinDates(contest, customer.firstPhoneVerifiedAt);
+  const previous = previousAccount(database, customer, secret, now);
+  const newCustomer = withinDates(contest, previous ? previous.firstSeenAt : customer.createdAt) &&
+    withinDates(contest, previous ? previous.firstVerifiedAt : customer.firstPhoneVerifiedAt);
   contest.entries.push({ customerId: customer.id, phoneHash, alias: `Participant ${crypto.randomBytes(4).toString('hex').toUpperCase()}`, sponsorId, newCustomer, joinedAt: now.toISOString(), rulesRevision: contest.revision, shareEvents: [], prizeAlerts: input.acceptPrizeAlerts === true, prizeAlertsUpdatedAt: now.toISOString() });
   return { changed: true, ...customerContest(database, customer, now) };
 }
@@ -203,11 +228,12 @@ function purgeExpiredContestEntries(database, now = new Date()) {
 
 function dashboardContest(database, now = new Date()) {
   const contest = contestFor(database);
+  const inContest = createContestDateFilter(contest);
   const { entries, ...draft } = contest;
   const participants = activeEntries(database, contest);
-  const ranking = contestRanking(database, contest);
+  const ranking = contestRanking(database, contest, now);
   const participantIds = new Set(participants.map(entry => entry.customerId));
-  const eligibleOrders = (database.orders || []).filter(order => participantIds.has(order.customerId) && order.payment?.status === 'PAID' && order.status !== 'cancelled' && withinDates(contest, order.payment.paidAt || order.createdAt));
+  const eligibleOrders = (database.orders || []).filter(order => participantIds.has(order.customerId) && order.payment?.status === 'PAID' && order.status !== 'cancelled' && inContest(order.payment.paidAt || order.createdAt));
   const paid = new Set(eligibleOrders.map(order => order.customerId));
   const paidRevenueCents = eligibleOrders.reduce((sum, order) => {
     const total = Number(order.total), original = Number(order.paidTotal);
@@ -216,7 +242,8 @@ function dashboardContest(database, now = new Date()) {
     const retained = Number.isFinite(original) && Number.isFinite(refunded) ? Math.min(total, Math.max(0, original - refunded)) : total;
     return sum + Math.round(retained * 100);
   }, 0);
-  return { draft, status: contestStatus(contest, now), missing: readiness(contest), launchLocked: contest.status === 'draft', scoring: { pointsPerEuro: 1, pointsPerVerifiedReferral: SCORE_PER_REFERRAL, pointsPerDailyShareAction: 1 }, statistics: { participants: participants.length, newReferrals: participants.filter(entry => entry.sponsorId && entry.newCustomer).length, paidCustomers: paid.size, paidOrders: eligibleOrders.length, paidRevenue: paidRevenueCents / 100 }, ranking: ranking.slice(0, 100), rankingTotal: ranking.length };
+  if (contest.status === 'published') draft.rules = require('./contest-rules-clarifications').clarifyContestRules(draft.rules);
+  return { draft, status: contestStatus(contest, now), missing: readiness(contest), launchLocked: contest.status === 'draft', scoring: scoringFor(contest), statistics: { participants: participants.length, newReferrals: participants.filter(entry => entry.sponsorId && entry.newCustomer).length, paidCustomers: paid.size, paidOrders: eligibleOrders.length, paidRevenue: paidRevenueCents / 100 }, ranking: ranking.slice(0, 100), rankingTotal: ranking.length };
 }
 
 module.exports = { defaultContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, withdrawContest, purgeExpiredContestEntries, dashboardContest, contestStatus, contestRanking };

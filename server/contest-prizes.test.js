@@ -63,10 +63,30 @@ test('lots : résultats modifiés et ex æquo bloquent la distribution', () => {
   const db = fixture(), preview = prizes.finalizationPreview(db, finalizedAt);
   const input = { confirmation: 'VALIDER LES LOTS DU CONCOURS', requestId: crypto.randomUUID(), rankingFingerprint: preview.rankingFingerprint, startMonth: '2026-11', eligibleMenuIds: ['classique-menu'] };
   db.orders[0].status = 'cancelled'; assert.throws(() => prizes.finalize(db, input, finalizedAt), { statusCode: 409 });
-  const tied = fixture(); tied.orders[1].total = tied.orders[0].total;
+  const tied = fixture(); tied.orders[1].total = tied.orders[0].total; tied.referralContest.entries[1].joinedAt = tied.referralContest.entries[0].joinedAt;
   const tiePreview = prizes.finalizationPreview(tied, finalizedAt); assert.equal(tiePreview.tied, true);
   assert.throws(() => prizes.finalize(tied, { ...input, rankingFingerprint: tiePreview.rankingFingerprint }, finalizedAt), { statusCode: 409 });
   assert.equal(tied.contestPrizes, undefined);
+});
+test('lots : le règlement réellement publié 24/6/2 est accepté sans réécrire ses libellés', () => {
+  const preset = require('../restaurant-dashboard/contest-launch-20261015.json');
+  const db = fixture(), instant = new Date('2027-01-01T12:00:00Z');
+  Object.assign(db.referralContest, preset);
+  db.referralContest.status = 'published';
+  for (const entry of db.referralContest.entries) entry.joinedAt = '2026-10-15T09:00:00Z';
+  for (const order of db.orders) order.createdAt = order.payment.paidAt = '2026-10-15T10:00:00Z';
+  const before = structuredClone(db.referralContest);
+  const input = { confirmation: 'VALIDER LES LOTS DU CONCOURS', requestId: crypto.randomUUID(), rankingFingerprint: prizes.finalizationPreview(db, instant).rankingFingerprint,
+    startMonth: '2027-02', eligibleMenuIds: ['classique-menu'] };
+  assert.equal(prizes.finalize(db, input, instant).changed, true);
+  assert.deepEqual(db.contestPrizes.grants.map(g => g.menus * g.months), [24, 6, 2]);
+  assert.equal(db.referralContest.thirdPrize, before.thirdPrize);
+  for (const invalid of ['20 menus en une seule commande', '2 menus par mois pendant 12 mois']) {
+    const bad = fixture(); bad.referralContest.thirdPrize = invalid;
+    const other = { ...input, rankingFingerprint: prizes.finalizationPreview(bad, finalizedAt).rankingFingerprint, startMonth: '2026-11' };
+    assert.throws(() => prizes.finalize(bad, other, finalizedAt), /lots du règlement/);
+    assert.equal(bad.contestPrizes, undefined);
+  }
 });
 test('lots : codes uniques par gagnant et par mois, pas de report, pas de création avant le mois', () => {
   const { db } = confirm(); assert.equal(prizes.issueCurrentMonth(db, finalizedAt), false);

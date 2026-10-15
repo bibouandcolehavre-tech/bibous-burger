@@ -5,10 +5,9 @@ const { orderFingerprint } = require('./order-attempt');
 const amendments = require('./order-amendments');
 const { validateAndPriceOrderItems } = require('./catalog');
 
-test('CHORUS : normalisation, panier entier et livraison offerts, codes inconnus refusés', () => {
-  const promo = promotionForCode('  chorus  ');
-  assert.equal(promo.code, 'CHORUS');
-  for (const value of ['CHORUSS', 'NOPE', 100, {}, ['CHORUS'], 'x'.repeat(41)]) assert.throws(() => promotionForCode(value), { statusCode: 400 });
+test('anciens paniers offerts : prix conservés sans réactiver un code retiré', () => {
+  const promo = { code: 'CHORUS', discountPercent: 100, freeDelivery: true }; // Historical record, not a newly accepted code.
+  for (const value of ['CHORUS', ' chorus ', 'CHORUSS', 'NOPE', 100, {}, ['CHORUS'], 'x'.repeat(41)]) assert.throws(() => promotionForCode(value), { statusCode: 400 });
   assert.equal(promotionForCode(''), null);
   for (const fee of [0, 3.99, 4.99, 5.99]) {
     const base = { subtotal: 26.8, discount: 2.68, discountRate: .1, deliveryFee: fee, standardDeliveryFee: fee, total: 24.12 + fee };
@@ -41,10 +40,11 @@ test('GROSLARD : exactement deux menus au choix, utilisable une seule fois', () 
   assertPromotionAvailable({ orders: [] }, promo);
   assertPromotionAvailable({ orders: [{ promotion: promo, status: 'awaiting_payment' }] }, promo);
   assert.throws(() => assertPromotionAvailable({ orders: [{ promotion: promo, payment: { status: 'PAID' }, status: 'cancelled' }] }, promo), /déjà été utilisé/);
-  assertPromotionAvailable({ orders: [{ promotion: promo, payment: { status: 'PAID' } }] }, promotionForCode('CHORUS'));
+  assertPromotionAvailable({ orders: [{ promotion: promo, payment: { status: 'PAID' } }] }, { code: 'HISTORICAL', discountPercent: 100, freeDelivery: true });
 });
 test('promotion : règlement gratuit distinct de SumUp, cohérence et idempotence', () => {
-  const order = { ...applyPromotion({ subtotal: 20, standardDeliveryFee: 5.99 }, promotionForCode('CHORUS')), promotion: promotionForCode('CHORUS'), status: 'awaiting_payment' };
+  const promo = promotionForCode('GROSLARD');
+  const order = { ...applyPromotion({ subtotal: 20, standardDeliveryFee: 0 }, promo, 'pickup'), method: 'pickup', promotion: promo, status: 'awaiting_payment' };
   assert.equal(settlePromotionalOrder(order), true);
   assert.equal(order.payment.provider, 'promotion'); assert.equal(order.payment.amount, 0);
   assert.equal(settlePromotionalOrder(order), false);
@@ -67,7 +67,7 @@ test('reprise client : ne jamais ouvrir un ancien paiement bancaire après confi
   assert.equal(differentPendingPromo({ kind: 'bibouPlus', input: {} }, 'order', { promoCode: 'CHORUS' }), true);
 });
 test('modification et annulation d’une livraison offerte : aucun prix ni remboursement inventé', () => {
-  const now = Date.parse('2026-09-26T10:00:00Z'), promo = promotionForCode('CHORUS');
+  const now = Date.parse('2026-09-26T10:00:00Z'), promo = { code: 'CHORUS', discountPercent: 100, freeDelivery: true };
   const cart = validateAndPriceOrderItems([{ productId: 'drink-coca', quantity: 2, selections: [] }]);
   const order = { ...applyPromotion({ subtotal: cart.subtotal, standardDeliveryFee: 5.99 }, promo), items: cart.items, promotion: promo, customerId: 'c', status: 'confirmed', payment: { status: 'PAID', provider: 'promotion', amount: 0 }, method: 'delivery', serviceDate: '2026-09-26', slot: '19:00 – 19:30' };
   const input = { revision: 0, reason: 'Remplacement', items: [{ productId: 'drink-perrier', quantity: 1, selections: [] }] };

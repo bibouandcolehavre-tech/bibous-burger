@@ -60,6 +60,46 @@ test("interface clients : historique complet ouvrable, calcul et préférence pr
   assert.match(html, /\+ 15 points de fidélité/);
 });
 
+test('interface clients : origine des points, roue jouée sans gain et cadeaux passés', async () => {
+  const h = await harness();
+  const database = { customers: [{ id: 'safe', name: 'Client exemple', points: 80 }],
+    orders: [{ id: 'order1', number: 301, customerId: 'safe', status: 'delivered', total: 20, subtotal: 20, wheelEurosPerTurn: 15,
+      loyaltyPointsAdded: 60, loyaltyGrantedAt: '2026-10-14T18:00:00Z', payment: { status: 'PAID', paidAt: '2026-10-14T18:00:00Z' } }],
+    wheelSpins: [
+      { id: 'points', customerId: 'safe', orderId: 'order1', prizeId: 'points-20', pointsAdded: 20, label: '20 points Club Bibou', awardedAt: '2026-10-14T18:02:00Z' },
+      { id: 'none', customerId: 'safe', orderId: 'order1', prizeId: 'none', label: 'Pas de gain cette fois', awardedAt: '2026-10-14T18:03:00Z' },
+      { id: 'gift', customerId: 'safe', prizeId: 'fries', label: '<img src=x onerror=bad()>', awardedAt: '2026-10-14T18:01:00Z', redemptionStatus: 'used', usedAt: '2026-10-14T19:00:00Z', usedOnOrderId: 'order1' },
+    ], rewardClaims: [{ id: 'tier', customerId: 'safe', rewardId: 'drink', status: 'used', createdAt: '2026-10-13T18:00:00Z', usedAt: '2026-10-14T18:00:00Z' }] };
+  h.context.fetch = async () => result(dashboardCustomerDetail(database, 'safe', new Date('2026-10-14T20:00:00Z')));
+  await h.run('loadCustomerDetail("safe")');
+  const html = h.element('#customer-detail').innerHTML;
+  assert.match(html, /Points des commandes<\/span><strong>60 pts/);
+  assert.match(html, /Points de la roue<\/span><strong>20 pts/);
+  assert.match(html, /correspondent au solde actuel/);
+  assert.match(html, /3 tour\(s\) joué\(s\)/);
+  assert.match(html, /Tour joué · aucun gain/);
+  assert.match(html, /Commande #301/);
+  assert.match(html, /Cadeaux et bons déjà gagnés/);
+  assert.match(html, /Déjà utilisé \/ remis/);
+  assert.match(html, /Palier fidélité/);
+  assert.match(html, /&lt;img/);
+  assert.equal(html.includes('<img'), false);
+});
+
+test('interface clients : historique incomplet signalé et ancien serveur jamais présenté comme zéro gain', async () => {
+  const h = await harness();
+  const legacy = dashboardCustomerDetail(db, 'safe');
+  h.context.fetch = async () => result(legacy);
+  await h.run('loadCustomerDetail("safe")');
+  assert.match(h.element('#customer-detail').innerHTML, /Historique partiel ou ajusté/);
+  assert.match(h.element('#customer-detail').innerHTML, /199 points supplémentaires restent sans origine détaillée/);
+  delete legacy.gains;
+  await h.run('loadCustomerDetail("safe")');
+  const html = h.element('#customer-detail').innerHTML;
+  assert.match(html, /Historique des gains indisponible/);
+  assert.equal(html.includes('0 tour(s) joué(s)'), false);
+});
+
 test("interface clients : réponse tardive ignorée après changement de recherche ou de session", async () => {
   const h = await harness();
   let resolve;
@@ -152,6 +192,39 @@ test('une nouvelle commande réclamée est imprimée sans clic puis acquittée u
   assert.equal(sent, 1);
   assert.equal(completed, 1);
   assert.match(h.element('#printer-status').textContent, /prête/);
+});
+
+test('remarque globale conservée sur les vrais documents des chemins manuel et automatique, Epson simulée uniquement', async () => {
+  const printer = require('../restaurant-dashboard/epson-print');
+  const order = { id: 'remark-path-fixture', number: 999, status: 'confirmed', method: 'pickup',
+    serviceDate: '2026-10-14', slot: '19:20', payment: { status: 'PAID' },
+    items: [{ name: 'Burger exemple', quantity: 1, price: 10 }], total: 10,
+    comment: 'Chèvre à la place du cheddar & sauce à part' };
+  for (const path of ['manual', 'auto']) {
+    const h = await harness();
+    let sent = 0, finished = 0;
+    h.context.window.BibouEpsonPrint = {
+      probe: async () => ({ success: true }),
+      orderReceiptEnvelope: printer.orderReceiptEnvelope,
+      send: async (host, documentXml) => {
+        assert.equal(host, '192.168.192.50');
+        assert.match(documentXml, /REMARQUE CLIENT/);
+        assert.match(documentXml, /Chèvre à la place du cheddar &amp; sauce à part/);
+        assert.ok(documentXml.indexOf('REMARQUE CLIENT') < documentXml.indexOf('1 x Burger exemple'));
+        sent++; return { success: true };
+      }
+    };
+    h.context.fetch = async (url, options) => {
+      if (url.endsWith('/manual') || url.endsWith('/claim')) return result({ job: { order, claimId: 'remark-test' } });
+      if (url.endsWith('/result')) { assert.equal(JSON.parse(options.body).status, 'printed'); finished++; return result({ status: 'printed' }); }
+      throw new Error('Unexpected fixture route');
+    };
+    if (path === 'manual') {
+      h.context.remarkButton = { dataset: { printOrder: order.id }, disabled: false, textContent: 'Imprimer', closest: () => ({ querySelector: () => ({ textContent: '' }) }) };
+      await h.run('printOrder(remarkButton)');
+    } else await h.run('dispatchAutoPrint()');
+    assert.equal(sent, 1); assert.equal(finished, 1);
+  }
 });
 
 test('impression automatique : le statut indique le point de panne sans réclamer de commande', async () => {

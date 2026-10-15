@@ -22,13 +22,14 @@ function birthdayTrigger(customer, now) {
   const today = parisDateKey(new Date(now)), registered = dayOf(customer.createdAt);
   if (registered && registered >= today) return null; // No birthday discount on sign-up day, even as an eve-of-birthday offer.
   const next = new Date(`${today}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
-  for (const date of [today, next.toISOString().slice(0, 10)]) if (eligibleBirthdayDate(customer, date)) return `birthday:${date.slice(0, 4)}`;
+  for (const date of [today, next.toISOString().slice(0, 10)]) if (!customer.birthdayBenefitUsedYears?.includes(date.slice(0, 4)) && eligibleBirthdayDate(customer, date)) return `birthday:${date.slice(0, 4)}`;
   return null;
 }
 function birthdayOfferEligible(customer, offer, now) {
   if (offer.ruleId !== 'birthday') return true;
   const year = /^birthday:(\d{4})$/.exec(offer.eventKey || '')?.[1];
   if (!year) return false;
+  if (customer.birthdayBenefitUsedYears?.includes(year)) return false;
   const date = `${year}-${customer.crmPreferences?.birthday || ''}`;
   if (offer.birthdayDate && offer.birthdayDate !== date) return false;
   const registered = dayOf(customer.createdAt);

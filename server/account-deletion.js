@@ -34,7 +34,9 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
       if (amendment?.proposal) amendment.proposal.reason = "Motif effacé après suppression du compte";
     }
     order.accountDeletedAt = deletedAt;
-    delete order.referralSponsorCustomerId;
+    // This is the active sponsor's credit reference, not the deleted buyer's
+    // identity. Keep it so a later cancellation can reverse that credit.
+    if (order.referralSponsorCustomerId === customerId) delete order.referralSponsorCustomerId;
     ordersAnonymized += 1;
   });
 

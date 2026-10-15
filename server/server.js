@@ -13,10 +13,12 @@ const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../cus
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
 const merchantPromotions = require('./merchant-promotions');
+const personalMenuGifts = require('./personal-menu-gifts');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
 const { dashboardContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, purgeExpiredContestEntries } = require('./referral-contest');
+const { dashboardContestPeriods } = require('./contest-periods');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { terminalDeviceSecret, authorizeTerminal, claimTerminalLaunch, verifyTerminalOrder } = require('./kiosk-terminal-service');
 const { reconcileTerminalPayment } = require('./kiosk-terminal-api');
@@ -45,6 +47,7 @@ const { RESERVATION_SLOT_CAPACITY, createReservation, ensureReservationStore, re
 const { depositFingerprint, prepareDepositReservation, finalizePaidDepositReservation, recordDepositAttendance, cancelDepositReservation } = require('./reservation-deposit');
 const { claimReward, ensureRewardStore, rewardClaimsForCustomer, updateRewardClaimStatus } = require("./rewards");
 const { WELCOME_DISCOUNT_RATE, consumeWelcomeReward, grantWelcomeReward, restoreWelcomeReward, welcomeRewardAvailable } = require("./welcome-reward");
+const welcomeRewardHistory = require('./welcome-reward-history');
 const { applySupportCredits } = require("./support-credits");
 const serviceSchedule = require("./service-schedule");
 const amendments = require("./order-amendments");
@@ -206,7 +209,12 @@ const readBody = (request) => {
       clearTimeout(timeout);
       if (failed) return;
       const raw = Buffer.concat(chunks); rawRequestBodies.set(request, raw);
-      try { resolve(raw.length ? JSON.parse(raw.toString("utf8")) : {}); } catch { reject(new Error("Invalid JSON")); }
+      let input;
+      try { input = raw.length ? JSON.parse(raw.toString("utf8")) : {}; } catch { reject(new Error("Invalid JSON")); return; }
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        reject(Object.assign(new Error('Informations de requête invalides.'), { statusCode: 400 })); return;
+      }
+      resolve(input);
     });
     request.on("error", fail);
     request.on("aborted", () => fail(new Error("Request aborted")));
@@ -248,7 +256,8 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
     throw new Error("Cette adresse n’a pas pu être localisée.");
   }
   const route = (await routeResponse.json()).routes?.[0];
-  const distanceKm = Number(route?.distanceMeters ?? 0) / 1000;
+  if (typeof route?.distanceMeters !== 'number' || !Number.isFinite(route.distanceMeters) || route.distanceMeters < 0) throw new Error("Cette adresse n’a pas pu être localisée.");
+  const distanceKm = route.distanceMeters / 1000;
   if (!Number.isFinite(distanceKm)) throw new Error("Cette adresse n’a pas pu être localisée.");
   const roundedDistanceKm = Math.round(distanceKm * 100) / 100;
   return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm) };
@@ -885,6 +894,14 @@ const server = http.createServer(async (request, response) => {
       releaseDatabase = await acquireDatabase();
       return send(response, 200, dashboardStatistics(await readDatabase(), { date: url.searchParams.get('date') || undefined, granularity: url.searchParams.get('granularity') || undefined }));
     }
+    // Read-only external draw lists; never run legacy migrations or expose them publicly.
+    if (url.pathname === '/api/dashboard/contest/periods') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      if (request.method !== 'GET') return send(response, 405, { error: 'Consultation uniquement.' });
+      if ([...url.searchParams.keys()].some(key => key !== 'period') || url.searchParams.getAll('period').length > 1) return send(response, 400, { error: 'Filtre de quinzaine invalide.' });
+      releaseDatabase = await acquireDatabase();
+      return send(response, 200, dashboardContestPeriods(await readDatabase(), url.searchParams.get('period') ?? undefined));
+    }
     // This reporting route is read-only, before the legacy read-time migrations.
     if (['/api/news', '/api/contest', '/api/dashboard/news', '/api/dashboard/contest'].includes(url.pathname)) {
       const privateRoute = url.pathname.startsWith('/api/dashboard/');
@@ -1023,7 +1040,8 @@ const server = http.createServer(async (request, response) => {
     const wheelRewardsChanged = wheelGame.reconcileWheelRewards(database);
     const stbChanged = wheelGame.reconcileStbTickets(database);
     const quantityChanged = quantityStock.reconcile(database);
-    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || stbChanged || quantityChanged) await writeDatabase(database);
+    const welcomeHistoryChanged = welcomeRewardHistory.reconcile(database, customerSessionSecret);
+    if (amendmentsExpired || loyaltyWeekChanged || referralCodesChanged || bibouPlusStoreChanged || rewardStoreChanged || contestPurged || supportCreditsChanged || wheelRewardsChanged || stbChanged || quantityChanged || welcomeHistoryChanged) await writeDatabase(database);
 
     if (url.pathname === '/api/dashboard/stb-tickets') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -1099,6 +1117,9 @@ const server = http.createServer(async (request, response) => {
       if (request.method !== 'POST' || url.pathname !== '/api/customer/wheel/spin')
         return send(response, 405, { error: 'Action non disponible.' });
       const spinInput = await readBody(request);
+      if (!spinInput || typeof spinInput !== 'object' || Array.isArray(spinInput) ||
+          Object.keys(spinInput).some(key => !['orderId', 'requestId'].includes(key)))
+        return send(response, 400, { error: 'Seules les références de la commande et du tour peuvent être envoyées. Le résultat est choisi par le serveur.' });
       if (request.kioskSession && !database.orders.some(order => order.id === spinInput.orderId && orderInKioskSession(order, request.kioskSession))) return send(response, 403, { error: 'Seuls les tours de cette commande sont utilisables sur la borne.' });
       if (request.kioskSession && (database.wheelSpins || []).some(spin => spin.customerId === customer.id && spin.requestId === spinInput.requestId && !database.orders.some(order => order.id === spin.orderId && orderInKioskSession(order, request.kioskSession)))) return send(response, 403, { error:'Ce tour appartient à une autre session.' });
       const result = wheelGame.spinWheel(database, customer.id, spinInput);
@@ -1309,6 +1330,7 @@ const server = http.createServer(async (request, response) => {
         customer = { id: `customer-${database.nextCustomerId++}`, name: "", phone: normalizedPhone, address: "", postalCode: "", city: "Le Havre", points: 0, weeklyOrders: 0, createdAt: new Date().toISOString() };
         ensureReferralCode(customer, database);
         grantWelcomeReward(customer);
+        welcomeRewardHistory.applyToCustomer(database, customer, customerSessionSecret);
         database.customers.push(customer);
       }
       customer.phone = normalizedPhone;
@@ -1334,6 +1356,7 @@ const server = http.createServer(async (request, response) => {
         customer = { id: `customer-${database.nextCustomerId++}`, ...identity, phone: proof.phone, address: '', postalCode: '', city: 'Le Havre', points: 0, weeklyOrders: 0, createdAt: now };
         ensureReferralCode(customer, database);
         grantWelcomeReward(customer);
+        welcomeRewardHistory.applyToCustomer(database, customer, customerSessionSecret);
         database.customers.push(customer);
       }
       // A retry/concurrent registration never renames an already completed account.
@@ -1378,6 +1401,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "DELETE" && url.pathname === "/api/customer/account") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Reconnecte-toi pour supprimer ton compte." });
+      welcomeRewardHistory.rememberBeforeDeletion(database, customer, customerSessionSecret);
       const deletion = anonymizeCustomerAccount(database, customer);
       await writeDatabase(database);
       return send(response, 200, { deleted: true, deletion });
@@ -2233,7 +2257,12 @@ if (orderSms.configured(orderSmsConfig)) {
 }
 const maintainContestPrivacy = async () => {
   const release = await acquireDatabase();
-  try { const database = await readDatabase(); if (purgeExpiredContestEntries(database)) await writeDatabase(database); }
+  try {
+    const database = await readDatabase();
+    const contestPurged = purgeExpiredContestEntries(database);
+    const welcomePurged = welcomeRewardHistory.reconcile(database, customerSessionSecret);
+    if (contestPurged || welcomePurged) await writeDatabase(database);
+  }
   catch { console.error('Entretien des données du concours : échec, nouvelle tentative dans une heure.'); }
   finally { release(); }
 };
@@ -2272,6 +2301,13 @@ if (keyyo.configured(keyyoConfig)) {
   keyyoWorker.unref();
   server.once('close', () => clearInterval(keyyoWorker));
 }
+server.once('listening', async () => {
+  if (!personalMenuGifts.configuredCount) return;
+  try {
+    const summary = personalMenuGifts.readiness(await readDatabase());
+    console.log(`Menus offerts personnels vérifiés : ${summary.available} disponible(s), ${summary.configured} configuré(s).`);
+  } catch { console.error('Menus offerts personnels : vérification indisponible.'); }
+});
 const onListen = () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`);
 if (process.env.LISTEN_HOST) server.listen(port, process.env.LISTEN_HOST, onListen);
 else server.listen(port, onListen);

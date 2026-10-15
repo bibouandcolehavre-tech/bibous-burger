@@ -42,7 +42,7 @@ const defaultWheel = () => ({
   status: 'published',
   startDate: '2026-10-05',
   endDate: '2026-12-31',
-  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Pour les nouvelles commandes, après paiement confirmé, 1 tour par tranche complète de 15 € de produits effectivement payés, hors frais de livraison ; les tours acquis sous l’ancien barème restent conservés. Un tour supplémentaire est accordé par parrainage validé. Exception pour les commandes intégralement offertes avec le code de test CHORUS : 2 tours de test au maximum par compte, sur deux commandes distinctes, sans achat payé. Les autres commandes offertes ne donnent pas de tour. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les nouvelles commandes de 15 € à moins de 30 € de produits payés, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de 30 € à moins de 60 € : 10 % et 7 % ; à partir de 60 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
+  officialRules: "Roue Bibou, du 5 octobre au 31 décembre 2026 (heure de Paris). Réservée aux clients possédant un compte Bibou. Pour les nouvelles commandes, après paiement confirmé, 1 tour par tranche complète de 15 € de produits effectivement payés, hors frais de livraison ; les tours acquis sous l’ancien barème restent conservés. Un tour supplémentaire est accordé par parrainage validé. Les commandes offertes ne donnent pas de tour. Une commande annulée ou remboursée ne donne pas droit aux tours correspondants. Chaque tour a 50 % de chances de ne rien gagner. Les autres gains possibles varient selon le montant de la commande : points Club Bibou, boisson ou frites maison offertes, ou remise de 1 %, 2 % ou 5 % sur une prochaine commande. Pour les nouvelles commandes de 15 € à moins de 30 € de produits payés, les chances de boisson et frites sont respectivement de 3 % et 2 % ; de 30 € à moins de 60 € : 10 % et 7 % ; à partir de 60 € : 17 % et 13 %. Les remises n’excèdent jamais 5 % et ne se cumulent pas entre elles. Un seul code promotionnel peut être utilisé par commande. Les codes de gains sont personnels, utilisables une seule fois dans les 30 jours sur une prochaine commande d’au moins 10 € de produits. Les boissons et frites gagnées doivent figurer dans cette prochaine commande. Les gains non utilisés expirent ; les gains encore inutilisés liés à une commande annulée ou remboursée sont retirés. Le concours de classement est distinct et reste fermé.",
   eurosPerTurn: EUROS_PER_TURN,
   referralTurn: true,
 });
@@ -88,8 +88,20 @@ function eligibleReferrals(database, sponsorId, wheel) {
 }
 function referralTurns(database, sponsorId, wheel) { return eligibleReferrals(database, sponsorId, wheel).length; }
 
+// Older saved rules may still contain the retired private test exception.
+// Filter its sentence for display without rewriting odds, history or paid rights.
+const publicWheelRules = rules => typeof rules === 'string'
+  ? rules.split(/(?<=[.!?\n])/u).filter(sentence => !/\bCHORUS\b/i.test(sentence)).join('')
+    .replace('Les autres commandes offertes', 'Les commandes offertes').trim() : '';
+
 function customerWheelState(database, customerId, now = new Date()) {
   const wheel = database.wheel || defaultWheel();
+  const rankingBonus = database.referralContest?.status === 'published' && database.referralContest.wheelPointsInRanking === true;
+  // The owner opts into the ranking bonus by publishing that contest's rules.
+  // Do not change the wheel's odds, credit, turns or historical stored rules.
+  const baseRules = publicWheelRules(wheel.officialRules);
+  const officialRules = rankingBonus ? baseRules.replace('Le concours de classement est distinct et reste fermé.', 'Le concours de classement reste un jeu distinct.') +
+    ' Si tu participes au concours de classement Bibou, chaque point réellement gagné à la roue pendant sa période ajoute aussi un point au classement, sans retirer le gain de fidélité. Seuls les tours valides sont retenus, une fois ; cadeaux, remises et tours fictifs sont exclus du bonus. Consulte les dates, les conditions et le règlement complet dans le concours.' : baseRules;
   const orders = (database.orders || []).filter(order => order.customerId === customerId);
   const earnedFromReferrals = referralTurns(database, customerId, wheel);
   const spins = (database.wheelSpins || []).filter(spin => spin.customerId === customerId);
@@ -122,7 +134,7 @@ function customerWheelState(database, customerId, now = new Date()) {
     stbTickets: stb.customerState(database, customerId, now),
     baseSegments: WHEEL_TIERS,
     segments: stb.availableMatch(database, now) ? Object.fromEntries(Object.entries(WHEEL_TIERS).map(([tier, segments]) => [tier, [...segments.map(([id, weight]) => [id, id === 'none' ? weight - 1 : weight]), ['stb-tickets', 1]]])) : WHEEL_TIERS,
-    rules: activeWheel(wheel, now) ? wheel.officialRules + (stb.availableMatch(database, now) ? ' Pendant la disponibilité du lot STB, 1 % des tours remplace un résultat sans gain par un lot unique de deux places : la probabilité sans gain passe alors de 50 % à 49 %. Le lot est attribué au plus tard cinq jours avant le match ; si nécessaire, un tirage de rattrapage est effectué parmi les participants éligibles, une chance par client. ' + stb.config(database).rules : '') : null,
+    rules: activeWheel(wheel, now) ? officialRules + (stb.availableMatch(database, now) ? ' Pendant la disponibilité du lot STB, 1 % des tours remplace un résultat sans gain par un lot unique de deux places : la probabilité sans gain passe alors de 50 % à 49 %. Le lot est attribué au plus tard cinq jours avant le match ; si nécessaire, un tirage de rattrapage est effectué parmi les participants éligibles, une chance par client. ' + stb.config(database).rules : '') : null,
     prizes: spins.filter(spin => !spin.revokedAt).map(spin => ({ id: spin.id, prizeId: spin.prizeId, label: spin.label, code: spin.code || null,
       redemptionStatus: spin.redemptionStatus || null, awardedAt: spin.awardedAt, expiresAt: spin.expiresAt || null })),
   };

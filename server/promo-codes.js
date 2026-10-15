@@ -1,8 +1,9 @@
 // Merchant-authorized codes stay on the server. Never trust a client-supplied
-// discount, price or payment state. CHORUS has no usage cap or expiry by request.
+// discount, price or payment state. Retired test codes must never create real orders.
 const { PRODUCT_CATALOG } = require('./catalog');
 const merchant = require('./merchant-promotions');
 const contestPrizes = require('./contest-prizes');
+const personalMenuGifts = require('./personal-menu-gifts');
 const normalizePromoCode = value => {
   if (value === undefined || value === null || value === '') return '';
   if (typeof value !== 'string' || value.length > 40) throw Object.assign(new Error('Code promo invalide.'), { statusCode: 400 });
@@ -11,9 +12,12 @@ const normalizePromoCode = value => {
 const promotionForCode = (value, database) => {
   const code = normalizePromoCode(value);
   if (!code) return null;
-  if (code === 'CHORUS') return { code, discountPercent: 100, freeDelivery: true };
+  // Retire before personal/configured offers too, including stale stored entries.
+  if (code === 'CHORUS') throw Object.assign(new Error('Ce code promo n’est plus disponible.'), { statusCode: 400 });
   if (code === 'GROSLARD') return { code, discountPercent: 100, freeDelivery: false, pickupOnly: true, requiredMenuCount: 2, singleUse: true,
     message: 'Ce code promo vous permet de bénéficier de deux menus offerts, au choix. Choisissez le retrait en Click & Collect ; vous pouvez aussi déguster vos menus sur place. Hors suppléments payants.' };
+  const personalGift = personalMenuGifts.promotion(code, database);
+  if (personalGift) return personalGift;
   if (database) {
     const personalPrize = contestPrizes.promotion(database, code);
     if (personalPrize) return personalPrize;
@@ -25,6 +29,7 @@ const promotionForCode = (value, database) => {
 const assertPromotionAvailable = (database, promotion, customerId, context = {}) => {
   if (promotion?.sourceContestPrize) return contestPrizes.assertAvailable(database, contestPrizes.findVoucher(database, promotion.code), customerId, context);
   if (promotion?.id) return merchant.assertAvailable(database, promotion, customerId);
+  if (promotion?.sourcePersonalMenuGift) personalMenuGifts.assertOwner(database, promotion, customerId);
   if (!promotion?.singleUse) return;
   if ((database.orders || []).some(order => order.promotion?.code === promotion.code && order.payment?.status === 'PAID')) {
     throw Object.assign(new Error('Ce code promo a déjà été utilisé.'), { statusCode: 409 });
@@ -40,6 +45,7 @@ const assertPromotionMethod = (promotion, method, context = {}, options = {}) =>
 };
 const assertPromotionCart = (promotion, items) => {
   if (promotion?.sourceContestPrize) return contestPrizes.assertCart(promotion, items);
+  if (promotion?.sourcePersonalMenuGift) return personalMenuGifts.assertCart(items);
   if (promotion?.id) {
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     merchant.discountFor(promotion, items, subtotal, promotion.type === 'free_delivery' ? 1 : 0);
@@ -63,6 +69,7 @@ const applyPromotion = (pricing, promotion, method, items = [], context = {}) =>
     return { ...pricing, discountRate: 1, discount: pricing.subtotal, total: pricing.deliveryFee };
   }
   if (promotion.id) return merchant.apply(pricing, promotion, items);
+  if (promotion.sourcePersonalMenuGift) assertPromotionCart(promotion, items);
   if (promotion.discountPercent !== 100 || (!promotion.freeDelivery && !promotion.pickupOnly)) throw new Error('Promotion non prise en charge.');
   return { ...pricing, discountRate: 1, discount: pricing.subtotal, deliveryFee: 0, total: 0 };
 };
@@ -79,8 +86,12 @@ const settlePromotionalOrder = (order, now = new Date(), database) => {
     order.payment = { provider: 'contest_prize', status: 'PAID', amount: 0, paidAt: now.toISOString() };
     return true;
   }
-  const promo = promotionForCode(order.promotion.code);
+  const promo = promotionForCode(order.promotion.code, database);
   assertPromotionMethod(promo, order.method);
+  if (promo?.sourcePersonalMenuGift) {
+    personalMenuGifts.assertOwner(database, promo, order.customerId);
+    assertPromotionCart(promo, order.items);
+  }
   if (!promo || order.total !== 0 || order.deliveryFee !== 0 || order.discount !== order.subtotal || order.discountRate !== 1) throw new Error('Total promotionnel incohérent.');
   // PAID means settled to the order workflow; the provider and amount explicitly
   // distinguish a fully gifted order from a SumUp card transaction.

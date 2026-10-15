@@ -4,7 +4,7 @@ const { spawn } = require('node:child_process'), { once } = require('node:events
 const { createCustomerSession } = require('./customer-session');
 const { parisDateKey } = require('./availability');
 
-test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et circuit restaurant', { timeout: 20000 }, async t => {
+test('Code de test retiré : refus sur les trois plateformes ; paiements normaux et cadeaux autorisés conservés', { timeout: 20000 }, async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-promo-test-')), file = path.join(dir, 'data.json'), providerFile = path.join(dir, 'sumup.json');
   const customer = { id: 'promo-test', firstName: 'Camille', lastName: 'Test', name: 'Camille Test', phone: '+33600000000', address: '1 rue fictive', postalCode: '76600', city: 'Le Havre', points: 0, welcomeReward: { status: 'available' } };
   await fs.writeFile(file, JSON.stringify({ customers: [customer, { ...customer, id: 'other-test', phone: '+33600000001' }], orders: [], nextOrderNumber: 1 }));
@@ -20,8 +20,8 @@ test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et 
     child.on('error', reject); child.on('exit', () => reject(new Error(errors)));
   });
   const token = createCustomerSession(customer.id, 'test-secret');
-  const request = async (route, body, auth = token, method = body === undefined ? 'GET' : 'POST') => {
-    const response = await fetch(base + route, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth}` }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const request = async (route, body, auth = token, method = body === undefined ? 'GET' : 'POST', platform = 'web') => {
+    const response = await fetch(base + route, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth}`, 'X-Bibou-Platform': platform }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, data: await response.json() };
   };
   const admin = (await request('/dashboard/auth/login', { password: 'test-only' })).data.token;
@@ -31,43 +31,24 @@ test('CHORUS HTTP : commande gratuite sûre, stocks/créneaux, répétitions et 
 
   assert.equal((await request('/promotions/validate', { code: 'CHORUS' }, '')).status, 401);
   assert.equal((await request('/promotions/validate', { code: 'invalide' })).status, 400);
-  assert.equal((await request('/promotions/validate', { code: ' chorus ' })).data.promotion.code, 'CHORUS');
+  for (const platform of ['web', 'android', 'ios']) {
+    for (const code of ['CHORUS', ' chorus ', 'ChOrUs']) {
+      const rejected = await request('/promotions/validate', { code, allowTestCode: true, reviewMode: true }, token, 'POST', platform);
+      assert.equal(rejected.status, 400, JSON.stringify(rejected.data));
+      const attempted = await request('/orders', { ...body, promoCode: code, requestId: 'retired-code-' + platform + '-attempt-001' }, token, 'POST', platform);
+      assert.equal(attempted.status, 400, JSON.stringify(attempted.data));
+      assert.equal((await request('/orders', { ...body, promoCode: code, method: 'delivery', slot: '19:00 – 19:30' }, token, 'POST', platform)).status, 400);
+    }
+    const wheel = await request('/customer/wheel', undefined, token, 'GET', platform);
+    assert.equal(wheel.status, 200);
+    assert.doesNotMatch(wheel.data.rules, /CHORUS|code de test/i);
+    assert.match(wheel.data.rules, /15 €/);
+  }
+  assert.deepEqual((await db()).orders, []);
+  assert.equal((await db()).customers[0].welcomeReward.status, 'available');
+  assert.equal((await db()).customers[0].points, 0);
+  assert.equal(await calls(), '', 'Rejected code never contacts the payment provider');
   assert.equal((await request('/orders', body, '')).status, 401);
-  assert.equal((await request('/orders', { ...body, promoCode: 'unknown' })).status, 400);
-  const results = await Promise.all([request('/orders', body), request('/orders', { ...body, promoCode: 'CHORUS' })]);
-  assert.deepEqual(results.map(r => r.status).sort(), [200, 201], JSON.stringify(results));
-  const order = results[0].data.order;
-  assert.equal(order.id, results[1].data.order.id); assert.equal(order.total, 0); assert.equal(order.discount, order.subtotal);
-  assert.equal(order.status, 'confirmed'); assert.equal(order.payment.provider, 'promotion'); assert.equal(order.payment.amount, 0);
-  assert.equal(order.wheelEurosPerTurn, 15);
-  assert.equal(order.welcomeRewardApplied, false); assert.equal(order.crmOfferId, undefined);
-  const saved = await db();
-  assert.equal(saved.orders.length, 1); assert.equal(saved.customers[0].welcomeReward.status, 'available');
-  const points = saved.customers[0].points;
-  assert.equal(points, 0); assert.equal(saved.customers[0].weeklyOrders, 0, 'Free orders never multiply points on paid orders');
-  assert.equal((await request('/orders', { ...body, promoCode: '' })).status, 409);
-  assert.equal((await request('/payments/sumup-checkout', { orderId: order.id })).data.payment.amount, 0);
-  assert.equal((await db()).customers[0].points, points, 'Replay does not award points twice');
-  assert.equal((await request('/customer/payment-attempts/' + body.requestId)).data.record.id, order.id);
-  assert.equal((await request('/customer/payment-attempts/' + body.requestId, undefined, createCustomerSession('other-test', 'test-secret'))).status, 404);
-  const dashboard = (await request('/dashboard/orders', undefined, admin)).data;
-  assert.equal(dashboard.orders[0].id, order.id); assert.equal(dashboard.revenue.today, 0);
-  assert.equal((await request('/dashboard/orders/' + order.id, { status: 'preparing' }, admin, 'PATCH')).status, 200);
-  assert.equal((await request('/dashboard/orders/' + order.id, { status: 'cancelled' }, admin, 'PATCH')).status, 200);
-  assert.equal((await request('/payments/sumup-checkout', { orderId: order.id })).status, 409);
-  assert.equal(await calls(), '', 'No SumUp call, even on replay or cancellation');
-
-  const delivery = { ...body, method: 'delivery', slot: '19:00 – 19:30', requestId: 'attempt-free-delivery-001' };
-  const shipped = await request('/orders', delivery);
-  assert.equal(shipped.status, 201, JSON.stringify(shipped.data));
-  assert.equal(shipped.data.order.standardDeliveryFee, 3.99); assert.equal(shipped.data.order.deliveryFee, 0); assert.equal(shipped.data.order.total, 0);
-  assert.equal((await request('/orders', { ...delivery, requestId: 'attempt-free-delivery-002' })).status, 201);
-  assert.equal((await request('/orders', { ...delivery, requestId: 'attempt-free-delivery-003' })).status, 409, 'Gifted orders consume delivery capacity');
-  assert.equal((await request('/orders', { ...body, slot: '03:00', requestId: 'attempt-free-bad-slot-001' })).status, 400);
-  await request('/dashboard/catalog/classique', { available: false }, admin, 'PATCH');
-  assert.equal((await request('/orders', { ...body, requestId: 'attempt-free-stock-00001' })).status, 400);
-  await request('/dashboard/catalog/classique', { available: true }, admin, 'PATCH');
-  assert.equal(await calls(), '', 'Free delivery never invokes SumUp');
   const forged = await request('/orders', { ...body, promoCode: '', requestId: 'attempt-forged-free-0001', total: 0, discountRate: 1, promotion: { code: 'CHORUS' }, payment: { status: 'PAID' } });
   assert.equal(forged.status, 201); assert.ok(forged.data.order.total > 0); assert.equal(forged.data.order.status, 'awaiting_payment');
   assert.equal(forged.data.order.promotion, undefined);

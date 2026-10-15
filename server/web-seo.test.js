@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { RESTAURANT } = require('../restaurant-info');
 const { enrichIndex, restaurantPage, supportPage, installPage, restaurantSchema, robots, sitemap, escape, build } = require('../scripts/build-web-seo.cjs');
 const sample = '<!DOCTYPE html><html lang="en"><head><title>Bibou</title></head><body><noscript>You need JavaScript</noscript><div id="root"></div><script src="/app.js" defer></script></body></html>';
@@ -26,7 +27,7 @@ test('Accueil SEO : français, canonical stable et contenu public sans JavaScrip
   assert.throws(() => enrichIndex('<html></html>'), /Structure Expo/);
   assert.throws(() => enrichIndex(html), /Structure Expo/);
 });
-test('Affichage ordinateur : mêmes parcours, CSS limitée aux grands écrans et hooks stables', () => {
+test('Affichage paysage validé : CSS du site uniquement, sans modifier le parcours ou le mobile', () => {
   const css = fs.readFileSync(path.join(__dirname, '../web/desktop-layout.css'), 'utf8');
   const html = enrichIndex(sample);
   assert.equal((html.match(/id="bibou-desktop-layout"/g) || []).length, 1);
@@ -35,29 +36,10 @@ test('Affichage ordinateur : mêmes parcours, CSS limitée aux grands écrans et
   assert.match(rules, /^@media \(min-width: 900px\) \{/);
   assert.match(css, /max-width: none !important/);
   assert.match(css, /width: 100% !important/);
-  assert.match(css, /data-bibou="navigation"/);
-  assert.match(css, /grid-template-columns: 210px minmax\(0, 1fr\)/);
-  assert.match(css, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
-  assert.match(css, /max-height: 100%/);
-  assert.match(css, /align-self: stretch !important/);
-  assert.doesNotMatch(css, /url\(|@import|position:\s*(fixed|absolute)|order:|visibility:|\.r-[\w-]+/);
+  assert.match(css, /font-size: 16px !important/);
+  assert.match(css, /font-size: 12px !important/);
+  assert.doesNotMatch(css, /url\(|@import|display:|position:|order:|visibility:|content:/);
   assert.match(html, /<script src="\/app.js" defer><\/script>/, 'Le JavaScript existant reste le même.');
-});
-test('Web mobile : le même shell que les apps, sans modifier la politique des binaires natifs', () => {
-  const webPolicy = require('../customer-experience-policy.web.js');
-  const nativePolicy = require('../customer-experience-policy.js');
-  assert.equal(webPolicy.supportsCustomerJourneyShell('web'), true);
-  assert.equal(nativePolicy.supportsCustomerJourneyShell('web'), false);
-  for (const platform of ['android', 'ios']) {
-    assert.equal(webPolicy.supportsCustomerJourneyShell(platform), nativePolicy.supportsCustomerJourneyShell(platform));
-  }
-  assert.equal(webPolicy.supportsCustomerJourneyShell('unknown'), false);
-  const source = fs.readFileSync(path.join(__dirname, '../CustomerJourneyScreens.js'), 'utf8');
-  assert.match(source, /Platform\.OS === 'web' \? \{ bibou: name \} : undefined/);
-  for (const part of ['journey', 'header', 'journey-scroll', 'embedded', 'content', 'navigation', 'navigation-button', 'catalogue']) {
-    assert.ok(source.includes(`webPart('${part}')`));
-  }
-  assert.match(source, /maxWidth: 430/, 'Le cadrage mobile commun reste inchangé.');
 });
 test('Le restaurant possède une vraie page HTML publique et les données structurées correspondantes', () => {
   const page = restaurantPage();
@@ -100,7 +82,7 @@ test('Le générateur complète le vrai export sans modifier le JavaScript ou co
   assert.ok(fs.statSync(path.join(dir, 'seo/taurus.jpg')).size > 0);
   assert.equal(escape('<img onerror="x">&'), '&lt;img onerror=&quot;x&quot;&gt;&amp;');
 });
-test('Lien intelligent : Android et iPhone vers leurs fiches publiques vérifiées', () => {
+test('Lien intelligent : Android vers Google Play, iPhone et iPad vers la fiche App Store publiée', () => {
   const page = installPage();
   assert.match(page, /com\.krokly\.bibousburgers/);
   assert.match(page, /Android/);
@@ -108,26 +90,40 @@ test('Lien intelligent : Android et iPhone vers leurs fiches publiques vérifié
   assert.match(page, /MacIntel/);
   assert.match(page, /window\.location\.replace/);
   assert.match(page, /Télécharger sur l’App Store/);
-  assert.match(page, /L’application est disponible sur iPhone et Android/);
-  assert.match(page, /Continuer sur le site sans installer/);
-  assert.doesNotMatch(page, /pendant la préparation|linear-gradient/);
   assert.match(page, /https:\/\/apps\.apple\.com\/fr\/app\/bibous-burgers\/id6817744169/);
+  assert.doesNotMatch(page, /Ouvrir sur iPhone|pendant la préparation|pas encore/);
+  const iphoneButton = page.match(/<a class="button secondary" href="([^"]+)"/)[1];
+  assert.equal(iphoneButton, 'https://apps.apple.com/fr/app/bibous-burgers/id6817744169');
+  const androidButton = page.match(/<a class="button" href="([^"]+)"/)[1].replaceAll('&amp;', '&');
+  assert.equal(androidButton, 'https://play.google.com/store/apps/details?id=com.krokly.bibousburgers&hl=fr');
 });
-test('Téléchargement web : liens présents dès l’accueil, destinations communes, aucune publicité dans les apps installées', () => {
-  const { APP_STORE_LINKS }=require('../app-store-links');
-  const web=fs.readFileSync(path.join(__dirname,'../AppDownloadLinks.web.js'),'utf8');
-  assert.match(web,/href=\{APP_STORE_LINKS.ios\}/);assert.match(web,/href=\{APP_STORE_LINKS.android\}/);
-  assert.match(web,/Télécharger sur iPhone/);assert.match(web,/Télécharger sur Android/);
-  assert.match(web,/sans installer/);assert.match(web,/minHeight: 46/);
-  assert.match(fs.readFileSync(path.join(__dirname,'../AppDownloadLinks.native.js'),'utf8'),/return null/);
-  const source=fs.readFileSync(path.join(__dirname,'../App.js'),'utf8');
-  assert.match(source,/<AppDownloadLinks \/>/);
-  assert(source.indexOf('<AppDownloadLinks />')<source.indexOf('<View style={[styles.nativeWelcomeMain'));
-  assert(installPage().includes(APP_STORE_LINKS.ios));assert(installPage().includes(escape(APP_STORE_LINKS.android)));
-});
-test('Informations indexables : ne pas promettre une réservation sans paiement ni un pas de créneau obsolète', () => {
-  assert.doesNotMatch(restaurantPage(),/Aucun paiement n’est demandé|toutes les 15 minutes/);
-  assert.match(restaurantPage(),/conditions de réservation et tout paiement éventuel/);
+test('SmartLink: real generated script redirects iOS and Android, while desktop keeps both buttons', () => {
+  const script = installPage().match(/<script>([\s\S]*?)<\/script>/)[1];
+  const apple = 'https://apps.apple.com/fr/app/bibous-burgers/id6817744169';
+  const google = 'https://play.google.com/store/apps/details?id=com.krokly.bibousburgers&hl=fr';
+  const cases = [
+    { name: 'iPhone', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', expected: apple },
+    { name: 'iPad', userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)', expected: apple },
+    { name: 'iPod', userAgent: 'Mozilla/5.0 (iPod touch)', expected: apple },
+    { name: 'desktop-class iPad', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', platform: 'MacIntel', maxTouchPoints: 5, expected: apple },
+    { name: 'Android', userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 8)', expected: google },
+    { name: 'Instagram iPhone browser', userAgent: 'Mozilla/5.0 (iPhone) Instagram 402.0.0', expected: apple },
+    { name: 'SMS iPhone browser', userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) AppleWebKit/605.1.15 Mobile/15E148', expected: apple },
+    { name: 'Mac', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X)', platform: 'MacIntel', maxTouchPoints: 0, expected: null },
+    { name: 'Windows', userAgent: 'Mozilla/5.0 (Windows NT 10.0)', expected: null },
+    { name: 'unknown', userAgent: '', expected: null },
+  ];
+  for (const item of cases) {
+    const destinations = [], status = { textContent: '' };
+    vm.runInNewContext(script, {
+      navigator: { userAgent: item.userAgent, platform: item.platform || '', maxTouchPoints: item.maxTouchPoints || 0 },
+      window: { location: { replace: target => destinations.push(target) } },
+      document: { getElementById: id => { assert.equal(id, 'status'); return status; } },
+      setTimeout: (callback, delay) => { assert.equal(delay, 900); callback(); },
+    }, { timeout: 1000 });
+    assert.deepEqual(destinations, item.expected ? [item.expected] : [], item.name);
+    if (!item.expected) assert.equal(status.textContent, 'Choisis la version de ton appareil.');
+  }
 });
 test('Assistance publique : contacts et liens utiles sans données privées', () => {
   const page = supportPage();

@@ -14,6 +14,16 @@
     ? [value.address, value.postalCode, value.city].map(part => clean(part)).filter(Boolean).join(' ') : '';
   const line = value => `<text>${xml(clean(value))}&#10;</text>`;
   const indentedLine = value => `<text>&#32;&#32;${xml(clean(value))}&#10;</text>`;
+  // The customer leaves one remark for the whole order. Print that same saved
+  // text on every ticket, prominently before the products, never as XML markup.
+  const customerRemark = order => {
+    const lines = typeof order.comment === 'string'
+      ? order.comment.split(/\r\n|[\r\n\u2028\u2029]/).map(clean).filter(Boolean) : [];
+    if (!lines.length) return [];
+    return [line(''), '<text align="left" dw="false" dh="true" em="true"/>',
+      line('REMARQUE CLIENT'), ...lines.map(line),
+      '<text align="left" dw="false" dh="false" em="false"/>', line('')];
+  };
   const serviceDay = value => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
     return match ? `${match[3]}/${match[2]}/${match[1]}` : 'DATE A CONFIRMER';
@@ -66,7 +76,7 @@
     if (order.customerPhone) parts.push(line(`Tel : ${order.customerPhone}`));
     if (order.dineIn && order.tableNote) parts.push(line(`Table : ${order.tableNote}`));
     if (method === 'LIVRAISON' && address(order.deliveryAddress)) parts.push(line(`Adresse : ${address(order.deliveryAddress)}`));
-    parts.push(line('--------------------------------'));
+    parts.push(...customerRemark(order), line('--------------------------------'));
     for (const item of order.items) {
       const quantity = Number(item.quantity);
       if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error('Quantité de produit invalide.');
@@ -74,8 +84,8 @@
       for (const option of item.options || []) {
         if (option?.label) parts.push(line(`  - ${option.label}`));
       }
+      if (item.productId === 'menu-solo-tenders') parts.push('<text em="true"/>', indentedLine('Ce menu contient 3 tenders.'), '<text em="false"/>');
     }
-    if (order.comment) parts.push(line('--------------------------------'), line(`Note : ${order.comment}`));
     parts.push(line('--------------------------------'), line('TICKET CUISINE - PAS UNE FACTURE'));
     if (duplicateTest) parts.push(line('DUPLICATA TEST - NE PAS PREPARER'));
     parts.push('<cut type="feed"/>');
@@ -125,6 +135,7 @@
       line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),
       line('RECAPITULATIF - NON FACTURE TVA'),
       line(''),
+      ...customerRemark(order),
       line('--------------------------------'),
     ];
     for (const item of order.items) {
@@ -139,6 +150,7 @@
         const title = optionTitle[option.groupId];
         parts.push(indentedLine(`${title ? `${title} : ` : '- '}${option.label}`));
       }
+      if (item.productId === 'menu-solo-tenders') parts.push('<text em="true"/>', indentedLine('Ce menu contient 3 tenders.'), '<text em="false"/>');
       parts.push(line(''), '<text em="true"/>', line(`Prix article : ${amount(Number(item.price) * quantity)}`), '<text em="false"/>', line(''));
       parts.push(line('--------------------------------'));
     }

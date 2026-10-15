@@ -10,7 +10,8 @@ const { createCustomerSession } = require("./customer-session");
 test("API clients : accès restaurant uniquement, réponses privées minimales, consultation sans écriture", { timeout: 15000 }, async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "bibou-customers-http-"));
   const databaseFile = path.join(directory, "data.json");
-  const database = { customers: [{ id: "test-customer", name: "Test Client", phone: "+33600000000", address: "PRIVATE-ADDRESS", points: 200 }], orders: [], nextOrderNumber: 1 };
+  const database = { customers: [{ id: "test-customer", name: "Test Client", phone: "+33600000000", address: "PRIVATE-ADDRESS", points: 200 }], orders: [],
+    wheelSpins: [{ id: 'http-spin', customerId: 'test-customer', prizeId: 'points-20', label: '20 points Club Bibou', pointsAdded: 20, awardedAt: '2026-10-14T18:00:00Z', requestId: 'PRIVATE-REQUEST', code: 'PRIVATE-CODE' }], nextOrderNumber: 1 };
   const original = JSON.stringify(database);
   await fs.writeFile(databaseFile, original);
   const child = spawn(process.execPath, [path.join(__dirname, "server.js")], { cwd: directory, env: { PATH: process.env.PATH, PORT: "0", DATA_FILE_PATH: databaseFile, RESTAURANT_DASHBOARD_PASSWORD: "customers-test-only", SESSION_SECRET: "customers-secret-test" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -42,6 +43,10 @@ test("API clients : accès restaurant uniquement, réponses privées minimales, 
   const detail = await detailResponse.json();
   assert.equal(detail.customer.prestige.level, 1);
   assert.equal(detail.rewards[0].status, "available");
+  assert.equal(detail.gains.points.wheel, 20);
+  assert.equal(detail.gains.wheel.played, 1);
+  assert.equal(detail.gains.points.reconciled, false);
+  assert.equal(JSON.stringify(detail.gains).includes('PRIVATE-'), false);
   assert.equal(JSON.stringify(detail).includes("PRIVATE-ADDRESS"), false);
   assert.equal((await request("/dashboard/customers/missing", token)).status, 404);
   for (const method of ["PATCH", "POST", "DELETE"]) assert.equal((await request("/dashboard/customers/test-customer", token, method, { points: 999999 })).status, 405);

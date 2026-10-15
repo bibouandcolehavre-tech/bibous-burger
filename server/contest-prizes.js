@@ -40,7 +40,7 @@ function finalizationPreview(db, now = new Date()) {
   const contest = db.referralContest;
   const { contestStatus, contestRanking } = require('./referral-contest');
   if (!contest || contestStatus(contest, new Date(now)) !== 'closed') fail('Les lots ne peuvent être validés qu’après la clôture du concours.', 409);
-  const ranking = contestRanking(db, contest), winners = ranking.slice(0, 3);
+  const ranking = contestRanking(db, contest, new Date(now)), winners = ranking.slice(0, 3);
   const fingerprint = crypto.createHash('sha256').update(JSON.stringify([contest.id, contest.revision, ranking])).digest('hex');
   return { contestId: contest.id, rankingFingerprint: fingerprint, winners, tied: winners.some(winner => winner.tied),
     minimumStartMonth: earliestFullMonth(now), eligibleMenus: eligibleMenuIds().map(id => ({ id, name: PRODUCT_CATALOG[id].name })), rules: CONTEST_PRIZE_RULES };
@@ -60,7 +60,11 @@ function finalize(db, input, now = new Date()) {
   if (preview.rankingFingerprint !== input.rankingFingerprint || preview.tied) fail('Le classement a changé ou présente un ex æquo : vérifier les résultats avant de distribuer les lots.', 409);
   if (!preview.winners.length) fail('Aucun gagnant éligible.', 409);
   const approvedLots = require('./referral-contest').defaultContest();
-  if (['firstPrize', 'secondPrize', 'thirdPrize'].some(key => db.referralContest[key] !== approvedLots[key])) fail('Les lots du règlement ne correspondent pas aux quotas préparés. Vérifier les conditions avant toute attribution.', 409);
+  // Both owner-approved labels describe the same third-place quota: two menus
+  // in one order. Do not rewrite an already published regulation to match copy.
+  const approvedLabels = { firstPrize: [approvedLots.firstPrize], secondPrize: [approvedLots.secondPrize],
+    thirdPrize: [approvedLots.thirdPrize, '2 menus en une seule commande'] };
+  if (Object.entries(approvedLabels).some(([key, labels]) => !labels.includes(db.referralContest[key]))) fail('Les lots du règlement ne correspondent pas aux quotas préparés. Vérifier les conditions avant toute attribution.', 409);
   if (!validMonth(input.startMonth) || input.startMonth < preview.minimumStartMonth) fail('Choisis un premier mois complet à venir.');
   if (!Array.isArray(input.eligibleMenuIds) || !input.eligibleMenuIds.length || new Set(input.eligibleMenuIds).size !== input.eligibleMenuIds.length ||
     input.eligibleMenuIds.some(id => !eligibleMenuIds().includes(id))) fail('Confirme la liste des menus éligibles.');
