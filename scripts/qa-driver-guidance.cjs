@@ -14,7 +14,7 @@ async function main() {
     db.orders.push(order); K.assign(db,order.id,driver.driver.id);
   }
   const file = path.join(dir,'data.json'); await fs.writeFile(file,JSON.stringify(db),{mode:0o600});
-  const child = spawn(process.execPath,['server/server.js'],{cwd:path.resolve(__dirname,'..'),env:{PATH:process.env.PATH,NODE_ENV:'test',PORT:'0',DATA_FILE_PATH:file,SESSION_SECRET:'guidance-local-only',RESTAURANT_DASHBOARD_PASSWORD:'local-only'},stdio:['ignore','pipe','pipe']});
+  const child = spawn(process.execPath,[path.resolve(__dirname,'../server/server.js')],{cwd:dir,env:{PATH:process.env.PATH,NODE_ENV:'test',PORT:'0',DATA_FILE_PATH:file,SESSION_SECRET:'guidance-local-only',RESTAURANT_DASHBOARD_PASSWORD:'local-only'},stdio:['ignore','pipe','pipe']});
   let browser, webServer;
   const results = [], stamp = new Date().toISOString().replace(/[:.]/g,'-'), out = path.resolve(__dirname,'../work/driver-guidance',stamp);
   await fs.mkdir(out,{recursive:true});
@@ -44,7 +44,14 @@ async function main() {
           // In the web rendering of React Native, intercept Linking.openURL
           // at its browser boundary. This is NOT a signed iOS/Android test.
           if(native)await page.evaluate(()=>{window.__gpsLaunches=[];window.open=url=>{window.__gpsLaunches.push(url);return null;};});
-          if(native){await page.getByTestId('live-username').fill('qa-guidance');await page.getByTestId('live-password').fill(driver.password);await page.getByTestId('live-login').click();await page.getByText('Bonjour Livreur fictif',{exact:true}).waitFor();}
+          if(native){
+            await page.getByTestId('live-privacy-open').click();
+            check('privacy information accessible before sign-in',await page.getByRole('heading',{name:'Le GPS reste ton choix',exact:true}).count()===1);
+            check('notifications disclose generic payload and separate stop',await page.getByText(/aucune adresse, aucun numéro client ni position GPS n’est inclus/).count()===1);
+            await page.getByTestId('live-privacy-close').click();
+            await page.getByTestId('live-privacy-close').waitFor({state:'hidden'});
+            await page.getByTestId('live-username').fill('qa-guidance');await page.getByTestId('live-password').fill(driver.password);await page.getByTestId('live-login').click();await page.getByText('Bonjour Livreur fictif',{exact:true}).waitFor();
+          }
           else{await page.locator('#username').fill('qa-guidance');await page.locator('#password').fill(driver.password);await page.locator('#login-form button[type=submit]').click();await page.locator('#workspace').waitFor({state:'visible'});}
           const number=++index;
           const card=native?page.getByText(new RegExp(`^COMMANDE #${number} ·`)).locator('..'):page.locator('.order').filter({has:page.getByText(`COMMANDE #${number}`,{exact:true})});
