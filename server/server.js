@@ -1479,6 +1479,10 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { deleted: true, deletion });
     }
 
+    if (request.method === "GET" && url.pathname === "/api/bibou-plus/offer") {
+      return send(response, 200, { bibouPlus: require('./bibou-plus').bibouPlusOffer() });
+    }
+
     if (request.method === "GET" && url.pathname === "/api/bibou-plus/status") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Connecte-toi pour consulter Bibou +." });
@@ -1497,6 +1501,11 @@ const server = http.createServer(async (request, response) => {
       const createdAt = new Date();
       const validUntil = new Date(createdAt.getTime() + 30 * 60 * 1000);
       let purchase = previous || database.bibouPlusPurchases.find(item => item.customerId === customer.id && !item.activatedAt && item.payment?.status !== "EXPIRED" && new Date(item.payment?.validUntil || 0) > createdAt);
+      // Never alter the amount of an already-created provider checkout or
+      // silently reuse an old, more expensive payment after a tariff change.
+      if (purchase && purchase.amount !== BIBOU_PLUS_PRICE) {
+        return send(response, 409, { code:'BIBOU_PLUS_PRICE_CHANGED', error:'Un paiement Bibou + à l’ancien tarif est encore associé à cette tentative. Vérifie son statut avant de souscrire au nouveau tarif de 5,99 €. Aucun nouveau paiement n’a été lancé.' });
+      }
       if (!purchase) {
         const number = database.nextBibouPlusNumber++;
         purchase = { id: `bibou-plus-${number}`, number, customerId: customer.id, requestId, amount: BIBOU_PLUS_PRICE, status: "awaiting_payment", createdAt: createdAt.toISOString() };
