@@ -152,10 +152,16 @@ function assign(db, orderId, driverId, now = Date.now(), { source = 'manual' } =
   return order.kroklyDriver;
 }
 
+function currentAssignment(order) {
+  if(!ACTIVE.has(order?.kroklyDriver?.status)||order.method!=='delivery'||order.payment?.status!=='PAID'||order.reviewMode||order.testMode||order.isTest||order.amendment?.status==='pending'||uberActive(order))return false;
+  const stage=order.kroklyDriver.status;
+  return stage==='picked_up'?order.status==='out_for_delivery':stage==='issue'?['preparing','ready','out_for_delivery'].includes(order.status):['preparing','ready'].includes(order.status);
+}
+
 function transition(db, orderId, driverId, action, now = Date.now()) {
   const order = (db.orders || []).find(item => item.id === orderId);
   if (!order || order.kroklyDriver?.driverId !== driverId) fail('Course non attribuée à ce livreur.', 404);
-  if (order.method !== 'delivery' || order.payment?.status !== 'PAID' || order.status === 'cancelled' || uberActive(order)) fail('Cette course n’est plus disponible.');
+  if (!currentAssignment(order)) fail('Cette course n’est plus disponible.');
   if (order.amendment?.status === 'pending' || order.reviewMode || (['accept','pickup'].includes(action) && order.status === 'preparing' && !preparation.due(order, now))) fail('La préparation de cette course doit être vérifiée.');
   const current = order.kroklyDriver.status;
   const next = {
@@ -194,7 +200,9 @@ function project(order) {
 }
 
 function assigned(db, driverId) {
-  return (db.orders || []).filter(order => order.kroklyDriver?.driverId === driverId && ACTIVE.has(order.kroklyDriver.status) && order.status !== 'cancelled').map(project);
+  // Imported/old inconsistent assignments must not re-expose contacts for a
+  // finished, refunded or transferred delivery. Never alter the real order.
+  return (db.orders || []).filter(order=>order.kroklyDriver?.driverId===driverId&&currentAssignment(order)).map(project);
 }
 
 function dispatchState(db, now = Date.now()) {

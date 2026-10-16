@@ -1,0 +1,365 @@
+{
+  "source": "https://www.swift.com/swift-resource/9606/download",
+  "authority": "SWIFT ISO 13616 Registration Authority",
+  "release": "103 – September 2026",
+  "checkedOn": "2026-10-16",
+  "validationScope": "National ISO format and MOD97 checksum only; not bank-account existence, ownership or transfer eligibility.",
+  "countries": {
+    "AD": {
+      "length": 24,
+      "structure": "AD2!n4!n4!n12!c"
+    },
+    "AE": {
+      "length": 23,
+      "structure": "AE2!n3!n16!n"
+    },
+    "AL": {
+      "length": 28,
+      "structure": "AL2!n8!n16!c"
+    },
+    "AT": {
+      "length": 20,
+      "structure": "AT2!n5!n11!n"
+    },
+    "AZ": {
+      "length": 28,
+      "structure": "AZ2!n4!a20!c"
+    },
+    "BA": {
+      "length": 20,
+      "structure": "BA2!n3!n3!n8!n2!n"
+    },
+    "BE": {
+      "length": 16,
+      "structure": "BE2!n3!n7!n2!n"
+    },
+    "BG": {
+      "length": 22,
+      "structure": "BG2!n4!a4!n2!n8!c"
+    },
+    "BH": {
+      "length": 22,
+      "structure": "BH2!n4!a14!c"
+    },
+    "BI": {
+      "length": 27,
+      "structure": "BI2!n5!n5!n11!n2!n"
+    },
+    "BR": {
+      "length": 29,
+      "structure": "BR2!n8!c5!n10!n1!c1!c"
+    },
+    "BY": {
+      "length": 28,
+      "structure": "BY2!n4!c4!n16!c"
+    },
+    "CH": {
+      "length": 21,
+      "structure": "CH2!n5!n12!c"
+    },
+    "CR": {
+      "length": 22,
+      "structure": "CR2!n4!n14!n"
+    },
+    "CY": {
+      "length": 28,
+      "structure": "CY2!n3!n5!n16!c"
+    },
+    "CZ": {
+      "length": 24,
+      "structure": "CZ2!n4!n6!n10!n"
+    },
+    "DE": {
+      "length": 22,
+      "structure": "DE2!n8!n10!n"
+    },
+    "DJ": {
+      "length": 27,
+      "structure": "DJ2!n5!n5!n11!n2!n"
+    },
+    "DK": {
+      "length": 18,
+      "structure": "DK2!n4!n9!n1!n"
+    },
+    "DO": {
+      "length": 28,
+      "structure": "DO2!n4!c20!n"
+    },
+    "EE": {
+      "length": 20,
+      "structure": "EE2!n2!n14!n"
+    },
+    "EG": {
+      "length": 29,
+      "structure": "EG2!n4!n4!n17!n"
+    },
+    "ES": {
+      "length": 24,
+      "structure": "ES2!n4!n4!n1!n1!n10!n"
+    },
+    "FI": {
+      "length": 18,
+      "structure": "FI2!n3!n11!n"
+    },
+    "FK": {
+      "length": 18,
+      "structure": "FK2!n2!a12!n"
+    },
+    "FO": {
+      "length": 18,
+      "structure": "FO2!n4!n9!n1!n"
+    },
+    "FR": {
+      "length": 27,
+      "structure": "FR2!n5!n5!n11!c2!n"
+    },
+    "GB": {
+      "length": 22,
+      "structure": "GB2!n4!a6!n8!n"
+    },
+    "GE": {
+      "length": 22,
+      "structure": "GE2!n2!a16!n"
+    },
+    "GI": {
+      "length": 23,
+      "structure": "GI2!n4!a15!c"
+    },
+    "GL": {
+      "length": 18,
+      "structure": "GL2!n4!n9!n1!n"
+    },
+    "GR": {
+      "length": 27,
+      "structure": "GR2!n3!n4!n16!c"
+    },
+    "GT": {
+      "length": 28,
+      "structure": "GT2!n4!c20!c"
+    },
+    "HN": {
+      "length": 28,
+      "structure": "HN2!n4!a20!n"
+    },
+    "HR": {
+      "length": 21,
+      "structure": "HR2!n7!n10!n"
+    },
+    "HU": {
+      "length": 28,
+      "structure": "HU2!n3!n4!n1!n15!n1!n"
+    },
+    "IE": {
+      "length": 22,
+      "structure": "IE2!n4!a6!n8!n"
+    },
+    "IL": {
+      "length": 23,
+      "structure": "IL2!n3!n3!n13!n"
+    },
+    "IQ": {
+      "length": 23,
+      "structure": "IQ2!n4!a3!n12!n"
+    },
+    "IS": {
+      "length": 26,
+      "structure": "IS2!n4!n2!n6!n10!n"
+    },
+    "IT": {
+      "length": 27,
+      "structure": "IT2!n1!a5!n5!n12!c"
+    },
+    "JO": {
+      "length": 30,
+      "structure": "JO2!n4!a4!n18!c"
+    },
+    "KW": {
+      "length": 30,
+      "structure": "KW2!n4!a22!c"
+    },
+    "KZ": {
+      "length": 20,
+      "structure": "KZ2!n3!n13!c"
+    },
+    "LB": {
+      "length": 28,
+      "structure": "LB2!n4!n20!c"
+    },
+    "LC": {
+      "length": 32,
+      "structure": "LC2!n4!a24!c"
+    },
+    "LI": {
+      "length": 21,
+      "structure": "LI2!n5!n12!c"
+    },
+    "LT": {
+      "length": 20,
+      "structure": "LT2!n5!n11!n"
+    },
+    "LU": {
+      "length": 20,
+      "structure": "LU2!n3!n13!c"
+    },
+    "LV": {
+      "length": 21,
+      "structure": "LV2!n4!a13!c"
+    },
+    "LY": {
+      "length": 25,
+      "structure": "LY2!n3!n3!n15!n"
+    },
+    "MC": {
+      "length": 27,
+      "structure": "MC2!n5!n5!n11!c2!n"
+    },
+    "MD": {
+      "length": 24,
+      "structure": "MD2!n2!c18!c"
+    },
+    "ME": {
+      "length": 22,
+      "structure": "ME2!n3!n13!n2!n"
+    },
+    "MK": {
+      "length": 19,
+      "structure": "MK2!n3!n10!c2!n"
+    },
+    "MN": {
+      "length": 20,
+      "structure": "MN2!n4!n12!n"
+    },
+    "MR": {
+      "length": 27,
+      "structure": "MR2!n5!n5!n11!n2!n"
+    },
+    "MT": {
+      "length": 31,
+      "structure": "MT2!n4!a5!n18!c"
+    },
+    "MU": {
+      "length": 30,
+      "structure": "MU2!n4!a2!n2!n12!n3!n3!a"
+    },
+    "NI": {
+      "length": 28,
+      "structure": "NI2!n4!a20!n"
+    },
+    "NL": {
+      "length": 18,
+      "structure": "NL2!n4!a10!n"
+    },
+    "NO": {
+      "length": 15,
+      "structure": "NO2!n4!n6!n1!n"
+    },
+    "OM": {
+      "length": 23,
+      "structure": "OM2!n3!n16!c"
+    },
+    "PK": {
+      "length": 24,
+      "structure": "PK2!n4!a16!c"
+    },
+    "PL": {
+      "length": 28,
+      "structure": "PL2!n8!n16!n"
+    },
+    "PS": {
+      "length": 29,
+      "structure": "PS2!n4!a21!c"
+    },
+    "PT": {
+      "length": 25,
+      "structure": "PT2!n4!n4!n11!n2!n"
+    },
+    "QA": {
+      "length": 29,
+      "structure": "QA2!n4!a21!c"
+    },
+    "RO": {
+      "length": 24,
+      "structure": "RO2!n4!a16!c"
+    },
+    "RS": {
+      "length": 22,
+      "structure": "RS2!n3!n13!n2!n"
+    },
+    "RU": {
+      "length": 33,
+      "structure": "RU2!n9!n5!n15!c"
+    },
+    "SA": {
+      "length": 24,
+      "structure": "SA2!n2!n18!c"
+    },
+    "SC": {
+      "length": 31,
+      "structure": "SC2!n4!a2!n2!n16!n3!a"
+    },
+    "SD": {
+      "length": 18,
+      "structure": "SD2!n2!n12!n"
+    },
+    "SE": {
+      "length": 24,
+      "structure": "SE2!n3!n16!n1!n"
+    },
+    "SI": {
+      "length": 19,
+      "structure": "SI2!n5!n8!n2!n"
+    },
+    "SK": {
+      "length": 24,
+      "structure": "SK2!n4!n6!n10!n"
+    },
+    "SM": {
+      "length": 27,
+      "structure": "SM2!n1!a5!n5!n12!c"
+    },
+    "SO": {
+      "length": 23,
+      "structure": "SO2!n4!n3!n12!n"
+    },
+    "ST": {
+      "length": 25,
+      "structure": "ST2!n4!n4!n11!n2!n"
+    },
+    "SV": {
+      "length": 28,
+      "structure": "SV2!n4!a20!n"
+    },
+    "TL": {
+      "length": 23,
+      "structure": "TL2!n3!n14!n2!n"
+    },
+    "TN": {
+      "length": 24,
+      "structure": "TN2!n2!n3!n13!n2!n"
+    },
+    "TR": {
+      "length": 26,
+      "structure": "TR2!n5!n1!n16!c"
+    },
+    "UA": {
+      "length": 29,
+      "structure": "UA2!n6!n19!c"
+    },
+    "VA": {
+      "length": 22,
+      "structure": "VA2!n3!n15!n"
+    },
+    "VG": {
+      "length": 24,
+      "structure": "VG2!n4!a16!n"
+    },
+    "XK": {
+      "length": 20,
+      "structure": "XK2!n4!n10!n2!n"
+    },
+    "YE": {
+      "length": 30,
+      "structure": "YE2!n4!a4!n18!c"
+    }
+  }
+}

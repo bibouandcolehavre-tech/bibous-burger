@@ -1,10 +1,11 @@
 'use strict';
 const crypto=require('node:crypto');
 const A=require('./krokli-driver-account');
+const bankFormat=require('./iban-validation');
 const fail=(message,statusCode=400)=>{throw Object.assign(Error(message),{statusCode});};
 const configured=key=>typeof key==='string'&&/^[a-f0-9]{64}$/i.test(key);
 function keyBytes(key){if(!configured(key))fail('La protection des coordonnées bancaires doit être configurée par le restaurant.',503);return Buffer.from(key,'hex');}
-function iban(value){const s=typeof value==='string'?value.replace(/\s/g,'').toUpperCase():'';if(!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(s))fail('IBAN invalide.');let r=0;for(const ch of s.slice(4)+s.slice(0,4)){for(const d of /[A-Z]/.test(ch)?String(ch.charCodeAt(0)-55):ch)r=(r*10+Number(d))%97;}if(r!==1)fail('La clé de contrôle de l’IBAN est invalide.');return s;}
+function iban(value){const account=bankFormat.normalize(value);if(!account)fail('IBAN invalide : vérifie son pays, sa longueur et ses caractères.');return account;}
 function encrypt(driverId,value,key){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',keyBytes(key),iv);cipher.setAAD(Buffer.from(driverId));const body=Buffer.concat([cipher.update(JSON.stringify(value),'utf8'),cipher.final()]);return {version:1,iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),body:body.toString('base64')};}
 function decrypt(driverId,value,key){try{const decipher=crypto.createDecipheriv('aes-256-gcm',keyBytes(key),Buffer.from(value.iv,'base64'));decipher.setAAD(Buffer.from(driverId));decipher.setAuthTag(Buffer.from(value.tag,'base64'));return JSON.parse(Buffer.concat([decipher.update(Buffer.from(value.body,'base64')),decipher.final()]).toString('utf8'));}catch{fail('Les coordonnées bancaires ne peuvent pas être déchiffrées. Aucun paiement automatique n’est effectué.',503);}}
 function saveBank(db,driver,input,key,now=new Date()){

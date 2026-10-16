@@ -103,3 +103,13 @@ test('expired offer can be reassigned to another courier, and deactivation revok
   K.setActive(db, lina.driver.id, false);
   assert.equal(K.authenticate(db, session.token, 'secret', now), null);
 });
+
+test('inconsistent old assignments never expose completed, refunded, amended or transferred contacts',()=>{
+  for(const mutate of [o=>o.status='delivered',o=>o.status='cancelled',o=>o.payment.status='REFUNDED',o=>o.method='pickup',o=>o.reviewMode=true,o=>o.testMode=true,o=>o.isTest=true,o=>o.amendment={status:'pending'},o=>o.uberDirect={phase:'created',status:'courier_assigned'},o=>o.status='awaiting_customer']){
+    const {db,now}=fixture(),driver=K.createDriver(db,{username:'exemple',name:'Livreur exemple'},now).driver;K.assign(db,'order-1',driver.id,now);K.transition(db,'order-1',driver.id,'accept',now);assert.equal(K.assigned(db,driver.id).length,1);mutate(db.orders[0]);const before=JSON.stringify(db);assert.deepEqual(K.assigned(db,driver.id),[]);assert.throws(()=>K.transition(db,'order-1',driver.id,'pickup',now),error=>error.statusCode===409);assert.equal(JSON.stringify(db),before,'Filtering/rejecting stale actions does not mutate order status or financials');
+  }
+});
+
+test('active pickup/delivery phases remain visible across midnight but not an impossible phase',()=>{
+  const {db,now}=fixture(),driver=K.createDriver(db,{username:'exemple',name:'Livreur exemple'},now).driver;K.assign(db,'order-1',driver.id,now);K.transition(db,'order-1',driver.id,'accept',now);K.transition(db,'order-1',driver.id,'pickup',now);db.orders[0].serviceDate='2000-01-01';assert.equal(K.assigned(db,driver.id).length,1,'No midnight cutoff on an active delivery');db.orders[0].status='ready';assert.deepEqual(K.assigned(db,driver.id),[]);
+});
