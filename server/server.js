@@ -64,7 +64,6 @@ const driverFeedback = require('./driver-feedback');
 const driverTips = require('./driver-tips');
 const driverSettlements = require('./driver-settlements');
 const arrivalProximity = require('./arrival-proximity');
-const driverBankKey = process.env.DRIVER_BANK_DATA_KEY || '';
 const krokliPreparation = require('./krokli-preparation');
 const krokliAutoDispatch = require('./krokli-auto-dispatch');
 const deliveryTiming = require('./delivery-timing');
@@ -91,6 +90,9 @@ if (fsSync.existsSync(envPath)) {
 }
 
 const port = Number(process.env.PORT || 3001);
+// Read after the supported local .env loader, as on every other feature flag.
+// On Render the value is injected at runtime; never baked into the image.
+const driverBankKey = process.env.DRIVER_BANK_DATA_KEY || '';
 const pushConfig = push.configFromEnv(process.env);
 pushConfig.arrivalEligible=(db,order)=>arrivalProximity.near(order,krokliGpsPilot.customerLocation(db,order));
 const marketingSmsConfig = marketingSms.configFromEnv(process.env);
