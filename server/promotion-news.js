@@ -43,7 +43,12 @@ function sundayBurgerNews(database, now, items) {
 function promotionNews(database, now, items) {
   const sunday = sundayBurgerNews(database, now, items);
   if (sunday) return sunday;
-  if (displayedProductOffer(now)) {
+  const productOffer = displayedProductOffer(now);
+  if (productOffer?.id === 'dynamite-2026-10-16-weekend') {
+    return prependHeadline(items, 'Dynamite Chicken · 9,90 €',
+      'DYNAMITE10 : 8,91 € · Jusqu’au 18/10 à 23 h 59. Burger seul, hors menus et suppléments. Nouveaux clients : bienvenue cumulable.');
+  }
+  if (productOffer) {
     return prependHeadline(items, 'Dynamite Chicken · 9,90 €',
       'Ce soir 19–22 h · Burger seul, hors menu et suppléments. Précommande avant 19 h acceptée pour ce service. Réduction automatique, sans code.');
   }

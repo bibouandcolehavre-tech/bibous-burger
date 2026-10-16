@@ -1,0 +1,37 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
+const {spawn}=require('node:child_process'),{once}=require('node:events');
+const {createCustomerSession}=require('./customer-session');
+test('Weekend HTTP: catalogue 9.90, code 8.91, welcome 8.02, idempotent unpaid orders only', {timeout:20000},async t=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bibou-dynamite-weekend-'));
+  const file=path.join(dir,'data.json');
+  const customer={id:'fictional-weekend',name:'Client Test',phone:'+33600000000',points:0,weeklyOrders:0,welcomeReward:{status:'used'}};
+  const newcomer={...customer,id:'fictional-weekend-welcome',phone:'+33600000001',welcomeReward:{status:'available',discountRate:.1}};
+  const promotion={id:'11111111-1111-4111-8111-111111111111',revision:1,code:'DYNAMITE10',type:'percent_burger',productId:'dynamite',percent:10,minimum:0,enabled:true,combineWelcome:true,oncePerCustomer:false,usageLimit:null,endsAt:'2026-10-18T22:00:00.000Z'};
+  await fs.writeFile(file,JSON.stringify({customers:[customer,newcomer],merchantPromotions:[promotion],orders:[],nextOrderNumber:1}));
+  const child=spawn(process.execPath,['--require',path.join(__dirname,'test-fixtures/dynamite-weekend-clock.cjs'),path.join(__dirname,'server.js')],{cwd:dir,env:{PATH:process.env.PATH,NODE_ENV:'test',PORT:'0',DATA_FILE_PATH:file,SESSION_SECRET:'fictional-secret',FAKE_DYNAMITE_WEEKEND_CLOCK:'true'},stdio:['ignore','pipe','pipe']});
+  t.after(async()=>{child.kill();if(child.exitCode===null)await once(child,'exit');await fs.rm(dir,{recursive:true,force:true});});
+  const base=await new Promise((resolve,reject)=>{let output='',errors='';child.stderr.on('data',data=>errors+=data);child.stdout.on('data',data=>{output+=data;const m=output.match(/http:\/\/localhost:(\d+)/);if(m)resolve(`http://127.0.0.1:${m[1]}/api`);});child.once('error',reject);child.once('exit',code=>reject(Error(`${code}: ${errors}`)));});
+  const request=async(route,body,owner=customer)=>{
+    const token=createCustomerSession(owner.id,'fictional-secret',{now:Date.parse('2026-10-16T12:00:00Z')});
+    const response=await fetch(base+route,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+    return{status:response.status,data:await response.json()};
+  };
+  assert.equal((await request('/catalog')).data.products.find(p=>p.id==='dynamite').price,9.9);
+  const product={productId:'dynamite',quantity:1,price:0,selections:[{groupId:'protein',id:'viande'},{groupId:'salad',id:'roquette'},{groupId:'sauces',id:'fixed-dynamite'}]};
+  const input={customerId:customer.id,method:'pickup',serviceDate:'2026-10-17',slot:'19:00',slotGrid:20,items:[product],promoCode:'DYNAMITE10',requestId:'fictional-weekend-attempt-0001',total:0};
+  const created=await request('/orders',input);
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  assert.equal(created.data.order.subtotal,9.9);
+  assert.equal(created.data.order.total,8.91);
+  assert.equal(created.data.order.status,'awaiting_payment');
+  const replay=await request('/orders',input);
+  assert.equal(replay.status,200,JSON.stringify(replay.data));
+  assert.equal(replay.data.order.id,created.data.order.id);
+  const welcome=await request('/orders',{...input,customerId:newcomer.id,requestId:'fictional-weekend-attempt-0002'},newcomer);
+  assert.equal(welcome.status,201,JSON.stringify(welcome.data));
+  assert.equal(welcome.data.order.total,8.02);
+  const db=JSON.parse(await fs.readFile(file,'utf8'));
+  assert.equal(db.orders.length,2);
+  assert.ok(db.orders.every(order=>!order.payment));
+  assert.equal(db.customers[1].welcomeReward.status,'available');
+});
