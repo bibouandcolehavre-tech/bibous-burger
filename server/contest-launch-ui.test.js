@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const { dashboardContest, saveContestDraft, publishContest, publicContest } = require('./referral-contest');
+const { dashboardContest, saveContestDraft, publishContest, publishReferralBonus, publicContest, defaultContest } = require('./referral-contest');
 const { dashboardNews, saveNews } = require('./news');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const preset = JSON.parse(fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/contest-launch-20261015.json'), 'utf8'));
@@ -19,7 +19,8 @@ function harness() {
     let result;
     try {
       const body = options.body ? JSON.parse(options.body) : null;
-      if (url.endsWith('/contest/publish')) { assert.equal(options.method, 'POST'); publishContest(db, body, now); result = dashboardContest(db, now); }
+      if (url.endsWith('/contest/referral-bonus')) { assert.equal(options.method, 'POST'); result=publishReferralBonus(db, body, now); }
+      else if (url.endsWith('/contest/publish')) { assert.equal(options.method, 'POST'); publishContest(db, body, now); result = dashboardContest(db, now); }
       else if (url.endsWith('/contest')) { if (body) saveContestDraft(db, body, now); result = dashboardContest(db, now); }
       else if (url.endsWith('/news')) { if (body) saveNews(db, body, now); result = dashboardNews(db); }
       else throw Error('Unknown fictitious endpoint');
@@ -69,4 +70,15 @@ test('Déconnexion pendant la lecture de la préparation : aucun retour tardif n
   h.session(''); h.panel.clear(); pending.resolve({ status: 200, ok: true, json: async () => structuredClone(preset) }); await reading;
   assert.equal(h.q('#contest-form [name="startTime"]').value, ''); assert.equal(h.q('#marketing-feedback').textContent, '');
   assert(!h.calls.some(c => c.method === 'POST')); assert.equal(h.db.referralContest, undefined);
+});
+test('Parrainage UI : publication séparée et confirmée, aucun plafond quotidien ni notification',async()=>{
+  const h=harness();h.now.setTime(Date.parse('2026-10-17T09:00:00Z'));
+  h.db.referralContest={...defaultContest(),status:'published',revision:3,startDate:'2026-10-15',startTime:'11:00',endDate:'2026-12-31',rules:'Règlement fictif.'};
+  await h.panel.load();assert.equal(h.q('#contest-referral-amendment').hidden,false);assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+  await h.q('#contest-referral-publish').onclick();assert.equal(h.db.referralContest.revision,3);
+  h.approve(true);await h.q('#contest-referral-publish').onclick();assert.equal(h.db.referralContest.revision,4);
+  assert.equal(h.q('#contest-referral-publish').hidden,true);assert.match(h.q('#contest-referral-state').textContent,/sans limite quotidienne/);
+  await h.q('#contest-referral-publish').onclick();assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
+  assert.deepEqual(JSON.parse(h.calls.find(c=>c.method==='POST').body),{contestId:'bibou-launch',revision:3,confirmation:'PUBLIER 20 POINTS CHACUN'});
+  assert(!h.calls.some(c=>/push|sms|payment|orders|finalize/.test(c.url)));
 });

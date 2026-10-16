@@ -17,7 +17,8 @@ test('web registration separates account creation, explicit consent and publishe
 test('approved enrollment is shared unchanged on web, Android and iPhone, with server-confirmed participation', () => {
   const screen = read('ContestScreen.js');
   assert.match(screen, /const enrollment = contest\?\.status === 'active' && !participation/);
-  assert.doesNotMatch(screen, /enrolmentControls|Platform\.OS/);
+  assert.doesNotMatch(screen, /enrolmentControls/);
+  assert.doesNotMatch(read('ContestRegistrationContent.js'), /Platform\.OS/);
   assert.match(screen, /if \(!response\.ok\) throw new Error\(result\.error \|\| 'Participation impossible\.'\)/);
   assert.match(screen, /if \(epoch\.current === id\) \{ setData\(result\); setJoinedNow\(Boolean\(result\.participation\)\); \}/);
   assert.match(screen, /joinedNow && participation/);

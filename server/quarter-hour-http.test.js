@@ -31,7 +31,7 @@ test("API : quarts d’heure, bonus non falsifiable et capacité partagée atomi
       ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, data: await response.json() };
   };
-  const date = parisDateKey(new Date(Date.now() + 86400000));
+  const date = require('./test-fixtures/next-table-service.cjs')();
   const pickup = await request("/availability?method=pickup&date=" + date);
   const delivery = await request("/availability?date=" + date);
   const table = await request("/reservation-availability?date=" + date);

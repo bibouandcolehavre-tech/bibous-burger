@@ -42,5 +42,6 @@ test('contest welcome: all platforms use a read-only entry and preserve explicit
   assert.match(fs.readFileSync(path.join(root, 'ContestEntry.native.js'), 'utf8'), /ContestEntryCard/);
   const app = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
   assert.match(app, /<NativeWelcomeChoice onOpenContest=\{\(\) => \{ setShowNativeWelcome\(false\); setScreen\("contest"\); \}\}/);
-  assert.match(app, /onLogin=\{\(\) => \{ setLoginDestination\("contest"\); setScreen\("login"\); \}\}/);
+  assert.match(app, /onLogin=\{\(\) => \{ setLoginDestination\(screen\); setScreen\("login"\); \}\}/);
+  assert.match(app, /\['contest','referral'\]\.includes\(screen\)/);
 });

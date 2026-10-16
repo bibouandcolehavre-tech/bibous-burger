@@ -34,7 +34,7 @@ test('table + repas : réservation liée, invisible avant paiement et visible ap
     return { status: response.status, data: response.status === 204 ? {} : await response.json() };
   };
   const admin = (await request('/dashboard/auth/login', { method: 'POST', body: { password: 'test-only' } })).data.token;
-  const serviceDate = parisDateKey(new Date(Date.now() + 86400000));
+  const serviceDate = require('./test-fixtures/next-table-service.cjs')();
   const body = { requestId: 'table-preorder-test-0001', customerId: customer.id, method: 'pickup', serviceDate, slot: '19:00', slotGrid: 20, tableReservation: { guests: 2, note: 'Chaise bébé' }, items: [{ productId: 'classique', quantity: 1, selections: [{ groupId: 'protein', id: 'viande' }, { groupId: 'salad', id: 'roquette' }, { groupId: 'sauces', id: 'mayo' }] }] };
   assert.equal((await request('/health')).data.capabilities.tablePreorders, 1);
   const created = await request('/orders', { method: 'POST', body });

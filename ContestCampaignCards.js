@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 const { contestPresentation } = require('./contest-presentation');
+const { referralPresentation } = require('./referral-presentation');
 export function InstagramContestCard({ contest, now }) {
   const [error, setError] = useState('');
   const info = contestPresentation(contest, null, now);
@@ -20,8 +21,9 @@ export function InstagramContestCard({ contest, now }) {
     {!!error && <><Text accessibilityRole="alert" style={s.error}>{error}</Text><Text selectable style={s.small}>{info.instagramUrl}</Text></>}
   </View>;
 }
-export default function ContestCampaignCards({ data, onOpenContest, compact = false }) {
+export default function ContestCampaignCards({ data, onOpenContest, onOpenReferral, compact = false }) {
   const info = contestPresentation(data?.contest, data?.participation);
+  const referral = referralPresentation(data);
   if (!info) return null;
   return <View style={s.stack}>
     <View style={s.main}>
@@ -29,6 +31,10 @@ export default function ContestCampaignCards({ data, onOpenContest, compact = fa
       <Text style={s.title}>{info.active && info.campaign ? 'Jusqu’à 1 an de Bibou à gagner' : info.title}</Text>
       <Text style={s.lightBody}>{info.detail}</Text>
       <Pressable accessibilityRole="button" onPress={onOpenContest} style={s.primary}><Text style={s.primaryText}>{info.action}</Text></Pressable>
+      {referral && onOpenReferral && <>
+        <Pressable accessibilityRole="button" onPress={onOpenReferral} style={s.referralButton}><Text style={s.referralButtonText}>Parrainer un ami →</Text></Pressable>
+        <Text style={s.lightSmall}>{referral.reward}. Sans limite de nouveaux amis par jour.</Text>
+      </>}
       {!compact && info.prizes.map(prize => <View key={prize.title} style={s.prize}><Text style={s.prizeTitle}>{prize.title}</Text><Text style={s.lightSmall}>{prize.detail}</Text></View>)}
       {info.active && info.referralPoints > 0 && <Text style={s.lightBody}>Gratuit : +{info.referralPoints} points par nouvel ami admissible inscrit avec ton code.</Text>}
       <Text style={s.lightSmall}>{info.active ? 'Compte avec numéro vérifié, 18 ans et plus, France métropolitaine. Inscription au concours distincte de la création du compte. Sans achat obligatoire.' : 'Consulte les dates et le règlement dans le concours.'}</Text>
@@ -47,6 +53,8 @@ const s = StyleSheet.create({
   prizeTitle: { color: '#FFF9EF', fontSize: 17, lineHeight: 24, fontWeight: '800' },
   primary: { backgroundColor: '#FFF0C9', borderRadius: 14, padding: 16, minHeight: 52, justifyContent: 'center' },
   primaryText: { color: '#25473B', fontWeight: '900', fontSize: 17, textAlign: 'center' },
+  referralButton: { backgroundColor:'#E2EDE5', borderRadius:14, padding:14, minHeight:52, justifyContent:'center' },
+  referralButtonText: { color:'#25473B', fontSize:16, fontWeight:'900', textAlign:'center' },
   instagram: { backgroundColor: '#FFF9EF', borderWidth: 1.5, borderColor: '#BB7258', borderRadius: 22, padding: 20, gap: 10 },
   eyebrow: { color: '#A55439', fontSize: 11, lineHeight: 17, letterSpacing: 1, fontWeight: '800' },
   heading: { color: '#315B4B', fontSize: 22, lineHeight: 28, fontWeight: '900' },

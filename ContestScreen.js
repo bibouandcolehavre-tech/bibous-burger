@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 const { GAME_ORGANIZER_NOTICE } = require('./game-organizer-notice');
-import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import ContestPrizes from './ContestPrizes';
 import ContestRegistration from './ContestRegistration';
 import { InstagramContestCard } from './ContestCampaignCards';
+import ContestReferralPanel from './ContestReferralPanel';
+const {shareReferral} = require('./referral-presentation');
 const { isReviewToken } = require('./review-client');
 const { CONTEST_PRIZE_RULES } = require('./contest-prize-policy');
 
 const prettyDate = value => new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(new Date(`${value}T12:00:00Z`));
-export default function ContestScreen({ apiBaseUrl, token, sponsorCode = '', onBack, onLogin, onOrderPrize }) {
+export default function ContestScreen({ apiBaseUrl, token, sponsorCode = '', onBack, onLogin, onOrderPrize, referralMode = false }) {
   const [data, setData] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  const shareBusyRef = useRef(false);
+  const [shareFeedback,setShareFeedback] = useState('');
   const [accepted, setAccepted] = useState(false), [adult, setAdult] = useState(false), [region, setRegion] = useState(false), [code, setCode] = useState(sponsorCode);
   const [reload, setReload] = useState(0);
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -20,7 +24,7 @@ export default function ContestScreen({ apiBaseUrl, token, sponsorCode = '', onB
   const epoch = useRef(0);
   useEffect(() => {
     const id = ++epoch.current, controller = new AbortController();
-    setData(null); setError(''); setBusy(false); setAccepted(false); setAdult(false); setRegion(false); setPrizeAlerts(false); setJoinedNow(false);
+    setData(null); setError(''); setBusy(false); setAccepted(false); setAdult(false); setRegion(false); setPrizeAlerts(false); setJoinedNow(false); shareBusyRef.current=false;setShareBusy(false);setShareFeedback('');
     const timer = setTimeout(() => controller.abort(), 12000);
     fetch(`${apiBaseUrl}/${token ? 'customer/contest' : 'contest'}?contestApi=2`, { signal: controller.signal, cache: 'no-store', headers: token ? { Authorization: `Bearer ${token}` } : {} }).then(async response => {
       const result = await response.json();
@@ -56,36 +60,45 @@ export default function ContestScreen({ apiBaseUrl, token, sponsorCode = '', onB
     finally { clearTimeout(timer); if (epoch.current === id) setBusy(false); }
   };
   const shareLink = async () => {
-    if (!data?.participation || shareBusy) return;
+    if (!data?.participation || data.contest?.status!=='active' || shareBusyRef.current) return;
     const id = epoch.current;
-    const { shareUrl } = data.participation;
-    if (!isReviewToken(token)) void Share.share({ message: `Rejoins le concours Bibou’s Burgers avec mon lien : ${shareUrl}` }).catch(() => setError('Le partage ne s’est pas ouvert. Tu peux copier le lien affiché ci-dessous.'));
-    if (data.participation.sharedToday) return;
-    setShareBusy(true); setError('');
+    const {shareUrl,code} = data.participation;
+    shareBusyRef.current=true;setShareBusy(true);setError('');setShareFeedback('');
+    // Open the system share sheet before any network await. Never read contacts.
+    const invitation = isReviewToken(token) ? Promise.resolve({status:'review'}) : shareReferral({platform:Platform.OS,navigator:typeof navigator!=='undefined'?navigator:null,nativeShare:content=>Share.share(content),url:shareUrl,code,inviteePoints:data.contest.scoring?.pointsPerVerifiedInvitee||0}).catch(()=>({status:'failed'}));
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
     try {
-      const response = await fetch(`${apiBaseUrl}/customer/contest/share?contestApi=2`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ contestId: data.contest.id, revision: data.contest.revision }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Le point du jour n’a pas été enregistré.');
-      if (epoch.current === id) setData(result);
-    } catch (err) { if (epoch.current === id) setError(err.message); }
-    finally { if (epoch.current === id) setShareBusy(false); }
+      if(!data.participation.sharedToday){
+        try{
+          const response = await fetch(`${apiBaseUrl}/customer/contest/share?contestApi=2`, { method: 'POST', signal:controller.signal, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ contestId: data.contest.id, revision: data.contest.revision }) });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Le point du jour n’a pas été enregistré.');
+          if (epoch.current === id) setData(result);
+        }catch(err){if(epoch.current===id)setError(err.name==='AbortError'?'Le point de partage est à vérifier. Actualise le concours.':err.message);}
+      }
+      const result=await invitation;
+      if(epoch.current===id)setShareFeedback(result.status==='copied'?'Invitation copiée : colle-la dans Messages ou WhatsApp.':['unsupported','failed'].includes(result.status)?'Le partage ne s’est pas ouvert. Tu peux copier le lien affiché ci-dessous.':result.status==='review'?'Partage externe désactivé dans cet espace de test.':'');
+    } finally { clearTimeout(timer);if (epoch.current === id) {shareBusyRef.current=false;setShareBusy(false);} }
   };
   const participation = data?.participation;
   const contest = data?.contest && { ...data.contest, rules: data.contest.rules ? `${data.contest.rules}\n\n${GAME_ORGANIZER_NOTICE}` : '' };
   const enrollment = contest?.status === 'active' && !participation;
   const accountStep = enrollment && (!token || data.needsPhoneVerification);
   return <><ScrollView ref={scroll} contentContainerStyle={s.page}>
+    <Pressable accessibilityRole="button" onPress={onBack} style={s.back}><Text style={s.backText}>‹ Retour à l’accueil</Text></Pressable>
+    {referralMode && !participation && <View style={s.introSection}><Text style={s.introTitle}>Parrainer un ami</Text><Text style={s.introCopy}>Inscris-toi au concours pour obtenir ton lien personnel. Tu pourras ensuite choisir un contact dans ta messagerie et l’inviter.</Text></View>}
     {!enrollment && contest?.rules && <Pressable accessibilityRole="button" onPress={() => setRulesOpen(true)} style={s.rulesButton}><Text style={s.rulesButtonText}>Règles, conditions et lots du concours ›</Text></Pressable>}
     {enrollment && <ContestRegistration contest={contest} token={token} needsPhoneVerification={data.needsPhoneVerification} onLogin={onLogin} onRules={() => setRulesOpen(true)} accepted={accepted} adult={adult} region={region} prizeAlerts={prizeAlerts} onAccepted={setAccepted} onAdult={setAdult} onRegion={setRegion} onPrizeAlerts={setPrizeAlerts} code={code} onCode={setCode} busy={busy} onJoin={join} error={error} />}
     {joinedNow && participation && <View accessibilityRole="alert" style={s.success}><Text style={s.h2}>Tu es inscrit au concours !</Text><Text style={s.body}>Ta participation est confirmée. Retrouve ton classement et ton lien de parrainage ci-dessous.</Text></View>}
+    <ContestReferralPanel contest={contest} participation={participation} onShare={shareLink} busy={shareBusy} message={shareFeedback} />
     {!enrollment && <View style={s.introSection}><Text style={s.introTitle}>{contest?.title || 'Les ambassadeurs Bibou'}</Text><Text style={s.introCopy}>{contest?.status === 'inactive' ? 'Le plaisir est encore meilleur quand il se partage.' : 'Jusqu’à 1 an de Bibou à gagner. Un classement commun sur iPhone, Android et web, jusqu’au 31 décembre.'}</Text></View>}
     {!data && !error && <Text style={s.body}>Chargement…</Text>}
     {contest?.status === 'inactive' && <View style={s.panel}><Text style={s.h2}>Le concours se prépare</Text><Text style={s.body}>L’idée : participer gratuitement, partager ton lien personnel et suivre ta place dans un classement. Les commandes payées pourraient aussi rapporter des points.</Text><Text style={s.body}>Les règles, les dates et les lots seront annoncés ici avant l’ouverture. Aucun point de concours n’est encore comptabilisé.</Text><Text style={s.note}>Le parrainage habituel du Club Bibou reste séparé : 100 points fidélité après la première commande payée de ton filleul.</Text></View>}
     {contest && contest.status !== 'inactive' && <>
       <Text style={s.date}>{prettyDate(contest.startDate)} → {prettyDate(contest.endDate)} · heure de Paris</Text>
       <InstagramContestCard contest={contest} />
-      {participation && <View style={s.panel}><Text style={s.h2}>Ta place provisoire : {participation.rank}{participation.rank === 1 ? 'er' : 'e'}</Text><Text style={s.count}>{participation.score} points</Text><Text style={s.body}>{participation.referrals} {participation.referrals === 1 ? 'nouvel inscrit vérifié' : 'nouveaux inscrits vérifiés'} · {participation.sharePoints || 0} points de partage · {participation.purchasePoints} points de commandes{contest.scoring?.pointsPerAwardedWheelPoint > 0 ? ' · ' + (participation.wheelPoints || 0) + ' points de roue' : ''}</Text><Text style={s.note}>{participation.alias} · Code : {participation.code}{participation.tied ? ' · ex æquo' : ''}</Text>{contest.status === 'active' && <><Pressable accessibilityRole="button" style={s.button} onPress={shareLink}><Text style={s.buttonText}>{shareBusy ? 'Enregistrement du point…' : 'Inviter un ami · +' + (contest.scoring?.pointsPerVerifiedReferral || 20) + ' points'}</Text></Pressable><Text style={s.note}>{participation.sharedToday ? 'Le point du jour est déjà compté. Tu peux toujours repartager ton lien.' : '+1 point au premier appui sur ce bouton aujourd’hui (heure de Paris).'}</Text><View style={s.referral}><Text style={s.h2}>Parrainage : +{contest.scoring?.pointsPerVerifiedReferral || 20} points par nouvel ami</Text><Text style={s.body}>Ton ami doit créer son compte pendant le concours, vérifier son numéro par SMS, puis rejoindre le concours avec ton code : {participation.code}.</Text><Text style={s.note}>Un ancien compte ou un auto-parrainage ne compte pas. Les 20 points de parrainage sont distincts du point de partage quotidien.</Text><Text selectable style={s.link}>{participation.shareUrl}</Text></View><Text style={s.note}>Appui long sur le lien pour le copier-coller.</Text></>}</View>}
-      <View style={s.panel}><Text style={s.h2}>Comment gagner des points ?</Text><Text style={s.body}>1. Je crée mon compte et vérifie mon numéro, puis je valide ma participation. Créer un compte ne suffit pas pour rejoindre le concours.</Text><Text style={s.body}>2. J’invite un nouvel ami : +20 points quand il crée son compte, vérifie son numéro et rejoint le concours.</Text><Text style={s.body}>3. J’appuie sur « Partager mon lien » : +1 point par jour maximum. L’application ne vérifie pas si un message a été publié.</Text><Text style={s.body}>4. Mes commandes réellement payées ajoutent 1 point par euro, sans plafond. Aucun achat n’est obligatoire.</Text>{contest.scoring?.pointsPerAwardedWheelPoint > 0 && <Text style={s.body}>5. Les points réellement gagnés à la roue comptent aussi au classement et restent crédités au Club Bibou. Les cadeaux, remises et tours fictifs ne donnent pas de points au classement.</Text>}</View>
+      {participation && <View style={s.panel}><Text style={s.h2}>Ta place provisoire : {participation.rank}{participation.rank === 1 ? 'er' : 'e'}</Text><Text style={s.count}>{participation.score} points</Text><Text style={s.body}>{participation.referrals} {participation.referrals === 1 ? 'nouvel inscrit vérifié' : 'nouveaux inscrits vérifiés'} · {participation.sharePoints || 0} points de partage · {participation.purchasePoints} points de commandes{contest.scoring?.pointsPerAwardedWheelPoint > 0 ? ' · ' + (participation.wheelPoints || 0) + ' points de roue' : ''}</Text><Text style={s.note}>{contest.scoring?.pointsPerVerifiedInvitee > 0 ? '+' + (participation.inviteePoints || 0) + ' points de filleul · ' : ''}{participation.alias} · Code : {participation.code}{participation.tied ? ' · ex æquo' : ''}</Text></View>}
+      <View style={s.panel}><Text style={s.h2}>Comment gagner des points ?</Text><Text style={s.body}>1. Je crée mon compte et vérifie mon numéro, puis je valide ma participation. Créer un compte ne suffit pas pour rejoindre le concours.</Text><Text style={s.body}>2. J’invite un nouvel ami : +20 points pour moi{contest.scoring?.pointsPerVerifiedInvitee > 0 ? ' et +20 points pour lui' : ''} quand il crée son compte, vérifie son numéro et rejoint le concours. Je peux parrainer plusieurs nouveaux amis le même jour.</Text><Text style={s.body}>3. J’appuie sur « Inviter un contact » : +1 point de partage par jour maximum. Les parrainages à 20 points ne sont pas limités par jour.</Text><Text style={s.body}>4. Mes commandes réellement payées ajoutent 1 point par euro, sans plafond. Aucun achat n’est obligatoire.</Text>{contest.scoring?.pointsPerAwardedWheelPoint > 0 && <Text style={s.body}>5. Les points réellement gagnés à la roue comptent aussi au classement et restent crédités au Club Bibou. Les cadeaux, remises et tours fictifs ne donnent pas de points au classement.</Text>}</View>
       {!accountStep && <View style={s.panel}><Text style={s.h2}>Les trois lots</Text><Text style={s.body}>1re place · 1 an de Bibou : {contest.firstPrize}</Text><Text style={s.body}>2e place · 6 mois de Bibou : {contest.secondPrize}</Text><Text style={s.body}>3e place : {contest.thirdPrize}</Text><Text style={s.note}>Classement sans tirage au sort. Les points fidélité habituels restent séparés. Seuls les points de roue valides sont aussi comptés au classement lorsque ce bonus est activé.</Text></View>}
       <View style={s.panel}><Text style={s.h2}>Utiliser les menus gagnés</Text><Text style={s.body}>{CONTEST_PRIZE_RULES}</Text></View>
       {contest.status === 'scheduled' && <Text style={s.body}>Les participations ouvriront le {prettyDate(contest.startDate)}.</Text>}

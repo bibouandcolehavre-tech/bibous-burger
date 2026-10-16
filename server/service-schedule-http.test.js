@@ -9,7 +9,7 @@ test('schedule HTTP: private changes, extra pickup/table bookings, closed checko
  let output='',errors='';child.stderr.on('data',d=>errors+=d);
  const base=await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{output+=d;const m=output.match(/http:\/\/localhost:\d+/);if(m)resolve(m[0]+'/api');});child.on('error',reject);child.on('exit',c=>reject(Error(c+errors)));});
  const request=async(route,token='',method='GET',body)=>{const r=await fetch(base+route,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};};
- const date=parisDateKey(new Date(Date.now()+86400000)),route='/dashboard/service-schedule?date='+date,customer=createCustomerSession('c1','test-schedule');
+ const date=require('./test-fixtures/next-table-service.cjs')(),route='/dashboard/service-schedule?date='+date,customer=createCustomerSession('c1','test-schedule');
  for(const token of ['',customer]){assert.equal((await request(route,token)).status,401);assert.equal((await request('/dashboard/service-schedule',token,'PATCH',{date})).status,401);}
  const admin=(await request('/dashboard/auth/login','','POST',{password:'test-schedule-only'})).data.token;
  const state=(await request(route,admin)).data;

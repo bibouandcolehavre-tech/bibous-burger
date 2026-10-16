@@ -6,7 +6,7 @@ fs.mkdirSync(out, { recursive: true });
 const report = { at: new Date().toISOString(), scope: 'Actual exported app; external traffic mocked; no real customer actions or messages', checks: [], unexpectedWrites: [] };
 const contest = { id: 'bibou-launch', revision: 3, title: 'Les ambassadeurs Bibou', status: 'active', startDate: '2026-10-15', startTime: '11:00', endDate: '2026-12-31', firstPrize: '2 menus par mois pendant 12 mois (24 menus)', secondPrize: '1 menu par mois pendant 6 mois (6 menus)', thirdPrize: '2 menus en une seule commande', region: 'France métropolitaine', rules: 'Règlement fictif de test. Aucun vrai participant.', scoring: { pointsPerEuro: 1, pointsPerVerifiedReferral: 20, pointsPerDailyShareAction: 1, pointsPerAwardedWheelPoint: 1 } };
 if (process.argv.includes('--storyboard')) contest.rules = require('../work/contest-entry-release-20261015/public-contest-storyboard-20261015.json').rules;
-const participant = { code: 'FICTIF', alias: 'Client Fictif', rank: 1, score: 60, referrals: 1, sharePoints: 0, purchasePoints: 0, wheelPoints: 40, sharedToday: false, shareUrl: 'https://example.invalid/?contest=1&ref=FICTIF' };
+const participant = { code: 'FICTIF', alias: 'Client Fictif', rank: 1, score: 60, referrals: 1, sharePoints: 0, purchasePoints: 0, wheelPoints: 40, sharedToday: false, shareUrl: 'https://bibous-burger-app.onrender.com/?contest=1&ref=FICTIF' };
 const customer = { id: 'fictional', firstName: 'Client', lastName: 'Fictif', name: 'Client Fictif', points: 40, weeklyOrders: 0 };
 const server = http.createServer((req, res) => {
   let file = path.resolve(root, '.' + decodeURIComponent(new URL(req.url, 'http://local').pathname));
@@ -71,6 +71,7 @@ async function run() {
         await page.goto(origin, { waitUntil: 'networkidle' });
         const entry = page.getByRole('button', { name: 'Je participe au concours', exact: true });
         await entry.waitFor(); await visibleTap(page, entry, viewport);
+        await visibleTap(page, page.getByRole('button', {name:'Parrainer un ami →',exact:true}), viewport);
         await page.getByRole('link', { name: 'Participer sur Instagram ↗', exact: true }).waitFor();
         assert.match(await page.locator('body').innerText(), /1re place · 1 an de Bibou/);
         assert.match(await page.locator('body').innerText(), /2e place · 6 mois de Bibou/);
@@ -102,6 +103,13 @@ async function run() {
         await page.getByRole('button', { name: /Click & collect.*Ton burger/ }).click();
         await page.getByRole('button', { name: /Nos menus.*Burger/ }).waitFor();
         report.checks.push({ engine, viewport, scenario: 'Original welcome, guest access, home tiles, ordering and categories retained', result: 'pass' });
+        await page.goto(origin, {waitUntil:'networkidle'});
+        await page.getByRole('button',{name:'Parrainer un ami →',exact:true}).click();
+        await page.getByText('Parrainer un ami',{exact:true}).waitFor();
+        await page.getByRole('button',{name:'Créer mon compte ou me connecter',exact:true}).click();
+        await page.getByPlaceholder('06 12 34 56 78').waitFor();
+        assert.equal(state.writes.filter(p=>p.includes('/contest/')).length,0);
+        report.checks.push({engine,viewport,scenario:'Direct referral entry explains signup, opens login, no automatic enrollment',result:'pass'});
         await context.close();
       }
       for (const status of process.argv.includes('--storyboard') ? [] : ['inactive', 'scheduled', 'closed', 'offline']) {
@@ -162,12 +170,15 @@ async function run() {
       await page.getByText('Tu es inscrit au concours !', { exact: true }).waitFor();
       await page.getByText('60 points', { exact: true }).waitFor();
       if (process.argv.includes('--storyboard')) {
-        await page.getByRole('button', { name: 'Inviter un ami · +20 points', exact: true }).scrollIntoViewIfNeeded();
+        await page.getByRole('button', { name: 'Inviter un contact', exact: true }).scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(out, 'parcours-05-classement.png') });
       }
       assert.match(await page.locator('body').innerText(), /40 points de roue/);
-      await page.getByRole('button', { name: 'Inviter un ami · +20 points', exact: true }).click();
+      await page.getByRole('button', { name: 'Inviter un contact', exact: true }).click();
       await page.getByText('61 points', { exact: true }).waitFor();
+      await page.getByRole('button',{name:'Inviter un contact',exact:true}).click();
+      assert.equal(state.writes.filter(p=>p==='/customer/contest/share').length,1,'More invitations do not multiply the daily share point');
+      assert.match(await page.locator('body').innerText(),/plusieurs nouveaux amis chaque jour/);
       await page.screenshot({ path: path.join(out, engine + '-participant.png') });
       await page.getByRole('link', { name: 'Participer sur Instagram ↗', exact: true }).click();
       await page.waitForTimeout(800); assert.equal(state.instagram[0], 'https://www.instagram.com/reel/DeglpQMFPat/');

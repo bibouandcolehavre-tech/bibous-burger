@@ -17,7 +17,7 @@ const personalMenuGifts = require('./personal-menu-gifts');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
 const { dashboardNews, publicNews, saveNews } = require('./news');
-const { dashboardContest, saveContestDraft, publishContest, publicContest, customerContest, joinContest, recordShareAction, purgeExpiredContestEntries } = require('./referral-contest');
+const { dashboardContest, saveContestDraft, publishContest, publishReferralBonus, publicContest, customerContest, joinContest, recordShareAction, purgeExpiredContestEntries } = require('./referral-contest');
 const { dashboardContestPeriods } = require('./contest-periods');
 const { applyVerifiedCheckout, assertOrderTransition, paymentError } = require("./sumup-payment");
 const { terminalDeviceSecret, authorizeTerminal, claimTerminalLaunch, verifyTerminalOrder } = require('./kiosk-terminal-service');
@@ -1027,6 +1027,17 @@ const server = http.createServer(async (request, response) => {
       }
       const modernContestClient = url.searchParams.get('contestApi') === '2';
       return send(response, 200, privateRoute ? (newsRoute ? dashboardNews(database) : dashboardContest(database)) : (newsRoute ? publicNews(database, new Date(), modernContestClient) : modernContestClient ? publicContest(database) : { status: 'inactive' }));
+    }
+
+    if (url.pathname === '/api/dashboard/contest/referral-bonus') {
+      if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
+      if (request.method !== 'POST') return send(response, 405, { error: 'Action non disponible.' });
+      const input = await readBody(request);
+      releaseDatabase = await acquireDatabase();
+      const database = await readDatabase();
+      const result = publishReferralBonus(database, input);
+      if (result.changed) await writeDatabase(database);
+      return send(response, 200, result);
     }
 
     if (url.pathname === '/api/dashboard/contest/publish') {
