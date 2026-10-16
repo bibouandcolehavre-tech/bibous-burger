@@ -61,6 +61,7 @@ const orderSms = require('./order-sms');
 const kroklyDrivers = require('./krokly-drivers');
 const krokliGpsPilot = require('./krokli-gps-pilot').createGpsPilot();
 const kroklyWebPush = require('./krokly-web-push');
+const krokliNativePush = require('./krokli-native-push');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { statistics: dashboardStatistics } = require('./dashboard-statistics');
@@ -84,6 +85,7 @@ const port = Number(process.env.PORT || 3001);
 const pushConfig = push.configFromEnv(process.env);
 const marketingSmsConfig = marketingSms.configFromEnv(process.env);
 const kroklyPushConfig = kroklyWebPush.configFromEnv(process.env);
+const krokliNativePushConfig = krokliNativePush.configFromEnv(process.env);
 const uberConfig = uber.configFromEnv(process.env);
 const uberClient = uber.createClient(uberConfig);
 const databasePath = process.env.DATA_FILE_PATH || path.join(__dirname, "data.json");
@@ -565,7 +567,8 @@ const server = http.createServer(async (request, response) => {
         if (url.pathname === '/api/krokly-driver/capabilities' && request.method === 'GET') return send(response, 200, {
           protocol: 'krokli-bibou-live-v1', restaurant: 'bibou-le-havre', sharedDriverAccounts: true,
           manualDispatch: true, gpsPilot: { optional: true, durationMinutes: 30, sharingModes: ['legacy-30-minutes', 'until-stopped'], visibleTo: 'restaurant-only', historyStored: false },
-          automaticNearestDispatch: false, groupedRouting: false, customerTracking: false
+          automaticNearestDispatch: false, groupedRouting: false, customerTracking: false,
+          nativePush: { protocol: 'krokli-native-push-v1', enabled: krokliNativePushConfig.enabled, projectId: krokliNativePush.PROJECT_ID }
         });
         const admin = url.pathname.startsWith('/api/dashboard/');
         if (admin && !authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
@@ -585,6 +588,12 @@ const server = http.createServer(async (request, response) => {
         }
         releaseDatabase = await acquireDatabase();
         const database = await readDatabase();
+        // The installation capability revokes only its own device. This also
+        // lets logout finish after the interactive login has already expired.
+        if (url.pathname === '/api/krokly-driver/native-push/unregister' && request.method === 'POST') {
+          const result = krokliNativePush.unregister(database, input);
+          await writeDatabase(database); return send(response, 200, result);
+        }
         if (!admin) {
           const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
           const driver = kroklyDrivers.authenticate(database, token, kroklyTokenSecret);
@@ -593,6 +602,15 @@ const server = http.createServer(async (request, response) => {
           if (expired) await writeDatabase(database);
           if (url.pathname === '/api/krokly-driver/state' && request.method === 'GET') {
             return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, orders: kroklyDrivers.assigned(database, driver.id), push: { enabled: kroklyPushConfig.enabled, publicKey: kroklyPushConfig.publicKey, devices: (database.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length } });
+          }
+          if (url.pathname === '/api/krokly-driver/native-push/register' && request.method === 'POST') {
+            if (!krokliNativePushConfig.enabled) return send(response, 503, { error: 'Les alertes natives sont désactivées par le restaurant.' });
+            // This token has just passed signature, expiry, active-account and
+            // auth-version checks. Never trust a client-supplied deadline.
+            const deadline = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')).exp;
+            const result = krokliNativePush.register(database, driver, input, deadline);
+            for (const order of kroklyDrivers.assigned(database, driver.id)) if (order.status === 'offered') krokliNativePush.queue(database, driver.id, order.id);
+            await writeDatabase(database); return send(response, 200, result);
           }
           if (url.pathname === '/api/krokly-driver/push/subscribe' && request.method === 'POST') {
             if (!kroklyPushConfig.enabled) return send(response, 503, { error: 'Les alertes Krokli Driver ne sont pas encore configurées.' });
@@ -651,6 +669,7 @@ const server = http.createServer(async (request, response) => {
         if (dispatch && request.method === 'POST') {
           const assignment = kroklyDrivers.assign(database, decodeURIComponent(dispatch[1]), input.driverId);
           if (kroklyPushConfig.enabled) kroklyWebPush.queue(database, input.driverId, decodeURIComponent(dispatch[1]), Date.now(), Date.parse(assignment.expiresAt));
+          if (krokliNativePushConfig.enabled) krokliNativePush.queue(database, input.driverId, decodeURIComponent(dispatch[1]));
           await writeDatabase(database);
           return send(response, 200, { assignment });
         }
@@ -2238,6 +2257,19 @@ if (marketingSms.ready(marketingSmsConfig)) {
   server.once('listening', () => void marketingSmsWorker.tick().catch(() => console.error('SMS commerciaux : traitement indisponible.')));
 }
 let kroklyPushBusy = false;
+const krokliNativePushWorker = krokliNativePush.createWorker({ config: krokliNativePushConfig, transact: async task => {
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase(), before = JSON.stringify(database.krokliNativePush);
+    const result = task(database);
+    if (JSON.stringify(database.krokliNativePush) !== before) await writeDatabase(database);
+    return result;
+  } finally { release(); }
+} });
+if (krokliNativePushConfig.enabled) {
+  const nativeTimer = setInterval(() => void krokliNativePushWorker.tick().catch(() => console.error('Alertes natives livreur : traitement à vérifier.')), 5000);
+  nativeTimer.unref(); server.on('close', () => clearInterval(nativeTimer));
+}
 const tickKroklyPush = async () => {
   if (!kroklyPushConfig.enabled || kroklyPushBusy) return;
   kroklyPushBusy = true;

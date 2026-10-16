@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 const webPush = require('./krokly-web-push');
+const nativePush = require('./krokli-native-push');
 
 const OFFER_MS = 5 * 60 * 1000;
 const SESSION_MS = 12 * 60 * 60 * 1000;
@@ -60,6 +61,7 @@ function resetPassword(db, id) {
   driver.authVersion += 1;
   driver.active = true;
   webPush.revokeDriver(db, id);
+  nativePush.revokeDriver(db, id);
   return { driver: publicDriver(driver), password };
 }
 
@@ -70,6 +72,7 @@ function setActive(db, id, active) {
   driver.active = active;
   driver.authVersion += 1;
   if (!active) webPush.revokeDriver(db, id);
+  if (!active) nativePush.revokeDriver(db, id);
   return publicDriver(driver);
 }
 

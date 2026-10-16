@@ -18,7 +18,7 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
     subtotal: 10, total: 13.99, deliveryFee: 3.99, status, payment: { status: 'PAID' }, createdAt: new Date().toISOString()
   });
   await fs.writeFile(file, JSON.stringify({ customers: [{ id: 'c1', name: 'Client fictif', points: 0 }], orders: [order(1), order(2)], reservations: [], nextOrderNumber: 3, nextCustomerId: 2 }));
-  const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
+  const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/driver-no-external.cjs'), path.join(__dirname, 'server.js')], {
     cwd: dir,
     env: { PATH: process.env.PATH, PORT: '0', NODE_ENV: 'test', DATA_FILE_PATH: file, SESSION_SECRET: 's'.repeat(64), RESTAURANT_DASHBOARD_PASSWORD: 'owner-test-password' },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -70,6 +70,19 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
   const capabilities = await request('/api/krokly-driver/capabilities');
   assert.equal(capabilities.data.protocol, 'krokli-bibou-live-v1');
   assert.equal(capabilities.data.automaticNearestDispatch, false);
+  assert.equal(capabilities.data.nativePush.protocol, 'krokli-native-push-v1');
+  assert.equal(capabilities.data.nativePush.projectId, '8f737171-95c6-449a-8c34-4ce9f0ee747c');
+  const nativeInput = { installationId: require('node:crypto').randomUUID(), installationSecret: require('node:crypto').randomUUID(), projectId: capabilities.data.nativePush.projectId,
+    platform: 'android', informed: true, token: 'ExpoPushToken[fixture_driver_only]' };
+  const nativeRoute = '/api/krokly-driver/native-push/register';
+  assert.equal((await request(nativeRoute, '', 'POST', nativeInput)).status, 401);
+  assert.equal((await request(nativeRoute, owner, 'POST', nativeInput)).status, 401);
+  assert.equal((await request(nativeRoute, linaToken, 'POST', { ...nativeInput, informed: false })).status, 400);
+  const registeredNative = await request(nativeRoute, linaToken, 'POST', nativeInput);
+  assert.equal(registeredNative.status, 200); assert.equal(registeredNative.data.registered, true);
+  assert.ok(Date.parse(registeredNative.data.expiresAt) > Date.now());
+  assert.equal(JSON.stringify((await request('/api/krokly-driver/state', malikToken)).data).includes(nativeInput.token), false);
+  assert.equal((await request(nativeRoute, malikToken, 'POST', { ...nativeInput, installationSecret: require('node:crypto').randomUUID() })).status, 403);
   assert.equal((await fetch(`${base}/driver/gps.js`)).status, 200);
   assert.equal((await request('/api/krokly-driver/gps/start', '', 'POST', { consentVersion: 'bibou-foreground-gps-v1' })).status, 401);
   assert.equal((await request('/api/krokly-driver/gps/start', linaToken, 'POST', {})).status, 400);
@@ -102,6 +115,7 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal(typeof firstState.push.publicKey, 'string');
   assert.equal((await request('/api/krokly-driver/push/subscribe', linaToken, 'POST', { endpoint: 'https://127.0.0.1/private' })).status, 400);
   assert.equal((await request('/api/dashboard/krokly-drivers/orders/order-1/assign', owner, 'POST', { driverId: lina.data.driver.id })).status, 200);
+  assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).krokliNativePush.jobs.length, 1);
   assert.equal((await request('/api/dashboard/krokly-drivers/orders/order-1/assign', owner, 'POST', { driverId: malik.data.driver.id })).status, 409);
   assert.equal((await request('/api/krokly-driver/state', malikToken)).data.orders.length, 0);
   assert.equal((await request('/api/krokly-driver/orders/order-1/accept', malikToken, 'POST')).status, 404);
@@ -117,6 +131,9 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal((await request('/api/krokly-driver/orders/order-1/deliver', linaToken, 'POST')).status, 200);
   const persisted = JSON.parse(await fs.readFile(file, 'utf8'));
   assert.equal(persisted.orders[0].status, 'delivered');
+  assert.equal((await request('/api/krokly-driver/native-push/unregister', '', 'POST', { ...nativeInput, installationSecret: require('node:crypto').randomUUID() })).status, 403);
+  assert.equal((await request('/api/krokly-driver/native-push/unregister', '', 'POST', nativeInput)).status, 200);
+  assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).krokliNativePush.devices.length, 0);
   assert.equal((await request('/api/dashboard/krokly-drivers/' + lina.data.driver.id + '/active', owner, 'PATCH', { active: false })).status, 200);
   assert.equal((await request('/api/krokly-driver/state', linaToken)).status, 401);
 });
