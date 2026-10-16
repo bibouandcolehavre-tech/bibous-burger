@@ -3,6 +3,7 @@ import DeliveryTracking from './DeliveryTracking';
 const {delayLabel:deliveryDelayLabel}=require('./delivery-tracking-client');
 const {createSessionRecovery}=require('./session-recovery');
 import ArticleReviews from './ArticleReviews';
+import DeliveryFeedback from './DeliveryFeedback';
 import BibouPlusAfterPayment from './BibouPlusAfterPayment';
 import PromoCodeField from './PromoCodeField';
 const { previewPromotion, differentPendingPromo } = require('./promo-client');
@@ -535,7 +536,12 @@ function SmsLoginScreen({ onBack, onAuthenticated, accountFirst = false, onPriva
 }
 
 function OrdersScreen(props) {
-  return <View style={{ flex: 1 }}><View style={{ flex: 1 }}><OrdersTrackingScreen {...props} /></View>{props.orders.some(order => order.status === 'delivered') && <ScrollView horizontal style={{ maxHeight: 78, backgroundColor: '#FBF3E6' }} contentContainerStyle={{ padding: 10, gap: 10 }}>{props.orders.filter(order => order.status === 'delivered').map(order => <Pressable key={order.apiId} style={styles.simulateButton} onPress={() => props.onReview(order)}><Text style={styles.simulateButtonText}>Noter mes articles · {order.id}</Text></Pressable>)}</ScrollView>}</View>;
+  const [feedbackOrder,setFeedbackOrder]=useState(null);
+  useEffect(()=>setFeedbackOrder(null),[props.token]);
+  return <View style={{flex:1}}><View style={{flex:1}}><OrdersTrackingScreen {...props}/></View>
+    {props.orders.some(o=>o.status==='delivered')?<ScrollView horizontal style={{maxHeight:90,backgroundColor:'#FBF3E6'}} contentContainerStyle={{padding:10,gap:10}}>{props.orders.filter(o=>o.status==='delivered').map(order=><View key={order.apiId} style={{flexDirection:'row',gap:10}}><Pressable accessibilityRole="button" style={styles.simulateButton} onPress={()=>props.onReview(order)}><Text style={styles.simulateButtonText}>Noter mes articles · {order.id}</Text></Pressable>{order.method==='delivery'&&!order.uberDelivery&&!isReviewToken(props.token)?<Pressable accessibilityRole="button" style={styles.simulateButton} onPress={()=>setFeedbackOrder(order.apiId)}><Text style={styles.simulateButtonText}>Noter ma livraison · {order.id}</Text></Pressable>:null}</View>)}</ScrollView>:null}
+    {feedbackOrder&&props.token?<DeliveryFeedback key={`${props.token}:${feedbackOrder}`} api={props.api} token={props.token} orderId={feedbackOrder} onClose={()=>setFeedbackOrder(null)}/>:null}
+  </View>;
 }
 function OrdersTrackingScreen({ orders, onBack, onRefresh, onDecide, busy, api, token }) {
   const activeOrder = orders.find((order) => !["delivered", "cancelled"].includes(order.status));

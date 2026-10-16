@@ -1,0 +1,10 @@
+# Source preparation only; these values have NOT been set in production.
+# Configure and preserve a dedicated random 32-byte key as 64 hexadecimal
+# characters in the service secret store. Never put a real key in Git, logs,
+# a mobile bundle, a PDF, or the database backup. Keep a separate protected
+# recovery copy; changing it makes prior encrypted RIBs unreadable.
+DRIVER_BANK_DATA_KEY=
+
+# Must be enabled for the owner's first complete release, only after verified
+# backend setup and payment checks. No real payment test is performed here.
+DRIVER_TIPS_ENABLED=false

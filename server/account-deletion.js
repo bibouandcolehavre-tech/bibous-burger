@@ -3,6 +3,7 @@ const { deleteCustomerPush } = require('./push-notifications');
 const { deleteCustomer: deleteCustomerCrm } = require('./crm');
 const { deleteCustomer: deleteCustomerSms } = require('./marketing-sms');
 const { deleteCustomerRatings } = require('./article-ratings');
+const { removeCustomer: deleteDeliveryFeedback } = require('./driver-feedback');
 const { deleteCustomer: deleteCustomerTickets } = require('./stb-tickets');
 const { deleteCustomer: deleteCustomerPrizes } = require('./contest-prizes');
 const { cancelDepositReservation } = require('./reservation-deposit');
@@ -14,6 +15,8 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   deleteCustomerCrm(database, customer.id);
   deleteCustomerSms(database, customer.id);
   deleteCustomerRatings(database, customer.id);
+  deleteDeliveryFeedback(database, customer.id);
+  for(const tip of database.driverTipPayments||[])if(tip.customerId===customer.id){tip.customerId=null;tip.accountDeletedAt=deletedAt;}
   deleteCustomerTickets(database, customer.id);
   deleteCustomerPrizes(database, customer.id, value);
   const customerId = customer.id;
@@ -28,6 +31,7 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
     order.customerName = "Client supprimé";
     delete order.customerPhone;
     delete order.deliveryAddress;
+    delete order.deliveryDestination;
     order.comment = "";
     if (order.uberDirect) delete order.uberDirect.payload;
     for (const amendment of [order.amendment, ...(order.amendmentHistory || [])]) {

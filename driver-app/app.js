@@ -302,7 +302,7 @@ function renderOwner() {
   const ready = currentState.orders.filter(o => o.status === 'ready' && o.eligible);
   const assigned = currentState.orders.filter(o => o.assignment && ['offered', 'accepted', 'picked_up', 'issue'].includes(o.assignment.status));
   content.innerHTML = `<div class="hint">Une course doit être <strong>payée et marquée prête</strong> avant attribution. Une commande confiée à Uber ne peut pas être attribuée en parallèle à Krokli.</div>
-    ${ownerGps()}
+    ${ownerGps()}${ownerPaymentRequests()}
     <div class="metrics"><div class="metric"><strong>${ready.length}</strong><span>à attribuer</span></div><div class="metric"><strong>${assigned.length}</strong><span>attribuée(s)</span></div><div class="metric"><strong>${currentState.drivers.filter(d => d.active).length}</strong><span>livreur(s) actifs</span></div></div>
     <h3 class="section-title">Commandes en livraison</h3>${currentState.orders.length ? `<div class="grid">${currentState.orders.map(ownerOrder).join('')}</div>` : '<div class="empty"><strong>Aucune livraison à répartir</strong>Les commandes payées et prêtes apparaîtront ici.</div>'}
     <h3 class="section-title">Comptes livreurs</h3><div class="card"><form id="create-form" class="create"><label>Nom du livreur<input name="name" required maxlength="60" placeholder="Ex. : Lina"></label><label>Identifiant<input name="username" required maxlength="32" placeholder="Ex. : lina"></label><button class="primary" type="submit">Créer le compte</button></form>
@@ -319,6 +319,20 @@ function ownerGps() {
       return `<div class="driver gps-position" data-gps-expiry="${escapeHtml(p.expiresAt)}"><div><strong>${escapeHtml(driver?.name || 'Livreur')}</strong><small>Reçue à ${escapeHtml(new Date(p.receivedAt).toLocaleTimeString('fr-FR'))} · précision ±${Math.ceil(Number(p.accuracy))} m</small></div><a class="secondary navigation" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&amp;query=${p.latitude},${p.longitude}">Voir la dernière position</a></div>`;
     }).join('') : '<p>Aucune position récente partagée. Le fonctionnement habituel des livraisons reste disponible.</p>'}</section>`;
 }
+function ownerPaymentRequests(){
+  const euro=n=>Number.isSafeInteger(n)?`${(n/100).toFixed(2).replace('.',',')} €`:'À vérifier';
+  return `<section class="card"><h3>Règlements des livreurs</h3><p>Aucun virement automatique. Les demandes du lundi excluent les gains déjà réclamés. Marquez une demande réglée seulement après votre virement bancaire.</p>${(currentState.paymentRequests||[]).map(r=>`<article class="driver-payment"><strong>${escapeHtml(r.driverName)} · ${euro(r.amountCents)}</strong><p>${r.status==='paid'?'Virement enregistré':r.status==='rejected'?'Demande annulée':'À régler'} · ${r.source==='weekly'?'demande du lundi':'demande manuelle'} · ${escapeHtml(new Date(r.createdAt).toLocaleDateString('fr-FR'))}</p><p>Forfaits ${euro(r.deliveryCents)} + pourboires ${euro(r.tipCents)} · Compte •••• ${escapeHtml(r.bankEnding)}</p>${r.status==='pending'?`<div class="actions"><button class="secondary" data-payment-bank="${escapeHtml(r.id)}">Voir le RIB de cette demande</button><button class="primary" data-payment-paid="${escapeHtml(r.id)}">J’ai effectué le virement</button><button class="secondary" data-payment-reject="${escapeHtml(r.id)}">Annuler la demande non payée</button></div><p data-bank-details></p>`:''}</article>`).join('')||'<p>Aucune demande de règlement.</p>'}</section>`;
+}
+document.addEventListener('click',async event=>{
+  const button=event.target.closest?.('[data-payment-bank],[data-payment-paid],[data-payment-reject]');if(!button||mode!=='owner'||busy||loading||!fresh)return;
+  const current=generation;busy=true;updateControls();
+  try{
+    if(button.dataset.paymentBank){const bank=await api(`dashboard/krokly-drivers/payment-requests/${encodeURIComponent(button.dataset.paymentBank)}/bank`);const box=button.closest('article').querySelector('[data-bank-details]');if(box&&current===generation)box.textContent=`${bank.holder} · IBAN ${bank.iban}${bank.bic?' · BIC '+bank.bic:''}`;}
+    else if(button.dataset.paymentReject){if(!window.confirm('Annuler cette demande uniquement si aucun virement n’a été fait ? Les gains seront recalculés pour une nouvelle demande.'))return;await api(`dashboard/krokly-drivers/payment-requests/${encodeURIComponent(button.dataset.paymentReject)}/reject`,{method:'POST',body:JSON.stringify({confirm:true})});message('Demande non payée annulée. Les gains disponibles seront recalculés.');lastOrders='';}
+    else{if(!window.confirm('Confirmez uniquement si vous avez déjà effectué ce virement à votre banque. L’application ne fait pas le virement.'))return;const reference=window.prompt('Référence du virement effectué :');if(!reference?.trim())return;await api(`dashboard/krokly-drivers/payment-requests/${encodeURIComponent(button.dataset.paymentPaid)}/paid`,{method:'POST',body:JSON.stringify({confirmPaid:true,reference:reference.trim()})});message('Virement déclaré effectué. Aucun transfert bancaire lancé par l’application.');lastOrders='';}
+  }catch(e){if(current===generation)message(e.message,true);}
+  finally{if(current===generation){busy=false;updateControls();void refresh();}}
+});
 
 function showSecret(data) {
   issuedSecret = data;

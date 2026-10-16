@@ -17,7 +17,7 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
     method: 'delivery', serviceDate: date, slot: '19:00', items: [{ name: 'Burger', price: 10, quantity: 1 }],
     subtotal: 10, total: 13.99, deliveryFee: 3.99, status, payment: { status: 'PAID' }, createdAt: new Date().toISOString()
   });
-  await fs.writeFile(file, JSON.stringify({ customers: [{ id: 'c1', name: 'Client fictif', points: 0 }], orders: [order(1), order(2)], reservations: [], nextOrderNumber: 3, nextCustomerId: 2 }));
+  await fs.writeFile(file, JSON.stringify({ customers: [{ id: 'c1', name: 'Client fictif', points: 0 },{id:'c2',name:'Autre client fictif',points:0}], orders: [order(1), order(2)], reservations: [], nextOrderNumber: 3, nextCustomerId: 3 }));
   const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/driver-no-external.cjs'), path.join(__dirname, 'server.js')], {
     cwd: dir,
     env: { PATH: process.env.PATH, PORT: '0', NODE_ENV: 'test', DATA_FILE_PATH: file, SESSION_SECRET: 's'.repeat(64), RESTAURANT_DASHBOARD_PASSWORD: 'owner-test-password' },
@@ -124,16 +124,41 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
   const acceptedResponse = await request('/api/krokly-driver/state', linaToken);
   assert.equal(acceptedResponse.headers.get('cache-control'), 'no-store');
   assert.equal(acceptedResponse.data.orders[0].deliveryAddress.address, '1 rue fictive');
-  assert.equal(acceptedResponse.data.orders[0].orderTotal, 13.99);
+  assert.equal(acceptedResponse.data.orders[0].orderTotal, undefined,'Driver must not receive restaurant basket revenue');
   assert.equal(acceptedResponse.data.orders[0].courierPay, 3.99);
   assert.equal((await request('/api/dashboard/orders/order-1', owner, 'PATCH', { status: 'delivered' })).status, 409);
   assert.equal((await request('/api/krokly-driver/orders/order-1/pickup', linaToken, 'POST')).status, 200);
   assert.equal((await request('/api/krokly-driver/orders/order-1/deliver', linaToken, 'POST')).status, 200);
   const persisted = JSON.parse(await fs.readFile(file, 'utf8'));
   assert.equal(persisted.orders[0].status, 'delivered');
+  assert.equal((await request('/api/krokly-driver/account')).status,401);
+  assert.equal((await request('/api/krokly-driver/account',owner)).status,401);
+  assert.equal((await request('/api/krokly-driver/account?driverId=other',linaToken)).status,400);
+  assert.equal((await request('/api/krokly-driver/account?week=2026-02-30',linaToken)).status,400);
+  const history=(await request('/api/krokly-driver/account',linaToken)).data;
+  assert.equal(history.history.length,1);assert.equal(history.summary.totalEntitlementCents,399);
+  for(const privateValue of ['Client fictif','0600000000','1 rue fictive'])assert.equal(JSON.stringify(history).includes(privateValue),false);
+  assert.equal((await request('/api/krokly-driver/account',malikToken)).data.history.length,0);
+  const pdf=await fetch(`${base}/api/krokly-driver/statement?week=${history.week.startDate}`,{headers:{Authorization:`Bearer ${linaToken}`}});
+  assert.equal(pdf.status,200);assert.equal(pdf.headers.get('content-type'),'application/pdf');assert.match(pdf.headers.get('cache-control'),/no-store/);
+  assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0,5).toString(),'%PDF-');
+  const session=require('./customer-session').createCustomerSession;
+  const customer=session('c1','s'.repeat(64)),other=session('c2','s'.repeat(64));
+  const feedbackRoute='/api/customer/orders/order-1/delivery-feedback';
+  assert.equal((await request(feedbackRoute)).status,401);
+  assert.equal((await request(feedbackRoute,linaToken)).status,401);
+  assert.equal((await request(feedbackRoute,other)).status,404);
+  assert.equal((await request(feedbackRoute,customer,'POST',{stars:5,tipCents:100})).status,400);
+  assert.equal((await request(feedbackRoute,customer,'POST',{stars:5,comment:'Livraison soignée'})).status,200);
+  assert.equal((await request(feedbackRoute,customer,'POST',{stars:5,comment:'Livraison soignée'})).status,200);
+  assert.equal((await request(feedbackRoute,customer,'POST',{stars:2})).status,409);
+  const rated=(await request('/api/krokly-driver/account',linaToken)).data;
+  assert.deepEqual(rated.ratings,{count:1,averageStars:5});assert.equal(JSON.stringify(rated).includes('Livraison soignée'),false);
   assert.equal((await request('/api/krokly-driver/native-push/unregister', '', 'POST', { ...nativeInput, installationSecret: require('node:crypto').randomUUID() })).status, 403);
   assert.equal((await request('/api/krokly-driver/native-push/unregister', '', 'POST', nativeInput)).status, 200);
   assert.equal(JSON.parse(await fs.readFile(file, 'utf8')).krokliNativePush.devices.length, 0);
   assert.equal((await request('/api/dashboard/krokly-drivers/' + lina.data.driver.id + '/active', owner, 'PATCH', { active: false })).status, 200);
   assert.equal((await request('/api/krokly-driver/state', linaToken)).status, 401);
+  assert.equal((await request('/api/krokly-driver/account', linaToken)).status, 401);
+  assert.equal((await fetch(`${base}/api/krokly-driver/statement`,{headers:{Authorization:`Bearer ${linaToken}`}})).status,401);
 });

@@ -120,6 +120,14 @@ function queueAmendmentNotification(db, order, config, now = Date.now()) {
   enqueue(db, customer, devices, { kind: 'service', eventKey: `amendment:${order.id}:${a.revision}:${a.status}:${a.phase || ''}`, title: copy[0], body: copy[1], screen: 'orders', entityId: order.id }, now);
   return { channel: devices.length ? 'in_app_push' : 'in_app', devices: devices.length };
 }
+function queueArrivalNotification(db,order,config,now=Date.now()){
+  if(!config.enabled||order.arrivalPushNotifiedAt||!config.arrivalEligible?.(db,order,now))return false;
+  const customer=(db.customers||[]).find(c=>c.id===order.customerId);if(!customer||!prefs(customer).service)return false;
+  const devices=customerDevices(db,customer,now).filter(d=>live(config,d.platform));if(!devices.length)return false;
+  enqueue(db,customer,devices,{kind:'service',eventKey:`order:${order.id}:near-arrival`,deliveryArrival:true,title:'Votre livreur est presque là !',body:'Préparez-vous, votre commande arrive. Le petit Bibou est tout près.',screen:'orders',entityId:order.id},now);
+  store(db).jobs.filter(j=>j.entityId===order.id&&j.deliveryArrival===true&&j.status==='queued').forEach(j=>{j.expiresAt=now+45000;});
+  order.arrivalPushNotifiedAt=new Date(now).toISOString();return true;
+}
 
 function prepareCampaign(db, input, config, now = Date.now()) {
   if (!input || !UUID.test(input.requestId || '') || typeof input.title !== 'string' || typeof input.body !== 'string' || !DESTINATIONS.includes(input.screen) || !['all', 'plus'].includes(input.audience)) fail('Notification incomplète.');
@@ -197,6 +205,7 @@ function canDispatch(db, job, config, now) {
     const order=(db.orders||[]).find(o=>o.id===job.entityId&&o.customerId===job.customerId);
     if(!order||order.status!=='out_for_delivery'||order.method!=='delivery'||order.payment?.status!=='PAID'||order.reviewMode||order.amendment?.status==='pending')return null;
   }
+  if(job.deliveryArrival===true){const order=(db.orders||[]).find(o=>o.id===job.entityId&&o.customerId===job.customerId);if(!order||!config.arrivalEligible?.(db,order,now))return null;}
   if (job.contestPrizeVoucherId && !require('./contest-prizes').alertEligible(db, job.contestPrizeVoucherId, new Date(now))) return null;
   if (job.kind === 'marketing') {
     if (job.crmOfferId) {
@@ -307,4 +316,4 @@ function createPushWorker({ config, transact, fetchImpl = fetch, clock = Date.no
   return { tick };
 }
 
-module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueAmendmentNotification, queueCrmNotification, queueContestPrizeNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };
+module.exports = { configFromEnv, customerPushState, updatePreferences, registerDevice, removeDevice, deleteCustomerPush, queueServiceNotification, queueArrivalNotification, queueAmendmentNotification, queueCrmNotification, queueContestPrizeNotification, prepareCampaign, sendCampaign, dashboardPush, purgePush, createPushWorker };

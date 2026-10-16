@@ -3,6 +3,7 @@ const { parisDateKey } = require('./availability');
 const webPush = require('./krokly-web-push');
 const nativePush = require('./krokli-native-push');
 const preparation = require('./krokli-preparation');
+const driverAccount = require('./krokli-driver-account');
 
 const OFFER_MS = 5 * 60 * 1000;
 const SESSION_MS = 12 * 60 * 60 * 1000;
@@ -144,7 +145,7 @@ function assign(db, orderId, driverId, now = Date.now(), { source = 'manual' } =
   if (!driver) fail('Livreur actif introuvable.', 404);
   if (!eligible(order, now)) fail('Commande hors service du jour, non prête, non payée, déjà attribuée ou confiée à Uber.');
   order.kroklyDriver = {
-    driverId, source, status: 'offered', offeredAt: new Date(now).toISOString(),
+    driverId, source, financials: driverAccount.quote(order), status: 'offered', offeredAt: new Date(now).toISOString(),
     expiresAt: new Date(now + OFFER_MS).toISOString(), updatedAt: new Date(now).toISOString()
   };
   if (source === 'manual' && preparation.validPlan(order)) order.krokliPreparation.state = 'manual';
@@ -167,21 +168,21 @@ function transition(db, orderId, driverId, action, now = Date.now()) {
   if (action === 'pickup' && order.status !== 'ready' && !(order.status === 'preparing' && preparation.validPlan(order))) fail('Le restaurant doit d’abord marquer la commande prête.');
   if (action === 'deliver' && order.status !== 'out_for_delivery') fail('Le départ en livraison doit être confirmé avant la remise.');
   order.kroklyDriver.status = next;
+  if (action === 'accept') driverAccount.freezeQuote(order);
   order.kroklyDriver.updatedAt = new Date(now).toISOString();
   if (action === 'pickup') { order.status = 'out_for_delivery'; order.kroklyDriver.pickedUpAt=new Date(now).toISOString(); }
-  if (action === 'deliver') { order.status = 'delivered'; order.kroklyDriver.deliveredAt=new Date(now).toISOString(); }
+  if (action === 'deliver') { order.status = 'delivered'; order.kroklyDriver.deliveredAt=new Date(now).toISOString(); driverAccount.recordCompletion(order); }
   if (['pickup', 'deliver'].includes(action)) order.updatedAt = new Date(now).toISOString();
   return order;
 }
 
 function project(order) {
-  const accepted = ['accepted', 'picked_up', 'delivered'].includes(order.kroklyDriver.status);
+  const accepted = ['accepted', 'picked_up'].includes(order.kroklyDriver.status);
   return {
     id: order.id, number: order.number, status: order.kroklyDriver.status,
     restaurant: "Bibou's Burgers", pickupAddress: '153 Quai Georges V, 76600 Le Havre',
     distanceKm: order.distanceKm || null, slot: order.slot, serviceDate: order.serviceDate,
-    orderTotal: Number.isFinite(order.total) ? order.total : null,
-    courierPay: [3.99, 4.99, 5.99].includes(order.deliveryFee) ? order.deliveryFee : null,
+    courierPay: Number.isSafeInteger((order.kroklyDriver.financials||driverAccount.quote(order)).driverPayCents) ? (order.kroklyDriver.financials||driverAccount.quote(order)).driverPayCents/100 : null,
     deliveryCity: order.deliveryAddress?.city || null,
     preparation: preparation.view(order),
     expiresAt: order.kroklyDriver.expiresAt,

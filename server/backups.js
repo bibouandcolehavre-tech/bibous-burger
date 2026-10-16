@@ -17,7 +17,7 @@ const object = (value) => value !== null && typeof value === "object" && !Array.
 
 function validateData(data) {
   if (!object(data) || !object(data.database) || !Array.isArray(data.database.customers) || !Array.isArray(data.database.orders) || !object(data.stock)) throw failure("Données de sauvegarde invalides.");
-  for (const key of ["reservations", "rewardClaims", "bibouPlusPurchases"]) {
+  for (const key of ["reservations", "rewardClaims", "bibouPlusPurchases", "driverTipPayments", "driverBankProfiles", "driverPaymentRequests", "driverFeedback"]) {
     if (data.database[key] !== undefined && !Array.isArray(data.database[key])) throw failure("Données de sauvegarde invalides.");
   }
   if (Object.values(data.stock).some((value) => typeof value !== "boolean")) throw failure("Disponibilités invalides.");

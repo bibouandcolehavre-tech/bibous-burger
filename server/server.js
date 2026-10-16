@@ -59,6 +59,12 @@ const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
 const orderSms = require('./order-sms');
 const kroklyDrivers = require('./krokly-drivers');
+const driverAccount = require('./krokli-driver-account');
+const driverFeedback = require('./driver-feedback');
+const driverTips = require('./driver-tips');
+const driverSettlements = require('./driver-settlements');
+const arrivalProximity = require('./arrival-proximity');
+const driverBankKey = process.env.DRIVER_BANK_DATA_KEY || '';
 const krokliPreparation = require('./krokli-preparation');
 const krokliAutoDispatch = require('./krokli-auto-dispatch');
 const deliveryTiming = require('./delivery-timing');
@@ -86,6 +92,7 @@ if (fsSync.existsSync(envPath)) {
 
 const port = Number(process.env.PORT || 3001);
 const pushConfig = push.configFromEnv(process.env);
+pushConfig.arrivalEligible=(db,order)=>arrivalProximity.near(order,krokliGpsPilot.customerLocation(db,order));
 const marketingSmsConfig = marketingSms.configFromEnv(process.env);
 const kroklyPushConfig = kroklyWebPush.configFromEnv(process.env);
 const krokliNativePushConfig = krokliNativePush.configFromEnv(process.env);
@@ -103,6 +110,7 @@ const sumupApiKey = process.env.SUMUP_API_KEY;
 const sumupMerchantCode = process.env.SUMUP_MERCHANT_CODE;
 const sumupReturnUrl = process.env.SUMUP_RETURN_URL;
 const sumupRedirectUrl = process.env.SUMUP_REDIRECT_URL;
+const driverTipsEnabled = process.env.DRIVER_TIPS_ENABLED==='true'&&Boolean(sumupApiKey && sumupReturnUrl && sumupRedirectUrl);
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
@@ -245,7 +253,7 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": googleMapsApiKey,
-      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration"
+      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.legs.endLocation.latLng"
     },
     body: JSON.stringify({
       origin: { address: restaurantAddress },
@@ -270,7 +278,9 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
   // time from kilometers or fail a legacy checkout solely for missing ETA.
   const seconds = typeof route.duration === 'string' && /^\d+(?:\.\d{1,9})?s$/.test(route.duration) ? Number(route.duration.slice(0,-1)) : NaN;
   const deliveryTravelSeconds = Number.isFinite(seconds) && seconds >= 0 && seconds <= 7200 ? Math.ceil(seconds) : null;
-  return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm), deliveryTravelSeconds };
+  const end=route.legs?.at(-1)?.endLocation?.latLng;
+  const deliveryDestination=end&&Number.isFinite(end.latitude)&&Number.isFinite(end.longitude)&&Math.abs(end.latitude)<=90&&Math.abs(end.longitude)<=180?{latitude:end.latitude,longitude:end.longitude,source:'google-routes'}:null;
+  return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm), deliveryTravelSeconds,deliveryDestination };
 };
 
 const normalizeFrenchPhone = (value) => {
@@ -457,6 +467,7 @@ const refreshPayment = async (record) => {
     checkout = found[0];
   }
   applyVerifiedCheckout(record, checkout, merchantCode);
+  if(record.kind==='driver-tip')driverTips.reconcileVerifiedCheckout(record,checkout);
 };
 
 // Never release a table held during SumUp checkout without checking the payment.
@@ -573,6 +584,7 @@ const server = http.createServer(async (request, response) => {
       try {
         if (url.pathname === '/api/krokly-driver/capabilities' && request.method === 'GET') return send(response, 200, {
           protocol: 'krokli-bibou-live-v1', restaurant: 'bibou-le-havre', sharedDriverAccounts: true,
+          driverAccount: { protocol:'krokli-driver-account-v1',weeklyPdf:true,completedContacts:false,firstNameOnly:true,ratings:true,tipsEnabled:driverTipsEnabled,settlementsEnabled:driverSettlements.configured(driverBankKey) },
           manualDispatch: true, gpsPilot: { optional: true, durationMinutes: 30, sharingModes: ['legacy-30-minutes', 'until-stopped'], visibleTo: 'restaurant-only', historyStored: false },
           automaticNearestDispatch: false, timedDispatch: { supported: true, selection: 'fresh-gps-proximity-or-rotation', roadTravelTimeVerified: false, availableCouriersOnly: true, requiresRestaurantActivation: true }, groupedRouting: false, customerTracking: {protocol:'bibou-customer-delivery-v1',explicitDriverConsent:true,onlyOwnActiveDelivery:true,maximumPositionAgeSeconds:30},
           nativePush: { protocol: 'krokli-native-push-v1', enabled: krokliNativePushConfig.enabled, projectId: krokliNativePush.PROJECT_ID }
@@ -605,6 +617,26 @@ const server = http.createServer(async (request, response) => {
           const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
           const driver = kroklyDrivers.authenticate(database, token, kroklyTokenSecret);
           if (!driver) return send(response, 401, { error: 'Session livreur expirée ou désactivée.' });
+          if(url.pathname==='/api/krokly-driver/settlements'&&request.method==='GET')return send(response,200,driverSettlements.state(database,driver,driverBankKey));
+          if(url.pathname==='/api/krokly-driver/bank'&&request.method==='POST'){
+            const bank=driverSettlements.saveBank(database,driver,input,driverBankKey);await writeDatabase(database);return send(response,200,bank);
+          }
+          if(url.pathname==='/api/krokly-driver/payment-requests'&&request.method==='POST'){
+            if(!input||input.confirm!==true||Object.keys(input).some(k=>k!=='confirm'))return send(response,400,{error:'Confirme la demande des gains disponibles.'});
+            const created=driverSettlements.request(database,driver,driverBankKey);await writeDatabase(database);return send(response,201,created);
+          }
+          if (['/api/krokly-driver/account','/api/krokly-driver/statement'].includes(url.pathname) && request.method==='GET') {
+            if([...url.searchParams.keys()].some(k=>!['week','offset','limit'].includes(k)))return send(response,400,{error:'Paramètres de compte invalides.'});
+            const week=url.searchParams.get('week')||undefined;
+            if(url.pathname.endsWith('/statement')){
+              const report=driverAccount.statement(database,driver,week);
+              // Snapshot already allowlisted: release the database lock before PDF work.
+              releaseDatabase();releaseDatabase=null;
+              const pdf=await require('./pdf/driver-statement').renderStatement(report);
+              response.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':`attachment; filename="krokli-releve-${report.week.startDate}.pdf"`,'Cache-Control':'no-store, private','X-Content-Type-Options':'nosniff','Access-Control-Allow-Origin':'*','Content-Length':String(pdf.length)});return response.end(pdf);
+            }
+            return send(response,200,driverAccount.account(database,driver,{week,offset:Number(url.searchParams.get('offset')||0),limit:Number(url.searchParams.get('limit')||50),tipsEnabled:driverTipsEnabled}));
+          }
           const expired = kroklyDrivers.expireOffers(database);
           if (expired) await writeDatabase(database);
           if (url.pathname === '/api/krokly-driver/state' && request.method === 'GET') {
@@ -635,6 +667,10 @@ const server = http.createServer(async (request, response) => {
             const result = gpsAction[1] === 'start' ? krokliGpsPilot.start(database, driver, input)
               : gpsAction[1] === 'stop' ? krokliGpsPilot.stop(database, driver.id, input)
                 : krokliGpsPilot.update(database, driver.id, input);
+            if(gpsAction[1]==='position'){
+              let changed=false;for(const order of database.orders||[])if(order.kroklyDriver?.driverId===driver.id)changed=push.queueArrivalNotification(database,order,pushConfig)||changed;
+              if(changed)await writeDatabase(database);
+            }
             return send(response, 200, result);
           }
           if (url.pathname === '/api/krokly-driver/push/unsubscribe' && request.method === 'POST') {
@@ -659,9 +695,20 @@ const server = http.createServer(async (request, response) => {
         }
         const expired = kroklyDrivers.expireOffers(database);
         if (expired) await writeDatabase(database);
+        if(url.pathname==='/api/dashboard/krokly-drivers/payment-requests'&&request.method==='GET')return send(response,200,driverSettlements.managerState(database));
+        const settlementRoute=/^\/api\/dashboard\/krokly-drivers\/payment-requests\/([^/]+)\/(bank|paid|reject)$/.exec(url.pathname);
+        if(settlementRoute){
+          if(['bank','paid'].includes(settlementRoute[2])){
+            const paymentRequest=(database.driverPaymentRequests||[]).find(r=>r.id===settlementRoute[1]);
+            for(const line of paymentRequest?.lines.filter(l=>l.kind==='tip')||[]){const tip=(database.driverTipPayments||[]).find(t=>`tip:${t.providerTransactionId}`===line.key);if(tip?.payment?.checkoutReference){await refreshPayment(tip);driverTips.finalizeVerified(tip);await writeDatabase(database);}}
+          }
+          if(settlementRoute[2]==='bank'&&request.method==='GET')return send(response,200,driverSettlements.requestBank(database,settlementRoute[1],driverBankKey));
+          if(settlementRoute[2]==='paid'&&request.method==='POST'){const paid=driverSettlements.markPaid(database,settlementRoute[1],input);await writeDatabase(database);return send(response,200,paid);}
+          if(settlementRoute[2]==='reject'&&request.method==='POST'){const rejected=driverSettlements.reject(database,settlementRoute[1],input);await writeDatabase(database);return send(response,200,rejected);}
+        }
         if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'GET') {
           const state = kroklyDrivers.dispatchState(database);
-          return send(response, 200, { ...state, drivers: state.drivers.map(d=>({...d, availability:krokliAutoDispatch.availabilityView(database.kroklyDrivers.find(item=>item.id===d.id))})), dispatchSettings: krokliPreparation.settings(database), gpsPositions: krokliGpsPilot.locations(database) });
+          return send(response, 200, { ...state, drivers: state.drivers.map(d=>({...d, availability:krokliAutoDispatch.availabilityView(database.kroklyDrivers.find(item=>item.id===d.id))})), dispatchSettings: krokliPreparation.settings(database), gpsPositions: krokliGpsPilot.locations(database),paymentRequests:driverSettlements.managerState(database).requests });
         }
         if (url.pathname === '/api/dashboard/krokly-drivers/settings' && request.method === 'PATCH') {
           const dispatchSettings = krokliAutoDispatch.configure(database,input);
@@ -1625,6 +1672,30 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { order });
     }
 
+    const deliveryFeedbackRoute=/^\/api\/customer\/orders\/([^/]+)\/delivery-feedback$/.exec(url.pathname);
+    if(deliveryFeedbackRoute&&['GET','POST'].includes(request.method)){
+      const customer=authenticatedCustomer(request,database);
+      if(!customer||request.kioskSession?.guest)return send(response,401,{error:'Connecte-toi pour noter ta livraison.'});
+      const order=database.orders.find(o=>o.id===decodeURIComponent(deliveryFeedbackRoute[1])&&o.customerId===customer.id&&orderInKioskSession(o,request.kioskSession));
+      if(!order)return send(response,404,{error:'Commande introuvable.'});
+      const result=request.method==='POST'?driverFeedback.save(database,order,await readBody(request)):driverFeedback.view(database,order);
+      result.tips=driverTips.view(driverTips.forOrder(database,order),driverTipsEnabled&&driverFeedback.eligible(order));
+      if(request.method==='POST')await writeDatabase(database);return send(response,200,result);
+    }
+    const driverTipRoute=/^\/api\/customer\/orders\/([^/]+)\/tip$/.exec(url.pathname);
+    if(driverTipRoute&&['GET','POST'].includes(request.method)){
+      const customer=authenticatedCustomer(request,database);if(!customer||request.kioskSession?.guest)return send(response,401,{error:'Connecte-toi pour laisser un pourboire.'});
+      const order=database.orders.find(o=>o.id===decodeURIComponent(driverTipRoute[1])&&o.customerId===customer.id&&orderInKioskSession(o,request.kioskSession));
+      if(!order)return send(response,404,{error:'Livraison introuvable.'});
+      let tip=driverTips.forOrder(database,order);
+      if(request.method==='POST'){
+        if(!driverTipsEnabled)return send(response,503,{error:'Le paiement des pourboires n’est pas encore configuré.'});
+        tip=driverTips.create(database,order,await readBody(request));await writeDatabase(database);
+        if(tip.state==='PENDING')await openPayment(tip,database,{merchantCode:await getSumUpMerchantCode(),expiresAt:new Date(Date.parse(tip.createdAt)+30*60000),description:`Pourboire livreur · livraison #${order.number}`,prefix:'driver-tip'});
+      }else if(tip?.payment?.checkoutReference&&driverTipsEnabled)await refreshPayment(tip);
+      if(tip){driverTips.finalizeVerified(tip);await writeDatabase(database);}
+      return send(response,200,driverTips.view(tip,driverTipsEnabled&&driverFeedback.eligible(order)));
+    }
     const ratingRoute = /^\/api\/customer\/orders\/([^/]+)\/ratings$/.exec(url.pathname);
     if (ratingRoute && ['GET', 'POST'].includes(request.method)) {
       const customer = authenticatedCustomer(request, database);
@@ -1954,6 +2025,7 @@ const server = http.createServer(async (request, response) => {
       let distanceKm = 0;
       let deliveryFee = 0;
       let deliveryTravelSeconds = null;
+      let deliveryDestination = null;
       if (input.method === "delivery") {
         if (![customer.address, customer.postalCode, customer.city].every(value => String(value || "").trim())) return send(response, 400, { error: "Indiquez une adresse complète pour la livraison." });
         try {
@@ -1961,6 +2033,7 @@ const server = http.createServer(async (request, response) => {
           distanceKm = quote.distanceKm;
           deliveryFee = quote.deliveryFee;
           deliveryTravelSeconds = quote.deliveryTravelSeconds;
+          deliveryDestination = quote.deliveryDestination;
         } catch (error) {
           return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });
         }
@@ -1990,6 +2063,7 @@ const server = http.createServer(async (request, response) => {
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, wheelEurosPerTurn: wheelGame.EUROS_PER_TURN, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         if (input.method === 'delivery' && deliveryTravelSeconds !== null) createdOrder.deliveryTravelSeconds = deliveryTravelSeconds;
+        if(input.method==='delivery'&&deliveryDestination)createdOrder.deliveryDestination=deliveryDestination;
         if (tableRequest) {
           let table;
           try { table = createReservation(latestDatabase, { customerId: latestCustomer.id, name: latestCustomer.name, phone: latestCustomer.phone, guests: tableRequest.guests, note: tableRequest.note, serviceDate: input.serviceDate, slot: input.slot, slotGrid: 20 }, new Date(createdOrder.createdAt)); }
@@ -2133,13 +2207,15 @@ const server = http.createServer(async (request, response) => {
       let order = database.orders.find((item) => item.payment?.checkoutId === checkoutId);
       let bibouPlusPurchase = database.bibouPlusPurchases.find((item) => item.payment?.checkoutId === checkoutId);
       let depositReservation = database.reservations?.find(item => item.deposit && item.payment?.checkoutId === checkoutId);
-      if (!order && !bibouPlusPurchase && !depositReservation) {
+      let driverTip=(database.driverTipPayments||[]).find(item=>item.payment?.checkoutId===checkoutId);
+      if (!order && !bibouPlusPurchase && !depositReservation && !driverTip) {
         const checkout = await sumupRequest(`checkouts/${encodeURIComponent(checkoutId)}`);
         const matches = item => !item.payment?.checkoutId && item.payment?.checkoutReference && item.payment.checkoutReference === checkout.checkout_reference;
         order = database.orders.find(matches);
         bibouPlusPurchase = database.bibouPlusPurchases.find(matches);
         depositReservation = database.reservations?.find(item => item.deposit && matches(item));
-        const record = order || bibouPlusPurchase || depositReservation;
+        driverTip=(database.driverTipPayments||[]).find(matches);
+        const record = order || bibouPlusPurchase || depositReservation || driverTip;
         if (record) applyVerifiedCheckout(record, checkout, record.payment.merchantCode || await getSumUpMerchantCode());
       }
       if (order) {
@@ -2157,8 +2233,9 @@ const server = http.createServer(async (request, response) => {
         finalizePaidTableDeposit(depositReservation, database);
         await writeDatabase(database);
       }
+      if(driverTip){await refreshPayment(driverTip);driverTips.finalizeVerified(driverTip);await writeDatabase(database);}
       // Unknown IDs can be retried after a checkout creation response is lost.
-      if (!order && !bibouPlusPurchase && !depositReservation) return send(response, 503, { error: "Paiement pas encore associé." });
+      if (!order && !bibouPlusPurchase && !depositReservation && !driverTip) return send(response, 503, { error: "Paiement pas encore associé." });
       return send(response, 204, {});
     }
 
@@ -2438,5 +2515,14 @@ server.once('listening', async () => {
   } catch { console.error('Menus offerts personnels : vérification indisponible.'); }
 });
 const onListen = () => console.log(`Bibou's Burgers API démarrée sur http://localhost:${server.address().port}`);
+const tickDriverSettlements=async()=>{
+  if(!driverSettlements.configured(driverBankKey))return;
+  const release=await acquireDatabase();
+  try{const database=await readDatabase();if(driverSettlements.weekly(database,driverBankKey))await writeDatabase(database);}
+  catch{console.error('Demandes de règlement livreur : traitement indisponible, aucun virement automatique.');}
+  finally{release();}
+};
+const driverSettlementsTimer=setInterval(()=>void tickDriverSettlements(),60000);driverSettlementsTimer.unref();
+server.once('listening',()=>void tickDriverSettlements());server.on('close',()=>clearInterval(driverSettlementsTimer));
 if (process.env.LISTEN_HOST) server.listen(port, process.env.LISTEN_HOST, onListen);
 else server.listen(port, onListen);
