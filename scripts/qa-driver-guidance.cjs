@@ -50,7 +50,7 @@ async function main() {
           await card.getByRole('button',{name:native?'Accepter la course':'Accepter',exact:true}).click();
           const nav=()=>native?card.getByRole('button',{name:'Démarrer le GPS',exact:true}):page.locator(`[data-navigate-order="fictional-${number}"]`);
           await nav().waitFor(); await nav().click();
-          if(native){await page.getByRole('radio',{name:/Google Maps/}).click();}else await page.locator('#guidance-provider').selectOption('google');
+          if(native){await page.getByRole('radio',{name:/Google Maps/}).click();}else await page.locator('#guidance-provider').getByRole('button',{name:'Google Maps',exact:true}).click();
           const launch=native?page.getByTestId('live-gps-launch'):page.locator('#guidance-launch');
           if(native){await launch.click();await page.waitForFunction(()=>window.__gpsLaunches.length===1);launches.push({url:await page.evaluate(()=>window.__gpsLaunches[0]),browserBoundaryIntercepted:true});}
           else{const popupEvent=page.waitForEvent('popup');await launch.click();const popup=await popupEvent;await popup.waitForLoadState('domcontentloaded');await popup.close();}
@@ -61,7 +61,7 @@ async function main() {
           await card.getByRole('button',{name:native?'J’ai récupéré le repas':"J'ai récupéré le repas",exact:true}).click();
           if(native)await page.getByRole('button',{name:'Confirmer',exact:true}).click();
           await nav().click();
-          if(native){await page.getByRole('radio',{name:/Plans Apple/,exact:false}).click();}else await page.locator('#guidance-provider').selectOption('apple');
+          if(native){await page.getByRole('radio',{name:/Plans Apple/,exact:false}).click();}else await page.locator('#guidance-provider').getByRole('button',{name:'Plans Apple',exact:true}).click();
           if(native){await launch.click();await page.waitForFunction(()=>window.__gpsLaunches.length===2);launches.push({url:await page.evaluate(()=>window.__gpsLaunches[1]),browserBoundaryIntercepted:true});}
           else{launches.push({url:await launch.getAttribute('href'),linkInspectedOnly:true});}
           check('pickup switches GPS to complete customer address',new URL(launches.at(-1).url).searchParams.get('daddr')==='1 rue Fictive & angle #2, 76600 Le Havre');
@@ -69,12 +69,13 @@ async function main() {
           check('GPS handoff never confirms delivery',stored.orders.find(o=>o.id===`fictional-${number}`).kroklyDriver.status==='picked_up');
           if(native)check('foreground-only GPS is never described as continuing in background',await page.getByTestId('live-gps-background-status').innerText().then(t=>/peut suspendre|n’est pas actif/.test(t)));
           else {
-            await page.locator('#guidance-provider').selectOption('waze');const url=new URL(await launch.getAttribute('href'));check('Waze also receives current destination',url.searchParams.get('q')==='1 rue Fictive & angle #2, 76600 Le Havre'&&url.searchParams.get('navigate')==='yes');
+            await page.locator('#guidance-provider').getByRole('button',{name:'Waze',exact:true}).click();const url=new URL(await launch.getAttribute('href'));check('Waze also receives current destination',url.searchParams.get('q')==='1 rue Fictive & angle #2, 76600 Le Havre'&&url.searchParams.get('navigate')==='yes');
             await context.setOffline(true);await page.waitForFunction(()=>document.querySelector('#guidance-launch').getAttribute('aria-disabled')==='true');check('offline handoff is disabled',await launch.getAttribute('href')===null);await context.setOffline(false);await page.waitForFunction(()=>document.querySelector('#guidance-launch').getAttribute('aria-disabled')==='false');
             await page.locator('#guidance-close').click();await page.locator('#metro-trip').click();check('METRO opens without GPS sharing or IGN calculation',new URL(await launch.getAttribute('href')).searchParams.get('ll')==='49.489123,0.149494');
-            await page.locator('#guidance-provider').selectOption('google');await page.reload();await page.locator('#metro-trip').click();check('GPS preference survives reopening',await page.locator('#guidance-provider').inputValue()==='google');
+            await page.locator('#guidance-provider').getByRole('button',{name:'Google Maps',exact:true}).click();await page.reload();await page.locator('#metro-trip').click();check('GPS preference survives reopening',await page.locator('[data-guidance-provider="google"]').getAttribute('aria-pressed')==='true');
           }
           check('no horizontal overflow',await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+          if(!native)await page.locator('#guidance-panel').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));
           await page.screenshot({path:path.join(out,`${engineName}-${native?'native-ui':'pwa'}.png`),fullPage:false});
           if(native){await page.getByRole('button',{name:'Retour aux courses',exact:true}).click();await page.getByRole('button',{name:'Me déconnecter',exact:true}).click();}
           else{await page.locator('#logout').click();check('logout clears destination and launch URL',await launch.getAttribute('href')===null&&await page.locator('#guidance-address').innerText()==='');}

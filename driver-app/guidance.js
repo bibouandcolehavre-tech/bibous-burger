@@ -2,15 +2,18 @@
   'use strict';
   const core = root.KrokliGuidanceCore;
   let target = null, available = false;
-  const view = document.querySelector('#guidance-panel'), select = document.querySelector('#guidance-provider');
+  const view = document.querySelector('#guidance-panel');
+  const choices = [...document.querySelectorAll('[data-guidance-provider]')];
+  const names = { apple: 'Plans Apple', google: 'Google Maps', waze: 'Waze' };
   const launch = document.querySelector('#guidance-launch');
   const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
   let saved = null;
   try { saved = localStorage.getItem('krokli-navigation-provider'); } catch { /* Optional non-personal preference. */ }
-  select.value = core.preferredProvider(saved, appleMobile);
+  let provider = core.preferredProvider(saved, appleMobile);
   function update() {
-    const links = core.externalLinks(target), provider = core.preferredProvider(select.value, appleMobile);
-    launch.textContent = `Ouvrir ${select.options[select.selectedIndex].textContent}`;
+    const links = core.externalLinks(target);
+    choices.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.guidanceProvider === provider)));
+    launch.textContent = `Ouvrir ${names[provider]}`;
     if (links && available) launch.href = links[provider]; else launch.removeAttribute('href');
     launch.setAttribute('aria-disabled', String(!links || !available));
   }
@@ -28,11 +31,11 @@
     document.querySelector('#guidance-status').textContent = '';
     update(); view.scrollIntoView({ behavior: 'smooth', block: 'start' }); return true;
   }
-  select.addEventListener('change', () => {
-    select.value = core.preferredProvider(select.value, appleMobile);
-    try { localStorage.setItem('krokli-navigation-provider', select.value); } catch { /* Keep the in-memory choice. */ }
+  choices.forEach(button => button.addEventListener('click', () => {
+    provider = core.preferredProvider(button.dataset.guidanceProvider, appleMobile);
+    try { localStorage.setItem('krokli-navigation-provider', provider); } catch { /* Keep the in-memory choice. */ }
     update();
-  });
+  }));
   launch.addEventListener('click', event => {
     if (!available || !core.externalLinks(target)) { event.preventDefault(); return; }
     // A real anchor and direct user gesture preserve mobile universal-link

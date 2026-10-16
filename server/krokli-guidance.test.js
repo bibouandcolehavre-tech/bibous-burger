@@ -40,5 +40,7 @@ test('web launcher uses direct, no-referrer links and clearly discloses foregrou
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8'), app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
   assert.match(html, /id="guidance-launch"[^>]*referrerpolicy="no-referrer"/);
   assert.match(html, /navigateur peut suspendre le partage/);
+  assert.doesNotMatch(html, /<select id="guidance-provider"/);
+  assert.equal((html.match(/data-guidance-provider="/g) || []).length, 3);
   assert.match(app, /function signOut[^]*KrokliGuidance\?\.close/);
 });

@@ -125,7 +125,11 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .actions .navigation { flex: 1; text-align: center; }
 #guidance-panel { margin-bottom: 20px; }
 #guidance-panel p { line-height: 1.5; }
-.guidance-choice { display: grid; gap: 8px; font-weight: 700; margin: 16px 0; }
+.guidance-choice-label { font-size: 14px; font-weight: 750; margin: 20px 0 10px; }
+.guidance-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.guidance-choices button { min-height: 58px; padding: 12px 8px; border: 1px solid var(--line); border-radius: 15px; background: var(--cream); color: var(--green); font-size: 14px; font-weight: 750; line-height: 1.3; touch-action: manipulation; }
+.guidance-choices button[aria-pressed="true"] { background: #e5ebe0; border: 2px solid var(--green); padding: 11px 7px; box-shadow: 0 2px 6px #315b4b0d; }
+.guidance-choices button:hover { border-color: var(--green); }
 #guidance-launch { display: flex; width: 100%; font-size: 17px; min-height: 56px; }
 .guidance-destination { font-weight: 700; overflow-wrap: anywhere; }
 #guidance-status { font-weight: 700; color: var(--green); }

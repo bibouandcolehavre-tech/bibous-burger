@@ -65,7 +65,12 @@
         <section id="guidance-panel" class="card" hidden aria-labelledby="guidance-title">
           <p class="eyebrow">Guidage GPS · voiture</p><h3 id="guidance-title"></h3>
           <p id="guidance-address" class="guidance-destination"></p>
-          <label class="guidance-choice">Mon application GPS<select id="guidance-provider"><option value="apple">Plans Apple</option><option value="google">Google Maps</option><option value="waze">Waze</option></select></label>
+          <p class="guidance-choice-label">Mon application GPS</p>
+          <div id="guidance-provider" class="guidance-choices" role="group" aria-label="Choisir mon application GPS">
+            <button type="button" data-guidance-provider="apple" aria-pressed="false">Plans Apple</button>
+            <button type="button" data-guidance-provider="google" aria-pressed="false">Google Maps</button>
+            <button type="button" data-guidance-provider="waze" aria-pressed="false">Waze</button>
+          </div>
           <a id="guidance-launch" class="primary navigation" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Ouvrir le GPS</a>
           <p>Ton GPS s’ouvre avec la destination : il assure la voix et le recalcul. Vérifie l’adresse, puis touche « Démarrer » ou « Aller » si demandé.</p>
           <p class="hint"><strong>Suivi Bibou sur la version web :</strong> le navigateur peut suspendre le partage de position quand tu ouvres le GPS ou verrouilles le téléphone. Reviens dans Krokli pour confirmer la livraison.</p>
