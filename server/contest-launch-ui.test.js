@@ -76,7 +76,9 @@ test('Parrainage UI : publication séparée et confirmée, aucun plafond quotidi
   h.db.referralContest={...defaultContest(),status:'published',revision:3,startDate:'2026-10-15',startTime:'11:00',endDate:'2026-12-31',rules:'Règlement fictif.'};
   await h.panel.load();assert.equal(h.q('#contest-referral-amendment').hidden,false);assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
   await h.q('#contest-referral-publish').onclick();assert.equal(h.db.referralContest.revision,3);
-  h.approve(true);await h.q('#contest-referral-publish').onclick();assert.equal(h.db.referralContest.revision,4);
+  assert.equal(h.q('#contest-referral-confirmation').hidden,false);
+  h.q('#contest-referral-cancel').onclick();assert.equal(h.q('#contest-referral-confirmation').hidden,true);assert.equal(h.db.referralContest.revision,3);
+  await h.q('#contest-referral-publish').onclick();await h.q('#contest-referral-confirm').onclick();assert.equal(h.db.referralContest.revision,4);
   assert.equal(h.q('#contest-referral-publish').hidden,true);assert.match(h.q('#contest-referral-state').textContent,/sans limite quotidienne/);
   await h.q('#contest-referral-publish').onclick();assert.equal(h.calls.filter(c=>c.method==='POST').length,1);
   assert.deepEqual(JSON.parse(h.calls.find(c=>c.method==='POST').body),{contestId:'bibou-launch',revision:3,confirmation:'PUBLIER 20 POINTS CHACUN'});
