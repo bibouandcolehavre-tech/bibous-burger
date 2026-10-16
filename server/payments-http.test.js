@@ -131,6 +131,7 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
     const first = await request('/bibou-plus/checkout', { method: 'POST' });
     const second = await request('/bibou-plus/checkout', { method: 'POST' });
     assert.equal(first.status, 201); assert.equal(second.status, 201);
+    assert.equal(first.data.purchase.amount, 5.99);
     assert.equal(first.data.purchase.id, second.data.purchase.id);
     const id = first.data.purchase.payment.checkoutId;
     await provider(state => { state.checkouts[id].status = 'PAID'; });
@@ -181,6 +182,23 @@ test('Parcours de paiement HTTP isolé : confirmations, doublons, panne et annul
     assert.equal(retried.data.purchase.id, first.data.purchase.id);
     assert.equal((await db()).customers[0].bibouPlusExpiresAt, expiry);
     assert.equal(await creations(), count);
+  });
+  await t.test('offre publique 5,99 € et trente jours, sans prélèvement automatique', async () => {
+    const result = await request('/bibou-plus/offer', {auth:''});
+    assert.equal(result.status,200);
+    assert.deepEqual(result.data.bibouPlus,{price:5.99,durationDays:30,automaticRenewal:false,discountRate:.05,loyaltyMultiplier:2});
+  });
+  await t.test('un ancien paiement à 9,99 € ne peut être réutilisé ni modifié après le changement de tarif', async () => {
+    const state=await db();
+    const purchase={id:'fictional-old-plus',customerId:customer.id,requestId:'fictional-old-plus-attempt',amount:9.99,status:'awaiting_payment',payment:{checkoutId:'fictional-old-checkout',checkoutReference:'fictional-old-reference',status:'PENDING',validUntil:new Date(Date.now()+600000).toISOString()}};
+    state.bibouPlusPurchases.unshift(purchase);
+    await fs.writeFile(databaseFile,JSON.stringify(state));
+    const before=await creations();
+    const result=await request('/bibou-plus/checkout',{method:'POST',body:{requestId:purchase.requestId}});
+    assert.equal(result.status,409);
+    assert.equal(result.data.code,'BIBOU_PLUS_PRICE_CHANGED');
+    assert.equal(await creations(),before);
+    assert.deepEqual((await db()).bibouPlusPurchases.find(p=>p.id===purchase.id),purchase);
   });
   await t.test('les coordonnées de livraison restent celles de la commande après changement de profil', async () => {
     const address = { address: '1 rue de Test', postalCode: '76600', city: 'Le Havre' };

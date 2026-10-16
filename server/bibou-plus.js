@@ -1,6 +1,6 @@
-const BIBOU_PLUS_PRICE = 9.99;
+const { BIBOU_PLUS_PRICE, BIBOU_PLUS_DURATION_DAYS, bibouPlusOffer } = require('../bibou-plus-offer');
 const BIBOU_PLUS_DISCOUNT_RATE = 0.05;
-const BIBOU_PLUS_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const BIBOU_PLUS_DURATION_MS = BIBOU_PLUS_DURATION_DAYS * 24 * 60 * 60 * 1000;
 
 const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -26,6 +26,8 @@ const bibouPlusStatus = (customer, value = new Date()) => {
     expiresAt,
     price: BIBOU_PLUS_PRICE,
     discountRate: BIBOU_PLUS_DISCOUNT_RATE,
+    durationDays: BIBOU_PLUS_DURATION_DAYS,
+    automaticRenewal: false,
   };
 };
 
@@ -56,6 +58,7 @@ const activateBibouPlus = (customer, purchase, value = new Date()) => {
 };
 
 module.exports = {
+  bibouPlusOffer,
   BIBOU_PLUS_DISCOUNT_RATE,
   BIBOU_PLUS_DURATION_MS,
   BIBOU_PLUS_PRICE,

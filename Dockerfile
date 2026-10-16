@@ -11,6 +11,7 @@ COPY cheese-naans.js ./cheese-naans.js
 COPY dietary-policy.js ./dietary-policy.js
 COPY custom-burger-preview.js ./custom-burger-preview.js
 COPY product-offer.js ./product-offer.js
+COPY bibou-plus-offer.js ./bibou-plus-offer.js
 COPY contest-prize-policy.js ./contest-prize-policy.js
 COPY privacy-policy.js ./privacy-policy.js
 
