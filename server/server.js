@@ -70,6 +70,9 @@ const deliveryTiming = require('./delivery-timing');
 const krokliGpsPilot = require('./krokli-gps-pilot').createGpsPilot();
 const kroklyWebPush = require('./krokly-web-push');
 const krokliNativePush = require('./krokli-native-push');
+const krokliStoreReview = require('./krokli-review-sandbox').createReviewSandbox({
+  passwordHash: process.env.KROKLI_REVIEW_PASSWORD_HASH || require('./krokli-review-access.json').passwordHash
+});
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { statistics: dashboardStatistics } = require('./dashboard-statistics');
@@ -531,6 +534,11 @@ const server = http.createServer(async (request, response) => {
   let releaseDatabase;
 
   try {
+    const driverReviewToken = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    if (krokliStoreReview.isToken(driverReviewToken) && !url.pathname.startsWith('/api/krokly-driver/'))
+      return send(response, 403, { error: 'Cet accès de vérification ne peut pas accéder aux données réelles.' });
+    if (krokliStoreReview.isToken(driverReviewToken) && url.pathname === '/api/krokly-driver/login')
+      return send(response, 403, { error: 'Reconnectez-vous sans utiliser une ancienne session de vérification.' });
     if (url.pathname.startsWith('/api/review/')) {
       try {
         const payload = await reviewSandbox.handle({ method: request.method, route: url.pathname.slice('/api/review'.length), token: String(request.headers.authorization || '').replace(/^Bearer /, ''), readBody: () => readBody(request) });
@@ -602,11 +610,29 @@ const server = http.createServer(async (request, response) => {
             response.setHeader('Retry-After', String(limit.retryAfterSeconds));
             return send(response, 429, { error: 'Trop de tentatives. Réessayez plus tard.' });
           }
+          if (krokliStoreReview.isLogin(input)) {
+            const session = krokliStoreReview.login(input);
+            kroklyLoginLimiter.reset(key);
+            return send(response, 200, session);
+          }
           const database = await readDatabase();
           const session = kroklyDrivers.sessionFor(database, input.username, input.password, kroklyTokenSecret);
           kroklyLoginLimiter.reset(key);
           return send(response, 200, session);
         }
+        // Dispatch reserved credentials BEFORE acquiring/reading the real DB.
+        // Even forged, expired and unknown review tokens must fail closed.
+        if (!admin && krokliStoreReview.isToken(driverReviewToken)) {
+          const result = await krokliStoreReview.handle(driverReviewToken, url.pathname, request.method, input, url.searchParams);
+          if (result.pdf) {
+            response.writeHead(result.status, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${result.filename}"`,
+              'Cache-Control': 'no-store, private', 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*', 'Content-Length': String(result.pdf.length) });
+            return response.end(result.pdf);
+          }
+          return send(response, result.status, result.data);
+        }
+        if (!admin && url.pathname === '/api/krokly-driver/native-push/unregister' && request.method === 'POST' && krokliStoreReview.ownsCleanup(input))
+          return send(response, 200, krokliStoreReview.cleanup(input));
         releaseDatabase = await acquireDatabase();
         const database = await readDatabase();
         // The installation capability revokes only its own device. This also
