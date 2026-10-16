@@ -28,6 +28,15 @@ test('legacy unknowns are not invented as zero; client-supplied tips are ignored
   const o=order(1,{deliveryFee:'unknown',tipCents:999999,tip:{amount:500}});const r=A.account({orders:[o]},driver,{},now);
   assert.equal(r.summary.totalEntitlementCents,null);assert.equal(r.summary.unknownPayCount,1);assert.equal(r.summary.unknownDeliveryFees,1);assert.equal(r.summary.tipCents,0);
 });
+test('Bibou Plus free delivery is explicit without reducing pay, distinct from a generic free-delivery offer',()=>{
+  for(const [bibouPlusApplied,deliveryFee,expected]of [[true,0,true],[false,0,false],[true,3.99,false],['true',0,false]]){const o=order(1,{bibouPlusApplied,deliveryFee,standardDeliveryFee:4.99});const r=A.account({orders:[o]},driver,{},now);assert.equal(r.history[0].bibouPlusDeliveryCovered,expected);assert.equal(r.summary.knownDriverPayCents,499);assert.equal(r.history[0].deliveryFeeCents,deliveryFee*100);}
+});
+test('the completed funding reason is frozen along with actual delivery fee, including older snapshots',()=>{
+  const o=order(1,{bibouPlusApplied:true,deliveryFee:0,standardDeliveryFee:4.99});A.recordCompletion(o);o.bibouPlusApplied=false;o.deliveryFee=5.99;
+  const r=A.account({orders:[o]},driver,{},now);assert.equal(r.history[0].bibouPlusDeliveryCovered,true);assert.equal(r.history[0].deliveryFeeCents,0);assert.equal(r.summary.knownDriverPayCents,499);
+  const generic=order(2,{deliveryFee:0,standardDeliveryFee:4.99});A.recordCompletion(generic);generic.bibouPlusApplied=true;assert.equal(A.account({orders:[generic]},driver,{},now).history[0].bibouPlusDeliveryCovered,false);
+  delete o.kroklyDriver.completedFinancials.bibouPlusDeliveryCovered;o.bibouPlusApplied=true;assert.equal(A.account({orders:[o]},driver,{},now).history[0].bibouPlusDeliveryCovered,true);
+});
 test('a later customer refund, anonymization or price edit cannot erase an already completed courier fee',()=>{
   const o=order();A.recordCompletion(o);o.payment.status='REFUNDED';o.total=0;o.customerId=null;o.status='cancelled';
   const r=A.account({orders:[o]},driver,{},now);assert.equal(r.summary.completedCount,1);assert.equal(r.summary.totalEntitlementCents,399);assert.equal(r.history[0].deliveryFeeCents,399);

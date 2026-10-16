@@ -15,7 +15,7 @@ function renderStatement(account,{now=new Date(),example=false}={}){
       tableHeader();
     }
     page(true);
-    for(const [index,row] of account.history.entries()){if(y>734)page(false);if(index%2===0)doc.rect(left,y-3,width,25).fill(cream);text(`${day(row.deliveredAt).slice(0,5)} ${day(row.deliveredAt).slice(-5)} · #${row.number}`,44,y+4,125);text(row.firstName,175,y+4,78,{ellipsis:true});text(money(row.deliveryFeeCents),268,y+4,88);text(money(row.driverPayCents),372,y+4,78);text(money(row.tipCents),466,y+4,85);y+=27;}
+    for(const [index,row] of account.history.entries()){const covered=row.bibouPlusDeliveryCovered===true&&row.deliveryFeeCents===0,height=covered?49:27;if(y+height>761)page(false);if(index%2===0)doc.rect(left,y-3,width,height-2).fill(cream);text(`${day(row.deliveredAt).slice(0,5)} ${day(row.deliveredAt).slice(-5)} · #${row.number}`,44,y+4,125);text(row.firstName,175,y+4,78,{ellipsis:true});text(money(row.deliveryFeeCents),268,y+4,88);text(money(row.driverPayCents),372,y+4,78);text(money(row.tipCents),466,y+4,85);if(covered)text('Bibou Plus : livraison offerte au client ; forfait pris en charge par le restaurant.',44,y+25,width-8,{size:9,bold:true});y+=height;}
     if(!account.history.length){text('Aucune livraison terminée cette semaine.',left,y+10,width,{color:muted});y+=40;}
     if(y>694)page(false);y+=18;doc.moveTo(left,y).lineTo(left+width,y).strokeColor('#D7DED0').stroke();y+=12;
     text('Frais client = frais de livraison réellement payés, sans le montant du panier.',left,y,width,{color:muted});y+=18;
