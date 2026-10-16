@@ -29,7 +29,6 @@ function updateGpsPanel() {
 }
 
 function stopGps(message) {
-  window.KrokliNavigation?.close();
   if (gpsPilot) void gpsPilot.stop(message);
   document.querySelector('#gps-consent').checked = false;
   updateGpsPanel();
@@ -53,8 +52,7 @@ document.querySelector('#gps-start').addEventListener('click', () => {
           return await response.json();
         } finally { timeout.cancel(); }
       },
-      onChange: () => { if (generation === current && gpsPilot === controller) { updateGpsPanel(); const s=controller.snapshot();if(!s.active&&!s.pending)window.KrokliNavigation?.close(); } },
-      onPosition: p => { if (generation === current && gpsPilot === controller) window.KrokliNavigation?.updatePosition(p); }
+      onChange: () => { if (generation === current && gpsPilot === controller) updateGpsPanel(); }
     });
     gpsPilot = controller || null;
   }
@@ -264,8 +262,6 @@ function driverCard(order) {
 
 function renderDriver() {
   const orders = currentState.orders || [];
-  const navigationKey=window.KrokliNavigation?.activeKey();
-  if(navigationKey && navigationKey!=='metro-trip' && !orders.some(o=>`${o.id}:${o.status}`===navigationKey && ['accepted','picked_up'].includes(o.status))) window.KrokliNavigation.close();
   const guidanceKey=window.KrokliGuidance?.activeKey();
   if(guidanceKey && guidanceKey!=='metro-trip' && !orders.some(o=>`${o.id}:${o.status}`===guidanceKey && ['accepted','picked_up'].includes(o.status))) window.KrokliGuidance.close();
   const push = currentState.push || {};

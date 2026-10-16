@@ -12,10 +12,6 @@
   <link rel="apple-touch-icon" href="/driver/apple-touch-icon.png" sizes="180x180">
   <link rel="manifest" href="/driver/manifest.webmanifest">
   <link rel="stylesheet" href="/driver/style.css">
-  <link rel="stylesheet" href="/driver/leaflet.css">
-  <script defer src="/driver/leaflet.js"></script>
-  <script defer src="/driver/navigation-core.js"></script>
-  <script defer src="/driver/navigation.js"></script>
   <script defer src="/driver/guidance-core.js"></script>
   <script defer src="/driver/guidance.js"></script>
   <script defer src="/driver/gps.js"></script>
@@ -76,18 +72,7 @@
           <p class="hint"><strong>Suivi Bibou sur la version web :</strong> le navigateur peut suspendre le partage de position quand tu ouvres le GPS ou verrouilles le téléphone. Reviens dans Krokli pour confirmer la livraison.</p>
           <details><summary>Fonctionnement et confidentialité</summary><p>Sans l’application GPS installée, le lien peut ouvrir une page web. Waze peut demander de choisir l’adresse. Seule cette destination est transmise : aucun nom, téléphone, identifiant de commande ou accès Bibou n’est ajouté au lien. Fais les réglages à l’arrêt.</p></details>
           <p id="guidance-status" role="status" aria-live="polite"></p>
-          <div class="actions"><button id="guidance-preview" class="secondary" type="button">Voir l’aperçu carte · sans voix</button><button id="guidance-close" class="quiet" type="button">Retour aux courses</button></div>
-        </section>
-        <section id="navigation-panel" class="card" hidden aria-labelledby="nav-title">
-          <p class="eyebrow">Aperçu carte · sans guidage vocal</p><h3 id="nav-title"></h3>
-          <p id="nav-address"></p>
-          <p>Le calcul IGN reçoit ton point de départ GPS et ta destination ; le fond de carte IGN reçoit la zone affichée. Aucun nom, téléphone ou identifiant Bibou n’est envoyé à IGN. Aucun trajet enregistré par Krokli. Suis toujours la signalisation et les conditions réelles.</p>
-          <label class="password-toggle"><input id="nav-consent" type="checkbox">À l’arrêt, je confirme la destination et j’autorise la navigation IGN pour ce trajet en voiture.</label>
-          <div id="nav-candidates" class="actions"></div>
-          <div class="actions"><button id="nav-calculate" class="primary" type="button">Calculer / recalculer à l’arrêt</button><button id="nav-center" class="secondary" type="button">Recentrer</button><button id="nav-close" class="quiet" type="button">Fermer la navigation</button></div>
-          <p id="nav-status" role="status" aria-live="polite"></p><p id="nav-summary"></p>
-          <div id="nav-map" aria-label="Carte de navigation routière"></div>
-          <p class="muted">Garde Krokli au premier plan et l’écran allumé. L’absence de verrouillage automatique dépend du navigateur. Pas de guidage vocal, de trafic en direct ni de validation automatique d’une livraison.</p>
+          <div class="actions"><button id="guidance-close" class="quiet" type="button">Retour aux courses</button></div>
         </section>
         <div id="content"></div>
       </section>

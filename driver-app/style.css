@@ -29,11 +29,6 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .hero h1 em { font-style: normal; color: #a35c43; }
 .hero p:last-child { color: var(--muted); margin: 0; font-size: 14px; }
 .card { background: var(--paper); border: 1px solid var(--line); border-radius: 20px; padding: 22px; box-shadow: 0 8px 23px #315b4b0d; }
-#navigation-panel { margin: 18px 0; scroll-margin-top: 14px; }
-#nav-map { height: min(58vh, 520px); min-height: 320px; width: 100%; border-radius: 14px; background: #e5ebe0; z-index: 0; }
-#navigation-panel p { line-height: 1.5; font-size: 14px; }
-#nav-status { font-weight: 750; padding: 12px; background: #e5ebe0; border-radius: 12px; }
-#nav-candidates { flex-direction: column; }
 .installation { margin-bottom: 20px; padding: 0 22px; }
 .installation summary { padding: 18px 0; min-height: 56px; cursor: pointer; font-size: 14px; font-weight: 800; }
 .installation p { font-size: 13px; line-height: 1.55; margin: 0 0 16px; }

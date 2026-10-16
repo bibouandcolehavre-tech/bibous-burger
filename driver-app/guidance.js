@@ -25,7 +25,7 @@
   }
   function open(next) {
     if (!core.externalLinks(next)) return false;
-    root.KrokliNavigation?.close(); target = { ...next }; view.hidden = false;
+    target = { ...next }; view.hidden = false;
     document.querySelector('#guidance-title').textContent = next.title;
     document.querySelector('#guidance-address').textContent = next.address;
     document.querySelector('#guidance-status').textContent = '';
@@ -43,6 +43,5 @@
     document.querySelector('#guidance-status').textContent = 'Ouverture du GPS demandée. Vérifie la destination et touche Démarrer / Aller dans le GPS si nécessaire. Reviens dans Krokli pour confirmer les étapes de livraison.';
   });
   document.querySelector('#guidance-close').addEventListener('click', close);
-  document.querySelector('#guidance-preview').addEventListener('click', () => { if (target) void root.KrokliNavigation?.open(target); });
   root.KrokliGuidance = { open, close, activeKey: () => target?.key || null, setAvailable: value => { available = value === true; update(); } };
 })(window);

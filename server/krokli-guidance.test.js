@@ -42,5 +42,6 @@ test('web launcher uses direct, no-referrer links and clearly discloses foregrou
   assert.match(html, /navigateur peut suspendre le partage/);
   assert.doesNotMatch(html, /<select id="guidance-provider"/);
   assert.equal((html.match(/data-guidance-provider="/g) || []).length, 3);
+  assert.doesNotMatch(html, /guidance-preview|navigation-panel|leaflet|navigation-core|\/navigation\.js|aperçu carte/i);
   assert.match(app, /function signOut[^]*KrokliGuidance\?\.close/);
 });

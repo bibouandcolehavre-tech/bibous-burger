@@ -39,6 +39,8 @@ async function main() {
         });
         try {
           await page.goto(native?nativeBase:base+'/driver/');
+          check('map preview removed from the application',await page.getByText(/aperçu carte|sans guidage vocal/i).count()===0);
+          if(!native)check('map runtime is not loaded or displayed',await page.locator('#navigation-panel,#guidance-preview,script[src*="leaflet"],script[src*="navigation.js"]').count()===0);
           // In the web rendering of React Native, intercept Linking.openURL
           // at its browser boundary. This is NOT a signed iOS/Android test.
           if(native)await page.evaluate(()=>{window.__gpsLaunches=[];window.open=url=>{window.__gpsLaunches.push(url);return null;};});
