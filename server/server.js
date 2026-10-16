@@ -531,6 +531,11 @@ const server = http.createServer(async (request, response) => {
       '/driver/': ['index.html', 'text/html; charset=utf-8'],
       '/driver/app.js': ['app.js', 'text/javascript; charset=utf-8'],
       '/driver/gps.js': ['gps.js', 'text/javascript; charset=utf-8'],
+      '/driver/navigation.js': ['navigation.js', 'text/javascript; charset=utf-8'],
+      '/driver/navigation-core.js': ['navigation-core.js', 'text/javascript; charset=utf-8'],
+      '/driver/leaflet.js': ['leaflet.js', 'text/javascript; charset=utf-8'],
+      '/driver/leaflet.css': ['leaflet.css', 'text/css; charset=utf-8'],
+      '/driver/leaflet-LICENSE.txt': ['leaflet-LICENSE.txt', 'text/plain; charset=utf-8'],
       '/driver/style.css': ['style.css', 'text/css; charset=utf-8'],
       '/driver/sw.js': ['sw.js', 'text/javascript; charset=utf-8'],
       '/driver/icon.svg': ['icon.svg', 'image/svg+xml'],
@@ -545,7 +550,7 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(200, {
         'Content-Type': kroklyFile[1], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'no-referrer',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: https://data.geopf.fr; connect-src 'self' https://data.geopf.fr; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
       });
       return response.end(contents);
     }
@@ -557,7 +562,7 @@ const server = http.createServer(async (request, response) => {
       try {
         if (url.pathname === '/api/krokly-driver/capabilities' && request.method === 'GET') return send(response, 200, {
           protocol: 'krokli-bibou-live-v1', restaurant: 'bibou-le-havre', sharedDriverAccounts: true,
-          manualDispatch: true, gpsPilot: { optional: true, durationMinutes: 30, visibleTo: 'restaurant-only', historyStored: false },
+          manualDispatch: true, gpsPilot: { optional: true, durationMinutes: 30, sharingModes: ['legacy-30-minutes', 'until-stopped'], visibleTo: 'restaurant-only', historyStored: false },
           automaticNearestDispatch: false, groupedRouting: false, customerTracking: false
         });
         const admin = url.pathname.startsWith('/api/dashboard/');

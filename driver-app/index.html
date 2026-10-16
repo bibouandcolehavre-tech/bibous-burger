@@ -12,6 +12,10 @@
   <link rel="apple-touch-icon" href="/driver/apple-touch-icon.png" sizes="180x180">
   <link rel="manifest" href="/driver/manifest.webmanifest">
   <link rel="stylesheet" href="/driver/style.css">
+  <link rel="stylesheet" href="/driver/leaflet.css">
+  <script defer src="/driver/leaflet.js"></script>
+  <script defer src="/driver/navigation-core.js"></script>
+  <script defer src="/driver/navigation.js"></script>
   <script defer src="/driver/gps.js"></script>
   <script defer src="/driver/app.js"></script>
 </head>
@@ -46,13 +50,26 @@
       <section id="workspace" hidden>
         <div class="workspace-head"><div><p class="eyebrow" id="role-label"></p><h2 id="welcome"></h2></div><div class="actions"><button id="refresh" class="secondary" type="button">Actualiser les courses</button><button id="logout" class="quiet" type="button">Se déconnecter</button></div></div>
         <section id="gps-pilot" class="card" hidden aria-labelledby="gps-heading">
-          <p class="eyebrow">Essai facultatif · 30 minutes maximum</p><h3 id="gps-heading">Partager ma position avec Bibou</h3>
-          <p>Uniquement pendant l’essai, avec cette page au premier plan. En passant dans Plans, en verrouillant le téléphone ou en fermant la page, le suivi s’interrompt. Aucun historique des trajets n’est conservé.</p>
+          <p class="eyebrow">Partage volontaire · jusqu’à ton arrêt</p><h3 id="gps-heading">Partager ma position avec Bibou</h3>
+          <p>Pas de coupure après 30 minutes : utilise « Arrêter le partage GPS » quand tu as terminé. Sur cette version web, garde cette page au premier plan : le suivi peut être suspendu avec Plans ouvert ou le téléphone verrouillé. Fermer la page ou te déconnecter arrête le partage. Aucun historique des trajets n’est conservé.</p>
           <p>Seule l’équipe connectée du restaurant voit ta dernière position reçue ; les clients ne la voient pas. Elle disparaît au plus tard après 90 secondes sans réception. Cet essai ne bloque aucune étape de livraison.</p>
-          <label class="password-toggle"><input type="checkbox" id="gps-consent">J’ai compris et je souhaite partager ma position pendant cet essai.</label>
-          <div class="actions"><button id="gps-start" class="primary" type="button">Démarrer l’essai GPS</button><button id="gps-stop" class="danger" type="button" hidden>Arrêter le partage GPS</button></div>
+          <label class="password-toggle"><input type="checkbox" id="gps-consent">J’ai compris : je partage ma position avec Bibou jusqu’à mon arrêt ou ma déconnexion.</label>
+          <div class="actions"><button id="gps-start" class="primary" type="button">Démarrer le partage GPS</button><button id="gps-stop" class="danger" type="button" hidden>Arrêter le partage GPS</button></div>
           <p id="gps-status" role="status" aria-live="polite">GPS facultatif · aucune position partagée.</p>
           <p class="muted">Fais les réglages à l’arrêt, jamais en roulant. En cas de problème, continue avec le fonctionnement habituel ou contacte le restaurant.</p>
+          <button id="metro-trip" class="secondary" type="button">Mon trajet réel vers METRO Le Havre</button>
+          <p class="muted">Destination : 2 rue Desmarais, Le Havre. Navigation voiture dans Krokli, sans créer de commande ni paiement.</p>
+        </section>
+        <section id="navigation-panel" class="card" hidden aria-labelledby="nav-title">
+          <p class="eyebrow">Navigation dans Krokli · voiture</p><h3 id="nav-title"></h3>
+          <p id="nav-address"></p>
+          <p>Le calcul IGN reçoit ton point de départ GPS et ta destination ; le fond de carte IGN reçoit la zone affichée. Aucun nom, téléphone ou identifiant Bibou n’est envoyé à IGN. Aucun trajet enregistré par Krokli. Suis toujours la signalisation et les conditions réelles.</p>
+          <label class="password-toggle"><input id="nav-consent" type="checkbox">À l’arrêt, je confirme la destination et j’autorise la navigation IGN pour ce trajet en voiture.</label>
+          <div id="nav-candidates" class="actions"></div>
+          <div class="actions"><button id="nav-calculate" class="primary" type="button">Calculer / recalculer à l’arrêt</button><button id="nav-center" class="secondary" type="button">Recentrer</button><button id="nav-close" class="quiet" type="button">Fermer la navigation</button></div>
+          <p id="nav-status" role="status" aria-live="polite"></p><p id="nav-summary"></p>
+          <div id="nav-map" aria-label="Carte de navigation routière"></div>
+          <p class="muted">Garde Krokli au premier plan et l’écran allumé. L’absence de verrouillage automatique dépend du navigateur. Pas de guidage vocal, de trafic en direct ni de validation automatique d’une livraison.</p>
         </section>
         <div id="content"></div>
       </section>

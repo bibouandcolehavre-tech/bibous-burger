@@ -44,11 +44,30 @@ test('pilot stops after thirty minutes even if positions keep arriving', t => {
   assert.equal(h.pilot.locations(h.db).length, 0);
   assert.throws(() => h.pilot.update(h.db, 'lina', { ...s, position: h.p() }), e => e.statusCode === 409);
 });
+test('new voluntary sharing survives 30 minutes and a signal gap, but positions still disappear after 90 seconds', t => {
+  const h = fixture(t), before = JSON.stringify(h.db);
+  const s = h.pilot.start(h.db, h.db.kroklyDrivers[0], { consentVersion: 'bibou-foreground-gps-until-stop-v2' });
+  assert.equal(s.sharingMode, 'until-stopped'); assert.equal(s.expiresAt, null);
+  for (let i = 0; i < 65; i++) { h.pilot.update(h.db, 'lina', { ...s, position: h.p() }); h.advance(60_000); }
+  assert.equal(h.pilot.locations(h.db).length, 1);
+  h.advance(POSITION_TTL_MS); assert.deepEqual(h.pilot.locations(h.db), []);
+  h.pilot.update(h.db, 'lina', { ...s, position: h.p() }); assert.equal(h.pilot.locations(h.db).length, 1);
+  assert.equal(JSON.stringify(h.db), before);
+  h.pilot.stop(h.db, 'lina', s);
+  assert.throws(() => h.pilot.update(h.db, 'lina', { ...s, position: h.p() }), e => e.statusCode === 409);
+});
+test('continuous sharing is revoked with the driver account, and cannot stop a newer device grant', t => {
+  const h = fixture(t), consent = { consentVersion: 'bibou-native-gps-until-stop-v2' };
+  const old = h.pilot.start(h.db, h.db.kroklyDrivers[0], consent), s = h.pilot.start(h.db, h.db.kroklyDrivers[0], consent);
+  h.pilot.stop(h.db, 'lina', old); h.pilot.update(h.db, 'lina', { ...s, position: h.p() });
+  h.db.kroklyDrivers[0].authVersion++;
+  assert.throws(() => h.pilot.update(h.db, 'lina', { ...s, position: h.p() }), e => e.statusCode === 409);
+});
 function clientHarness() {
   let success, error, interval, time = Date.now(); const sends = [], clears = [], messages = [];
   let send = async (action, data) => {
     sends.push({ action, data });
-    if (action === 'start') return { sessionId: 'session-test-only', expiresAt: new Date(time + SESSION_MS).toISOString() };
+    if (action === 'start') return { sessionId: 'session-test-only', expiresAt: null, sharingMode: 'until-stopped' };
     return { receivedAt: new Date(time).toISOString() };
   };
   const client = createClient({ geolocation: { watchPosition: (ok, fail) => { success = ok; error = fail; return 9; }, clearWatch: id => clears.push(id) }, send: (...args) => send(...args), now: () => time,
@@ -68,10 +87,22 @@ test('browser GPS refusal and inaccurate fixes do not send coordinates', async (
   h.error(1); await flush(); assert.equal(h.client.snapshot().active, false); assert.match(h.client.snapshot().message, /refusée/);
   assert.equal(h.sends.some(s => s.action === 'position'), false);
 });
-test('browser GPS stops on network error and stale fix, without touching orders', async () => {
+test('browser GPS keeps voluntary sharing through network or signal interruption, without inventing fresh positions', async () => {
   const h = clientHarness(); await h.client.start(true); h.setSend(async action => { h.sends.push({ action }); if (action === 'position') throw Error('Offline'); return {}; });
-  h.position(); await flush(); assert.equal(h.client.snapshot().active, false); assert.deepEqual(h.sends.map(s => s.action), ['start', 'position', 'stop']);
-  const fresh = clientHarness(); await fresh.client.start(true); fresh.position(); await flush(); fresh.tick(31000); await flush(); assert.equal(fresh.client.snapshot().active, false);
+  h.position(); await flush(); assert.equal(h.client.snapshot().active, true); assert.deepEqual(h.sends.map(s => s.action), ['start', 'position']);
+  const fresh = clientHarness(); await fresh.client.start(true); fresh.position(); await flush(); fresh.tick(31000); await flush(); assert.equal(fresh.client.snapshot().active, true);
+  assert.equal(fresh.sends.filter(s => s.action === 'position').length, 1);
+  fresh.position(); fresh.tick(10000); await flush(); assert.equal(fresh.sends.filter(s => s.action === 'position').length, 2);
+});
+test('browser continuous grant is not silently replaced by a legacy 30-minute grant', async () => {
+  const h = clientHarness(); h.setSend(async action => action === 'start' ? { sessionId: 'legacy-session', expiresAt: new Date().toISOString() } : {});
+  await h.client.start(true); assert.equal(h.client.snapshot().active, false);
+});
+test('browser does not stop after 30 minutes and explicit Stop cancels subsequent callbacks', async () => {
+  const h = clientHarness(); await h.client.start(true);
+  for (let i = 0; i < 190; i++) { h.position(); h.tick(10000); await flush(); }
+  assert.equal(h.client.snapshot().active, true); await h.client.stop(); h.position(); h.tick(10000); await flush();
+  assert.equal(h.client.snapshot().active, false); assert.equal(h.sends.at(-1).action, 'stop');
 });
 test('late start after logout/stop is cancelled before accessing phone GPS', async () => {
   const h = clientHarness(); let resolve;

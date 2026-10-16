@@ -14,7 +14,7 @@ function harness() {
 test('le cache livreur ne supprime pas les caches des autres applications', async () => {
   const h = harness(); let ready;
   h.handlers.activate({ waitUntil: promise => { ready = promise; } }); await ready;
-  assert.deepEqual(h.deleted, ['krokly-driver-shell-v5']);
+  assert.deepEqual(h.deleted, ['krokly-driver-shell-v5', 'krokly-driver-shell-v6']);
 });
 test('aucune API authentifiée ni donnée client ne passe par le cache livreur', async () => {
   const h = harness(); let install;
@@ -36,5 +36,5 @@ test('hors ligne, le shell public est lu uniquement dans le cache Krokli actif',
   const h = harness(); h.offline(); let response;
   h.handlers.fetch({ request: { method: 'GET', url: 'https://example.test/driver/', headers: { has: () => false } }, respondWith: promise => { response = promise; } });
   assert.equal((await response).ok, true);
-  assert.deepEqual(h.reads, [{ name: 'krokly-driver-shell-v6', url: 'https://example.test/driver/' }]);
+  assert.deepEqual(h.reads, [{ name: 'krokly-driver-shell-v7', url: 'https://example.test/driver/' }]);
 });

@@ -29,6 +29,7 @@ function updateGpsPanel() {
 }
 
 function stopGps(message) {
+  window.KrokliNavigation?.close();
   if (gpsPilot) void gpsPilot.stop(message);
   document.querySelector('#gps-consent').checked = false;
   updateGpsPanel();
@@ -48,11 +49,12 @@ document.querySelector('#gps-start').addEventListener('click', () => {
             method: 'POST', headers: { Authorization: `Bearer ${auth}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(data), cache: 'no-store', signal: timeout.signal, keepalive: action === 'stop'
           });
-          if (!response.ok) throw Error('Partage GPS indisponible.');
+          if (!response.ok) throw Object.assign(Error('Partage GPS indisponible.'), { status: response.status });
           return await response.json();
         } finally { timeout.cancel(); }
       },
-      onChange: () => { if (generation === current && gpsPilot === controller) updateGpsPanel(); }
+      onChange: () => { if (generation === current && gpsPilot === controller) { updateGpsPanel(); const s=controller.snapshot();if(!s.active&&!s.pending)window.KrokliNavigation?.close(); } },
+      onPosition: p => { if (generation === current && gpsPilot === controller) window.KrokliNavigation?.updatePosition(p); }
     });
     gpsPilot = controller || null;
   }
@@ -60,6 +62,18 @@ document.querySelector('#gps-start').addEventListener('click', () => {
   void gpsPilot.start(document.querySelector('#gps-consent').checked);
 });
 document.querySelector('#gps-stop').addEventListener('click', () => stopGps());
+document.querySelector('#metro-trip')?.addEventListener('click', () => {
+  if (!token || mode !== 'driver') return;
+  void window.KrokliNavigation?.open({ key: 'metro-trip', title: 'Trajet réel · METRO Le Havre', address: '2 rue Desmarais, 76600 Le Havre', coordinates: [0.149494,49.489123] });
+});
+document.addEventListener('click', event => {
+  const button=event.target.closest?.('[data-navigate-order]'); if(!button||!fresh||busy||loading||mode!=='driver')return;
+  const order=currentState?.orders?.find(o=>o.id===button.dataset.navigateOrder);
+  if(!order||!['accepted','picked_up'].includes(order.status))return;
+  const address=order.status==='accepted'?order.pickupAddress:addressText(order.deliveryAddress);
+  if(!address)return;
+  void window.KrokliNavigation?.open({key:`${order.id}:${order.status}`,title:order.status==='accepted'?'Rejoindre le restaurant':`Livrer la commande ${order.number}`,address});
+});
 
 function isStandalone() {
   return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -243,11 +257,13 @@ function driverCard(order) {
     <div class="route"><div><small>DÉPART</small><strong>${escapeHtml(order.pickupAddress)}</strong></div><div><small>DESTINATION</small><strong>${accepted ? escapeHtml(addressText(order.deliveryAddress)) : escapeHtml(order.deliveryCity || 'Adresse complète après acceptation')}</strong></div></div>
     <div class="info">${order.distanceKm ? `${escapeHtml(order.distanceKm)} km · ` : ''}Créneau ${escapeHtml(order.serviceDate || '')} ${escapeHtml(order.slot || '')}
       ${accepted ? `<br><strong>${escapeHtml(order.customerName || 'Client')}</strong>${order.customerPhone ? ` · <a href="tel:${escapeHtml(order.customerPhone)}">${escapeHtml(order.customerPhone)}</a>` : ''}${order.comment ? `<br>Instruction : ${escapeHtml(order.comment)}` : ''}` : ''}</div>
-      ${accepted && addressText(order.deliveryAddress) ? `<div class="actions"><a class="secondary navigation" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/dir/?api=1&amp;destination=${encodeURIComponent(addressText(order.deliveryAddress))}&amp;travelmode=driving">Naviguer · Google Maps</a><a class="secondary navigation" target="_blank" rel="noopener noreferrer" href="https://maps.apple.com/?daddr=${encodeURIComponent(addressText(order.deliveryAddress))}&amp;dirflg=d">Naviguer · Plans</a></div>` : ''}${action}</article>`;
+      ${accepted && addressText(order.deliveryAddress) ? `<div class="actions"><button class="primary" data-navigate-order="${escapeHtml(order.id)}">Naviguer dans Krokli · ${order.status === 'accepted' ? 'restaurant' : 'client'}</button><a class="quiet navigation" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/dir/?api=1&amp;destination=${encodeURIComponent(order.status === 'accepted' ? order.pickupAddress : addressText(order.deliveryAddress))}&amp;travelmode=driving">Secours · Google Maps</a><a class="quiet navigation" target="_blank" rel="noopener noreferrer" href="https://maps.apple.com/?daddr=${encodeURIComponent(order.status === 'accepted' ? order.pickupAddress : addressText(order.deliveryAddress))}&amp;dirflg=d">Secours · Plans</a></div>` : ''}${action}</article>`;
 }
 
 function renderDriver() {
   const orders = currentState.orders || [];
+  const navigationKey=window.KrokliNavigation?.activeKey();
+  if(navigationKey && navigationKey!=='metro-trip' && !orders.some(o=>`${o.id}:${o.status}`===navigationKey && ['accepted','picked_up'].includes(o.status))) window.KrokliNavigation.close();
   const push = currentState.push || {};
   const notificationPanel = push.enabled
     ? `<div class="card push-card"><h3>Alertes de courses · à tester</h3><p>Sur iPhone et iPad, installe d’abord Krokli Driver avec l’aide en haut de cette page, puis ouvre son icône. Appuie ensuite sur « Activer les alertes » et accepte la demande du téléphone.</p><div class="actions"><button class="primary" data-push-enable>Activer les alertes</button><button class="secondary" data-push-test>Tester dans 15 secondes</button></div><p class="muted">Lance le test, verrouille le téléphone et vérifie la réception. Tant que cet essai n’est pas réussi sur ton appareil, surveille aussi les courses à l’écran. Même ensuite, le réseau et les réglages du téléphone peuvent retarder une alerte.</p></div>`
@@ -428,13 +444,12 @@ form.addEventListener('submit', async event => {
 
 document.querySelector('#logout').addEventListener('click', () => { void unregisterNotifications(); signOut(); });
 document.querySelector('#refresh')?.addEventListener('click', () => { void refresh(true); });
-window.addEventListener('offline', () => { stopGps('Réseau coupé. GPS arrêté ; les positions expirent sous 90 secondes.'); fresh = false; updateControls(); });
+window.addEventListener('offline', () => { fresh = false; updateControls(); });
 window.addEventListener('pagehide', () => stopGps('Page fermée. GPS arrêté.'));
 window.addEventListener('online', () => { fresh = false; updateControls(); void refresh(true); });
 window.addEventListener('pageshow', event => { if (event.persisted && token) { fresh = false; updateControls(); void refresh(true); } });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) stopGps('Page passée en arrière-plan. GPS arrêté : relance-le à l’arrêt en revenant ici.');
-  else { fresh = false; updateControls(); void refresh(true); }
+  if (!document.hidden) { fresh = false; updateControls(); void refresh(true); }
 });
 
 document.addEventListener('submit', async event => {

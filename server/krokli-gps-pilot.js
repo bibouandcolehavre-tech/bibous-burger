@@ -1,10 +1,11 @@
 const crypto = require('node:crypto');
 
-// Foreground pilot only. RAM-only positions: no history, backup or status gate.
+// Voluntary sharing. RAM-only positions: no history, backup or status gate.
 const POSITION_TTL_MS = 90_000;
 const SESSION_MS = 30 * 60_000;
 const CONSENT_VERSION = 'bibou-foreground-gps-v1';
 const NATIVE_CONSENT_VERSION = 'bibou-native-gps-pilot-v1';
+const CONTINUOUS_CONSENTS = ['bibou-foreground-gps-until-stop-v2', 'bibou-native-gps-until-stop-v2'];
 function fail(message, statusCode = 400) { throw Object.assign(Error(message), { statusCode }); }
 function createGpsPilot({ clock = Date.now } = {}) {
   const sessions = new Map();
@@ -12,7 +13,8 @@ function createGpsPilot({ clock = Date.now } = {}) {
     const now = clock();
     for (const [id, session] of sessions) {
       const driver = (db.kroklyDrivers || []).find(d => d.id === id && d.active && d.authVersion === session.authVersion);
-      if (!driver || session.expiresAt <= now || session.leaseUntil <= now) sessions.delete(id);
+      if (!driver || session.expiresAt <= now || (!session.continuous && session.leaseUntil <= now)) sessions.delete(id);
+      else if (session.leaseUntil <= now) session.position = null;
     }
   }
   function current(db, driverId, input) {
@@ -23,11 +25,12 @@ function createGpsPilot({ clock = Date.now } = {}) {
   }
   function start(db, driver, input) {
     clean(db);
-    if (![CONSENT_VERSION, NATIVE_CONSENT_VERSION].includes(input?.consentVersion)) fail('Lis les informations puis confirme le partage GPS.');
+    if (![CONSENT_VERSION, NATIVE_CONSENT_VERSION, ...CONTINUOUS_CONSENTS].includes(input?.consentVersion)) fail('Lis les informations puis confirme le partage GPS.');
     const now = clock();
-    const session = { id: crypto.randomUUID(), authVersion: driver.authVersion, mode: input.consentVersion === NATIVE_CONSENT_VERSION ? 'native-pilot' : 'foreground-pilot', expiresAt: now + SESSION_MS, leaseUntil: now + POSITION_TTL_MS, position: null };
+    const continuous = CONTINUOUS_CONSENTS.includes(input.consentVersion);
+    const session = { id: crypto.randomUUID(), authVersion: driver.authVersion, continuous, mode: input.consentVersion.includes('native') ? 'native-pilot' : 'foreground-pilot', expiresAt: continuous ? Infinity : now + SESSION_MS, leaseUntil: now + POSITION_TTL_MS, position: null };
     sessions.set(driver.id, session);
-    return { sessionId: session.id, expiresAt: new Date(session.expiresAt).toISOString(), positionTtlSeconds: POSITION_TTL_MS / 1000 };
+    return { sessionId: session.id, expiresAt: continuous ? null : new Date(session.expiresAt).toISOString(), ...(continuous ? { sharingMode: 'until-stopped' } : {}), positionTtlSeconds: POSITION_TTL_MS / 1000 };
   }
   function update(db, driverId, input) {
     const session = current(db, driverId, input);
@@ -42,7 +45,7 @@ function createGpsPilot({ clock = Date.now } = {}) {
     if (session.position && p.timestamp <= session.position.timestamp) fail('Une position plus récente est déjà disponible.', 409);
     session.position = { latitude: p.latitude, longitude: p.longitude, accuracy: p.accuracy, timestamp: p.timestamp, receivedAt: now };
     session.leaseUntil = now + POSITION_TTL_MS;
-    return { receivedAt: new Date(now).toISOString(), expiresAt: new Date(session.expiresAt).toISOString() };
+    return { receivedAt: new Date(now).toISOString(), expiresAt: Number.isFinite(session.expiresAt) ? new Date(session.expiresAt).toISOString() : null };
   }
   function stop(db, driverId, input) {
     clean(db);
@@ -61,7 +64,10 @@ function createGpsPilot({ clock = Date.now } = {}) {
   // Expire memory independently of dashboard reads; do not retain old GPS fixes.
   const timer = setInterval(() => {
     const now = clock();
-    for (const [id, s] of sessions) if (s.leaseUntil <= now || s.expiresAt <= now) sessions.delete(id);
+    for (const [id, s] of sessions) {
+      if (s.expiresAt <= now || (!s.continuous && s.leaseUntil <= now)) sessions.delete(id);
+      else if (s.leaseUntil <= now) s.position = null;
+    }
   }, 5000);
   timer.unref();
   return { start, update, stop, locations, close: () => { clearInterval(timer); sessions.clear(); } };

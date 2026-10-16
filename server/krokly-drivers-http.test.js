@@ -84,6 +84,12 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal(JSON.stringify(JSON.parse(await fs.readFile(file, 'utf8'))).includes('latitude'), false, 'GPS is absent from database and backups');
   assert.equal((await request('/api/krokly-driver/gps/stop', linaToken, 'POST', gps.data)).status, 200);
   assert.deepEqual((await request('/api/dashboard/krokly-drivers', owner)).data.gpsPositions, []);
+  assert.ok(capabilities.data.gpsPilot.sharingModes.includes('until-stopped'));
+  const continuous = await request('/api/krokly-driver/gps/start', linaToken, 'POST', { consentVersion: 'bibou-foreground-gps-until-stop-v2' });
+  assert.equal(continuous.status, 200); assert.equal(continuous.data.expiresAt, null); assert.equal(continuous.data.sharingMode, 'until-stopped');
+  assert.equal((await request('/api/krokly-driver/gps/position', linaToken, 'POST', { ...continuous.data, position: { ...fix, timestamp: Date.now() } })).status, 200);
+  await request('/api/krokly-driver/gps/stop', linaToken, 'POST', continuous.data);
+  assert.deepEqual((await request('/api/dashboard/krokly-drivers', owner)).data.gpsPositions, []);
   assert.equal(firstState.orders.length, 0);
   const renameRoute = '/api/dashboard/krokly-drivers/' + lina.data.driver.id + '/name';
   assert.equal((await request(renameRoute, '', 'PATCH', { name: 'Lina (surnom)' })).status, 401);
