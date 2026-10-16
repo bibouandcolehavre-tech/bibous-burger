@@ -16,6 +16,8 @@
   <script defer src="/driver/leaflet.js"></script>
   <script defer src="/driver/navigation-core.js"></script>
   <script defer src="/driver/navigation.js"></script>
+  <script defer src="/driver/guidance-core.js"></script>
+  <script defer src="/driver/guidance.js"></script>
   <script defer src="/driver/gps.js"></script>
   <script defer src="/driver/app.js"></script>
 </head>
@@ -58,10 +60,21 @@
           <p id="gps-status" role="status" aria-live="polite">GPS facultatif · aucune position partagée.</p>
           <p class="muted">Fais les réglages à l’arrêt, jamais en roulant. En cas de problème, continue avec le fonctionnement habituel ou contacte le restaurant.</p>
           <button id="metro-trip" class="secondary" type="button">Mon trajet réel vers METRO Le Havre</button>
-          <p class="muted">Destination : 2 rue Desmarais, Le Havre. Navigation voiture dans Krokli, sans créer de commande ni paiement.</p>
+          <p class="muted">Destination : 2 rue Desmarais, Le Havre. Ouvre ton GPS avec l’adresse déjà renseignée, sans créer de commande ni paiement.</p>
+        </section>
+        <section id="guidance-panel" class="card" hidden aria-labelledby="guidance-title">
+          <p class="eyebrow">Guidage GPS · voiture</p><h3 id="guidance-title"></h3>
+          <p id="guidance-address" class="guidance-destination"></p>
+          <label class="guidance-choice">Mon application GPS<select id="guidance-provider"><option value="apple">Plans Apple</option><option value="google">Google Maps</option><option value="waze">Waze</option></select></label>
+          <a id="guidance-launch" class="primary navigation" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Ouvrir le GPS</a>
+          <p>Ton GPS s’ouvre avec la destination : il assure la voix et le recalcul. Vérifie l’adresse, puis touche « Démarrer » ou « Aller » si demandé.</p>
+          <p class="hint"><strong>Suivi Bibou sur la version web :</strong> le navigateur peut suspendre le partage de position quand tu ouvres le GPS ou verrouilles le téléphone. Reviens dans Krokli pour confirmer la livraison.</p>
+          <details><summary>Fonctionnement et confidentialité</summary><p>Sans l’application GPS installée, le lien peut ouvrir une page web. Waze peut demander de choisir l’adresse. Seule cette destination est transmise : aucun nom, téléphone, identifiant de commande ou accès Bibou n’est ajouté au lien. Fais les réglages à l’arrêt.</p></details>
+          <p id="guidance-status" role="status" aria-live="polite"></p>
+          <div class="actions"><button id="guidance-preview" class="secondary" type="button">Voir l’aperçu carte · sans voix</button><button id="guidance-close" class="quiet" type="button">Retour aux courses</button></div>
         </section>
         <section id="navigation-panel" class="card" hidden aria-labelledby="nav-title">
-          <p class="eyebrow">Navigation dans Krokli · voiture</p><h3 id="nav-title"></h3>
+          <p class="eyebrow">Aperçu carte · sans guidage vocal</p><h3 id="nav-title"></h3>
           <p id="nav-address"></p>
           <p>Le calcul IGN reçoit ton point de départ GPS et ta destination ; le fond de carte IGN reçoit la zone affichée. Aucun nom, téléphone ou identifiant Bibou n’est envoyé à IGN. Aucun trajet enregistré par Krokli. Suis toujours la signalisation et les conditions réelles.</p>
           <label class="password-toggle"><input id="nav-consent" type="checkbox">À l’arrêt, je confirme la destination et j’autorise la navigation IGN pour ce trajet en voiture.</label>

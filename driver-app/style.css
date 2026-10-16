@@ -123,6 +123,12 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 #gps-status { color: var(--green); font-weight: 700; }
 .navigation { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border-radius: 12px; padding: 12px 14px; min-height: 44px; font-size: 14px; font-weight: 700; border: 1px solid var(--green); }
 .actions .navigation { flex: 1; text-align: center; }
+#guidance-panel { margin-bottom: 20px; }
+#guidance-panel p { line-height: 1.5; }
+.guidance-choice { display: grid; gap: 8px; font-weight: 700; margin: 16px 0; }
+#guidance-launch { display: flex; width: 100%; font-size: 17px; min-height: 56px; }
+.guidance-destination { font-weight: 700; overflow-wrap: anywhere; }
+#guidance-status { font-weight: 700; color: var(--green); }
 footer { border-top: 1px solid var(--line); padding: 22px 0; margin-top: 35px; color: var(--muted); font-size: 11px; }
 @media (max-width: 700px) {
   .grid, .installation-guides, .create { grid-template-columns: 1fr; }

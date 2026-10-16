@@ -31,7 +31,7 @@ async function main(){
         return r.abort();
       });
       await page.goto(base+'/driver/');await page.locator('#username').fill('qa-navigation');await page.locator('#password').fill(driver.password);await page.locator('#login-form button[type=submit]').click();await page.locator('#workspace').waitFor({state:'visible'});
-      await page.locator('#metro-trip').click();await page.locator('#nav-calculate').click();assert.match(await page.locator('#nav-status').innerText(),/Confirme/);assert.equal(routeCalls,0);
+      await page.locator('#metro-trip').click();await page.locator('#guidance-preview').click();await page.locator('#nav-calculate').click();assert.match(await page.locator('#nav-status').innerText(),/Confirme/);assert.equal(routeCalls,0);
       await page.locator('#gps-consent').check();await page.locator('#gps-start').click();try{await page.waitForFunction(()=>document.querySelector('#gps-status').textContent.includes('Position reçue'),null,{timeout:10000});}catch(e){console.log(JSON.stringify({browser:name,gpsStatus:await page.locator('#gps-status').innerText(),errors,csp}));throw e;}
       await page.locator('#nav-consent').check();await page.locator('#nav-calculate').click();try{await page.waitForFunction(()=>document.querySelector('#nav-summary').textContent.includes('3,0 km'),null,{timeout:10000});}catch(e){console.log(JSON.stringify({browser:name,navStatus:await page.locator('#nav-status').innerText(),errors,csp,routeCalls}));throw e;}
       assert.equal(routeCalls,1);assert.equal(context.pages().length,1);assert.match(await page.locator('#nav-status').innerText(),/GPS reçu/);
