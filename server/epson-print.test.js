@@ -16,7 +16,7 @@ test('ticket de préparation : commande payée, options échappées et aucun con
     comment: 'Sauce > à part',
   });
   assert.match(request, /#123/);
-  assert.match(request, /<text>RETRAIT&#10;<\/text><text>POUR LE 30\/09\/2026&#10;<\/text><text>A 20:20&#10;<\/text>/);
+  assert.match(request, /<text>RETRAIT&#10;<\/text><text>POUR LE 30\/09\/2026&#10;<\/text><text>HEURE DE RETRAIT&#10;<\/text><text width="3" height="3" em="true"\/><text>20:20&#10;<\/text>/);
   assert.match(request, /Camille &amp; Co/);
   assert.match(request, /2 x Burger &lt;Classique&gt;/);
   assert.match(request, /Sauce &gt; à part/);
@@ -32,7 +32,7 @@ test('repas réservé à table : le ticket affiche clairement l’heure d’arri
     customerName: 'Camille', items: [{ name: 'Burger classique', quantity: 1, options: [] }],
   });
   assert.match(request, /SUR PLACE - TABLE \+ REPAS/);
-  assert.match(request, /ARRIVEE A 19:20/);
+  assert.match(request, /ARRIVEE A&#10;<\/text><text width="3" height="3" em="true"\/><text>19:20/);
   assert.match(request, /TABLE DE 3 PERSONNE\(S\)/);
   assert.match(request, /Table : Chaise bébé/);
   assert.doesNotMatch(request, /<text>RETRAIT&#10;<\/text>/);
@@ -90,7 +90,7 @@ test('duplicata contient la vraie commande mais interdit de la préparer et ne p
     items: [{ name: 'Menu Classique', quantity: 1, options: [{ label: 'Boisson citron' }] }] };
   const request = printer.preparationEnvelope(order, { duplicateTest: true });
   assert.match(request, /#824/);
-  assert.match(request, /<text>LIVRAISON&#10;<\/text><text>POUR LE 29\/09\/2026&#10;<\/text><text>CRENEAU 20:20&#10;<\/text>/);
+  assert.match(request, /<text>LIVRAISON&#10;<\/text><text>POUR LE 29\/09\/2026&#10;<\/text><text>CRENEAU DE LIVRAISON&#10;<\/text><text width="3" height="3" em="true"\/><text>20:20&#10;<\/text>/);
   assert.match(request, /Menu Classique/);
   assert.match(request, /Boisson citron/);
   assert.match(request, /153 Quai Georges V 76600 Le Havre/);
@@ -114,7 +114,7 @@ test('récapitulatif client : articles, paiement initial, état et aucun taux de
   assert.match(request, /COMMANDE #42/);
   assert.match(request, /Camille &amp; Co/);
   assert.match(request, /2 x Menu &lt;Classique&gt;/);
-  assert.match(request, /<text dw="false" dh="true" em="true"\/><text>RETRAIT&#10;<\/text><text>POUR LE 01\/10\/2026&#10;<\/text><text>A 19:20&#10;<\/text>/);
+  assert.match(request, /<text dw="false" dh="true" em="true"\/><text>RETRAIT&#10;<\/text><text>POUR LE 01\/10\/2026&#10;<\/text><text>HEURE DE RETRAIT&#10;<\/text><text width="3" height="3" em="true"\/><text>19:20&#10;<\/text>/);
   assert.match(request, /Paiement : 30\/09\/2026/);
   assert.match(request, /<text dw="true" dh="true" em="true"\/><text>MENU&#10;<\/text><text>2 x Menu &lt;Classique&gt;&#10;<\/text>/);
   assert.match(request, /<text dw="true" dh="true" em="true"\/><text>BURGER SEUL&#10;<\/text><text>1 x Classique&#10;<\/text>/);
@@ -134,7 +134,7 @@ test('récapitulatif livraison : le créneau figure en haut, pas seulement l’h
     payment: { status: 'PAID' }, items: [{ productId: 'classique', name: 'Classique', quantity: 1, price: 9.9 }], total: 9.9,
   });
   assert.match(request, /COMMANDE #259/);
-  assert.match(request, /<text>LIVRAISON&#10;<\/text><text>POUR LE 01\/10\/2026&#10;<\/text><text>CRENEAU 19:00 - 19:20&#10;<\/text>/);
+  assert.match(request, /<text>LIVRAISON&#10;<\/text><text>POUR LE 01\/10\/2026&#10;<\/text><text>CRENEAU DE LIVRAISON&#10;<\/text><text width="2" height="3" em="true"\/><text>19:00 - 19:20&#10;<\/text>/);
 });
 
 test('récapitulatif refusé pour paiement non confirmé ou prix manquant', () => {
