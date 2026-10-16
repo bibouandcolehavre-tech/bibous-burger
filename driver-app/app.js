@@ -26,11 +26,13 @@ function updateGpsPanel() {
   document.querySelector('#gps-start').disabled = busy || loading || !fresh || navigator.onLine === false;
   document.querySelector('#gps-stop').hidden = !state?.active && !state?.pending;
   document.querySelector('#gps-consent').disabled = Boolean(state?.active || state?.pending);
+  document.querySelector('#gps-customer-consent').disabled = Boolean(state?.active || state?.pending);
 }
 
 function stopGps(message) {
   if (gpsPilot) void gpsPilot.stop(message);
   document.querySelector('#gps-consent').checked = false;
+  document.querySelector('#gps-customer-consent').checked = false;
   updateGpsPanel();
 }
 
@@ -57,7 +59,7 @@ document.querySelector('#gps-start').addEventListener('click', () => {
     gpsPilot = controller || null;
   }
   if (!gpsPilot) { document.querySelector('#gps-status').textContent = 'Essai GPS indisponible. Actualise la page ; tes courses restent accessibles.'; return; }
-  void gpsPilot.start(document.querySelector('#gps-consent').checked);
+  void gpsPilot.start(document.querySelector('#gps-consent').checked,{customerTracking:document.querySelector('#gps-customer-consent').checked});
 });
 document.querySelector('#gps-stop').addEventListener('click', () => stopGps());
 document.querySelector('#metro-trip')?.addEventListener('click', () => {
@@ -194,6 +196,12 @@ function requestTimeout(milliseconds) {
 }
 
 function signOut(showMessage = true) {
+  const oldToken=token;
+  if(oldToken && mode==='driver' && currentState?.availability) {
+    const timeout=requestTimeout(8000);
+    void fetch('/api/krokly-driver/availability',{method:'POST',headers:{Authorization:`Bearer ${oldToken}`,'Content-Type':'application/json'},body:JSON.stringify({available:false}),cache:'no-store',keepalive:true,signal:timeout.signal})
+      .then(r=>{if(!r.ok)throw Error('Disponibilité non confirmée.');}).catch(()=>{if(!token)message('Déconnecté. Arrêt de la disponibilité non confirmé : préviens le restaurant.',true);}).finally(()=>timeout.cancel());
+  }
   window.KrokliGuidance?.close();
   stopGps();
   gpsPilot = null;
@@ -268,7 +276,8 @@ function renderDriver() {
   const notificationPanel = push.enabled
     ? `<div class="card push-card"><h3>Alertes de courses · à tester</h3><p>Sur iPhone et iPad, installe d’abord Krokli Driver avec l’aide en haut de cette page, puis ouvre son icône. Appuie ensuite sur « Activer les alertes » et accepte la demande du téléphone.</p><div class="actions"><button class="primary" data-push-enable>Activer les alertes</button><button class="secondary" data-push-test>Tester dans 15 secondes</button></div><p class="muted">Lance le test, verrouille le téléphone et vérifie la réception. Tant que cet essai n’est pas réussi sur ton appareil, surveille aussi les courses à l’écran. Même ensuite, le réseau et les réglages du téléphone peuvent retarder une alerte.</p></div>`
     : `<div class="hint"><strong>Alertes écran verrouillé non activées.</strong> Le restaurant peut voir les courses dans le back-office. Garde cet écran ouvert pendant le service tant que les alertes ne sont pas vérifiées.</div>`;
-  content.innerHTML = `${notificationPanel}
+  const availability=currentState.availability;
+  content.innerHTML = `${notificationPanel}${availability ? `<div class="card"><h3>${availability.available?'Disponible pour les courses':'Indisponible pour les courses'}</h3><p>Les propositions automatiques sont réservées aux livreurs disponibles. Si tu as choisi de partager le GPS, ta position récente aide à proposer la course au livreur connu le plus proche. Sans position récente, les disponibles sont proposés à tour de rôle. La disponibilité ne démarre pas le GPS. Elle prend fin au plus tard à l’expiration de ta connexion.</p><button class="${availability.available?'secondary':'primary'}" data-availability>${availability.available?'Me mettre indisponible':'Me mettre disponible'}</button></div>`:''}
     <div class="metrics"><div class="metric"><strong>${orders.filter(o => o.status === 'offered').length}</strong><span>à accepter</span></div><div class="metric"><strong>${orders.filter(o => o.status === 'accepted').length}</strong><span>à récupérer</span></div><div class="metric"><strong>${orders.filter(o => o.status === 'picked_up').length}</strong><span>en livraison</span></div></div>
     <h3 class="section-title">Mes courses</h3>${orders.length ? `<div class="grid">${orders.map(driverCard).join('')}</div>` : '<div class="empty"><strong>Aucune course attribuée</strong>La prochaine course apparaîtra ici si le restaurant te la propose.</div>'}
     <p class="muted">Une proposition non acceptée revient à la répartition après cinq minutes. Une commande annulée disparaît de cet écran ; appelle le restaurant si tu l’avais déjà récupérée.</p>`;
@@ -474,6 +483,14 @@ document.addEventListener('submit', async event => {
 
 document.addEventListener('click', async event => {
   const current = generation;
+  if(event.target.closest('[data-availability]')) {
+    if(busy||loading||!fresh||!token||mode!=='driver'||!currentState?.availability)return;
+    const availability=currentState.availability;busy=true;updateControls();
+    try{await api('krokly-driver/availability',{method:'POST',body:JSON.stringify({available:!availability.available,...(!availability.available?{revision:availability.revision}:{})})});if(current!==generation)return;busy=false;await refresh(true);}
+    catch(error){if(current===generation){fresh=false;message(`${error.message} Actualise pour vérifier ta disponibilité.`,true);}}
+    finally{if(current===generation){busy=false;updateControls();}}
+    return;
+  }
   if (event.target.closest('[data-push-enable],[data-push-test]')) {
     if (busy || !fresh || !token || mode !== 'driver') return;
     busy = true;

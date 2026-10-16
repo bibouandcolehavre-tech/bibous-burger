@@ -1,4 +1,7 @@
 import OrderAmendments from "./OrderAmendments";
+import DeliveryTracking from './DeliveryTracking';
+const {delayLabel:deliveryDelayLabel}=require('./delivery-tracking-client');
+const {createSessionRecovery}=require('./session-recovery');
 import ArticleReviews from './ArticleReviews';
 import PromoCodeField from './PromoCodeField';
 const { previewPromotion, differentPendingPromo } = require('./promo-client');
@@ -32,14 +35,14 @@ const { bestClientOffer } = require('./crm-client');
 const { observeBrowserFocus } = require('./browser-focus');
 import { syncPushDevice, detachPushDevice, observePush } from "./push-client";
 import { customerAlert as Alert } from "./customer-alert";
-import { readSession, saveSession, clearSession, readAttempt, saveAttempt, clearAttempt } from "./client-storage";
+import { readSession, saveSession, clearSession, clearSessionIf, readAttempt, saveAttempt, clearAttempt } from "./client-storage";
 const { createAttempt, parseAttempt, paymentState, openCheckoutUrl } = require("./payment-recovery");
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 const { slotAlreadyStarted } = require('./client-slots');
 const { repriceOfferCart } = require('./product-offer');
 const { quantityOf, cartUnitCount, cartTotal, changeCartQuantity, replaceCartLine, choicesFromLine, serializeCartItems } = require('./cart-client');
-const { preparationMinutes, regularSlotsForWeekday } = require('./service-policy');
+const { preparationMinutes, PREPARATION_LABEL, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
 const { kioskRecipeChoices, vegetarianInstruction } = require('./consumer-recipe');
 const { consumerRecipeGroup, naanOptionGroups, clearNaanChoices, customerProducts, cartMealFacts, customerServiceSlots, customerNavigationTab } = require('./customer-journey');
@@ -538,7 +541,7 @@ function OrdersTrackingScreen({ orders, onBack, onRefresh, onDecide, busy, api, 
   const activeMessage = activeOrder?.status === "awaiting_customer" ? activeOrder.amendment?.mode === 'category-choice' ? activeOrder.amendment.phase === 'submitted' ? 'Tes nouveaux choix attendent la confirmation du restaurant.' : 'Un article est indisponible : choisis son remplacement ou annule la commande.' : "Le restaurant attend ton accord sur le nouveau panier." : activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? activeOrder.dineIn ? "Ton repas est prêt pour ta table." : "Ta commande est prête : le livreur arrive." : activeOrder?.dineIn ? "Ton repas est servi à table." : "Ton livreur est en route.";
   const activeSteps = activeOrder?.dineIn ? ["Confirmée", "En préparation", "Prête", "Servie"] : ORDER_STEPS;
   const labelForOrder = (order) => order.status === "cancelled" ? "Annulée" : order.status === "awaiting_customer" ? "Ton accord est attendu" : ORDER_STEPS[order.progress];
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy} api={api} token={token} onUpdated={onRefresh}/>{orders.filter(o=>o.uberDelivery).map(order=><View key={order.apiId} style={styles.trackingCard}><Text style={styles.trackingOrder}>{order.id} · Livraison Uber Direct</Text><Text style={styles.trackingMessage}>{{pending:"Recherche de coursier",pickup:"Le coursier arrive au restaurant",pickup_complete:"Commande récupérée",dropoff:"Le coursier est en route",delivered:"Livraison terminée",canceled:"Course annulée : contacte le restaurant",returned:"Commande retournée au restaurant"}[order.uberDelivery.status] || "Suivi en cours"}</Text>{order.uberDelivery.dropoffEta && <Text>Arrivée estimée : {new Date(order.uberDelivery.dropoffEta).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</Text>}{order.uberDelivery.trackingUrl && <Pressable accessibilityRole="link" onPress={()=>Linking.openURL(order.uberDelivery.trackingUrl).catch(()=>Alert.alert("Suivi indisponible","Réessaie dans un instant."))} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Suivre mon coursier Uber</Text></Pressable>}</View>)}{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.dineIn ? "Repas à table" : activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{activeSteps.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text></View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy} api={api} token={token} onUpdated={onRefresh}/>{orders.filter(o=>o.uberDelivery).map(order=><View key={order.apiId} style={styles.trackingCard}><Text style={styles.trackingOrder}>{order.id} · Livraison Uber Direct</Text><Text style={styles.trackingMessage}>{{pending:"Recherche de coursier",pickup:"Le coursier arrive au restaurant",pickup_complete:"Commande récupérée",dropoff:"Le coursier est en route",delivered:"Livraison terminée",canceled:"Course annulée : contacte le restaurant",returned:"Commande retournée au restaurant"}[order.uberDelivery.status] || "Suivi en cours"}</Text>{order.uberDelivery.dropoffEta && <Text>Arrivée estimée : {new Date(order.uberDelivery.dropoffEta).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</Text>}{order.uberDelivery.trackingUrl && <Pressable accessibilityRole="link" onPress={()=>Linking.openURL(order.uberDelivery.trackingUrl).catch(()=>Alert.alert("Suivi indisponible","Réessaie dans un instant."))} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Suivre mon coursier Uber</Text></Pressable>}</View>)}{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.dineIn ? "Repas à table" : activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{activeSteps.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text>{activeOrder.method === "delivery" && !activeOrder.uberDelivery && !String(api).includes("/review") ? <DeliveryTracking key={activeOrder.apiId + ":" + token} api={api} token={token} orderId={activeOrder.apiId} status={activeOrder.status} onStatusChanged={onRefresh} /> : null}</View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
 }
 
 function ReservationsScreen({ reservations, onBack, onRefresh, onCancel }) {
@@ -902,8 +905,8 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
     <Header onBack={onBack} />
     <Text style={styles.title}>{delivery.method === "pickup" ? "À quelle heure viens-tu retirer ?" : "Quand veux-tu être livré ?"}</Text>
-    <Text style={styles.deliveryIntro}>Horaires toutes les 20 minutes. Préparation minimum pour ton panier : {minimumPreparation} minutes.</Text>
-    <Text style={styles.deliveryFeeHint}>Moins de 25 € : 20 min · De 25 à 60 € : 30 min · Au-delà de 60 € : 45 min. Seuls les horaires laissant ce délai sont disponibles.</Text>
+    <Text style={styles.deliveryIntro}>Horaires toutes les 20 minutes. Préparation de ton panier : {minimumPreparation} minutes, hors attente et trajet. Le délai de livraison dépend aussi de ton adresse et des commandes en cours.</Text>
+    <Text style={styles.deliveryFeeHint}>{PREPARATION_LABEL}</Text>
     <Text style={styles.deliveryLabel}>MODE</Text>
     <View style={styles.methodRow}><ChoiceChip label="🛵 Livraison" selected={delivery.method === "delivery"} onPress={() => onChange({ ...delivery, method: "delivery", fee: undefined, slot: null })} /><ChoiceChip label="🏠 Retrait" selected={delivery.method === "pickup"} onPress={() => onChange({ ...delivery, method: "pickup", fee: 0, slot: null })} /></View>
     <View style={styles.addressNotice}><Text style={styles.addressNoticeTitle}>{delivery.method === "delivery" ? "Zone de livraison" : "Retrait au restaurant"}</Text><Text style={styles.addressNoticeText}>{delivery.method === "delivery" ? DELIVERY_ZONE : RESTAURANT_ADDRESS}</Text>{delivery.method === "delivery" && <><View style={styles.deliveryPrices}>{DELIVERY_PRICING.map((tier) => <View key={tier.label} style={styles.deliveryPriceRow}><Text style={styles.deliveryPriceDistance}>{tier.label}</Text><Text style={styles.deliveryPriceValue}>{money(tier.price)}</Text></View>)}</View><Text style={styles.deliveryFeeHint}>Le tarif sera choisi automatiquement selon l’adresse. Deux livraisons maximum par créneau.</Text></>}</View>
@@ -944,7 +947,7 @@ function CheckoutDetailsScreen({ cart, customer, dineIn, authToken, onChange, on
     }
     setQuote({ status: "loading" });
     try {
-      const response = await customerFetch(`${API_BASE_URL}/delivery-quote`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify(customer) });
+      const response = await customerFetch(`${API_BASE_URL}/delivery-quote`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }, body: JSON.stringify({...customer,subtotal:cart.total,serviceDate:cart.delivery.date,slot:cart.delivery.slot}) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Impossible de calculer la livraison.");
       setQuote({ status: "success", ...payload });
@@ -956,7 +959,7 @@ function CheckoutDetailsScreen({ cart, customer, dineIn, authToken, onChange, on
   const hasExactFee = !isDelivery || quoteReady;
   const pricing = customerOrderPricing(cart.total, standardDeliveryFee ?? deliveryCostForDistance(0), customer, isDelivery);
   const restaurantComment = <><Text style={styles.deliveryLabel}>COMMENTAIRE POUR LE RESTAURANT · FACULTATIF</Text><TextInput value={cart.comment || ""} onChangeText={onCommentChange} placeholder="Exemple : merci de bien cuire le steak" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} textAlignVertical="top" /></>;
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Tes coordonnées</Text><Text style={styles.detailsIntro}>Elles permettent au restaurant de préparer et de suivre ta commande.</Text><Text style={styles.deliveryLabel}>CONTACT</Text><TextInput value={customer.name} editable={!hasCompleteIdentity(customer)} onChangeText={(value) => update("name", value)} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" />{hasCompleteIdentity(customer) && <Pressable accessibilityRole="button" onPress={onEditIdentity} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon prénom / nom</Text></Pressable>}<TextInput value={customer.phone} onChangeText={(value) => update("phone", value)} placeholder="Téléphone" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" /><Text style={styles.deliveryLabel}>PARRAINAGE · FACULTATIF</Text>{customer.referredByCustomerId ? <View style={styles.referralApplied}><Text style={styles.referralAppliedText}>✓ Ton parrain est déjà enregistré</Text></View> : <TextInput value={customer.sponsorCode || ""} onChangeText={(value) => update("sponsorCode", value.toUpperCase())} placeholder="Exemple : BIBOU-A1B2C3" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="characters" autoCorrect={false} />}<Text style={styles.referralFieldHint}>Le parrain gagne 100 points après ta première commande réellement payée.</Text>{isDelivery ? <><Text style={styles.deliveryLabel}>ADRESSE DE LIVRAISON</Text><TextInput value={customer.address} onChangeText={(value) => update("address", value)} placeholder="Numéro et nom de rue" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><View style={styles.fieldRow}><TextInput value={customer.postalCode} onChangeText={(value) => update("postalCode", value)} placeholder="Code postal" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldHalf]} keyboardType="number-pad" maxLength={5} /><TextInput value={customer.city} onChangeText={(value) => update("city", value)} placeholder="Ville" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldCity]} autoCapitalize="words" /></View><View style={[styles.distanceCard, quote?.status === "error" && styles.distanceCardError]}><Text style={styles.distanceTitle}>Vérification de la zone</Text><Text style={styles.distanceText}>Ton adresse sert à calculer l’itinéraire et à vérifier le rayon de 5 km.</Text><Pressable onPress={calculateQuote} disabled={quote?.status === "loading"} style={[styles.quoteButton, quote?.status === "loading" && styles.quoteButtonDisabled]}><Text style={styles.quoteButtonText}>{quote?.status === "loading" ? "Calcul en cours…" : "Calculer mon tarif"}</Text></Pressable>{quote?.status === "success" && quote.withinZone && <Text style={styles.distanceSuccess}>✓ À {quote.distanceKm.toFixed(2).replace(".", ",")} km · {pricing.bibouPlus ? `Livraison offerte au lieu de ${money(quote.deliveryFee)}` : `Livraison ${money(quote.deliveryFee)}`}</Text>}{quote?.status === "success" && !quote.withinZone && <Text style={styles.distanceError}>Cette adresse est hors de la zone de livraison de 5 km.</Text>}{quote?.status === "error" && <Text style={styles.distanceError}>{quote.error}</Text>}</View></> : <View style={styles.pickupCard}><Text style={styles.pickupTitle}>{dineIn ? 'Repas à ta table' : 'Retrait au restaurant'}</Text><Text style={styles.pickupText}>{RESTAURANT_ADDRESS}</Text><Text style={styles.pickupText}>{dineIn ? `Ta table est prévue le ${cart.delivery.dayLabel} à ${cart.delivery.slot}. Les plats seront préparés pour ton arrivée après paiement confirmé.` : 'Aucun frais de livraison.'}</Text></View>}{restaurantComment}<Text style={styles.detailsFinePrint}>{isDelivery ? "La livraison peut être confiée à Uber Direct. Les coordonnées et les articles nécessaires lui seront transmis pour assurer la livraison. " : ""}Les remises et avantages sont vérifiés une dernière fois par le serveur avant le paiement.</Text></ScrollView><View style={styles.stickyAction}>{!complete && <Text style={styles.requiredHint}>{isDelivery && !quoteReady ? "Calcule ton tarif de livraison pour continuer." : "Complète les informations pour continuer."}</Text>}<Pressable disabled={!complete} style={[styles.primaryButton, !complete && styles.primaryButtonDisabled]} onPress={() => onContinue(standardDeliveryFee)}><Text style={styles.primaryButtonText}>Vérifier et payer · {!hasExactFee ? "dès " : ""}{money(pricing.total)}</Text></Pressable></View></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Tes coordonnées</Text><Text style={styles.detailsIntro}>Elles permettent au restaurant de préparer et de suivre ta commande.</Text><Text style={styles.deliveryLabel}>CONTACT</Text><TextInput value={customer.name} editable={!hasCompleteIdentity(customer)} onChangeText={(value) => update("name", value)} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" />{hasCompleteIdentity(customer) && <Pressable accessibilityRole="button" onPress={onEditIdentity} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon prénom / nom</Text></Pressable>}<TextInput value={customer.phone} onChangeText={(value) => update("phone", value)} placeholder="Téléphone" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" /><Text style={styles.deliveryLabel}>PARRAINAGE · FACULTATIF</Text>{customer.referredByCustomerId ? <View style={styles.referralApplied}><Text style={styles.referralAppliedText}>✓ Ton parrain est déjà enregistré</Text></View> : <TextInput value={customer.sponsorCode || ""} onChangeText={(value) => update("sponsorCode", value.toUpperCase())} placeholder="Exemple : BIBOU-A1B2C3" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="characters" autoCorrect={false} />}<Text style={styles.referralFieldHint}>Le parrain gagne 100 points après ta première commande réellement payée.</Text>{isDelivery ? <><Text style={styles.deliveryLabel}>ADRESSE DE LIVRAISON</Text><TextInput value={customer.address} onChangeText={(value) => update("address", value)} placeholder="Numéro et nom de rue" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><View style={styles.fieldRow}><TextInput value={customer.postalCode} onChangeText={(value) => update("postalCode", value)} placeholder="Code postal" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldHalf]} keyboardType="number-pad" maxLength={5} /><TextInput value={customer.city} onChangeText={(value) => update("city", value)} placeholder="Ville" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldCity]} autoCapitalize="words" /></View><View style={[styles.distanceCard, quote?.status === "error" && styles.distanceCardError]}><Text style={styles.distanceTitle}>Vérification de la zone</Text><Text style={styles.distanceText}>Ton adresse sert à calculer l’itinéraire et à vérifier le rayon de 5 km.</Text><Pressable onPress={calculateQuote} disabled={quote?.status === "loading"} style={[styles.quoteButton, quote?.status === "loading" && styles.quoteButtonDisabled]}><Text style={styles.quoteButtonText}>{quote?.status === "loading" ? "Calcul en cours…" : "Calculer mon tarif"}</Text></Pressable>{quote?.status === "success" && quote.withinZone && <Text style={styles.distanceSuccess}>✓ À {quote.distanceKm.toFixed(2).replace(".", ",")} km · {pricing.bibouPlus ? `Livraison offerte au lieu de ${money(quote.deliveryFee)}` : `Livraison ${money(quote.deliveryFee)}`}</Text>}{quote?.status === "success" && quote.withinZone && quote.timing ? <Text style={styles.distanceSuccess}>{deliveryDelayLabel(quote.timing)}</Text> : null}{quote?.status === "success" && !quote.withinZone && <Text style={styles.distanceError}>Cette adresse est hors de la zone de livraison de 5 km.</Text>}{quote?.status === "error" && <Text style={styles.distanceError}>{quote.error}</Text>}</View></> : <View style={styles.pickupCard}><Text style={styles.pickupTitle}>{dineIn ? 'Repas à ta table' : 'Retrait au restaurant'}</Text><Text style={styles.pickupText}>{RESTAURANT_ADDRESS}</Text><Text style={styles.pickupText}>{dineIn ? `Ta table est prévue le ${cart.delivery.dayLabel} à ${cart.delivery.slot}. Les plats seront préparés pour ton arrivée après paiement confirmé.` : 'Aucun frais de livraison.'}</Text></View>}{restaurantComment}<Text style={styles.detailsFinePrint}>{isDelivery ? "La livraison peut être confiée à Uber Direct. Les coordonnées et les articles nécessaires lui seront transmis pour assurer la livraison. " : ""}Les remises et avantages sont vérifiés une dernière fois par le serveur avant le paiement.</Text></ScrollView><View style={styles.stickyAction}>{!complete && <Text style={styles.requiredHint}>{isDelivery && !quoteReady ? "Calcule ton tarif de livraison pour continuer." : "Complète les informations pour continuer."}</Text>}<Pressable disabled={!complete} style={[styles.primaryButton, !complete && styles.primaryButtonDisabled]} onPress={() => onContinue(standardDeliveryFee)}><Text style={styles.primaryButtonText}>Vérifier et payer · {!hasExactFee ? "dès " : ""}{money(pricing.total)}</Text></Pressable></View></SafeAreaView>;
 }
 
 function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onValidatePromo }) {
@@ -1226,7 +1229,9 @@ function AppContent({ onReviewModeChange }) {
     return () => { stopped = true; clearInterval(timer); subscription.remove(); stopBrowserFocus(); };
   }, [authToken]);
   const [screen, setScreen] = useState(initialScreenFromUrl);
-  const [sessionRestored, setSessionRestored] = useState(!welcomeEnabled);
+  const [sessionRestored, setSessionRestored] = useState(false);
+  const [sessionRecoveryUnavailable,setSessionRecoveryUnavailable]=useState(false);
+  const sessionRecoveryRef=useRef(null);
   const [showNativeWelcome, setShowNativeWelcome] = useState(welcomeEnabled);
   const [showContestWelcome, setShowContestWelcome] = useState(welcomeEnabled);
   const [loginFromWelcome, setLoginFromWelcome] = useState(false);
@@ -1262,6 +1267,7 @@ function AppContent({ onReviewModeChange }) {
   const [accountDeletionLoading, setAccountDeletionLoading] = useState(false);
   const [bibouPlusReturnScreen, setBibouPlusReturnScreen] = useState("menu");
   const [loginDestination, setLoginDestination] = useState(nativeAccountFirst ? "menu" : "account");
+  const loginDestinationRef=useRef(loginDestination);loginDestinationRef.current=loginDestination;
   const [preferredMethod, setPreferredMethod] = useState("delivery");
   const [customerCategory, setCustomerCategory] = useState('menus');
   const [identityReturnScreen, setIdentityReturnScreen] = useState('details');
@@ -1372,9 +1378,13 @@ function AppContent({ onReviewModeChange }) {
     setLoginFromWelcome(false);
     setLoginStartedFromWelcome(false);
     sessionEpoch.current += 1;
+    sessionRecoveryRef.current?.stop();
+    setSessionRecoveryUnavailable(false);
+    setSessionRestored(true);
     sessionTokenRef.current = token;
     setAuthToken(token);
-    try { await saveSession(token); } catch { setStockFeedback("Connexion active, mais elle ne peut pas être mémorisée sur cet appareil."); }
+    try { await saveSession(token); } catch { if(sessionTokenRef.current===token)setStockFeedback("Connexion active, mais elle ne peut pas être mémorisée sur cet appareil."); }
+    if(sessionTokenRef.current!==token)return;
     setCustomer((current) => isReviewToken(token) ? { ...savedCustomer, distance: "", sponsorCode: "" } : ({
       ...savedCustomer,
       name: savedCustomer.name || "",
@@ -1398,30 +1408,36 @@ function AppContent({ onReviewModeChange }) {
   useEffect(() => {
     let stopped = false;
     const epoch = sessionEpoch.current;
-    const restore = async () => {
-      try {
-        const savedToken = await readSession();
-        if (!savedToken || stopped) return;
-        const response = await apiRequest('/auth/me', savedToken);
-        if (stopped || sessionEpoch.current !== epoch) return;
-        if (response.status === 401) { await clearSession(); return; }
-        const payload = response.payload;
-        if (!response.ok || !payload.customer) throw new Error("Connexion temporairement indisponible.");
-        if (stopped || sessionEpoch.current !== epoch) return;
+    const recovery=createSessionRecovery({
+      read:readSession,clear:clearSessionIf,
+      verify:token=>apiRequest('/auth/me',token,undefined,12000),
+      isCurrent:()=>!stopped&&sessionEpoch.current===epoch,
+      canRetry:()=>AppState.currentState!=='background'&&AppState.currentState!=='inactive',
+      onRestored:(savedToken,savedCustomer)=>{
         sessionTokenRef.current = savedToken;
         setAuthToken(savedToken);
-        setCustomer((current) => ({ ...current, ...payload.customer }));
-        setLoyalty({ points: payload.customer.points, orders: payload.customer.weeklyOrders, weeklyProgramPoints: payload.customer.weeklyProgramPoints || 0 });
+        setCustomer((current) => ({ ...current, ...savedCustomer }));
+        setLoyalty({ points: savedCustomer.points, orders: savedCustomer.weeklyOrders, weeklyProgramPoints: savedCustomer.weeklyProgramPoints || 0 });
+        setSessionRecoveryUnavailable(false);
         setSessionRestored(true);
-        void loadCustomerOrders(savedToken);
+        setLoginFromWelcome(false);setLoginStartedFromWelcome(false);
+        setScreen(current=>current==='login'?loginDestinationRef.current:current);
+        void loadCustomerOrders(savedToken,true);
         void loadCustomerReservations({ token: savedToken, silent: true });
         void loadCustomerRewards({ token: savedToken, silent: true });
-        await recoverPayment(savedToken, payload.customer.id);
-      } catch { if (!stopped) setStockFeedback("Connexion non actualisée. Ton accès est conservé : réessaie lorsque le réseau revient."); }
-      finally { if (!stopped) setSessionRestored(true); }
-    };
-    void restore();
-    return () => { stopped = true; };
+        void recoverPayment(savedToken,savedCustomer.id).catch(()=>{if(sessionTokenRef.current===savedToken)setStockFeedback('Impossible de lire le suivi du paiement sur cet appareil.');});
+      },
+      onAbsent:reason=>{
+        setSessionRecoveryUnavailable(false);setSessionRestored(true);
+        if(reason==='invalid')setStockFeedback('Ta session n’est plus valide. Reconnecte-toi pour accéder à ton compte.');
+      },
+      onUnavailable:()=>setSessionRecoveryUnavailable(true),
+    });
+    sessionRecoveryRef.current=recovery;
+    void recovery.retry();
+    const subscription=AppState.addEventListener('change',state=>{if(state==='active')void recovery.retry();});
+    const stopBrowserFocus=observeBrowserFocus(Platform.OS,()=>void recovery.retry());
+    return () => {stopped=true;recovery.stop();subscription.remove();stopBrowserFocus();if(sessionRecoveryRef.current===recovery)sessionRecoveryRef.current=null;};
   }, []);
   useEffect(() => {
     if (!authToken || isReviewToken(authToken)) return;
@@ -1504,10 +1520,10 @@ function AppContent({ onReviewModeChange }) {
     setCart(repriceOfferCart({ ...cart, delivery: { ...cart.delivery, fee: deliveryFee } }));
     setScreen("payment");
   };
-  const apiRequest = async (route, token, body) => {
+  const apiRequest = async (route, token, body, timeoutMs = 60000) => {
     const controller = new AbortController();
     // Render may need time to wake up before creating or checking a payment.
-    const timer = setTimeout(() => controller.abort(), 60000);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await customerFetch(`${API_BASE_URL}${route}`, {
         method: body === undefined ? "GET" : "POST",
@@ -1763,6 +1779,7 @@ function AppContent({ onReviewModeChange }) {
       if (!isReviewToken(authToken)) await detachPushDevice(API_BASE_URL, authToken);
       await clearSession();
       sessionEpoch.current += 1;
+      sessionRecoveryRef.current?.stop();setSessionRecoveryUnavailable(false);setSessionRestored(true);
       sessionTokenRef.current = '';
       setAuthToken('');
       setCustomer({ name: '', phone: '', address: '', postalCode: '', city: 'Le Havre', distance: '', sponsorCode: '' });
@@ -1783,6 +1800,7 @@ function AppContent({ onReviewModeChange }) {
       await clearSession();
       await clearAttempt();
       sessionEpoch.current += 1;
+      sessionRecoveryRef.current?.stop();setSessionRecoveryUnavailable(false);setSessionRestored(true);
       sessionTokenRef.current = '';
       paymentAttempt.current = null;
       setPendingOrder(null);
@@ -1854,11 +1872,14 @@ function AppContent({ onReviewModeChange }) {
   const customerFrame = { currentNav: customerNavigationTab(screen), onHome: () => setScreen('menu'), onCard: () => setScreen('customer-categories'), onOrders: () => openCustomerArea('orders'), onAccount: () => openCustomerArea('account'), onCart: () => setScreen('cart'), cartCount };
   const customerLoyaltyStrip = <CustomerLoyaltyStrip signedIn={Boolean(authToken)} points={loyalty.points} rewards={REWARDS} onLogin={() => openCustomerArea('account')} onRewards={() => openCustomerArea('loyalty')} />;
   const customerCollections = { products: PRODUCTS, snacks: SNACK_PRODUCTS.filter(p => !p.id.startsWith('dessert-')), desserts: DESSERT_PRODUCTS, drinks: DRINK_PRODUCTS, naans: NAAN_PRODUCTS };
+  if(!sessionRestored||(!authToken&&sessionRecoveryUnavailable&&(phonePairing||['login','account','orders','loyalty','notifications','offers','details','payment'].includes(screen))))return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}>
+    <Text style={styles.accountRestoreText}>{sessionRecoveryUnavailable?'Ta connexion est conservée':'Ouverture de Bibou…'}</Text>
+    {sessionRecoveryUnavailable?<><Text style={{color:'#526259',textAlign:'center',lineHeight:22,maxWidth:340}}>Le réseau ne permet pas encore de retrouver ton compte. Nous réessayons automatiquement, sans te demander de nouveau ton numéro.</Text><Pressable accessibilityRole="button" style={styles.primaryButton} onPress={()=>void sessionRecoveryRef.current?.retry()}><Text style={styles.primaryButtonText}>Réessayer ma connexion</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>{setSessionRestored(true);setShowContestWelcome(false);setShowNativeWelcome(false);setScreen('menu');}}><Text style={styles.link}>Voir la carte sans me déconnecter</Text></Pressable></>:null}
+  </View></SafeAreaView>;
   if (phonePairing) {
     const closePairing = () => { setPhonePairing(null); window.history?.replaceState(null, '', '/'); setScreen('menu'); };
     return authToken && !isReviewToken(authToken) ? <KioskPhoneApproval api={API_BASE_URL} authToken={authToken} pairing={phonePairing} onBack={closePairing} /> : <SmsLoginScreen onBack={closePairing} onAuthenticated={authenticate} />;
   }
-  if (welcomeEnabled && !sessionRestored) return <SafeAreaView style={styles.safeArea}><View style={styles.accountRestore}><Text style={styles.accountRestoreText}>Ouverture de Bibou…</Text></View></SafeAreaView>;
   if (welcomeEnabled && showContestWelcome && screen === 'menu') return <ContestWelcome apiBaseUrl={reviewApiBase(API_BASE_URL, authToken)} token={authToken} onOpenContest={() => { setShowContestWelcome(false); setShowNativeWelcome(false); setScreen('contest'); }} onContinue={() => setShowContestWelcome(false)} />;
 if (welcomeEnabled && showNativeWelcome && screen === 'menu' && (CUSTOMER_JOURNEY_SHELL || Platform.OS === 'web' || !authToken)) return <NativeWelcomeChoice onOpenContest={() => { setShowNativeWelcome(false); setScreen("contest"); }} signedIn={Boolean(authToken)} personalizedOffers={welcomePersonalizedOffers} onPersonalizedOffersChange={setWelcomePersonalizedOffers} orderNotifications={welcomeOrderNotifications} onOrderNotificationsChange={setWelcomeOrderNotifications} marketingNotifications={welcomeMarketingNotifications} onMarketingNotificationsChange={setWelcomeMarketingNotifications} onCreateAccount={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(true); setLoginDestination('menu'); setScreen('login'); }} onSignIn={() => { setShowNativeWelcome(false); setLoginStartedFromWelcome(true); setLoginFromWelcome(false); setLoginDestination('menu'); setScreen('login'); }} onViewMenu={() => setShowNativeWelcome(false)} onPrivacy={() => setScreen('privacy')} />;
   if (authToken && !isReviewToken(authToken) && !hasCompleteIdentity(customer) && !['privacy', 'delete-account', 'payment-pending', 'bibou-plus-pending', 'reservation-payment-pending', 'reservation-deposit-success'].includes(screen)) return <CustomerIdentityScreen key={authToken} api={API_BASE_URL} authToken={authToken} customer={customer} onComplete={({ customer: saved }) => { if (sessionTokenRef.current === authToken) setCustomer(current => ({ ...current, ...saved })); }} onExit={logoutCustomer} onPrivacy={() => setScreen('privacy')} onDelete={() => setScreen('delete-account')} />;
@@ -2069,7 +2090,7 @@ const styles = StyleSheet.create(applyAppPalette({
   accountContent: { padding: 20, paddingBottom: 46 }, accountHero: { backgroundColor: "#2C201B", borderRadius: 22, padding: 19, marginTop: 20, flexDirection: "row", alignItems: "center" }, accountAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: "#E95122", alignItems: "center", justifyContent: "center", marginRight: 13 }, accountAvatarText: { color: "white", fontSize: 22, fontWeight: "900" }, accountGreeting: { color: "white", fontSize: 18, fontWeight: "800" }, accountContact: { color: "#F2C8B5", fontSize: 12, marginTop: 5, maxWidth: 230 }, currentOrderCard: { backgroundColor: "#EAF5E4", borderRadius: 20, padding: 16, marginTop: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, currentOrderEyebrow: { color: "#397353", fontSize: 10, fontWeight: "900", letterSpacing: 0.5 }, currentOrderTitle: { color: "#2C201B", fontSize: 15, fontWeight: "800", marginTop: 5 }, currentOrderText: { color: "#526D57", fontSize: 12, marginTop: 4 }, currentOrderArrow: { color: "#397353", fontSize: 30 }, accountAction: { backgroundColor: "#FFFDFC", borderRadius: 18, borderWidth: 1, borderColor: "#EADBD2", padding: 14, flexDirection: "row", alignItems: "center", marginBottom: 10 }, accountActionIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginRight: 11 }, accountActionCopy: { flex: 1 }, accountActionTitle: { color: "#2C201B", fontWeight: "800" }, accountActionText: { color: "#826E63", fontSize: 12, marginTop: 4 }, accountActionArrow: { color: "#D74318", fontSize: 26 }, accountAddress: { backgroundColor: "#F8EAE0", borderRadius: 18, padding: 15, marginTop: 15 }, accountAddressTitle: { color: "#2C201B", fontWeight: "800" }, accountAddressText: { color: "#826E63", fontSize: 13, lineHeight: 18, marginTop: 6 }, accountFinePrint: { color: "#826E63", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 19 }, trackingCard: { backgroundColor: "#FFFDFC", borderRadius: 20, borderWidth: 1, borderColor: "#EADBD2", padding: 16 }, trackingHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }, trackingOrder: { color: "#2C201B", fontSize: 15, fontWeight: "800", maxWidth: 230 }, trackingMeta: { color: "#826E63", fontSize: 12, marginTop: 5 }, trackingPrice: { color: "#2C201B", fontWeight: "800" }, trackingSteps: { flexDirection: "row", justifyContent: "space-between", marginTop: 24 }, trackingStep: { flex: 1, alignItems: "center" }, trackingDot: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#F3E9E2", borderWidth: 1, borderColor: "#D6BEB1", alignItems: "center", justifyContent: "center" }, trackingDotDone: { backgroundColor: "#E95122", borderColor: "#E95122" }, trackingCheck: { color: "white", fontSize: 12, fontWeight: "900" }, trackingLabel: { color: "#9B877B", fontSize: 8, fontWeight: "700", textAlign: "center", marginTop: 5 }, trackingLabelDone: { color: "#D74318" }, trackingMessage: { color: "#397353", fontWeight: "700", fontSize: 12, textAlign: "center", marginTop: 18 }, historyOrder: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 17, padding: 13, flexDirection: "row", alignItems: "center", marginBottom: 9 }, historyIcon: { width: 32, height: 32, borderRadius: 11, backgroundColor: "#EAF5E4", alignItems: "center", justifyContent: "center", marginRight: 10 }, historyCopy: { flex: 1 }, historyTitle: { color: "#2C201B", fontSize: 13, fontWeight: "800" }, historyMeta: { color: "#826E63", fontSize: 11, marginTop: 4 }, historyPrice: { color: "#2C201B", fontWeight: "800", fontSize: 12 },
   customerReservationCard: { backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18, padding: 14, flexDirection: "row", alignItems: "flex-start", marginBottom: 10 }, customerReservationIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", marginRight: 12 }, customerReservationIconText: { fontSize: 21, fontWeight: "900" }, customerReservationCopy: { flex: 1 }, customerReservationTitle: { color: "#2C201B", fontSize: 14, fontWeight: "900", textTransform: "capitalize" }, customerReservationMeta: { color: "#826E63", fontSize: 11, marginTop: 4 }, customerReservationStatus: { fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 8 }, emptyReservationState: { alignItems: "center", paddingVertical: 28, backgroundColor: "#FFFDFC", borderWidth: 1, borderColor: "#EADBD2", borderRadius: 18 },
   loginContent: { padding: 20, paddingBottom: 44 }, loginIcon: { width: 68, height: 68, borderRadius: 24, backgroundColor: "#FFF0E9", alignItems: "center", justifyContent: "center", marginTop: 26 }, loginIconText: { color: "#E95122", fontSize: 31 }, loginIntro: { color: "#826E63", lineHeight: 20, marginTop: 9 }, loginCard: { backgroundColor: "#F8EAE0", borderRadius: 22, padding: 17, marginTop: 23 }, loginFinePrint: { color: "#826E63", fontSize: 12, lineHeight: 17, marginTop: 2, marginBottom: 16 }, loginError: { color: "#A3472A", fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 2, marginBottom: 16 }, loginSecondary: { alignItems: "center", paddingTop: 17 }, loginSecondaryText: { color: "#D74318", fontWeight: "800" }, loginLegal: { color: "#826E63", fontSize: 11, lineHeight: 16, textAlign: "center", marginTop: 18 }, codeInput: { fontSize: 24, fontWeight: "800", letterSpacing: 8, textAlign: "center" },
-  accountRestore: { flex: 1, alignItems: "center", justifyContent: "center" }, accountRestoreText: { color: "#173F3E", fontSize: 17, fontWeight: "700" },
+  accountRestore: { flex: 1, alignItems: "center", justifyContent: "center", padding:24, gap:20 }, accountRestoreText: { color: "#173F3E", fontSize: 17, fontWeight: "700" },
   nativeWelcome: { flexGrow: 1, width: "100%", maxWidth: 520, alignSelf: "center", paddingHorizontal: 24, paddingTop: 12, paddingBottom: 20 },
   nativeWelcomeBrand: { alignSelf: "center", alignItems: "center" },
   nativeWelcomeLogo: { width: 190, height: 96, ...(Platform.OS === "web" ? { filter: "brightness(0) saturate(100%) invert(25%) sepia(15%) saturate(962%) hue-rotate(104deg) brightness(91%) contrast(92%)" } : { tintColor: "#25473B" }) },

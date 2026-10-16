@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const { parisDateKey } = require('./availability');
 const webPush = require('./krokly-web-push');
 const nativePush = require('./krokli-native-push');
+const preparation = require('./krokli-preparation');
 
 const OFFER_MS = 5 * 60 * 1000;
 const SESSION_MS = 12 * 60 * 60 * 1000;
@@ -122,7 +123,7 @@ function uberActive(order) {
 }
 
 function eligible(order, now = Date.now()) {
-  return Boolean(order?.method === 'delivery' && order.payment?.status === 'PAID' && order.status === 'ready' && order.serviceDate === parisDateKey(new Date(now)) && order.amendment?.status !== 'pending' && !uberActive(order) && !ACTIVE.has(order.kroklyDriver?.status));
+  return Boolean(order?.method === 'delivery' && order.payment?.status === 'PAID' && (order.status === 'ready' || preparation.due(order, now)) && !order.reviewMode && order.serviceDate === parisDateKey(new Date(now)) && order.amendment?.status !== 'pending' && !uberActive(order) && !ACTIVE.has(order.kroklyDriver?.status));
 }
 
 function expireOffers(db, now = Date.now()) {
@@ -137,15 +138,16 @@ function expireOffers(db, now = Date.now()) {
   return changed;
 }
 
-function assign(db, orderId, driverId, now = Date.now()) {
+function assign(db, orderId, driverId, now = Date.now(), { source = 'manual' } = {}) {
   const order = (db.orders || []).find(item => item.id === orderId);
   const driver = (db.kroklyDrivers || []).find(item => item.id === driverId && item.active);
   if (!driver) fail('Livreur actif introuvable.', 404);
   if (!eligible(order, now)) fail('Commande hors service du jour, non prête, non payée, déjà attribuée ou confiée à Uber.');
   order.kroklyDriver = {
-    driverId, status: 'offered', offeredAt: new Date(now).toISOString(),
+    driverId, source, status: 'offered', offeredAt: new Date(now).toISOString(),
     expiresAt: new Date(now + OFFER_MS).toISOString(), updatedAt: new Date(now).toISOString()
   };
+  if (source === 'manual' && preparation.validPlan(order)) order.krokliPreparation.state = 'manual';
   return order.kroklyDriver;
 }
 
@@ -153,6 +155,7 @@ function transition(db, orderId, driverId, action, now = Date.now()) {
   const order = (db.orders || []).find(item => item.id === orderId);
   if (!order || order.kroklyDriver?.driverId !== driverId) fail('Course non attribuée à ce livreur.', 404);
   if (order.method !== 'delivery' || order.payment?.status !== 'PAID' || order.status === 'cancelled' || uberActive(order)) fail('Cette course n’est plus disponible.');
+  if (order.amendment?.status === 'pending' || order.reviewMode || (['accept','pickup'].includes(action) && order.status === 'preparing' && !preparation.due(order, now))) fail('La préparation de cette course doit être vérifiée.');
   const current = order.kroklyDriver.status;
   const next = {
     offered: { accept: 'accepted', decline: 'declined' },
@@ -161,12 +164,12 @@ function transition(db, orderId, driverId, action, now = Date.now()) {
   }[current]?.[action];
   if (!next) fail('Cette étape n’est pas disponible pour cette course.');
   if (current === 'offered' && Date.parse(order.kroklyDriver.expiresAt) <= now) fail('Cette proposition a expiré.');
-  if (action === 'pickup' && order.status !== 'ready') fail('Le restaurant doit d’abord marquer la commande prête.');
+  if (action === 'pickup' && order.status !== 'ready' && !(order.status === 'preparing' && preparation.validPlan(order))) fail('Le restaurant doit d’abord marquer la commande prête.');
   if (action === 'deliver' && order.status !== 'out_for_delivery') fail('Le départ en livraison doit être confirmé avant la remise.');
   order.kroklyDriver.status = next;
   order.kroklyDriver.updatedAt = new Date(now).toISOString();
-  if (action === 'pickup') order.status = 'out_for_delivery';
-  if (action === 'deliver') order.status = 'delivered';
+  if (action === 'pickup') { order.status = 'out_for_delivery'; order.kroklyDriver.pickedUpAt=new Date(now).toISOString(); }
+  if (action === 'deliver') { order.status = 'delivered'; order.kroklyDriver.deliveredAt=new Date(now).toISOString(); }
   if (['pickup', 'deliver'].includes(action)) order.updatedAt = new Date(now).toISOString();
   return order;
 }
@@ -180,6 +183,7 @@ function project(order) {
     orderTotal: Number.isFinite(order.total) ? order.total : null,
     courierPay: [3.99, 4.99, 5.99].includes(order.deliveryFee) ? order.deliveryFee : null,
     deliveryCity: order.deliveryAddress?.city || null,
+    preparation: preparation.view(order),
     expiresAt: order.kroklyDriver.expiresAt,
     ...(accepted ? {
       customerName: order.customerName, customerPhone: order.customerPhone,
@@ -196,8 +200,8 @@ function dispatchState(db, now = Date.now()) {
   return {
     drivers: drivers(db).map(driver => ({ ...driver, pushDevices: (db.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length })),
     orders: (db.orders || [])
-      .filter(order => order.method === 'delivery' && order.payment?.status === 'PAID' && order.serviceDate === parisDateKey(new Date(now)) && ['ready', 'out_for_delivery'].includes(order.status))
-      .map(order => ({ id: order.id, number: order.number, status: order.status, serviceDate: order.serviceDate, slot: order.slot, eligible: eligible(order, now), assignment: order.kroklyDriver || null }))
+      .filter(order => order.method === 'delivery' && order.payment?.status === 'PAID' && order.serviceDate === parisDateKey(new Date(now)) && ['preparing','ready', 'out_for_delivery'].includes(order.status))
+      .map(order => ({ id: order.id, number: order.number, status: order.status, serviceDate: order.serviceDate, slot: order.slot, eligible: eligible(order, now), preparation: preparation.view(order, now), assignment: order.kroklyDriver || null }))
   };
 }
 

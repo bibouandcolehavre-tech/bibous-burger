@@ -20,7 +20,7 @@ async function main() {
   await fs.mkdir(out,{recursive:true});
   try {
     let logs=''; const base = await new Promise((resolve,reject)=>{child.stdout.on('data',b=>{logs+=b;const m=logs.match(/http:\/\/localhost:\d+/);if(m)resolve(m[0]);});child.once('error',reject);child.once('exit',()=>reject(Error('Local API stopped')));});
-    const exported = path.join(nativeRoot,'guidance-web-export');
+    const exported = process.env.KROKLI_QA_WEB_EXPORT || path.join(nativeRoot,'guidance-web-export');
     webServer = http.createServer(async(req,res)=>{try{const p=decodeURIComponent(new URL(req.url,'http://local').pathname), f=path.resolve(exported,p==='/'?'index.html':'.'+p);if(!f.startsWith(exported+path.sep))throw Error();const bytes=await fs.readFile(f);res.writeHead(200,{'Content-Type':f.endsWith('.js')?'text/javascript':f.endsWith('.html')?'text/html':'application/octet-stream'});res.end(bytes);}catch{res.writeHead(404);res.end();}});
     await new Promise(resolve=>webServer.listen(0,'127.0.0.1',resolve)); const nativeBase=`http://127.0.0.1:${webServer.address().port}`;
     let index=0;
@@ -53,6 +53,13 @@ async function main() {
             await page.getByTestId('live-username').fill('qa-guidance');await page.getByTestId('live-password').fill(driver.password);await page.getByTestId('live-login').click();await page.getByText('Bonjour Livreur fictif',{exact:true}).waitFor();
           }
           else{await page.locator('#username').fill('qa-guidance');await page.locator('#password').fill(driver.password);await page.locator('#login-form button[type=submit]').click();await page.locator('#workspace').waitFor({state:'visible'});}
+          const availabilityToggle=()=>native?page.getByTestId('live-availability-toggle'):page.locator('[data-availability]');
+          await availabilityToggle().click();
+          await page.getByRole('button',{name:'Me mettre indisponible',exact:true}).waitFor();
+          check('explicit availability is recorded by the local backend',JSON.parse(await fs.readFile(file,'utf8')).kroklyDrivers[0].krokliAvailability.available===true);
+          await availabilityToggle().click();await page.getByRole('button',{name:'Me mettre disponible',exact:true}).waitFor();
+          check('stopping availability is confirmed before proceeding',JSON.parse(await fs.readFile(file,'utf8')).kroklyDrivers[0].krokliAvailability.available===false);
+          check('availability does not collect GPS positions',!JSON.stringify(JSON.parse(await fs.readFile(file,'utf8'))).includes('latitude'));
           const number=++index;
           const card=native?page.getByText(new RegExp(`^COMMANDE #${number} ·`)).locator('..'):page.locator('.order').filter({has:page.getByText(`COMMANDE #${number}`,{exact:true})});
           check('no navigation to unaccepted customer',await card.getByRole('button',{name:/Démarrer le GPS/}).count()===0);

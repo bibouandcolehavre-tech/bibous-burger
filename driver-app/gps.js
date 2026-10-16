@@ -32,7 +32,7 @@
         }
       } finally { sending = false; }
     }
-    async function start(consent) {
+    async function start(consent,{customerTracking=false}={}) {
       if (active || pending) return;
       if (!consent) { show('Coche la case après avoir lu les informations du partage GPS.'); return; }
       if (!geolocation?.watchPosition) { show('GPS indisponible dans ce navigateur. Les livraisons restent accessibles.'); return; }
@@ -40,9 +40,9 @@
       pending = true; show('Préparation du partage GPS…');
       let opened;
       try {
-        opened = await send('start', { consentVersion: 'bibou-foreground-gps-until-stop-v2' });
+        opened = await send('start', { consentVersion: customerTracking?'bibou-foreground-gps-customer-v3':'bibou-foreground-gps-until-stop-v2',...(customerTracking?{customerTracking:true}:{}) });
         if (current !== epoch) { await send('stop', { sessionId: opened.sessionId }).catch(() => {}); return; }
-        if (opened.sharingMode !== 'until-stopped' || opened.expiresAt !== null || typeof opened.sessionId !== 'string' || !/^[A-Za-z0-9_-]{8,120}$/.test(opened.sessionId)) {
+        if (customerTracking&&opened.customerTracking!==true||opened.sharingMode !== 'until-stopped' || opened.expiresAt !== null || typeof opened.sessionId !== 'string' || !/^[A-Za-z0-9_-]{8,120}$/.test(opened.sessionId)) {
           if (opened.sessionId) await send('stop', { sessionId: opened.sessionId }).catch(() => {});
           throw Error('Version du partage GPS à actualiser.');
         }

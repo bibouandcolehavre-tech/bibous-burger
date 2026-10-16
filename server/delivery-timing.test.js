@@ -1,0 +1,58 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const T=require('./delivery-timing'),L=require('./timing-learning'),C=require('../delivery-tracking-client');
+const now=Date.parse('2026-10-16T17:00:00Z'),iso=ms=>new Date(ms).toISOString();
+const order=(id,extra={})=>({id,serviceDate:'2026-10-16',slot:'19:00',method:'delivery',status:'preparing',payment:{status:'PAID'},subtotal:20,items:[{productId:'classique',quantity:1}],kitchenAcceptedAt:iso(now),deliveryTravelSeconds:480,...extra});
+test('customer delay adds Google road time to preparation; never treats the kitchen band as a total',()=>{
+  const o=order('a'),db={orders:[o]},s=T.customerTiming(db,o,now);
+  assert.equal(s.remainingMinutes,23);assert.equal(s.preparationMinutes,15);assert.equal(s.travelMinutes,8);assert.equal(s.queueMinutes,0);
+  assert.equal(T.customerTiming(db,o,now+5*60000).remainingMinutes,18);
+});
+test('two meals prepare in parallel; third waits, and early Ready shortens its remaining delay',()=>{
+  const a=order('a'),b=order('b'),c=order('c'),db={orders:[a,b,c]};
+  assert.equal(T.customerTiming(db,a,now).remainingMinutes,23);
+  assert.equal(T.customerTiming(db,b,now).remainingMinutes,23);
+  assert.equal(T.customerTiming(db,c,now).remainingMinutes,38);
+  a.status='ready';a.kitchenReadyAt=iso(now+5*60000);
+  assert.equal(T.customerTiming(db,c,now+5*60000).remainingMinutes,23);
+  b.status='cancelled';b.updatedAt=iso(now+5*60000);assert.equal(T.customerTiming(db,c,now+5*60000).remainingMinutes,23);
+});
+test('future delivery arrival slot subtracts the road leg for kitchen scheduling, rather than adding it twice',()=>{
+  const o=order('a',{slot:'21:00'}),db={orders:[o]},f=T.kitchenForecast(db,o,now);
+  assert.equal(iso(f.readyAt),'2026-10-16T18:52:00.000Z');
+  assert.equal(T.customerTiming(db,o,now).remainingMinutes,120);
+});
+test('missing route, unknown late meal, no courier and overdue journey never invent a reliable countdown',()=>{
+  const o=order('a'),db={orders:[o]};
+  o.deliveryTravelSeconds=null;assert.equal(T.customerTiming(db,o,now).available,false);
+  o.deliveryTravelSeconds=480;assert.equal(T.customerTiming(db,o,now+16*60000).reason,'kitchen-update-needed');
+  o.status='ready';o.kitchenReadyAt=iso(now+10*60000);assert.equal(T.customerTiming(db,o,now+10*60000).reason,'waiting-for-driver');
+  o.status='out_for_delivery';o.kroklyDriver={pickedUpAt:iso(now+11*60000)};
+  assert.equal(T.customerTiming(db,o,now+12*60000).remainingMinutes,7);
+  assert.equal(T.customerTiming(db,o,now+20*60000).reason,'journey-update-needed');
+  o.status='delivered';assert.equal(T.customerTiming(db,o,now+20*60000),null);
+});
+test('learning requires five unqueued, unchanged, explicit kitchen Ready measurements; pickup alone is not cooking evidence',()=>{
+  const db={orders:[]};
+  for(let i=0;i<5;i++) {const o=order('learn'+i);o.kitchenObservation={version:1,signature:L.signature(o),queueMinutes:0,baseMinutes:15};o.kitchenReadyAt=iso(now+20*60000);db.orders.push(o);}
+  const at=now+60*60000;
+  assert.equal(L.model({orders:db.orders.slice(0,4)},at).preparation[15].value,15);
+  assert.equal(L.model(db,at).preparation[15].value,20);
+  db.orders[0].items[0].quantity++;assert.equal(L.model(db,at).preparation[15].learned,false);
+  db.orders[0].items[0].quantity--;db.orders[0].kitchenObservation.queueMinutes=5;assert.equal(L.model(db,at).preparation[15].learned,false);
+  db.orders[0].kitchenObservation.queueMinutes=0;delete db.orders[0].kitchenReadyAt;db.orders[0].kroklyDriver={pickedUpAt:iso(now+20*60000)};assert.equal(L.model(db,at).preparation[15].learned,false);
+});
+test('learning road duration uses completed pickup-to-delivery legs, a rolling median and bounded correction',()=>{
+  const rows=Array.from({length:5},(_,i)=>order('road'+i,{status:'delivered',deliveryTravelSeconds:600,kroklyDriver:{pickedUpAt:iso(now),deliveredAt:iso(now+12*60000)}}));
+  assert.equal(L.model({orders:rows},now+3600000).travel.value,1.2);
+  rows.push(order('outlier',{status:'delivered',deliveryTravelSeconds:600,kroklyDriver:{pickedUpAt:iso(now),deliveredAt:iso(now+25*60000)}}));
+  assert.equal(L.model({orders:rows},now+3600000).travel.value,1.2);
+  rows[0].reviewMode=true;rows[1].payment.status='FAILED';assert.equal(L.model({orders:rows},now+3600000).travel.learned,false);
+});
+test('customer map uses bounded tiles and a recent own-course position, never credentials or contacts in map requests',()=>{
+  const p={latitude:49.49,longitude:0.12,accuracy:10,validForMs:30000},map=C.mapTiles(p);
+  assert.ok(map.tiles.length>0&&map.tiles.length<=9);
+  for(const tile of map.tiles){const u=new URL(tile.url);assert.equal(u.origin,'https://data.geopf.fr');assert.equal(u.searchParams.has('token'),false);}
+  assert.equal(C.validPosition({...p,validForMs:0}),false);assert.equal(C.validPosition({...p,latitude:91}),false);
+  assert.equal(C.delayLabel({available:true,remainingMinutes:23}),'Livraison dans environ 23 min');
+  assert.doesNotMatch(C.delayLabel({available:false,reason:'kitchen-update-needed'}),/\d{2}:\d{2}/);
+});

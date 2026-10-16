@@ -59,6 +59,9 @@ const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
 const orderSms = require('./order-sms');
 const kroklyDrivers = require('./krokly-drivers');
+const krokliPreparation = require('./krokli-preparation');
+const krokliAutoDispatch = require('./krokli-auto-dispatch');
+const deliveryTiming = require('./delivery-timing');
 const krokliGpsPilot = require('./krokli-gps-pilot').createGpsPilot();
 const kroklyWebPush = require('./krokly-web-push');
 const krokliNativePush = require('./krokli-native-push');
@@ -242,7 +245,7 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": googleMapsApiKey,
-      "X-Goog-FieldMask": "routes.distanceMeters"
+      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration"
     },
     body: JSON.stringify({
       origin: { address: restaurantAddress },
@@ -263,7 +266,11 @@ const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
   const distanceKm = route.distanceMeters / 1000;
   if (!Number.isFinite(distanceKm)) throw new Error("Cette adresse n’a pas pu être localisée.");
   const roundedDistanceKm = Math.round(distanceKm * 100) / 100;
-  return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm) };
+  // Optional duration on the same existing quote request; never infer travel
+  // time from kilometers or fail a legacy checkout solely for missing ETA.
+  const seconds = typeof route.duration === 'string' && /^\d+(?:\.\d{1,9})?s$/.test(route.duration) ? Number(route.duration.slice(0,-1)) : NaN;
+  const deliveryTravelSeconds = Number.isFinite(seconds) && seconds >= 0 && seconds <= 7200 ? Math.ceil(seconds) : null;
+  return { distanceKm: roundedDistanceKm, deliveryFee: deliveryFeeForDistance(distanceKm), deliveryTravelSeconds };
 };
 
 const normalizeFrenchPhone = (value) => {
@@ -567,7 +574,7 @@ const server = http.createServer(async (request, response) => {
         if (url.pathname === '/api/krokly-driver/capabilities' && request.method === 'GET') return send(response, 200, {
           protocol: 'krokli-bibou-live-v1', restaurant: 'bibou-le-havre', sharedDriverAccounts: true,
           manualDispatch: true, gpsPilot: { optional: true, durationMinutes: 30, sharingModes: ['legacy-30-minutes', 'until-stopped'], visibleTo: 'restaurant-only', historyStored: false },
-          automaticNearestDispatch: false, groupedRouting: false, customerTracking: false,
+          automaticNearestDispatch: false, timedDispatch: { supported: true, selection: 'fresh-gps-proximity-or-rotation', roadTravelTimeVerified: false, availableCouriersOnly: true, requiresRestaurantActivation: true }, groupedRouting: false, customerTracking: {protocol:'bibou-customer-delivery-v1',explicitDriverConsent:true,onlyOwnActiveDelivery:true,maximumPositionAgeSeconds:30},
           nativePush: { protocol: 'krokli-native-push-v1', enabled: krokliNativePushConfig.enabled, projectId: krokliNativePush.PROJECT_ID }
         });
         const admin = url.pathname.startsWith('/api/dashboard/');
@@ -601,7 +608,12 @@ const server = http.createServer(async (request, response) => {
           const expired = kroklyDrivers.expireOffers(database);
           if (expired) await writeDatabase(database);
           if (url.pathname === '/api/krokly-driver/state' && request.method === 'GET') {
-            return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, orders: kroklyDrivers.assigned(database, driver.id), push: { enabled: kroklyPushConfig.enabled, publicKey: kroklyPushConfig.publicKey, devices: (database.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length } });
+            return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, availability: krokliAutoDispatch.availabilityView(driver), orders: kroklyDrivers.assigned(database, driver.id), push: { enabled: kroklyPushConfig.enabled, publicKey: kroklyPushConfig.publicKey, devices: (database.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length } });
+          }
+          if (url.pathname === '/api/krokly-driver/availability' && request.method === 'POST') {
+            const deadline = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')).exp;
+            const availability = krokliAutoDispatch.setAvailability(database, driver, input, deadline);
+            await writeDatabase(database); return send(response, 200, { availability });
           }
           if (url.pathname === '/api/krokly-driver/native-push/register' && request.method === 'POST') {
             if (!krokliNativePushConfig.enabled) return send(response, 503, { error: 'Les alertes natives sont désactivées par le restaurant.' });
@@ -641,13 +653,20 @@ const server = http.createServer(async (request, response) => {
             const order = kroklyDrivers.transition(database, decodeURIComponent(action[1]), driver.id, action[2]);
             if (['pickup', 'deliver'].includes(action[2])) push.queueServiceNotification(database, order, 'order', action[2] === 'pickup' ? 'ready' : 'out_for_delivery', pushConfig);
             await writeDatabase(database);
-            return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, orders: kroklyDrivers.assigned(database, driver.id) });
+            return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, availability: krokliAutoDispatch.availabilityView(driver), orders: kroklyDrivers.assigned(database, driver.id) });
           }
           return send(response, 405, { error: 'Action livreur indisponible.' });
         }
         const expired = kroklyDrivers.expireOffers(database);
         if (expired) await writeDatabase(database);
-        if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'GET') return send(response, 200, { ...kroklyDrivers.dispatchState(database), gpsPositions: krokliGpsPilot.locations(database) });
+        if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'GET') {
+          const state = kroklyDrivers.dispatchState(database);
+          return send(response, 200, { ...state, drivers: state.drivers.map(d=>({...d, availability:krokliAutoDispatch.availabilityView(database.kroklyDrivers.find(item=>item.id===d.id))})), dispatchSettings: krokliPreparation.settings(database), gpsPositions: krokliGpsPilot.locations(database) });
+        }
+        if (url.pathname === '/api/dashboard/krokly-drivers/settings' && request.method === 'PATCH') {
+          const dispatchSettings = krokliAutoDispatch.configure(database,input);
+          await writeDatabase(database); return send(response,200,{dispatchSettings});
+        }
         if (url.pathname === '/api/dashboard/krokly-drivers' && request.method === 'POST') {
           const created = kroklyDrivers.createDriver(database, input);
           await writeDatabase(database);
@@ -836,9 +855,11 @@ const server = http.createServer(async (request, response) => {
       const input = await readBody(request);
       if (!authenticatedCustomer(request, await readDatabase())) return send(response, 401, { error: "Connecte-toi pour calculer la livraison." });
       if (![input.address, input.postalCode, input.city].every((value) => String(value || "").trim())) return send(response, 400, { error: "Indiquez une adresse complète pour calculer la livraison." });
+      if(input.subtotal!==undefined&&(typeof input.subtotal!=='number'||!Number.isFinite(input.subtotal)||input.subtotal<0||input.subtotal>1_000_000))return send(response,400,{error:'Montant du panier invalide.'});
       try {
         const quote = await calculateDeliveryQuote(input);
-        return send(response, 200, { ...quote, withinZone: quote.deliveryFee !== null });
+        const timing=input.subtotal===undefined?null:deliveryTiming.customerTiming(database,{id:'quote-only',method:'delivery',status:'confirmed',payment:{status:'PAID'},subtotal:input.subtotal,serviceDate:input.serviceDate||parisDateKey(new Date()),slot:input.slot||'00:00',deliveryTravelSeconds:quote.deliveryTravelSeconds});
+        return send(response, 200, { ...quote,timing, withinZone: quote.deliveryFee !== null });
       } catch (error) {
         return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });
       }
@@ -1608,10 +1629,18 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, articleRatings.customerOrderRatings(database, order));
     }
 
+    const deliveryTrackingRoute=/^\/api\/customer\/orders\/([^/]+)\/delivery-tracking$/.exec(url.pathname);
+    if(request.method==='GET'&&deliveryTrackingRoute) {
+      const customer=authenticatedCustomer(request,database);
+      if(!customer)return send(response,401,{error:'Session expirée.'});
+      const order=paidOrders(database).find(o=>o.id===decodeURIComponent(deliveryTrackingRoute[1])&&o.customerId===customer.id&&orderInKioskSession(o,request.kioskSession));
+      if(!order)return send(response,404,{error:'Commande introuvable.'});
+      return send(response,200,{protocol:'bibou-customer-delivery-v1',status:order.status,timing:deliveryTiming.customerTiming(database,order),position:krokliGpsPilot.customerLocation(database,order)});
+    }
     if (request.method === "GET" && url.pathname === "/api/customer/orders") {
       const customer = authenticatedCustomer(request, database);
       if (!customer) return send(response, 401, { error: "Session expirée." });
-      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id && orderInKioskSession(order, request.kioskSession)).map(({uberDirect,...order})=>({...order,uberDelivery:uber.publicDelivery({...order,uberDirect})})) });
+      return send(response, 200, { orders: paidOrders(database).filter((order) => order.customerId === customer.id && orderInKioskSession(order, request.kioskSession)).map(({uberDirect,...order})=>({...order,deliveryTiming:deliveryTiming.customerTiming(database,order),uberDelivery:uber.publicDelivery({...order,uberDirect})})) });
     }
 
     if (request.method === "GET" && url.pathname === "/api/customer/reservations") {
@@ -1806,6 +1835,8 @@ const server = http.createServer(async (request, response) => {
       if (input.status === "cancelled" && order.status !== "cancelled" && order.amendment) amendments.cancel(order, "cancelled");
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
+      krokliPreparation.recordAcceptance(database,order,previousStatus);
+      if (krokliPreparation.recordReady(database,order,previousStatus)) dispatchKrokliOffers(database);
       cancelLinkedTable(order, database);
       revokeLoyaltyForCancelledOrder(order, database);
       push.queueServiceNotification(database, order, 'order', previousStatus, pushConfig);
@@ -1913,12 +1944,14 @@ const server = http.createServer(async (request, response) => {
       }
       let distanceKm = 0;
       let deliveryFee = 0;
+      let deliveryTravelSeconds = null;
       if (input.method === "delivery") {
         if (![customer.address, customer.postalCode, customer.city].every(value => String(value || "").trim())) return send(response, 400, { error: "Indiquez une adresse complète pour la livraison." });
         try {
           const quote = await calculateDeliveryQuote(customer);
           distanceKm = quote.distanceKm;
           deliveryFee = quote.deliveryFee;
+          deliveryTravelSeconds = quote.deliveryTravelSeconds;
         } catch (error) {
           return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });
         }
@@ -1947,6 +1980,7 @@ const server = http.createServer(async (request, response) => {
         const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items, promotionContext);
         const storedItems = pricedCart.items;
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, wheelEurosPerTurn: wheelGame.EUROS_PER_TURN, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
+        if (input.method === 'delivery' && deliveryTravelSeconds !== null) createdOrder.deliveryTravelSeconds = deliveryTravelSeconds;
         if (tableRequest) {
           let table;
           try { table = createReservation(latestDatabase, { customerId: latestCustomer.id, name: latestCustomer.name, phone: latestCustomer.phone, guests: tableRequest.guests, note: tableRequest.note, serviceDate: input.serviceDate, slot: input.slot, slotGrid: 20 }, new Date(createdOrder.createdAt)); }
@@ -2143,6 +2177,8 @@ const server = http.createServer(async (request, response) => {
       if (input.status === "cancelled" && order.status !== "cancelled" && order.amendment) amendments.cancel(order, "cancelled");
       order.status = input.status;
       order.updatedAt = new Date().toISOString();
+      krokliPreparation.recordAcceptance(database,order,previousStatus);
+      if (krokliPreparation.recordReady(database,order,previousStatus)) dispatchKrokliOffers(database);
       cancelLinkedTable(order, database);
       revokeLoyaltyForCancelledOrder(order, database);
       push.queueServiceNotification(database, order, 'order', previousStatus, pushConfig);
@@ -2257,6 +2293,26 @@ if (marketingSms.ready(marketingSmsConfig)) {
   server.once('listening', () => void marketingSmsWorker.tick().catch(() => console.error('SMS commerciaux : traitement indisponible.')));
 }
 let kroklyPushBusy = false;
+let krokliDispatchBusy = false;
+function dispatchKrokliOffers(database) {
+  return krokliAutoDispatch.tick(database,{locations:krokliGpsPilot.locations(database),queueOffer:(order,driver,assignment)=>{
+    if(kroklyPushConfig.enabled) kroklyWebPush.queue(database,driver.id,order.id,Date.now(),Date.parse(assignment.expiresAt));
+    if(krokliNativePushConfig.enabled) krokliNativePush.queue(database,driver.id,order.id);
+  }});
+}
+async function tickKrokliDispatch() {
+  if (krokliDispatchBusy) return;
+  krokliDispatchBusy = true;
+  const release = await acquireDatabase();
+  try {
+    const database = await readDatabase();
+    const result = dispatchKrokliOffers(database);
+    if(result.changed) await writeDatabase(database);
+  } catch { console.error('Répartition programmée Krokli : vérifiez les courses avant tout nouvel envoi.'); }
+  finally { release(); krokliDispatchBusy = false; }
+}
+const krokliDispatchTimer = setInterval(()=>void tickKrokliDispatch(),10000);
+krokliDispatchTimer.unref(); server.on('close',()=>clearInterval(krokliDispatchTimer));
 const krokliNativePushWorker = krokliNativePush.createWorker({ config: krokliNativePushConfig, transact: async task => {
   const release = await acquireDatabase();
   try {

@@ -105,6 +105,29 @@ test('push : table confirmée ou annulée sans promesse prématurée', () => {
   assert.equal(db.pushNotifications.jobs[0].title, 'Table confirmée');
 });
 
+test('push : départ Bibou iPhone et Android, une alerte par appareil sans adresse ni faux arrêt',async()=>{
+  const {db,c}=setup();push.registerDevice(db,c,device('android'),now);
+  const o={...order('out_for_delivery'),method:'delivery'};db.orders.push(o);
+  push.queueServiceNotification(db,o,'order','ready',config,now);push.queueServiceNotification(db,o,'order','ready',config,now);
+  assert.equal(db.pushNotifications.jobs.length,2);
+  for(const job of db.pushNotifications.jobs){assert.equal(job.title,'Le petit Bibou arrive avec votre commande !');assert.equal(job.screen,'orders');assert.equal(job.deliveryDeparture,true);assert.doesNotMatch(job.body,/livraison avant|latitude|longitude|060000/);}
+  const sent=[];await worker(db,async(url,input)=>{sent.push(...JSON.parse(input.body));return response({data:JSON.parse(input.body).map((_,i)=>({status:'ok',id:'local-ticket-'+i}))});}).tick();
+  assert.equal(sent.length,2);assert.ok(sent.every(message=>message.data.accountId==='c1'&&message.data.screen==='orders'));
+});
+
+test('push : un départ devenu obsolète ne part pas après livraison, annulation ou retrait du consentement',async()=>{
+  for(const changed of ['delivered','cancelled','revoked','pending-amendment']){
+    const {db,c}=setup(),o={...order('out_for_delivery'),method:'delivery'};db.orders.push(o);push.queueServiceNotification(db,o,'order','ready',config,now);
+    if(changed==='revoked')push.updatePreferences(db,c,{service:false},now);else if(changed==='pending-amendment')o.amendment={status:'pending'};else o.status=changed;
+    await worker(db,()=>assert.fail('No obsolete departure may reach the provider')).tick();assert.equal(db.pushNotifications.jobs[0].status,'cancelled');
+  }
+});
+
+test('push : retrait sur place et compte boutique ne reçoivent pas le message du livreur',()=>{
+  const {db}=setup();push.queueServiceNotification(db,order('out_for_delivery'),'order','ready',config,now);assert.equal(db.pushNotifications.jobs[0].title,'Commande remise');
+  const review={...order('out_for_delivery'),id:'review',method:'delivery',reviewMode:true};push.queueServiceNotification(db,review,'order','ready',config,now);assert.equal(db.pushNotifications.jobs.length,1);
+});
+
 test('push : accepter le suivi des commandes ne donne pas accès aux campagnes promotionnelles', () => {
   const { db } = setup(database(), 'service');
   const preview = push.prepareCampaign(db, campaign(), config, now);

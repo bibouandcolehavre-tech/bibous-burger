@@ -1,0 +1,13 @@
+{
+  "status": "prepared-for-customer-tracking-not-published",
+  "asset": "bibou-courier-character-v1.png",
+  "character": "Generic illustrated little Bibou riding a bicycle; owner requested almond-shaped eyes, green helmet and a delivery bag. Not claimed to reproduce the real child's likeness.",
+  "generationMethod": "Built-in image_gen, 16 October 2026; no separately billed image API invoked.",
+  "source": "/Users/nowar/.codex/generated_images/01a0aea1-8728-7ac3-b9dc-ad71a581c085/exec-2c34ac2e-56e5-454f-82ab-8045e9205fe9.png",
+  "finalSourcePrompt": "Use case: precise-object-edit. Prepare this approved child-and-bicycle illustration for exact logo compositing later. Remove ONLY the white logos/lettering from the green delivery bag and from the green bicycle helmet. Reconstruct the clean unmarked green fabric/plastic beneath each logo to match existing shading. Both helmet and delivery bag must be completely blank with no text or emblems. Keep EVERYTHING else identical, especially the child's slightly almond-shaped eyes, face, hair, smile, pose, clothing, delivery bag geometry and size, helmet geometry, hands, complete bicycle, both wheels, green/cream palette, composition and transparent alpha background. Do not add any logo, inscription, background, border, ground or new element. This is a blank preparation image, not a new character variant.",
+  "normalization": "Proportional 400px thumbnail preserving transparency; no creative raster alteration after generation.",
+  "officialLogo": "bibous-official-wordmark-preview.png",
+  "officialLogoSha256": "25172c6a730cdaf92d6bb0ecb2ceae33c6deda12c1fabf5f0aac6e29890b2717",
+  "logoMethod": "BibouCourierMarker displays the exact cream-and-gold application PNG as separate proportional layers on the bag and helmet. Never substitute the old white logo or the AI-redrawn logo variants rejected by the owner.",
+  "movement": "Map marker location comes from authenticated own-delivery GPS responses only. A short transition between two received points is not a route prediction. No automatic imaginary movement or GPS history."
+}

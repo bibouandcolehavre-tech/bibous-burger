@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { bibouPlusStatus } = require('./bibou-plus');
+const {DEPARTURE_TITLE,DEPARTURE_BODY}=require('../delivery-status-copy');
 
 const DAY = 86400000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -75,14 +76,14 @@ function enqueue(db, customer, devices, message, now) {
 }
 
 function queueServiceNotification(db, record, type, previousStatus, config, now = Date.now()) {
-  if (previousStatus === record.status || !record.customerId || !config.enabled || (type === 'order' && record.payment?.status !== 'PAID')) return;
+  if (previousStatus === record.status || !record.customerId || record.reviewMode || !config.enabled || (type === 'order' && record.payment?.status !== 'PAID')) return;
   const customer = db.customers.find(c => c.id === record.customerId);
   if (!customer || !prefs(customer).service) return;
   const messages = type === 'order' ? {
     confirmed: ['Commande transmise', 'Ton paiement est confirmé. Le restaurant va prendre en charge ta commande.'],
     preparing: ['Commande acceptée', 'Ta commande est en préparation chez Bibou’s Burgers.'],
     ready: ['Commande prête', record.method === 'pickup' ? 'Ta commande est prête à être retirée au restaurant.' : 'Ta commande est prête. Elle attend son départ en livraison.'],
-    out_for_delivery: [record.method === 'pickup' ? 'Commande remise' : 'Livraison en route', record.method === 'pickup' ? 'Merci pour ta commande et bon appétit !' : 'Ta commande a été confiée au livreur.'],
+    out_for_delivery: [record.method === 'pickup' ? 'Commande remise' : DEPARTURE_TITLE, record.method === 'pickup' ? 'Merci pour ta commande et bon appétit !' : DEPARTURE_BODY],
     delivered: ['Bon appétit !', 'Ta commande est terminée. Merci et à bientôt chez Bibou’s Burgers.'],
     cancelled: ['Commande annulée', 'Ta commande a été annulée. Consulte son suivi et contacte le restaurant pour toute question.'],
   } : {
@@ -97,7 +98,9 @@ function queueServiceNotification(db, record, type, previousStatus, config, now 
   record.pushNotifiedStatuses.push(record.status);
   // Superseded status updates should never arrive late, out of sequence.
   store(db).jobs.filter(j => j.entityId === record.id && j.kind === 'service' && j.status === 'queued').forEach(j => { j.status = 'cancelled'; });
-  enqueue(db, customer, devices, { kind: 'service', eventKey: `${type}:${record.id}:${record.status}`, title: copy[0], body: copy[1], screen: type === 'order' ? 'orders' : 'reservations', entityId: record.id }, now);
+  enqueue(db, customer, devices, { kind: 'service', eventKey: `${type}:${record.id}:${record.status}`, title: copy[0], body: copy[1], screen: type === 'order' ? 'orders' : 'reservations', entityId: record.id,
+    ...(type==='order'&&record.method==='delivery'&&record.status==='out_for_delivery'?{deliveryDeparture:true}:{}),
+  }, now);
 }
 
 function queueAmendmentNotification(db, order, config, now = Date.now()) {
@@ -190,6 +193,10 @@ function dashboardPush(db, config, now = Date.now()) {
 function canDispatch(db, job, config, now) {
   const s = store(db), device = s.devices.find(d => d.installationId === job.deviceId && d.customerId === job.customerId), customer = db.customers.find(c => c.id === job.customerId);
   if (!customer || !device || !prefs(customer)[job.kind] || !activeDevice(device, now)) return null;
+  if(job.deliveryDeparture===true) {
+    const order=(db.orders||[]).find(o=>o.id===job.entityId&&o.customerId===job.customerId);
+    if(!order||order.status!=='out_for_delivery'||order.method!=='delivery'||order.payment?.status!=='PAID'||order.reviewMode||order.amendment?.status==='pending')return null;
+  }
   if (job.contestPrizeVoucherId && !require('./contest-prizes').alertEligible(db, job.contestPrizeVoucherId, new Date(now))) return null;
   if (job.kind === 'marketing') {
     if (job.crmOfferId) {

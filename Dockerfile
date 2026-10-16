@@ -7,6 +7,7 @@ COPY news-config.js ./news-config.js
 COPY customer-identity.js ./customer-identity.js
 COPY kiosk-qr-client.js ./kiosk-qr-client.js
 COPY service-policy.js ./service-policy.js
+COPY delivery-status-copy.js ./delivery-status-copy.js
 COPY cheese-naans.js ./cheese-naans.js
 COPY dietary-policy.js ./dietary-policy.js
 COPY custom-burger-preview.js ./custom-burger-preview.js

@@ -6,6 +6,7 @@ const SESSION_MS = 30 * 60_000;
 const CONSENT_VERSION = 'bibou-foreground-gps-v1';
 const NATIVE_CONSENT_VERSION = 'bibou-native-gps-pilot-v1';
 const CONTINUOUS_CONSENTS = ['bibou-foreground-gps-until-stop-v2', 'bibou-native-gps-until-stop-v2'];
+const CUSTOMER_CONSENTS = ['bibou-foreground-gps-customer-v3', 'bibou-native-gps-customer-v3'];
 function fail(message, statusCode = 400) { throw Object.assign(Error(message), { statusCode }); }
 function createGpsPilot({ clock = Date.now } = {}) {
   const sessions = new Map();
@@ -25,12 +26,14 @@ function createGpsPilot({ clock = Date.now } = {}) {
   }
   function start(db, driver, input) {
     clean(db);
-    if (![CONSENT_VERSION, NATIVE_CONSENT_VERSION, ...CONTINUOUS_CONSENTS].includes(input?.consentVersion)) fail('Lis les informations puis confirme le partage GPS.');
+    if (![CONSENT_VERSION, NATIVE_CONSENT_VERSION, ...CONTINUOUS_CONSENTS,...CUSTOMER_CONSENTS].includes(input?.consentVersion)) fail('Lis les informations puis confirme le partage GPS.');
+    const customerTracking=CUSTOMER_CONSENTS.includes(input.consentVersion);
+    if(customerTracking&&input.customerTracking!==true)fail('Confirme séparément le suivi client pendant la livraison.');
     const now = clock();
-    const continuous = CONTINUOUS_CONSENTS.includes(input.consentVersion);
-    const session = { id: crypto.randomUUID(), authVersion: driver.authVersion, continuous, mode: input.consentVersion.includes('native') ? 'native-pilot' : 'foreground-pilot', expiresAt: continuous ? Infinity : now + SESSION_MS, leaseUntil: now + POSITION_TTL_MS, position: null };
+    const continuous = customerTracking||CONTINUOUS_CONSENTS.includes(input.consentVersion);
+    const session = { id: crypto.randomUUID(), authVersion: driver.authVersion, continuous,customerTracking, mode: input.consentVersion.includes('native') ? 'native-pilot' : 'foreground-pilot', expiresAt: continuous ? Infinity : now + SESSION_MS, leaseUntil: now + POSITION_TTL_MS, position: null };
     sessions.set(driver.id, session);
-    return { sessionId: session.id, expiresAt: continuous ? null : new Date(session.expiresAt).toISOString(), ...(continuous ? { sharingMode: 'until-stopped' } : {}), positionTtlSeconds: POSITION_TTL_MS / 1000 };
+    return { sessionId: session.id, expiresAt: continuous ? null : new Date(session.expiresAt).toISOString(), ...(continuous ? { sharingMode: 'until-stopped' } : {}),...(customerTracking?{customerTracking:true}:{}), positionTtlSeconds: POSITION_TTL_MS / 1000 };
   }
   function update(db, driverId, input) {
     const session = current(db, driverId, input);
@@ -61,6 +64,19 @@ function createGpsPilot({ clock = Date.now } = {}) {
       source: session.mode, verifiedArrival: false
     }] : []);
   }
+  function customerLocation(db,order) {
+    clean(db);
+    const assignment=order?.kroklyDriver,driverId=assignment?.driverId,session=sessions.get(driverId);
+    if(order?.payment?.status!=='PAID'||order.reviewMode||order.status!=='out_for_delivery'||assignment?.status!=='picked_up'||
+      !session?.customerTracking||!session.position)return null;
+    // No position while serving another customer or a multi-stop tour whose
+    // selective sharing has not yet been implemented.
+    const active=(db.orders||[]).filter(o=>o.status==='out_for_delivery'&&o.kroklyDriver?.status==='picked_up'&&o.kroklyDriver.driverId===driverId);
+    if(active.length!==1||active[0].id!==order.id)return null;
+    const p=session.position,age=clock()-p.timestamp;
+    if(age<0||age>=30_000)return null;
+    return {latitude:p.latitude,longitude:p.longitude,accuracy:p.accuracy,ageSeconds:Math.floor(age/1000),validForMs:Math.max(0,30_000-age)};
+  }
   // Expire memory independently of dashboard reads; do not retain old GPS fixes.
   const timer = setInterval(() => {
     const now = clock();
@@ -70,6 +86,6 @@ function createGpsPilot({ clock = Date.now } = {}) {
     }
   }, 5000);
   timer.unref();
-  return { start, update, stop, locations, close: () => { clearInterval(timer); sessions.clear(); } };
+  return { start, update, stop, locations, customerLocation, close: () => { clearInterval(timer); sessions.clear(); } };
 }
 module.exports = { createGpsPilot, POSITION_TTL_MS, SESSION_MS, CONSENT_VERSION, NATIVE_CONSENT_VERSION };

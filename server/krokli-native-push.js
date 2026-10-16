@@ -1,5 +1,6 @@
 // Native Driver devices only: never reuse customer tokens, jobs or campaigns.
 const crypto = require('node:crypto');
+const preparation = require('./krokli-preparation');
 const PROJECT_ID = '8f737171-95c6-449a-8c34-4ce9f0ee747c';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const TOKEN = /^(?:Exponent|Expo)PushToken\[[A-Za-z0-9_-]{10,200}\]$/;
@@ -71,7 +72,7 @@ function queue(db, driverId, orderId, now = Date.now()) {
 }
 function validOffer(order, driverId, now) {
   const u = order?.uberDirect;
-  return order?.method === 'delivery' && order.payment?.status === 'PAID' && order.status === 'ready' &&
+  return preparation.kitchenOrder(order) && (order.status === 'ready' || preparation.due(order, now)) &&
     order.kroklyDriver?.driverId === driverId && order.kroklyDriver.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) > now &&
     !(u && ['sending', 'uncertain', 'created'].includes(u.phase) && !['canceled', 'returned', 'delivered'].includes(u.status));
 }

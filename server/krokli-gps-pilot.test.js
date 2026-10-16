@@ -63,6 +63,17 @@ test('continuous sharing is revoked with the driver account, and cannot stop a n
   h.db.kroklyDrivers[0].authVersion++;
   assert.throws(() => h.pilot.update(h.db, 'lina', { ...s, position: h.p() }), e => e.statusCode === 409);
 });
+test('customer tracking requires distinct consent and one active own delivery; no old, completed or multi-stop GPS exposure',t=>{
+  const h=fixture(t),order={id:'one',status:'out_for_delivery',payment:{status:'PAID'},kroklyDriver:{driverId:'lina',status:'picked_up'}};h.db.orders=[order];
+  const input={consentVersion:'bibou-native-gps-customer-v3',customerTracking:true};
+  assert.throws(()=>h.pilot.start(h.db,h.db.kroklyDrivers[0],{consentVersion:input.consentVersion}));
+  const old=h.open('lina');h.pilot.update(h.db,'lina',{...old,position:h.p()});assert.equal(h.pilot.customerLocation(h.db,order),null);
+  const s=h.pilot.start(h.db,h.db.kroklyDrivers[0],input);h.pilot.update(h.db,'lina',{...s,position:h.p()});
+  assert.equal(h.pilot.customerLocation(h.db,order).latitude,49.49);
+  h.db.orders.push({...order,id:'two'});assert.equal(h.pilot.customerLocation(h.db,order),null);h.db.orders.pop();
+  h.advance(30_000);assert.equal(h.pilot.customerLocation(h.db,order),null);
+  h.pilot.update(h.db,'lina',{...s,position:h.p()});order.status='delivered';assert.equal(h.pilot.customerLocation(h.db,order),null);
+});
 function clientHarness() {
   let success, error, interval, time = Date.now(); const sends = [], clears = [], messages = [];
   let send = async (action, data) => {

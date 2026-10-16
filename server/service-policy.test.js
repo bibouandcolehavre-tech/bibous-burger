@@ -13,13 +13,13 @@ const schedule = require('./service-schedule');
 const date='2026-09-28', now=new Date('2026-09-28T08:00:00Z');
 
 test('délais de préparation appliqués au retrait et à la livraison, selon le panier',()=>{
-  for(const [amount,minutes] of [[24.99,20],[25,30],[60,30],[60.01,45]]) assert.equal(preparationMinutes(amount),minutes);
+  for(const [amount,minutes] of [[24.99,15],[25,15],[39.99,15],[40,30],[60,30],[100,30],[100.01,35]]) assert.equal(preparationMinutes(amount),minutes);
   const time=new Date('2026-09-28T17:10:00Z');
   for(const method of ['pickup','delivery']) {
     assert.match(validateServiceSlot(date,'19:20',time,method,{},24.99),/préparation/);
     assert.equal(validateServiceSlot(date,'19:40',time,method,{},25),null);
-    assert.match(validateServiceSlot(date,'19:40',time,method,{},60.01),/45 minutes/);
-    assert.equal(availabilityForDate({},date,time,method,60.01)['19:40'].unavailable,true);
+    assert.match(validateServiceSlot(date,'19:40',time,method,{},100.01),/35 minutes/);
+    assert.equal(availabilityForDate({},date,time,method,100.01)['19:40'].unavailable,true);
   }
   assert.equal(validateServiceSlot(date,'19:20',time,'reservation',{},100),null);
 });
