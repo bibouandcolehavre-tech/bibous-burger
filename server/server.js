@@ -73,6 +73,7 @@ const krokliNativePush = require('./krokli-native-push');
 const krokliStoreReview = require('./krokli-review-sandbox').createReviewSandbox({
   passwordHash: process.env.KROKLI_REVIEW_PASSWORD_HASH || require('./krokli-review-access.json').passwordHash
 });
+const krokliPublicPages = require('./krokli-public-pages');
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { statistics: dashboardStatistics } = require('./dashboard-statistics');
@@ -539,6 +540,15 @@ const server = http.createServer(async (request, response) => {
       return send(response, 403, { error: 'Cet accès de vérification ne peut pas accéder aux données réelles.' });
     if (krokliStoreReview.isToken(driverReviewToken) && url.pathname === '/api/krokly-driver/login')
       return send(response, 403, { error: 'Reconnectez-vous sans utiliser une ancienne session de vérification.' });
+    const driverInformationPage = /^\/driver\/(privacy|support)\/?$/.exec(url.pathname);
+    if (driverInformationPage) {
+      if (!['GET','HEAD'].includes(request.method)) return send(response, 405, { error: 'Lecture seule.' });
+      const html = krokliPublicPages.page(driverInformationPage[1]);
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': String(Buffer.byteLength(html)),
+        'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" });
+      return response.end(request.method === 'HEAD' ? undefined : html);
+    }
     if (url.pathname.startsWith('/api/review/')) {
       try {
         const payload = await reviewSandbox.handle({ method: request.method, route: url.pathname.slice('/api/review'.length), token: String(request.headers.authorization || '').replace(/^Bearer /, ''), readBody: () => readBody(request) });

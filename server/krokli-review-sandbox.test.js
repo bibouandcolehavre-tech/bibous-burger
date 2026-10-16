@@ -83,3 +83,9 @@ test('review push registration is RAM-only and tokenless cleanup remains isolate
   now += SESSION_MS + 1;
   assert.equal(sandbox.ownsCleanup(input), true); assert.equal(sandbox.cleanup(input).removed, true); assert.equal(sandbox.cleanup(input).removed, true);
 });
+test('explicit reviewer cleanup after restart never needs or claims a production installation', t => {
+  const sandbox = createReviewSandbox(); t.after(() => sandbox.close());
+  const input = { installationId: crypto.randomUUID(), installationSecret: crypto.randomUUID(), reviewMode: true };
+  assert.equal(sandbox.ownsCleanup(input), true); assert.deepEqual(sandbox.cleanup(input), { removed: true });
+  assert.throws(() => sandbox.cleanup({ ...input, installationSecret: 'invalid' }), { statusCode: 400 });
+});

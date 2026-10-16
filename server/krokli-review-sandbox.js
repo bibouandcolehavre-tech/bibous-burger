@@ -88,10 +88,13 @@ function createReviewSandbox({ passwordHash = '', clock = Date.now } = {}) {
       reviewMode: true, availability: dispatch.availabilityView(s.driver, clock()),
       orders: drivers.assigned(s.db, s.driver.id), push: { enabled: false, devices: 0 } };
   }
-  function ownsCleanup(input) { sweep(); return installationOwners.has(input?.installationId); }
+  // An explicit review marker only REDUCES access: it routes even a forgotten
+  // installation to an empty fixture after restart, never to the real DB.
+  function ownsCleanup(input) { sweep(); return input?.reviewMode === true || installationOwners.has(input?.installationId); }
   function cleanup(input) {
     sweep();
     const owner = installationOwners.get(input?.installationId);
+    if (!owner && input?.reviewMode === true) return nativePush.unregister({}, input);
     if (!owner || typeof input?.installationSecret !== 'string' || !same(owner.proof, digest(input.installationSecret))) fail('Preuve de ce téléphone requise.', 403);
     // Keep the tombstone so a repeated/expired logout never falls through to DB.
     for (const s of sessions.values()) nativePush.unregister(s.db, input);

@@ -31,7 +31,16 @@ test('review HTTP uses isolated state, rejects real routes, leaves production fi
   }
   // Let normal startup initialisation finish before observing any reviewer call.
   await request('/api/krokly-driver/capabilities');
+  for (const page of ['privacy','support']) {
+    const publicPage = await fetch(`${base}/driver/${page}`);
+    assert.equal(publicPage.status, 200); assert.match(publicPage.headers.get('content-type'), /text\/html/);
+    assert.match(publicPage.headers.get('content-security-policy'), /default-src 'none'/);
+    assert.match(await publicPage.text(), /Krokli Driver/);
+    assert.equal((await fetch(`${base}/driver/${page}`, { method: 'HEAD' })).status, 200);
+    assert.equal((await request(`/driver/${page}`, '', {})).status, 405);
+  }
   const baseline = await fs.readFile(file);
+  assert.equal((await request('/api/krokly-driver/native-push/unregister', '', { installationId: crypto.randomUUID(), installationSecret: crypto.randomUUID(), reviewMode: true })).status, 200);
   const login = await request('/api/krokly-driver/login', '', { username: 'store-review-krokli', password });
   assert.equal(login.status, 200); assert.equal(login.data.driver.reviewMode, true);
   const token = login.data.token;
