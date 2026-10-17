@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="./promotions.css?v=1" />
     <link rel="stylesheet" href="./dispatch.css?v=1" />
     <link rel="stylesheet" href="./pwa.css?v=pickup-time-20261016" />
+    <link rel="stylesheet" href="./customers-compact.css?v=20261018" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -214,11 +215,13 @@
           <p class="menu-note">Les quantités des boissons, accompagnements, suppléments et desserts comptent aussi lorsqu’ils sont choisis dans un menu. Un burger seul et son menu partagent le même compteur, mais conservent leurs boutons de rupture séparés. Les stocks ne sont pas remis à zéro au changement de jour. Une annulation payée ne remet pas automatiquement un produit préparé en stock : corrigez la quantité si vous pouvez réellement le vendre à nouveau. Les paiements déjà ouverts restent à vérifier.</p>
         </section>
         <section id="customers-view" class="customers-section" hidden>
-          <div class="menu-intro"><p class="eyebrow">LE CLUB BIBOU, CÔTÉ RESTAURANT</p><h2>Vos clients fidèles, en un coup d’œil.</h2><p>Retrouvez leurs points, leurs avantages et leurs parrainages. Cet espace est en consultation uniquement : aucun point n’est ajouté ou retiré ici.</p></div>
+          <div class="customer-directory-heading"><h2 id="customer-directory-title" tabindex="-1">Clients & fidélité</h2><button type="button" class="secondary-button" data-jump="home">← Toutes les rubriques</button></div>
+          <p class="customer-list-intro">Cliquez sur un nom pour ouvrir sa fiche, sans quitter la liste.</p>
           <div class="metrics customer-metrics" aria-label="Ensemble des comptes clients"><article><div><strong id="customer-total">—</strong><small>comptes clients</small></div></article><article><div><strong id="customer-plus">—</strong><small>membres Bibou + actifs</small></div></article><article><div><strong id="customer-referrals">—</strong><small>parrainages validés</small></div></article><article><div><strong id="customer-points">—</strong><small>points cumulés des clients</small></div></article></div>
-          <div class="menu-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><label for="customer-filter">Afficher<select id="customer-filter"><option value="all">Tous les clients</option><option value="plus">Membres Bibou + actifs</option><option value="sponsors">Clients avec des filleuls</option></select></label></div>
+          <div class="menu-toolbar customer-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><label for="customer-filter">Afficher<select id="customer-filter"><option value="all">Tous les clients</option><option value="plus">Membres Bibou + actifs</option><option value="sponsors">Clients avec des filleuls</option></select></label><label for="customer-limit">Clients par liste<select id="customer-limit"><option value="25">25 clients</option><option value="50" selected>50 clients</option></select></label></div>
           <p id="customer-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
-          <div class="customers-layout"><div><div id="customer-list" class="customer-list"></div><div class="customer-pagination"><button type="button" id="customer-previous" class="secondary-button" disabled>← Précédents</button><span id="customer-page"></span><button type="button" id="customer-next" class="secondary-button" disabled>Suivants →</button></div></div><section id="customer-detail" class="customer-detail" aria-label="Fiche client"><p class="empty">Sélectionnez un client pour consulter sa fiche.</p></section></div>
+          <div class="customers-layout"><div class="customer-directory"><div class="customer-pagination"><button type="button" id="customer-previous" class="secondary-button" disabled>← Précédents</button><span id="customer-page" role="status" aria-live="polite"></span><button type="button" id="customer-next" class="secondary-button" disabled>Suivants →</button></div><div id="customer-list" class="customer-list" tabindex="0" role="region" aria-label="Liste des clients, défilement indépendant"></div></div></div>
+          <dialog id="customer-detail-drawer" class="customer-detail-drawer" aria-labelledby="customer-drawer-title"><div class="customer-drawer-toolbar"><strong id="customer-drawer-title">Fiche client</strong><button type="button" id="customer-detail-close" class="secondary-button">Fermer ✕</button></div><section id="customer-detail" class="customer-detail" aria-label="Fiche client"><p class="empty">Sélectionnez un client pour consulter sa fiche.</p></section></dialog>
           <p class="menu-note">Les compteurs du haut concernent tous les comptes encore présents, indépendamment de la recherche. Un parrainage est validé après la première commande payée non annulée et l’attribution du bonus de 100 points. Ce suivi ne constitue pas un classement de concours.</p>
           <p class="menu-note">Les montants affichés excluent les commandes annulées dans l’application. Un remboursement effectué uniquement dans SumUp n’est pas encore synchronisé ici : pensez aussi à annuler la commande dans le tableau restaurant.</p>
         </section>
@@ -259,7 +262,7 @@
     <script src="./uber-direct.js?v=dispatch-20261007"></script>
     <script src="./dispatch.js?v=2"></script>
     <script src="./epson-print.js?v=pickup-ticket-time-20261016"></script>
-    <script src="./pwa.js?v=simple-ca-20261013"></script>
-    <script src="./app.js?v=pickup-time-20261016"></script>
+    <script src="./pwa.js?v=customers-compact-20261018"></script>
+    <script src="./app.js?v=customers-compact-20261018"></script>
   </body>
 </html>

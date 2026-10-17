@@ -22,7 +22,8 @@
       }
       if (moved) {
         window.scrollTo({top:0,behavior:'instant'});
-        const heading = document.querySelector('#dashboard-title');
+        if (view === 'customers') document.querySelector('#customers-view').scrollIntoView({block:'start',behavior:'instant'});
+        const heading = document.querySelector(view === 'customers' ? '#customer-directory-title' : '#dashboard-title');
         heading.setAttribute('tabindex','-1'); heading.focus({preventScroll:true});
       }
     },

@@ -788,6 +788,7 @@ document.querySelector("#menu-search").addEventListener("input", renderMenu);
 document.querySelector("#menu-filter").addEventListener("change", renderMenu);
 
 function clearCustomerView() {
+  closeCustomerDetail(false);
   customerData = null;
   selectedCustomerId = null;
   customerOffset = 0;
@@ -810,7 +811,10 @@ function renderCustomers() {
   if (!customerData) return;
   const { customers, summary, total, offset, limit } = customerData;
   for (const [key, value] of Object.entries({ total: summary.customers, plus: summary.bibouPlus, referrals: summary.validatedReferrals, points: summary.points })) document.querySelector(`#customer-${key}`).textContent = customerNumber(value);
-  document.querySelector("#customer-list").innerHTML = customers.length ? customers.map((customer) => `<article class="customer-card ${customer.id === selectedCustomerId ? "selected" : ""}"><div class="customer-card-heading"><div><h3>${escapeHtml(customer.name)}</h3><p>${escapeHtml(customer.phone || "Téléphone non renseigné")}</p></div><strong class="customer-balance">${customerNumber(customer.points)}<small>points</small></strong></div><p class="customer-prestige">${escapeHtml(customerPrestige(customer))}${customer.bibouPlus.active ? '<span class="plus-label">Bibou +</span>' : ""}</p><p class="customer-card-meta">${customerNumber(customer.orders.count)} commande(s) payée(s) · ${customerNumber(customer.referrals.validated)} parrainage(s) validé(s)</p><button type="button" class="secondary-button" data-customer-id="${escapeHtml(customer.id)}" aria-label="Voir la fiche de ${escapeHtml(customer.name)}" aria-pressed="${customer.id === selectedCustomerId}">Voir la fiche →</button></article>`).join("") : '<p class="empty">Aucun client ne correspond à votre recherche.</p>';
+  const list = document.querySelector("#customer-list");
+  const scrollTop = list.scrollTop;
+  list.innerHTML = customers.length ? `<table class="customer-table"><thead><tr><th scope="col">Client · ouvrir sa fiche</th><th scope="col">Points</th><th scope="col" class="customer-secondary-column">Commandes</th><th scope="col" class="customer-secondary-column">Parrainages</th><th scope="col">Bibou +</th></tr></thead><tbody>${customers.map(customer => `<tr class="${customer.id === selectedCustomerId ? 'selected' : ''}"><td><button type="button" class="customer-open" data-customer-id="${escapeHtml(customer.id)}" aria-label="Voir la fiche de ${escapeHtml(customer.name)}" aria-haspopup="dialog" aria-pressed="${customer.id === selectedCustomerId}"><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.phone || 'Téléphone non renseigné')}</small></button></td><td class="customer-points">${customerNumber(customer.points)}</td><td class="customer-secondary-column">${customerNumber(customer.orders.count)}</td><td class="customer-secondary-column">${customerNumber(customer.referrals.validated)}</td><td>${customer.bibouPlus.active ? '<span class="plus-label">Actif</span>' : '—'}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">Aucun client ne correspond à votre recherche.</p>';
+  list.scrollTop = scrollTop;
   document.querySelector("#customer-page").textContent = total ? `${offset + 1}–${Math.min(offset + limit, total)} sur ${total}` : "0 résultat";
   document.querySelector("#customer-previous").disabled = offset <= 0;
   document.querySelector("#customer-next").disabled = offset + limit >= total;
@@ -827,16 +831,22 @@ async function loadCustomers() {
   const filter = encodeURIComponent(document.querySelector("#customer-filter").value || "all");
   document.querySelector("#customer-feedback").textContent = "Actualisation des clients…";
   try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/customers?q=${query}&filter=${filter}&offset=${customerOffset}&limit=10`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
+    const limit = document.querySelector('#customer-limit')?.value === '25' ? 25 : 50;
+    const response = await fetch(`${API_BASE_URL}/dashboard/customers?q=${query}&filter=${filter}&offset=${customerOffset}&limit=${limit}`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
     if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
     if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
     if (!response.ok) throw new Error("Impossible de charger les clients. Cliquez sur Actualiser pour réessayer.");
     const payload = await response.json();
     if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
+    const firstDirectoryLoad = !customerData;
     customerData = payload;
     customerOffset = payload.offset;
     customerLastUpdate = Date.now();
     renderCustomers();
+    if (firstDirectoryLoad) {
+      document.querySelector('#customers-view').scrollIntoView?.({ block: 'start', behavior: 'instant' });
+      document.querySelector('#customer-directory-title')?.focus({ preventScroll: true });
+    }
     document.querySelector("#customer-feedback").textContent = `À jour à ${new Date().toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })} · clients classés par points décroissants.`;
     if (selectedCustomerId) void loadCustomerDetail(selectedCustomerId);
   } catch (error) {
@@ -872,7 +882,14 @@ async function loadCustomerDetail(id, focus = false) {
   const token = dashboardToken;
   const requestId = ++customerDetailRequest;
   selectedCustomerId = id;
-  if (focus) { renderCustomers(); document.querySelector("#customer-detail").innerHTML = '<p class="empty">Chargement de la fiche…</p>'; }
+  if (focus) {
+    renderCustomers();
+    const detail = document.querySelector('#customer-detail');
+    detail.innerHTML = '<p class="empty" role="status">Chargement de la fiche…</p>';
+    detail.scrollTop = 0;
+    const drawer = document.querySelector('#customer-detail-drawer');
+    if (drawer && !drawer.open) drawer.showModal?.();
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
@@ -888,18 +905,37 @@ async function loadCustomerDetail(id, focus = false) {
   } finally { clearTimeout(timeout); }
 }
 function searchCustomers() {
+  closeCustomerDetail(false);
   ++customerRequest;
   ++customerDetailRequest;
   selectedCustomerId = null;
   customerOffset = 0;
+  document.querySelector('#customer-list').scrollTop = 0;
   document.querySelector("#customer-detail").innerHTML = '<p class="empty">Sélectionnez un client pour consulter sa fiche.</p>';
   clearTimeout(customerSearchTimer);
   customerSearchTimer = setTimeout(() => { void loadCustomers(); }, 250);
 }
 document.querySelector("#customer-search").addEventListener("input", searchCustomers);
 document.querySelector("#customer-filter").addEventListener("change", searchCustomers);
-document.querySelector("#customer-previous").addEventListener("click", () => { customerOffset = Math.max(0, customerOffset - (customerData?.limit || 25)); void loadCustomers(); });
-document.querySelector("#customer-next").addEventListener("click", () => { customerOffset += customerData?.limit || 25; void loadCustomers(); });
+document.querySelector('#customer-limit')?.addEventListener('change', searchCustomers);
+function closeCustomerDetail(restoreFocus = true) {
+  const drawer = document.querySelector('#customer-detail-drawer');
+  if (drawer?.open) drawer.close();
+  if (restoreFocus) {
+    const button = Array.from(document.querySelectorAll('[data-customer-id]')).find(item => item.dataset.customerId === selectedCustomerId);
+    button?.focus({ preventScroll: true });
+  }
+}
+document.querySelector('#customer-detail-close')?.addEventListener('click', () => closeCustomerDetail());
+document.querySelector('#customer-detail-drawer')?.addEventListener('cancel', event => { event.preventDefault(); closeCustomerDetail(); });
+function changeCustomerPage(direction) {
+  closeCustomerDetail(false);
+  customerOffset = Math.max(0, customerOffset + direction * (customerData?.limit || 50));
+  document.querySelector('#customer-list').scrollTop = 0;
+  void loadCustomers();
+}
+document.querySelector("#customer-previous").addEventListener("click", () => changeCustomerPage(-1));
+document.querySelector("#customer-next").addEventListener("click", () => changeCustomerPage(1));
 
 let backupBusy = false;
 const backupDate = (value) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -959,6 +995,7 @@ document.querySelector("#backup-create").addEventListener("click", () => loadBac
 
 function showView(view) {
   if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (view !== 'customers') closeCustomerDetail(false);
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
