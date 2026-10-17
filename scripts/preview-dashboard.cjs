@@ -11,6 +11,11 @@ async function main() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bibou-dashboard-qa-'));
   const now = new Date(), date = new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
   const customers = [{id:'qa-c1',name:'Camille · test',phone:'+33600000001',points:180,referralCode:'TESTCAMILLE'}, {id:'qa-c2',name:'Alex · test',phone:'+33600000002',points:350,referralCode:'TESTALEX'}];
+  for(let i=2;i<(Number(process.env.DASHBOARD_QA_CUSTOMERS)||2);i++)customers.push({id:'qa-c'+(i+1),name:'Client exemple '+(i+1),phone:'060000'+String(i+1).padStart(4,'0'),points:i});
+  if(process.env.DASHBOARD_QA_BIRTHDAYS==='1') {
+    customers[0].createdAt='2025-01-01T12:00:00Z';customers[0].crmPreferences={birthday:date.slice(5),personalizedOffers:true};customers[0].pushPreferences={marketing:true};
+    customers[1].createdAt='2025-01-01T12:00:00Z';customers[1].crmPreferences={birthday:date.slice(5),personalizedOffers:false};
+  }
   const orders = ['confirmed','preparing','ready'].map((status,index) => ({
     id:'qa-order-'+index,number:1042+index,customerId:customers[index%2].id,customerName:customers[index%2].name,customerPhone:customers[index%2].phone,
     createdAt:now.toISOString(),paidAt:now.toISOString(),serviceDate:date,slot:index===0?'19:00 – 19:30':'19:30',method:index===0?'delivery':'pickup',status,
@@ -20,6 +25,7 @@ async function main() {
   }));
   const reservations=[{id:'qa-table',number:87,customerId:'qa-c1',customerName:'Camille · test',phone:'+33600000001',guests:2,serviceDate:date,slot:'19:30',status:'pending',createdAt:now.toISOString()}];
   const database = {customers,orders,reservations,rewardClaims:[],nextOrderNumber:1045,nextCustomerId:3};
+  if(process.env.DASHBOARD_QA_QUIET==='1'){orders.forEach(o=>o.status='delivered');reservations.forEach(r=>r.status='confirmed');}
   if (process.env.KROKLY_DISPATCH_QA === '1') {
     const K = require('../server/krokly-drivers');
     const mathieu = K.createDriver(database, {username:'mathieu',name:'Mathieu · test local'});
