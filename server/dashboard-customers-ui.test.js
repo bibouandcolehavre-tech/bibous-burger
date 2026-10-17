@@ -60,6 +60,16 @@ test("interface clients : historique complet ouvrable, calcul et préférence pr
   assert.match(html, /\+ 15 points de fidélité/);
 });
 
+test('clients : pages numérotées, aucune liste à défilement interne ni menu déroulant',async()=>{
+  const h=await harness();let url;
+  const data={customers:Array.from({length:138},(_,i)=>({id:'test-'+i,name:'Client '+i,points:i})),orders:[]};
+  h.context.fetch=async value=>{url=value;return result(listDashboardCustomers(data,{limit:Number(new URL(value,'http://localhost').searchParams.get('limit')),offset:Number(new URL(value,'http://localhost').searchParams.get('offset'))}));};
+  await h.run('loadCustomers()');assert.match(url,/limit=12/);assert.equal(h.element('#customer-page').textContent,'1–12 sur 138');assert.match(h.element('#customer-page-buttons').innerHTML,/data-customer-page="12"/);
+  h.run('customerOffset=12');await h.run('loadCustomers()');assert.equal(h.element('#customer-page-bottom').textContent,'13–24 sur 138');
+  const html=fs.readFileSync(path.join(__dirname,'../restaurant-dashboard/index.html'),'utf8').split('id="customers-view"')[1].split('id="backups-view"')[0];assert.doesNotMatch(html,/<select/);assert.match(html,/customer-next-bottom/);
+  const css=fs.readFileSync(path.join(__dirname,'../restaurant-dashboard/customers-compact.css'),'utf8');assert.match(css,/\.customer-list[^}]*max-height:none; overflow:visible/);
+});
+
 test('interface clients : origine des points, roue jouée sans gain et cadeaux passés', async () => {
   const h = await harness();
   const database = { customers: [{ id: 'safe', name: 'Client exemple', points: 80 }],

@@ -27,6 +27,7 @@ const { cashRequested, prepareCashOrder, cashDue, confirmCashOrder, cancelCashOr
 const { anonymizeCustomerAccount } = require("./account-deletion");
 const push = require('./push-notifications');
 const crm = require('./crm');
+const birthdays = require('./dashboard-birthdays');
 const marketingSms = require('./marketing-sms');
 const articleRatings = require('./article-ratings');
 const { naanLoyaltyPoints } = require('../cheese-naans');
@@ -970,6 +971,18 @@ const server = http.createServer(async (request, response) => {
       const token = dashboardSessions.issue();
       if (!token) return send(response, 503, { error: 'Trop de sessions actives. Réessayez plus tard.' });
       return send(response, 200, { token });
+    }
+
+    if (url.pathname === '/api/dashboard/birthdays' || url.pathname === '/api/dashboard/birthdays/offer') {
+      if (!authenticatedDashboard(request)) return send(response,401,{error:'Accès restaurant requis.'});
+      const creating = url.pathname.endsWith('/offer');
+      if (request.method !== (creating ? 'POST' : 'GET')) return send(response,405,{error:'Action non disponible.'});
+      const input = creating ? await readBody(request) : null;
+      releaseDatabase = await acquireDatabase();
+      const db = await readDatabase();
+      const result = creating ? birthdays.createBirthdayOffer(db,input) : null;
+      if (result?.created) await writeDatabase(db);
+      return send(response,200,{...birthdays.birthdayDashboard(db),...(result ? {result} : {})});
     }
 
     if (url.pathname === '/api/dashboard/crm' || url.pathname === '/api/dashboard/crm/preview' || url.pathname === '/api/dashboard/settings') {

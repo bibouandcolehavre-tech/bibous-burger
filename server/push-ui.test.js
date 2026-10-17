@@ -5,7 +5,7 @@ function harness() {
   let token = 'fake-session', pending = null, enabled = true, lastCampaign, unauthorized = 0;
   const fields = { title: '<img src=x onerror=bad()>', body: '<script>bad()</script>', audience: 'all', screen: 'menu' };
   const el = key => {
-    if (!elements.has(key)) elements.set(key, { innerHTML: '', _text: '', get textContent() { return this._text; }, set textContent(value) { this._text = value; this.innerHTML = ''; }, checked: false, hidden: true, disabled: false, handlers: {}, addEventListener(event, fn) { this.handlers[event] = fn; }, reset() {} });
+    if (!elements.has(key)) elements.set(key, { innerHTML: '', _text: '', querySelector:el, get textContent() { return this._text; }, set textContent(value) { this._text = value; this.innerHTML = ''; }, checked: false, hidden: true, disabled: false, handlers: {}, addEventListener(event, fn) { this.handlers[event] = fn; }, reset() {} });
     return elements.get(key);
   };
   const state = () => ({ enabled, platforms: enabled ? ['ios'] : [], optedInCustomers: 1, registeredDevices: 1, eligibleCustomers: enabled ? 1 : 0, campaigns: lastCampaign ? [{ ...lastCampaign, recipients: undefined }] : [] });
@@ -76,4 +76,16 @@ test('interface push : noms avant envoi, échappés, conservés après actualisa
   assert.equal(h.calls.filter(c => c.url.endsWith('/send')).length, 0);
   h.el('#push-form').handlers.input(); assert.equal(h.el('#push-recipients').innerHTML, '');
   await h.submit(); h.panel.clear(); assert.equal(h.el('#push-recipients').innerHTML, '');
+});
+
+test('notification anniversaire : formulaire ciblé et verrouillé, aperçu seulement, aucun retour implicite à tous les clients',async()=>{
+  const h=harness();await h.panel.load();
+  h.panel.prepareBirthday({id:'birthday-a',name:'Camille <img>',date:'2026-10-18',offer:{status:'available',discountPercent:15}});
+  assert.equal(h.el('[name="audience"]').value,'birthday');assert.equal(h.el('[name="audience"]').disabled,true);
+  assert.match(h.el('#push-birthday-target').innerHTML,/Camille &lt;img&gt;/);
+  assert.match(h.el('[name="body"]').value,/15 %/);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/send')).length,0);
+  await h.submit();const input=h.calls.find(c=>c.url.endsWith('/preview')).body;
+  assert.equal(input.audience,'birthday');assert.deepEqual(input.customerIds,['birthday-a']);assert.equal(input.birthdayDate,'2026-10-18');
+  h.panel.clear();assert.equal(h.el('#push-birthday-target').hidden,true);
 });

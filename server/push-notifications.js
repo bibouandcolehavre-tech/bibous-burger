@@ -1,11 +1,12 @@
 const crypto = require('node:crypto');
 const { bibouPlusStatus } = require('./bibou-plus');
 const {DEPARTURE_TITLE,DEPARTURE_BODY}=require('../delivery-status-copy');
+const { parisDateKey } = require('./availability');
 
 const DAY = 86400000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const TOKEN = /^(?:Expo|Exponent)PushToken\[[A-Za-z0-9_-]{10,200}\]$/;
-const DESTINATIONS = ['menu', 'loyalty', 'bibou-plus', 'reservation'];
+const DESTINATIONS = ['menu', 'loyalty', 'bibou-plus', 'reservation', 'account'];
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const store = db => db.pushNotifications ||= { devices: [], jobs: [], campaigns: [] };
@@ -129,16 +130,29 @@ function queueArrivalNotification(db,order,config,now=Date.now()){
   order.arrivalPushNotifiedAt=new Date(now).toISOString();return true;
 }
 
+function birthdayCampaignCustomer(customer, campaign, now) {
+  return campaign.birthdayDate === parisDateKey(new Date(now)) && campaign.customerIds?.includes(customer.id) && customer.crmPreferences?.birthday === campaign.birthdayDate.slice(5) && customer.crmPreferences?.personalizedOffers === true;
+}
+function campaignDevices(db, campaign, config, now) {
+  const devices = eligibleDevices(db,campaign.audience === 'birthday' ? 'all' : campaign.audience,config,now);
+  return campaign.audience === 'birthday' ? devices.filter(d => birthdayCampaignCustomer(db.customers.find(c=>c.id===d.customerId),campaign,now)) : devices;
+}
 function prepareCampaign(db, input, config, now = Date.now()) {
-  if (!input || !UUID.test(input.requestId || '') || typeof input.title !== 'string' || typeof input.body !== 'string' || !DESTINATIONS.includes(input.screen) || !['all', 'plus'].includes(input.audience)) fail('Notification incomplète.');
+  if (!input || !UUID.test(input.requestId || '') || typeof input.title !== 'string' || typeof input.body !== 'string' || !DESTINATIONS.includes(input.screen) || !['all', 'plus', 'birthday'].includes(input.audience)) fail('Notification incomplète.');
+  let target = {};
+  if (input.audience === 'birthday') {
+    if (input.birthdayDate !== parisDateKey(new Date(now)) || !Array.isArray(input.customerIds) || input.customerIds.length !== 1 || typeof input.customerIds[0] !== 'string' || !input.customerIds[0] || input.customerIds[0].length>100) fail('Choisissez un client dont c’est l’anniversaire aujourd’hui.');
+    target = {customerIds:[...input.customerIds],birthdayDate:input.birthdayDate};
+    if (!db.customers.some(c => birthdayCampaignCustomer(c,target,now))) fail('Ce client n’est plus éligible au message anniversaire.',409);
+  } else if (input.customerIds !== undefined || input.birthdayDate !== undefined) fail('Le ciblage anniversaire ne doit pas devenir un envoi général.');
   const title = input.title.trim(), body = input.body.trim();
   if (!title || title.length > 65 || !body || body.length > 220 || /[\u0000-\u0008\u000b-\u001f]/.test(title + body)) fail('Titre : 1 à 65 caractères. Message : 1 à 220 caractères.');
-  const s = store(db), fingerprint = hash(JSON.stringify([title, body, input.screen, input.audience]));
+  const s = store(db), fingerprint = hash(JSON.stringify([title, body, input.screen, input.audience,...(input.audience === 'birthday' ? [target.customerIds,target.birthdayDate] : [])]));
   const old = s.campaigns.find(c => c.id === input.requestId);
   if (old) { if (old.fingerprint !== fingerprint) fail('Cet aperçu a changé. Crée un nouvel aperçu.', 409); return previewView(db, old, config, now); }
   if (s.campaigns.filter(c => c.createdAt > now - DAY).length >= 50) fail('Trop d’aperçus aujourd’hui. Réessayez demain.', 429);
-  const devices = eligibleDevices(db, input.audience, config, now);
-  const campaign = { id: input.requestId, fingerprint, title, body, screen: input.screen, audience: input.audience, status: 'draft', createdAt: now, previewExpiresAt: now + 15 * 60000, deviceIds: devices.map(d => d.installationId), targetOwners: Object.fromEntries(devices.map(d => [d.installationId, d.customerId])), customers: new Set(devices.map(d => d.customerId)).size };
+  const devices = campaignDevices(db,{audience:input.audience,...target},config,now);
+  const campaign = { id: input.requestId, fingerprint, title, body, screen: input.screen, audience: input.audience, ...target, status: 'draft', createdAt: now, previewExpiresAt: now + 15 * 60000, deviceIds: devices.map(d => d.installationId), targetOwners: Object.fromEntries(devices.map(d => [d.installationId, d.customerId])), customers: new Set(devices.map(d => d.customerId)).size };
   s.campaigns.unshift(campaign);
   return previewView(db, campaign, config, now);
 }
@@ -148,7 +162,7 @@ function previewView(db, campaign, config, now) {
   const view = campaignView(db, campaign);
   if (campaign.status !== 'draft') return view;
   const snapshot = new Set(campaign.deviceIds), recipients = new Map();
-  const devices = eligibleDevices(db, campaign.audience, config, now).filter(d => snapshot.has(d.installationId) && campaign.targetOwners[d.installationId] === d.customerId);
+  const devices = campaignDevices(db, campaign, config, now).filter(d => snapshot.has(d.installationId) && campaign.targetOwners[d.installationId] === d.customerId);
   for (const device of devices) {
     if (!recipients.has(device.customerId)) {
       const customer = db.customers.find(c => c.id === device.customerId);
@@ -170,7 +184,7 @@ function sendCampaign(db, id, input, config, now = Date.now()) {
   if (campaign.previewExpiresAt <= now) fail('Cet aperçu a expiré. Préparez un nouvel aperçu.', 409);
   if (s.campaigns.filter(c => c.sentAt > now - DAY).length >= 2) fail('Limite de sécurité : deux campagnes promotionnelles par 24 heures.', 429);
   const snapshot = new Set(campaign.deviceIds);
-  const devices = eligibleDevices(db, campaign.audience, config, now).filter(d => snapshot.has(d.installationId) && campaign.targetOwners[d.installationId] === d.customerId);
+  const devices = campaignDevices(db, campaign, config, now).filter(d => snapshot.has(d.installationId) && campaign.targetOwners[d.installationId] === d.customerId);
   if (!devices.length) fail('Aucun appareil autorisé pour cet envoi.', 409);
   for (const device of devices) {
     const customer = db.customers.find(c => c.id === device.customerId);
@@ -215,6 +229,7 @@ function canDispatch(db, job, config, now) {
     } else {
       const campaign = s.campaigns.find(c => c.id === job.campaignId);
       if (!campaign || campaign.status !== 'sent' || (campaign.audience === 'plus' && !bibouPlusStatus(customer, new Date(now)).active)) return null;
+      if (campaign.audience === 'birthday' && !birthdayCampaignCustomer(customer,campaign,now)) return null;
     }
   }
   return live(config, device.platform) ? device : null;
