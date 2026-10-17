@@ -20,7 +20,8 @@
     <link rel="stylesheet" href="./promotions.css?v=1" />
     <link rel="stylesheet" href="./dispatch.css?v=1" />
     <link rel="stylesheet" href="./pwa.css?v=pickup-time-20261016" />
-    <link rel="stylesheet" href="./customers-compact.css?v=20261018" />
+    <link rel="stylesheet" href="./customers-compact.css?v=pages-20261018" />
+    <link rel="stylesheet" href="./birthdays.css?v=20261018" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -69,6 +70,7 @@
         <nav class="app-navigation" aria-label="Navigation de l’application">
           <button type="button" class="app-home" data-jump="home">▦ Toutes les rubriques</button>
           <span id="app-current" aria-live="polite">Accueil</span>
+          <button type="button" id="birthday-open" class="app-home birthday-open">🎂 Anniversaires</button>
           <a class="app-legacy" href="./ancienne-interface.html">Ancienne interface</a>
         </nav>
         <p id="app-offline" class="app-offline" role="alert" hidden>Connexion coupée. Les informations affichées peuvent être anciennes. Reconnectez l’iPad avant toute action.</p>
@@ -83,6 +85,8 @@
           </div>
         </header>
 
+        <section id="birthday-alert" class="birthday-alert" role="status" aria-live="polite" hidden></section>
+        <dialog id="birthday-dialog" class="birthday-dialog" aria-labelledby="birthday-dialog-title"></dialog>
         <section id="order-alarm" class="order-alarm" hidden aria-label="Commandes en attente">
           <div class="alarm-bell" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M2 8a10 10 0 0 1 2-5M22 8a10 10 0 0 0-2-5"/></svg></div>
           <div class="alarm-copy" aria-live="polite" aria-atomic="true"><small>N’ATTEND PLUS QUE VOUS</small><strong id="order-alarm-title"></strong><p id="order-alarm-detail"></p></div>
@@ -218,9 +222,9 @@
           <div class="customer-directory-heading"><h2 id="customer-directory-title" tabindex="-1">Clients & fidélité</h2><button type="button" class="secondary-button" data-jump="home">← Toutes les rubriques</button></div>
           <p class="customer-list-intro">Cliquez sur un nom pour ouvrir sa fiche, sans quitter la liste.</p>
           <div class="metrics customer-metrics" aria-label="Ensemble des comptes clients"><article><div><strong id="customer-total">—</strong><small>comptes clients</small></div></article><article><div><strong id="customer-plus">—</strong><small>membres Bibou + actifs</small></div></article><article><div><strong id="customer-referrals">—</strong><small>parrainages validés</small></div></article><article><div><strong id="customer-points">—</strong><small>points cumulés des clients</small></div></article></div>
-          <div class="menu-toolbar customer-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><label for="customer-filter">Afficher<select id="customer-filter"><option value="all">Tous les clients</option><option value="plus">Membres Bibou + actifs</option><option value="sponsors">Clients avec des filleuls</option></select></label><label for="customer-limit">Clients par liste<select id="customer-limit"><option value="25">25 clients</option><option value="50" selected>50 clients</option></select></label></div>
+          <div class="menu-toolbar customer-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><div class="customer-button-options"><strong>Afficher</strong><input id="customer-filter" type="hidden" value="all"><div role="group" aria-label="Filtrer les clients"><button type="button" data-customer-filter="all" aria-pressed="true">Tous</button><button type="button" data-customer-filter="plus" aria-pressed="false">Bibou +</button><button type="button" data-customer-filter="sponsors" aria-pressed="false">Parrains</button></div></div><div class="customer-button-options"><strong>Clients par page</strong><input id="customer-limit" type="hidden" value="12"><div role="group" aria-label="Nombre de clients par page"><button type="button" data-customer-limit="6" aria-pressed="false">6</button><button type="button" data-customer-limit="12" aria-pressed="true">12</button><button type="button" data-customer-limit="24" aria-pressed="false">24</button><button type="button" data-customer-limit="48" aria-pressed="false">48</button></div></div></div>
           <p id="customer-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
-          <div class="customers-layout"><div class="customer-directory"><div class="customer-pagination"><button type="button" id="customer-previous" class="secondary-button" disabled>← Précédents</button><span id="customer-page" role="status" aria-live="polite"></span><button type="button" id="customer-next" class="secondary-button" disabled>Suivants →</button></div><div id="customer-list" class="customer-list" tabindex="0" role="region" aria-label="Liste des clients, défilement indépendant"></div></div></div>
+          <div class="customers-layout"><div class="customer-directory"><nav class="customer-pagination" aria-label="Pages des clients"><button type="button" id="customer-previous" class="secondary-button" disabled>←</button><div id="customer-page-buttons" class="customer-page-buttons"></div><button type="button" id="customer-next" class="secondary-button" disabled>→</button><span id="customer-page" role="status" aria-live="polite"></span></nav><div id="customer-list" class="customer-list"></div><nav class="customer-pagination" aria-label="Pages des clients en bas de liste"><button type="button" id="customer-previous-bottom" class="secondary-button" disabled>←</button><div id="customer-page-buttons-bottom" class="customer-page-buttons"></div><button type="button" id="customer-next-bottom" class="secondary-button" disabled>→</button><span id="customer-page-bottom"></span></nav></div></div>
           <dialog id="customer-detail-drawer" class="customer-detail-drawer" aria-labelledby="customer-drawer-title"><div class="customer-drawer-toolbar"><strong id="customer-drawer-title">Fiche client</strong><button type="button" id="customer-detail-close" class="secondary-button">Fermer ✕</button></div><section id="customer-detail" class="customer-detail" aria-label="Fiche client"><p class="empty">Sélectionnez un client pour consulter sa fiche.</p></section></dialog>
           <p class="menu-note">Les compteurs du haut concernent tous les comptes encore présents, indépendamment de la recherche. Un parrainage est validé après la première commande payée non annulée et l’attribution du bonus de 100 points. Ce suivi ne constitue pas un classement de concours.</p>
           <p class="menu-note">Les montants affichés excluent les commandes annulées dans l’application. Un remboursement effectué uniquement dans SumUp n’est pas encore synchronisé ici : pensez aussi à annuler la commande dans le tableau restaurant.</p>
@@ -254,7 +258,7 @@
     <script src="./wheel-rewards.js?v=roue-80-classique-20261015"></script>
     <script src="./marketing.js?v=referral-inline-confirm-20261017"></script>
     <script src="./promotions.js?v=5"></script>
-    <script src="./notifications.js?v=push-3"></script>
+    <script src="./notifications.js?v=birthday-target-20261018"></script>
     <script src="./marketing-sms.js?v=sms-2"></script>
     <script src="./crm.js?v=terminal-session-1"></script>
     <script src="./planner.js?v=simple-slots-audio-20261001"></script>
@@ -263,6 +267,7 @@
     <script src="./dispatch.js?v=2"></script>
     <script src="./epson-print.js?v=pickup-ticket-time-20261016"></script>
     <script src="./pwa.js?v=customers-compact-20261018"></script>
-    <script src="./app.js?v=customers-compact-20261018"></script>
+    <script src="./birthdays.js?v=20261018"></script>
+    <script src="./app.js?v=birthdays-20261018"></script>
   </body>
 </html>

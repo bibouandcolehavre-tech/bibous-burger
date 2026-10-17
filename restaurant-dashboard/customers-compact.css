@@ -19,13 +19,13 @@
 #customers-view .customer-metrics article { min-height:0; padding:10px 14px; }
 #customers-view .customer-metrics strong { font-size:21px; }
 #customers-view .customer-metrics small { font-size:11px; }
-#customers-view .customer-toolbar { display:grid; grid-template-columns:minmax(230px,1fr) minmax(180px,.55fr) 150px; gap:12px; padding:12px; margin:0; }
+#customers-view .customer-toolbar { display:grid; grid-template-columns:minmax(230px,1fr) auto auto; gap:12px; padding:12px; margin:0; }
 #customers-view .customer-toolbar label { min-width:0; width:auto; }
 #customers-view .customer-toolbar input,#customers-view .customer-toolbar select { width:100%; min-height:42px; }
 #customers-view #customer-feedback { margin:7px 2px; min-height:18px; font-size:11px; }
 #customers-view .customers-layout { display:block; }
-.customer-directory { border:1px solid var(--line); background:white; border-radius:14px; overflow:hidden; }
-#customers-view .customer-list { display:block; padding:0; max-height:clamp(300px,52dvh,750px); overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.customer-directory { border:1px solid var(--line); background:white; border-radius:14px; }
+#customers-view .customer-list { display:block; padding:0; max-height:none; overflow:visible; }
 .customer-table { width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; font-size:13px; }
 .customer-table caption { text-align:left; padding:10px 14px; }
 .customer-table th { position:sticky; top:0; z-index:1; background:#f7f2ed; padding:10px 12px; color:var(--muted); font-size:11px; text-align:right; border-bottom:1px solid var(--line); }
@@ -40,9 +40,10 @@
 .customer-open strong::after { content:' →'; color:var(--orange); }
 .customer-table .plus-label { margin:0; font-size:11px; padding:3px 6px; white-space:nowrap; }
 .customer-table .customer-points { font-weight:800; color:#a33a13; font-variant-numeric:tabular-nums; }
-#customers-view .customer-pagination { position:sticky; top:0; z-index:2; margin:0; min-height:58px; padding:8px 12px; gap:8px; border-bottom:1px solid var(--line); background:#fffaf6; }
+#customers-view .customer-pagination { position:static; display:flex; flex-wrap:wrap; justify-content:flex-start; margin:0; min-height:54px; padding:8px 12px; gap:8px; border-bottom:1px solid var(--line); background:#fffaf6; border-radius:14px; }
 #customers-view .customer-pagination button { padding:8px 12px; min-height:40px; }
 #customers-view .customer-pagination span { color:var(--ink); font-weight:700; }
+.customer-button-options>strong {display:block;font-size:12px;margin-bottom:6px}.customer-button-options>div,.customer-page-buttons {display:flex;align-items:center;gap:5px}.customer-button-options button,.customer-page-buttons button {min-width:36px;min-height:40px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink);padding:7px 9px;font-size:12px;font-weight:700}.customer-button-options button[aria-pressed=true],.customer-page-buttons button[aria-current=page]{background:#315b4b;color:#fffaf6;border-color:#315b4b}.customer-pagination>span {margin-left:auto}
 .customer-detail-drawer { position:fixed; inset:0 0 0 auto; margin:0 0 0 auto; width:min(620px,96vw); height:100dvh; max-height:100dvh; max-width:96vw; padding:0; border:0; border-left:1px solid var(--line); background:white; color:var(--ink); box-shadow:-12px 0 50px #29201d25; }
 .customer-detail-drawer[open] { display:flex; flex-direction:column; }
 .customer-detail-drawer::backdrop { background:#29201d60; }
@@ -61,14 +62,14 @@ body:has(.customer-detail-drawer[open]) { overflow:hidden; }
   #customers-view .customer-metrics article>div { display:flex; align-items:center; gap:8px; }
   #customers-view .customer-metrics strong { font-size:17px; }
   #customers-view .customer-metrics small { font-size:10px; margin:0; line-height:1.25; }
-  #customers-view .customer-toolbar { grid-template-columns:minmax(0,1fr) 120px; gap:8px; padding:10px; }
+  #customers-view .customer-toolbar { grid-template-columns:1fr; gap:8px; padding:10px; }
   #customers-view .customer-toolbar label:first-child { grid-column:1/-1; }
   .customer-secondary-column { display:none; }
   .customer-table th:first-child { width:58%; }
   .customer-table td,.customer-table th { padding:7px 8px; }
   .customer-open { padding:8px 10px; min-height:58px; }
   .customer-table .plus-label { font-size:10px; padding:3px 4px; }
-  #customers-view .customer-pagination { padding:8px; flex-wrap:nowrap; gap:4px; }
+  #customers-view .customer-pagination { padding:8px; flex-wrap:wrap; gap:4px; }
   #customers-view .customer-pagination button { padding:8px; font-size:11px; }
   #customers-view .customer-pagination span { font-size:11px; white-space:nowrap; }
   .customer-detail-drawer { width:100vw; max-width:100vw; }

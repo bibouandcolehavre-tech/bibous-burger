@@ -19,6 +19,7 @@ let customerRequest = 0;
 let customerDetailRequest = 0;
 let customerSearchTimer = null;
 let customerLastUpdate = 0;
+let customerPageChanged = false;
 let filter = "all";
 let archiveSearch = "";
 let selectedOrderId = null;
@@ -82,6 +83,7 @@ let promotionsPanel = null;
 let notificationsPanel = null;
 let smsPanel = null;
 let crmPanel = null;
+let birthdaysPanel = null;
 let schedulePanel = null;
 let dispatchPanel = null;
 let statisticsPanel = null;
@@ -103,7 +105,7 @@ const logoutDashboard = () => {
   showLogin('Vous êtes déconnecté de cet appareil.');
   if (token) void fetch(`${API_BASE_URL}/dashboard/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
 };
-const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
+const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; void birthdaysPanel?.load(); };
 
 const cashDue = order => order?.kioskCash === true && order.status === 'awaiting_payment' && order.payment?.provider === 'cash' && order.payment.status === 'CASH_DUE';
 const cashChanges = new Set();
@@ -788,6 +790,8 @@ document.querySelector("#menu-search").addEventListener("input", renderMenu);
 document.querySelector("#menu-filter").addEventListener("change", renderMenu);
 
 function clearCustomerView() {
+  birthdaysPanel?.clear();
+  customerPageChanged=false;
   closeCustomerDetail(false);
   customerData = null;
   selectedCustomerId = null;
@@ -802,6 +806,8 @@ function clearCustomerView() {
   document.querySelector("#customer-page").textContent = "";
   document.querySelector("#customer-previous").disabled = true;
   document.querySelector("#customer-next").disabled = true;
+  for(const id of ['#customer-page-bottom','#customer-page-buttons','#customer-page-buttons-bottom']) document.querySelector(id).textContent='';
+  for(const id of ['#customer-previous-bottom','#customer-next-bottom']) document.querySelector(id).disabled=true;
 }
 const customerDate = (value) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium" }).format(new Date(value)) : "Non renseigné";
 const customerNumber = (value) => Number(value || 0).toLocaleString("fr-FR");
@@ -818,6 +824,16 @@ function renderCustomers() {
   document.querySelector("#customer-page").textContent = total ? `${offset + 1}–${Math.min(offset + limit, total)} sur ${total}` : "0 résultat";
   document.querySelector("#customer-previous").disabled = offset <= 0;
   document.querySelector("#customer-next").disabled = offset + limit >= total;
+  const page = Math.floor(offset/limit)+1, pages=Math.max(1,Math.ceil(total/limit));
+  const shown=[...new Set([1,page-1,page,page+1,pages])].filter(p=>p>=1&&p<=pages).sort((a,b)=>a-b);
+  const pageButtons=shown.map((p,i)=>`${i && p>shown[i-1]+1?'<span aria-hidden="true">…</span>':''}<button type="button" data-customer-page="${p}" aria-label="Page ${p}" ${p===page?'aria-current="page"':''}>${p}</button>`).join('');
+  for (const suffix of ['', '-bottom']) {
+    document.querySelector('#customer-page-buttons'+suffix).innerHTML=pageButtons;
+    document.querySelector('#customer-page'+suffix).textContent=total?`${offset+1}–${Math.min(offset+limit,total)} sur ${total}`:'0 résultat';
+    document.querySelector('#customer-previous'+suffix).disabled=offset<=0;
+    document.querySelector('#customer-next'+suffix).disabled=offset+limit>=total;
+  }
+  document.querySelectorAll('[data-customer-page]').forEach(button=>button.addEventListener('click',()=>{customerOffset=(Number(button.dataset.customerPage)-1)*limit;customerPageChanged=true;void loadCustomers();}));
   document.querySelectorAll("[data-customer-id]").forEach((button) => button.addEventListener("click", () => loadCustomerDetail(button.dataset.customerId, true)));
 }
 
@@ -831,7 +847,8 @@ async function loadCustomers() {
   const filter = encodeURIComponent(document.querySelector("#customer-filter").value || "all");
   document.querySelector("#customer-feedback").textContent = "Actualisation des clients…";
   try {
-    const limit = document.querySelector('#customer-limit')?.value === '25' ? 25 : 50;
+    const requestedLimit = Number(document.querySelector('#customer-limit')?.value);
+    const limit = [6,12,24,48].includes(requestedLimit) ? requestedLimit : 12;
     const response = await fetch(`${API_BASE_URL}/dashboard/customers?q=${query}&filter=${filter}&offset=${customerOffset}&limit=${limit}`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
     if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
     if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
@@ -843,7 +860,8 @@ async function loadCustomers() {
     customerOffset = payload.offset;
     customerLastUpdate = Date.now();
     renderCustomers();
-    if (firstDirectoryLoad) {
+    if (firstDirectoryLoad || customerPageChanged) {
+      customerPageChanged=false;
       document.querySelector('#customers-view').scrollIntoView?.({ block: 'start', behavior: 'instant' });
       document.querySelector('#customer-directory-title')?.focus({ preventScroll: true });
     }
@@ -905,6 +923,7 @@ async function loadCustomerDetail(id, focus = false) {
   } finally { clearTimeout(timeout); }
 }
 function searchCustomers() {
+  customerPageChanged=false;
   closeCustomerDetail(false);
   ++customerRequest;
   ++customerDetailRequest;
@@ -918,6 +937,13 @@ function searchCustomers() {
 document.querySelector("#customer-search").addEventListener("input", searchCustomers);
 document.querySelector("#customer-filter").addEventListener("change", searchCustomers);
 document.querySelector('#customer-limit')?.addEventListener('change', searchCustomers);
+if (window.matchMedia?.('(max-width:700px)').matches) document.querySelector('#customer-limit').value='6';
+for(const kind of ['filter','limit']) document.querySelectorAll(`[data-customer-${kind}]`).forEach(button=>button.addEventListener('click',()=>{
+  document.querySelector('#customer-'+kind).value=button.dataset[kind==='filter'?'customerFilter':'customerLimit'];
+  document.querySelectorAll(`[data-customer-${kind}]`).forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+  searchCustomers();
+}));
+document.querySelectorAll('[data-customer-limit]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.customerLimit===document.querySelector('#customer-limit').value)));
 function closeCustomerDetail(restoreFocus = true) {
   const drawer = document.querySelector('#customer-detail-drawer');
   if (drawer?.open) drawer.close();
@@ -930,12 +956,15 @@ document.querySelector('#customer-detail-close')?.addEventListener('click', () =
 document.querySelector('#customer-detail-drawer')?.addEventListener('cancel', event => { event.preventDefault(); closeCustomerDetail(); });
 function changeCustomerPage(direction) {
   closeCustomerDetail(false);
-  customerOffset = Math.max(0, customerOffset + direction * (customerData?.limit || 50));
+  customerOffset = Math.max(0, customerOffset + direction * (customerData?.limit || 12));
+  customerPageChanged=true;
   document.querySelector('#customer-list').scrollTop = 0;
   void loadCustomers();
 }
 document.querySelector("#customer-previous").addEventListener("click", () => changeCustomerPage(-1));
 document.querySelector("#customer-next").addEventListener("click", () => changeCustomerPage(1));
+document.querySelector('#customer-previous-bottom').addEventListener('click',()=>changeCustomerPage(-1));
+document.querySelector('#customer-next-bottom').addEventListener('click',()=>changeCustomerPage(1));
 
 let backupBusy = false;
 const backupDate = (value) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -1106,6 +1135,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
+  void birthdaysPanel?.load(true);
   if (["crm", "settings"].includes(currentView)) return crmPanel?.load();
   if (currentView === "schedule") return schedulePanel?.load();
   if (currentView === 'statistics') return statisticsPanel?.load();
@@ -1157,6 +1187,7 @@ if (typeof window.BibouMarketingSms === 'function') smsPanel = window.BibouMarke
 if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSchedule({root:document.querySelector('#schedule-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:showLogin});
 if (window.BibouDispatch?.create) dispatchPanel = window.BibouDispatch.create({root:document.querySelector('#dispatch-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onOrdersChanged:()=>loadOrders(),getOrder:id=>orders.find(order=>order.apiId===id)});
 if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });
+if (typeof window.BibouBirthdays === 'function') birthdaysPanel = window.BibouBirthdays({banner:document.querySelector('#birthday-alert'),dialog:document.querySelector('#birthday-dialog'),openButton:document.querySelector('#birthday-open'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onPreparePush:target=>{showView('notifications');notificationsPanel?.prepareBirthday(target);}});
 refreshMetrics();
 updateSoundControls();
 updateConnectionStatus();
@@ -1169,6 +1200,7 @@ window.BibouRestaurantApp?.start(showView);
 if (dashboardToken) { showDashboard(); void ensureServiceSound(); void refreshFeeds({ notify: false }); } else { showLogin(); }
 const resumeUpdates = () => {
   if (!dashboardToken) return;
+  if (!document.hidden) void birthdaysPanel?.load();
   updateConnectionStatus();
   updateSoundControls();
   if (!soundPlayer.state().ready && !document.hidden) void ensureServiceSound();

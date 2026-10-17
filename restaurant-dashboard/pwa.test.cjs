@@ -7,7 +7,7 @@ const read = name => fs.readFileSync(path.join(__dirname,name),'utf8');
 function shell({hash='',standalone=false,online=true}={}) {
   const nodes = new Map(), handlers = {}, pushes = [], installs = [], navigations = [];
   const node = selector => {
-    if (!nodes.has(selector)) nodes.set(selector,{hidden:false,dataset:{},textContent:'',listeners:{},setAttribute(){},focus(){},addEventListener(name,fn){this.listeners[name]=fn;},showModal(){this.open=true;},close(){this.open=false;}});
+    if (!nodes.has(selector)) nodes.set(selector,{hidden:false,dataset:{},textContent:'',listeners:{},setAttribute(){},focus(){this.focused=true;},scrollIntoView(){this.scrolled=true;},addEventListener(name,fn){this.listeners[name]=fn;},showModal(){this.open=true;},close(){this.open=false;}});
     return nodes.get(selector);
   };
   const installButtons = [node('install-login'),node('install-dashboard')];
@@ -18,13 +18,13 @@ function shell({hash='',standalone=false,online=true}={}) {
   const navigate = view => {navigations.push(view);app.changed(view);};
   return {context,app,node,handlers,pushes,installs,installButtons,navigations,navigate};
 }
-test('all original operational node IDs remain; no duplicated IDs; 9 rubric entry points',()=>{
+test('all original operational node IDs remain; no duplicated IDs; 10 rubric entry points',()=>{
   const ids = html => Array.from(html.matchAll(/\bid="([^"]+)"/g),match=>match[1]);
   const original = ids(read('ancienne-interface.html')), current = ids(read('index.html'));
   assert.equal(new Set(current).size,current.length);
   for (const id of original) assert.ok(current.includes(id),`Missing operational node ${id}`);
   const navigation = read('index.html').match(/<nav class="app-rubrics"[\s\S]*?<\/nav>/)[0];
-  assert.equal((navigation.match(/data-jump=/g)||[]).length,9);
+  assert.equal((navigation.match(/data-jump=/g)||[]).length,10);
   assert.match(navigation,/Répartition des livreurs/);
   assert.match(read('index.html'),/data-order-filter="Historique"/);
   assert.match(read('index.html'),/ancienne-interface.html/);

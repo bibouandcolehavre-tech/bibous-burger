@@ -58,7 +58,8 @@ test('large bold styling is scoped to order times and asset URLs are refreshed',
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   assert.match(css, /\.queue-order \.order-time,\.home-row \.order-time\{[^}]*font-size:26px;[^}]*font-weight:900/);
   assert.match(css, /\.order-appointment>\.order-time\{[^}]*font-size:clamp\(32px,5vw,40px\);[^}]*font-weight:900/);
-  for (const file of ['pwa.css', 'app.js']) assert.ok(html.includes(`${file}?v=pickup-time-20261016`));
+  assert.ok(html.includes('pwa.css?v=pickup-time-20261016'));
+  assert.ok(html.includes('app.js?v=birthdays-20261018'));
 });
 
 module.exports = { renderFixture };
