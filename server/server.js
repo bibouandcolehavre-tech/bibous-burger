@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
+const { deliveryFeeForDistance } = require('../delivery-pricing');
 const { createDatabaseLock } = require("./database-lock");
 const { createServiceModuleStore } = require('./service-modules');
 const { createReviewSandbox } = require('./review-sandbox');
@@ -241,13 +242,6 @@ const readBody = (request) => {
   });
   requestBodies.set(request, result);
   return result;
-};
-
-const deliveryFeeForDistance = (distanceKm) => {
-  if (distanceKm <= 1.5) return 3.99;
-  if (distanceKm <= 3) return 4.99;
-  if (distanceKm <= 5) return 5.99;
-  return null;
 };
 
 const calculateDeliveryQuote = async ({ address, postalCode, city }) => {
@@ -2087,7 +2081,7 @@ const server = http.createServer(async (request, response) => {
           return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });
         }
       }
-      if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 5 km." });
+      if (input.method === "delivery" && deliveryFee === null) return send(response, 400, { error: "L’adresse est hors de la zone de livraison de 7 km par la route." });
       const order = await serializeOrderCreation(async () => {
         if (!(await serviceModuleStore.read()).modules[input.method]) throw Object.assign(new Error('Ce mode de commande est momentanément indisponible.'), { statusCode: 409 });
         assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());

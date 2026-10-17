@@ -1,6 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 const A=require('./krokli-driver-account');
+const { DELIVERY_FEE_CENTS }=require('../delivery-pricing');
 const bankFormat=require('./iban-validation');
 const fail=(message,statusCode=400)=>{throw Object.assign(Error(message),{statusCode});};
 const configured=key=>typeof key==='string'&&/^[a-f0-9]{64}$/i.test(key);
@@ -18,7 +19,7 @@ function saveBank(db,driver,input,key,now=new Date()){
 function bankView(db,driver){const p=(db.driverBankProfiles||[]).find(p=>p.driverId===driver.id);return p?{registered:true,holder:p.holder,maskedIban:`${p.country} •••• ${p.last4}`,revision:p.revision,updatedAt:p.updatedAt}:{registered:false};}
 function earnings(db,driver,before=null){
   const cutoff=before||'9999-99-99',reserved=new Set((db.driverPaymentRequests||[]).filter(r=>r.driverId===driver.id&&r.status!=='rejected').flatMap(r=>r.lines.map(l=>l.key))),lines=[];
-  for(const o of db.orders||[]){if(!A.completed(o,driver.id)||!A.deliveryAt(o)||A.dateKey(A.deliveryAt(o))>=cutoff)continue;const q=o.kroklyDriver.completedFinancials||o.kroklyDriver.financials||A.quote(o);if(Number.isSafeInteger(q.driverPayCents)&&[399,499,599].includes(q.driverPayCents)&&!reserved.has(`fee:${o.id}`))lines.push({key:`fee:${o.id}`,orderId:o.id,kind:'delivery',amountCents:q.driverPayCents});}
+  for(const o of db.orders||[]){if(!A.completed(o,driver.id)||!A.deliveryAt(o)||A.dateKey(A.deliveryAt(o))>=cutoff)continue;const q=o.kroklyDriver.completedFinancials||o.kroklyDriver.financials||A.quote(o);if(Number.isSafeInteger(q.driverPayCents)&&DELIVERY_FEE_CENTS.includes(q.driverPayCents)&&!reserved.has(`fee:${o.id}`))lines.push({key:`fee:${o.id}`,orderId:o.id,kind:'delivery',amountCents:q.driverPayCents});}
   // Tips can arrive after a delivery fee has already been requested/paid.
   const seen=new Set();for(const t of db.driverTipPayments||[]){const paidDay=A.dateKey(t.paidAt);if(t.driverId!==driver.id||t.state!=='PAID'||t.providerVerified!==true||t.reconciliationHold===true||!t.providerTransactionId||seen.has(t.providerTransactionId)||!paidDay||paidDay>=cutoff||!Number.isSafeInteger(t.amountCents)||!Number.isSafeInteger(t.refundedCents||0)||(t.refundedCents||0)<0)continue;seen.add(t.providerTransactionId);const net=t.amountCents-(t.refundedCents||0);if(Number.isSafeInteger(net)&&net>0&&net<=5000&&!reserved.has(`tip:${t.providerTransactionId}`))lines.push({key:`tip:${t.providerTransactionId}`,orderId:t.orderId,kind:'tip',amountCents:net});}
   return lines;

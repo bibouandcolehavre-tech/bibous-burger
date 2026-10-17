@@ -25,7 +25,7 @@ test('HTTP : requêtes JSON nulles, tableaux et primitives ne provoquent ni pann
   assert.deepEqual(failures, []);
   assert.equal(await fs.readFile(fx.file, 'utf8'), before, 'Malformed inputs must never alter orders, customers or their benefits');
 });
-test('HTTP livraison : pas de distance inventée lorsque Google ne trouve aucun trajet ; seuils inchangés', { timeout: 20000 }, async t => {
+test('HTTP livraison : pas de distance inventée ; anciens tarifs préservés et limite routière de 7 km exacte', { timeout: 20000 }, async t => {
   const fx = await fixture(t), address = { address: '1 rue fictive', postalCode: '76600', city: 'Le Havre' };
   for (const response of [{}, { routes: [] }, { routes: [{}] }, { routes: [{ distanceMeters: null }] }, { routes: [{ distanceMeters: -1 }] }, { routes: [{ distanceMeters: '1500' }] }]) {
     await fs.writeFile(fx.routeFile, JSON.stringify(response));
@@ -34,7 +34,7 @@ test('HTTP livraison : pas de distance inventée lorsque Google ne trouve aucun 
     assert.equal(order.status, 422, JSON.stringify(order.body));
   }
   assert.deepEqual(JSON.parse(await fs.readFile(fx.file, 'utf8')).orders, []);
-  for (const [distanceMeters, fee] of [[0, 3.99], [1500, 3.99], [1501, 4.99], [3000, 4.99], [3001, 5.99], [5000, 5.99], [5001, null]]) {
+  for (const [distanceMeters, fee] of [[0, 3.99], [1500, 3.99], [1501, 4.99], [3000, 4.99], [3001, 5.99], [5000, 5.99], [5001, 6.99], [6500, 6.99], [7000, 6.99], [7001, null]]) {
     await fs.writeFile(fx.routeFile, JSON.stringify({ routes: [{ distanceMeters }] })); const result = await fx.request('/delivery-quote', address);
     assert.equal(result.status, 200); assert.equal(result.body.deliveryFee, fee); assert.equal(result.body.withinZone, fee !== null);
   }

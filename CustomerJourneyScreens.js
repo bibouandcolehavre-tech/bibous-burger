@@ -3,6 +3,7 @@ import { Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, StyleShe
 import Svg, { Path, Circle } from 'react-native-svg';
 const { CUSTOMER_CATEGORIES, loyaltyMilestoneProgress } = require('./customer-journey');
 const { PARTNERS } = require('./partners');
+const { DELIVERY_PRICING, DELIVERY_MAX_KM } = require('./delivery-pricing');
 const logo = require('./assets/bibous-official-wordmark-preview.png');
 const money = value => Number(value).toFixed(2).replace('.', ',') + ' €';
 // Stable web-only styling hooks, rather than generated React Native class names.
@@ -46,8 +47,8 @@ export function CustomerLoyaltyStrip({ signedIn, points, rewards, onLogin, onRew
   const p = loyaltyMilestoneProgress(points, rewards);
   return <Pressable accessibilityRole="button" accessibilityLabel={'Club Bibou : ' + p.points + ' points. ' + (p.next ? 'Il te manque ' + (p.next.points - p.points) + ' points pour ' + p.next.title : 'Les cinq paliers sont débloqués')} onPress={onRewards} style={[s.loyalty, s.loyaltyColumn]}><Text style={s.giftTitle}>{p.points.toLocaleString('fr-FR')} points · Club Bibou</Text><View style={s.stages}>{p.stages.map(r => <View key={r.id} style={s.stage}><Text>{r.emoji}</Text><View style={s.track}><View style={[s.fill, { width: (r.fraction * 100) + '%' }]} /></View><Text style={s.small}>{r.points.toLocaleString('fr-FR')}</Text></View>)}</View><Text style={s.body}>{p.next ? 'Il te manque ' + (p.next.points - p.points).toLocaleString('fr-FR') + ' points pour débloquer : ' + p.next.title.toLowerCase() + '.' : 'Tu as débloqué les cinq paliers !'}</Text></Pressable>;
 }
-export function CustomerJourneyHome({ frame, loyalty, contestEntry, customer, onOrder, onReserve, onClub, onPlus, onNews, onPartners, onResumePayment, pendingPayment, reviews, stockMessage }) {
-  return <CustomerJourneyFrame {...frame} title="Que souhaites-tu faire ?" eyebrow={customer?.name ? 'Bonjour ' + customer.name.split(' ')[0] : 'Bienvenue chez Bibou'}>{contestEntry}{loyalty}{pendingPayment && <View style={s.panel}><Text style={s.body}>Une tentative de paiement reste à vérifier. Tu peux consulter la carte librement.</Text><Action label="Retrouver ma tentative" onPress={onResumePayment} secondary /></View>}<View style={s.grid}>
+export function CustomerJourneyHome({ frame, loyalty, customer, onOrder, onReserve, onClub, onPlus, onNews, onPartners, onResumePayment, pendingPayment, reviews, stockMessage }) {
+  return <CustomerJourneyFrame {...frame} title="Que souhaites-tu faire ?" eyebrow={customer?.name ? 'Bonjour ' + customer.name.split(' ')[0] : 'Bienvenue chez Bibou'}>{loyalty}{pendingPayment && <View style={s.panel}><Text style={s.body}>Une tentative de paiement reste à vérifier. Tu peux consulter la carte librement.</Text><Action label="Retrouver ma tentative" onPress={onResumePayment} secondary /></View>}<View style={s.grid}>
     <Tile label="Commander" detail="Retrait ou livraison" icon="🛍️" onPress={onOrder} selected />
     <Tile label="Réserver une table" detail="Avec ou sans repas" icon="🍽️" onPress={onReserve} />
     <Tile label="Mes commandes" detail="Suivi et réservations" icon="🧾" onPress={frame.onOrders} />
@@ -59,7 +60,7 @@ export function CustomerJourneyHome({ frame, loyalty, contestEntry, customer, on
   </View>{stockMessage ? <Text style={s.small}>{stockMessage}</Text> : null}{reviews}</CustomerJourneyFrame>;
 }
 export function CustomerServiceScreen({ frame, onSelect, onReserve, loyalty }) {
-  return <CustomerJourneyFrame {...frame} title="Comment profiter de Bibou ?">{loyalty}<View style={s.grid}><Tile label="Click & collect" detail="Ton burger t’attend chez Bibou" icon="🛍️" onPress={() => onSelect('pickup')} /><Tile label="Livraison" detail="Le goût de Bibou vient jusqu’à toi" icon="🛵" onPress={() => onSelect('delivery')} delivery /></View><Action label="Réserver une table" onPress={onReserve} secondary /><Text style={s.small}>Le dimanche soir : click & collect et livraison uniquement.</Text></CustomerJourneyFrame>;
+  return <CustomerJourneyFrame {...frame} title="Comment profiter de Bibou ?">{loyalty}<View style={s.grid}><Tile label="Click & collect" detail="Ton burger t’attend chez Bibou" icon="🛍️" onPress={() => onSelect('pickup')} /><Tile label="Livraison" detail="Le goût de Bibou vient jusqu’à toi" icon="🛵" onPress={() => onSelect('delivery')} delivery /></View><Text style={s.small}>Livraison jusqu’à {DELIVERY_MAX_KM} km par la route. Plus de 5 km et jusqu’à {DELIVERY_MAX_KM} km : {money(DELIVERY_PRICING[DELIVERY_PRICING.length - 1].price)}.</Text><Action label="Réserver une table" onPress={onReserve} secondary /><Text style={s.small}>Le dimanche soir : click & collect et livraison uniquement.</Text></CustomerJourneyFrame>;
 }
 export function CustomerCategoriesScreen({ frame, loyalty, showNaans, onCategory, onCustom, service, reservation }) {
   return <CustomerJourneyFrame {...frame} title="Qu’est-ce qui te fait envie ?" eyebrow={reservation ? 'Pour ta table' : service === 'delivery' ? 'En livraison' : 'Click & collect'}>{loyalty}<View style={s.grid}><Tile label="Compose ton burger" detail="Ta protéine, ton pain, ton fromage : à toi de choisir !" icon="👨‍🍳" onPress={onCustom} wide />{CUSTOMER_CATEGORIES.filter(c => c.id !== 'naans' || showNaans).map(c => <Tile key={c.id} label={c.label} detail={c.detail} icon={c.icon} onPress={() => onCategory(c.id)} />)}</View>{reservation && <View style={s.panel}><Text style={s.body}>Repas pour ta table · {reservation.guests} personne(s) · {reservation.dayLabel} à {reservation.slot}</Text></View>}</CustomerJourneyFrame>;

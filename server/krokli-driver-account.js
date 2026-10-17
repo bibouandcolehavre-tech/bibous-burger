@@ -1,7 +1,7 @@
 'use strict';
 // Exact allowlisted projections only. Never return completed-order contacts.
 const fail=(message,statusCode=400)=>{throw Object.assign(Error(message),{statusCode});};
-const FEES=new Set([399,499,599]);
+const FEES=new Set(require('../delivery-pricing').DELIVERY_FEE_CENTS);
 function cents(value){return typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1000000&&Math.abs(value*100-Math.round(value*100))<.00001?Math.round(value*100):null;}
 function dateKey(value){const n=Date.parse(value);if(!Number.isFinite(n))return null;return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(n);}
 function shift(key,days){return new Date(Date.parse(`${key}T12:00:00Z`)+days*86400000).toISOString().slice(0,10);}
