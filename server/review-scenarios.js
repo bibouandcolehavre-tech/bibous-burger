@@ -24,6 +24,8 @@ function prepareReviewScenarios(db, customer, date) {
   const order = { id: 'review-replacement-example', number: 'TEST-RUPTURE', customerId: customer.id, customerName: customer.name, ...cart, discount: 0, discountRate: 0, deliveryFee: 0, total: cart.subtotal, paidTotal: cart.subtotal, method: 'pickup', serviceDate: tomorrow, slot: '19:00', createdAt: date.toISOString(), status: 'confirmed', reviewMode: true, payment: { status: 'PAID', provider: 'isolated-review-simulation', paidAt: date.toISOString() } };
   replacements.requestReplacement(order, { revision: 0, targets: ['0:product'], reason: 'Exemple fictif : Coca indisponible, choisis une autre boisson.' }, +date);
   db.orders.push(order);
+  db.referralContest.referralInviteeBonus = { version: require('./contest-referral-bonus').VERSION, points: 20, includeExisting: true, publishedAt: date.toISOString() };
+  require('./review-customer-delivery').prepare(db, customer, date, cart);
   return { contestSecret: crypto.randomBytes(32).toString('hex') };
 }
 function reviewContestState(db, customer, date) {

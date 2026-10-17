@@ -78,6 +78,7 @@ export default function DeliveryTracking({api,token,orderId,status,onStatusChang
   const tileKey=layout?.tiles.map(tile=>tile.key).join(':');
   const inDelivery=(snapshot?.status||status)==='out_for_delivery';
   return <View style={s.card} testID="delivery-live-tracking">
+    {snapshot?.reviewMode?<Text style={s.note}>MODE DE TEST · trajet et position illustrés, aucune livraison réelle.</Text>:null}
     {inDelivery&&!error?<View style={s.departure} testID="delivery-departure-banner"><Text style={s.departureTitle}>{DEPARTURE_TITLE}</Text><Text style={s.note}>Votre livreur a récupéré votre repas.</Text></View>:null}
     <Text style={s.title}>{error||delayLabel(snapshot?.timing)}</Text><Text style={s.note}>Le délai peut évoluer selon les commandes en cours et l’avancement réel de ta livraison.</Text>
     {inDelivery?<><View style={s.map} onLayout={event=>setWidth(Math.max(1,Math.min(2000,event.nativeEvent.layout.width)))} accessibilityLabel={position?'Carte : dernière position récente de ton livreur':'Position du livreur non actualisée'}>

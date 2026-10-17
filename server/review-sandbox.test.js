@@ -48,7 +48,7 @@ test('review: real pricing, simulated checkout, idempotent loyalty and subscript
   await request(sandbox, '/orders', token, input);
   const history = (await request(sandbox, '/customer/orders', token)).orders;
   assert.equal(history.filter(item => item.requestId === input.requestId).length, 1);
-  assert.equal(history.length, 2); // One deliberately seeded missing-drink demonstration.
+  assert.equal(history.length, 4); // Missing drink + active and completed delivery examples.
   const paid = await request(sandbox, '/payments/sumup-checkout', token, { orderId: order.id });
   assert.equal(paid.order.payment.status, 'PAID'); assert.equal(paid.checkoutUrl, undefined);
   const first = (await request(sandbox, '/auth/me', token)).customer;

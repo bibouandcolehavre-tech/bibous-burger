@@ -19,3 +19,12 @@ assert.match(read('ContestRegistrationContent.js'), /Confirmer mon inscription a
 assert.match(read('WheelAfterPayment.js'), /testID="wheel-remaining-counter"/);
 assert.match(read('WheelAfterPayment.js'), /width=\{diameter\} height=\{diameter\}/);
 console.log('Shared customer interface and contest entry verified.');
+for (const file of ['DeliveryTracking.js', 'BibouCourierMarker.js', 'DeliveryFeedback.js', 'DriverTipOffer.js', 'session-recovery.js', 'session-storage-queue.js', 'ContestReferralPanel.js']) assert(fs.existsSync(path.join(root, file)), 'Missing customer update module: ' + file);
+assert.match(read('App.js'), /<DeliveryTracking /);
+assert.match(read('App.js'), /<DeliveryFeedback /);
+assert.match(read('App.js'), /onOpenReferral=\{openReferral\}/);
+assert.match(read('DeliveryTracking.js'), /delivery-tracking/);
+assert.match(read('DeliveryFeedback.js'), /<DriverTipOffer /);
+assert.equal(require('./bibou-plus-offer').BIBOU_PLUS_PRICE, 5.99);
+assert.equal(require('./bibou-plus-offer').BIBOU_PLUS_DURATION_DAYS, 30);
+console.log('Customer delivery, feedback, referral, session and Bibou Plus update modules verified.');

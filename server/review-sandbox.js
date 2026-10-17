@@ -22,6 +22,8 @@ const contestPrizes = require('./contest-prizes');
 const wheel = require('./wheel');
 const replacements = require('./order-replacements');
 const amendments = require('./order-amendments');
+const reviewDelivery = require('./review-customer-delivery');
+const { BIBOU_PLUS_PRICE } = require('../bibou-plus-offer');
 
 // Only a SHA-256 verifier is committed; the 192-bit random code is given to Play
 // in its private app-access instructions, never embedded in the client bundle.
@@ -87,6 +89,8 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
       }
       if (route === '/customer/account' && method === 'DELETE') { sessions.delete(token); return { deleted: true }; }
       if (route === '/customer/orders' && method === 'GET') return { orders: snapshot(db.orders) };
+      const deliveryResult = await reviewDelivery.handle({ db, customer, route, method, readBody, date });
+      if (deliveryResult) return snapshot(deliveryResult);
       const ratingsRoute = /^\/customer\/orders\/([^/]+)\/ratings$/.exec(route);
       if (ratingsRoute && ['GET', 'POST'].includes(method)) {
         const order = db.orders.find(o => o.id === ratingsRoute[1] && o.customerId === customer.id);
@@ -212,7 +216,7 @@ function createReviewSandbox({ accessHash = ACCESS_HASH, now = Date.now, enabled
         let purchase = db.bibouPlusPurchases.find(item => item.requestId === requestId);
         if (!purchase) {
           if (db.bibouPlusPurchases.length >= 50) throw fail('Limite des achats de test atteinte.', 429);
-          purchase = { id: `review-plus-${db.bibouPlusPurchases.length + 1}`, customerId: customer.id, requestId, amount: 9.99, createdAt: date.toISOString(), payment: { status: 'PAID', provider: 'isolated-review-simulation' }, reviewMode: true };
+          purchase = { id: `review-plus-${db.bibouPlusPurchases.length + 1}`, customerId: customer.id, requestId, amount: BIBOU_PLUS_PRICE, createdAt: date.toISOString(), payment: { status: 'PAID', provider: 'isolated-review-simulation' }, reviewMode: true };
           db.bibouPlusPurchases.push(purchase);
           activateBibouPlus(customer, purchase, date);
         }

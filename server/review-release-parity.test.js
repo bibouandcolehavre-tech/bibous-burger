@@ -19,9 +19,10 @@ test('review release: contest join, rules, leaderboard and daily share are isola
   const input = { contestId: initial.contest.id, revision: initial.contest.revision, acceptRules: true, confirmAdult: true, confirmRegion: true, acceptPrizeAlerts: true };
   await assert.rejects(request(sandbox, '/customer/contest/join', token, { ...input, confirmAdult: false }));
   const joined = await request(sandbox, '/customer/contest/join', token, input);
-  assert.equal(joined.participation.score, 1); assert.equal(joined.leaderboard.length, 1); assert.match(joined.contest.rules, /fictifs/);
+  assert.equal(joined.participation.purchasePoints, 13); // Missing drink + two delivery examples, not real sales.
+  assert.equal(joined.participation.score, 13); assert.equal(joined.leaderboard.length, 1); assert.match(joined.contest.rules, /fictifs/);
   assert.equal(new URL(joined.participation.shareUrl).hostname, 'example.invalid');
-  for (let i = 0; i < 2; i++) assert.equal((await request(sandbox, '/customer/contest/share', token, input)).participation.score, 2);
+  for (let i = 0; i < 2; i++) assert.equal((await request(sandbox, '/customer/contest/share', token, input)).participation.score, 14);
   assert.equal((await request(sandbox, '/auth/me', token)).customer.points, 1500);
   assert.equal(require('./referral-contest').publicContest({}, new Date(NOW)).status, 'inactive');
 });
