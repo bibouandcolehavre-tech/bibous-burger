@@ -1,6 +1,11 @@
 /* Presentation only. The operational modules and database remain unchanged. */
 :root{--app-green:#315b4b;--app-orange:#bb7258;--app-paper:#fbf3e6;--ink:#263e33;--green:#315b4b;--orange:#bb7258;--line:#dddace;--muted:#5d6a5d}
 body{background:var(--app-paper);font-size:16px;line-height:1.45}
+/* Service time stays prominent on the overview, queue and open order. */
+.queue-order .order-time,.home-row .order-time{display:block;font-size:26px;font-weight:900;line-height:1.2;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:var(--app-green);margin:8px 0 12px;overflow-wrap:anywhere}
+.order-appointment{border:2px solid var(--app-green);background:#e7eee3;padding:16px 18px;margin:18px 0}
+.order-appointment>span{font-size:14px;font-weight:700;color:var(--app-green)}
+.order-appointment>.order-time{display:block;font-size:clamp(32px,5vw,40px);font-weight:900;line-height:1.15;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:var(--app-green);margin-top:8px;overflow-wrap:anywhere}
 .completed-order>summary .open-order-label,.completed-order[open]>summary .closed-order-label{display:none}
 .completed-order[open]>summary .open-order-label{display:inline}
 .completed-order-body>[data-close-order]{margin-top:16px}
