@@ -76,6 +76,9 @@ const krokliStoreReview = require('./krokli-review-sandbox').createReviewSandbox
   passwordHash: process.env.KROKLI_REVIEW_PASSWORD_HASH || require('./krokli-review-access.json').passwordHash
 });
 const krokliPublicPages = require('./krokli-public-pages');
+const krokliFieldTest = require('./krokli-field-test').createFieldTest(require('./krokli-field-test-access.json'));
+const driverPassword = require('./driver-password');
+const driverPasswordLimiter = createAuthRateLimiter({ limit: 5, windowMs: 15 * 60000 });
 const { amendmentCatalog } = require("./catalog");
 const { revenuePeriods } = require("./revenue-periods");
 const { statistics: dashboardStatistics } = require('./dashboard-statistics');
@@ -531,11 +534,32 @@ const server = http.createServer(async (request, response) => {
 
   try {
     const driverReviewToken = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    // Reserved field credentials are dispatched before ANY real DB/auth route.
+    // Expired/forged field tokens fail closed; never fall through to production.
+    if (krokliFieldTest.isDriverToken(driverReviewToken)) {
+      if (!url.pathname.startsWith('/api/krokly-driver/') || url.pathname.endsWith('/login'))
+        return send(response, 403, { error: 'Accès de test réservé aux courses fictives.' });
+      try {
+        const input = request.method === 'POST' ? await readBody(request) : {};
+        return send(response, 200, await krokliFieldTest.handleDriver(driverReviewToken, url.pathname, request.method, input));
+      } catch (error) {
+        return send(response, [400, 401, 403, 404, 408, 409, 413, 429].includes(error.statusCode) ? error.statusCode : 503,
+          { error: error.statusCode ? error.message : 'Essai momentanément indisponible.' });
+      }
+    }
+    if (krokliFieldTest.isCustomerToken(driverReviewToken) && !url.pathname.startsWith('/api/review/'))
+      return send(response, 403, { error: 'Accès de test sans accès aux données réelles.' });
     if (krokliStoreReview.isToken(driverReviewToken) && !url.pathname.startsWith('/api/krokly-driver/'))
       return send(response, 403, { error: 'Cet accès de vérification ne peut pas accéder aux données réelles.' });
     if (krokliStoreReview.isToken(driverReviewToken) && url.pathname === '/api/krokly-driver/login')
       return send(response, 403, { error: 'Reconnectez-vous sans utiliser une ancienne session de vérification.' });
     const driverInformationPage = /^\/driver\/(privacy|support)\/?$/.exec(url.pathname);
+    if (url.pathname === '/driver/password') {
+      if (!['GET', 'HEAD'].includes(request.method)) return send(response, 405, { error: 'Lecture seule.' });
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, private',
+        'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': driverPassword.csp });
+      return response.end(request.method === 'HEAD' ? undefined : driverPassword.page());
+    }
     if (driverInformationPage) {
       if (!['GET','HEAD'].includes(request.method)) return send(response, 405, { error: 'Lecture seule.' });
       const html = krokliPublicPages.page(driverInformationPage[1]);
@@ -546,7 +570,15 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname.startsWith('/api/review/')) {
       try {
-        const payload = await reviewSandbox.handle({ method: request.method, route: url.pathname.slice('/api/review'.length), token: String(request.headers.authorization || '').replace(/^Bearer /, ''), readBody: () => readBody(request) });
+        const route = url.pathname.slice('/api/review'.length), token = driverReviewToken;
+        let payload;
+        if (krokliFieldTest.isCustomerToken(token)) {
+          payload = await krokliFieldTest.handleCustomer(token, route, request.method, () => readBody(request));
+        } else if (route === '/session' && request.method === 'POST') {
+          const input = await readBody(request);
+          payload = krokliFieldTest.isCustomerCode(input?.accessCode) ? krokliFieldTest.loginCustomer(input)
+            : await reviewSandbox.handle({ method: request.method, route, token, readBody: async () => input });
+        } else payload = await reviewSandbox.handle({ method: request.method, route, token, readBody: () => readBody(request) });
         return send(response, 200, payload);
       } catch (error) {
         return send(response, [400, 401, 403, 404, 408, 409, 413, 429].includes(error.statusCode) ? error.statusCode : 400, { error: error.message || 'Action de test impossible.' });
@@ -615,6 +647,11 @@ const server = http.createServer(async (request, response) => {
             response.setHeader('Retry-After', String(limit.retryAfterSeconds));
             return send(response, 429, { error: 'Trop de tentatives. Réessayez plus tard.' });
           }
+          if (krokliFieldTest.isLogin(input)) {
+            const session = krokliFieldTest.loginDriver(input);
+            kroklyLoginLimiter.reset(key);
+            return send(response, 200, session);
+          }
           if (krokliStoreReview.isLogin(input)) {
             const session = krokliStoreReview.login(input);
             kroklyLoginLimiter.reset(key);
@@ -650,6 +687,13 @@ const server = http.createServer(async (request, response) => {
           const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
           const driver = kroklyDrivers.authenticate(database, token, kroklyTokenSecret);
           if (!driver) return send(response, 401, { error: 'Session livreur expirée ou désactivée.' });
+          if (url.pathname === '/api/krokly-driver/change-password' && request.method === 'POST') {
+            const limit = driverPasswordLimiter.consume(driver.id);
+            if (!limit.allowed) return send(response, 429, { error: 'Trop de tentatives. Réessaie dans 15 minutes.' });
+            const result = await kroklyDrivers.changeOwnPassword(database, driver, input);
+            await writeDatabase(database);
+            return send(response, 200, result);
+          }
           if(url.pathname==='/api/krokly-driver/settlements'&&request.method==='GET')return send(response,200,driverSettlements.state(database,driver,driverBankKey));
           if(url.pathname==='/api/krokly-driver/bank'&&request.method==='POST'){
             const bank=driverSettlements.saveBank(database,driver,input,driverBankKey);await writeDatabase(database);return send(response,200,bank);
