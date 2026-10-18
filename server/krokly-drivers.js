@@ -19,8 +19,8 @@ function equal(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-function hashPassword(password, salt) {
-  return crypto.scryptSync(password, salt, 64).toString('hex');
+function hashPassword(password, salt, kdf) {
+  return crypto.scryptSync(password, salt, 64, kdf === 'scrypt-v2' ? require('./driver-password').KDF : undefined).toString('hex');
 }
 
 function cleanUsername(value) {
@@ -59,7 +59,7 @@ function resetPassword(db, id) {
   if (!driver) fail('Livreur introuvable.', 404);
   const password = crypto.randomBytes(18).toString('base64url');
   driver.salt = crypto.randomBytes(16).toString('hex');
-  driver.passwordHash = hashPassword(password, driver.salt);
+  driver.passwordHash = hashPassword(password, driver.salt, driver.passwordKdf);
   driver.authVersion += 1;
   driver.active = true;
   webPush.revokeDriver(db, id);
@@ -97,7 +97,7 @@ function sessionFor(db, usernameInput, password, secret, now = Date.now()) {
   if (typeof password !== 'string' || password.length > 128) fail('Identifiant ou mot de passe incorrect.', 401);
   // Courier passwords are generated base64url strings, so surrounding whitespace
   // can only come from copying/pasting. Preserve every actual password character.
-  const found = hashPassword(password.trim(), salt);
+  const found = hashPassword(password.trim(), salt, driver?.passwordKdf);
   if (!driver?.active || !equal(expected, found)) fail('Identifiant ou mot de passe incorrect.', 401);
   const payload = Buffer.from(JSON.stringify({ id: driver.id, v: driver.authVersion, exp: now + SESSION_MS })).toString('base64url');
   const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
@@ -116,6 +116,21 @@ function authenticate(db, token, secret, now = Date.now()) {
     const driver = (db.kroklyDrivers || []).find(item => item.id === payload.id && item.authVersion === payload.v && item.active);
     return driver || null;
   } catch { return null; }
+}
+
+async function changeOwnPassword(db, driver, input, now = Date.now()) {
+  if (!driver?.active || !(db.kroklyDrivers || []).includes(driver)) fail('Connexion livreur requise.', 401);
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !['currentPassword', 'newPassword', 'confirmation'].includes(k)) ||
+    typeof input.currentPassword !== 'string' || input.currentPassword.length > 128) fail('Informations de changement invalides.', 400);
+  if (!equal(hashPassword(input.currentPassword.trim(), driver.salt, driver.passwordKdf), driver.passwordHash)) fail('Mot de passe actuel incorrect.', 401);
+  require('./driver-password').validatePassword(input.newPassword, input.confirmation);
+  if (input.newPassword === input.currentPassword.trim()) fail('Choisis un nouveau mot de passe différent de l’ancien.', 400);
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = await new Promise((resolve, reject) => crypto.scrypt(input.newPassword, salt, 64, require('./driver-password').KDF, (error, result) => error ? reject(error) : resolve(result.toString('hex'))));
+  driver.salt = salt; driver.passwordHash = hash; driver.passwordKdf = 'scrypt-v2'; driver.authVersion++;
+  driver.krokliAvailability = { available: false, revision: (driver.krokliAvailability?.revision || 0) + 1, authVersion: driver.authVersion, expiresAt: now, since: new Date(now).toISOString() };
+  webPush.revokeDriver(db, driver.id); nativePush.revokeDriver(db, driver.id);
+  return { changed: true, reconnect: true };
 }
 
 function uberActive(order) {
@@ -214,4 +229,4 @@ function dispatchState(db, now = Date.now()) {
   };
 }
 
-module.exports = { drivers, createDriver, resetPassword, setActive, setName, sessionFor, authenticate, uberActive, eligible, expireOffers, assign, transition, assigned, dispatchState, OFFER_MS };
+module.exports = { drivers, createDriver, resetPassword, changeOwnPassword, setActive, setName, sessionFor, authenticate, uberActive, eligible, expireOffers, assign, transition, assigned, dispatchState, OFFER_MS };
