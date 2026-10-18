@@ -35,10 +35,14 @@ const links = [
   ['Durées des documents comptables', 'https://www.service-public.gouv.fr/entreprendre/vosdroits/F10029']
 ];
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function page(kind) {
+function informationPage(kind) {
   if (!['privacy','support'].includes(kind)) throw Error('Page publique inconnue.');
   const title = kind === 'privacy' ? 'Confidentialité' : 'Assistance';
   const sections = kind === 'privacy' ? PRIVACY : SUPPORT;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${title} de Krokli Driver, application professionnelle de livraison."><title>${title} · Krokli Driver</title><style>body{margin:0;background:#FBF3E6;color:#274B3E;font:17px/1.65 system-ui,sans-serif}main{max-width:800px;margin:auto;padding:32px 20px 64px}header{padding-bottom:28px;border-bottom:1px solid #D7DED0}h1{font-size:clamp(32px,7vw,48px);line-height:1.15;margin:18px 0}h2{font-size:23px;line-height:1.3}section{background:#FFFCF6;border:1px solid #D7DED0;border-radius:18px;padding:20px;margin:20px 0}p{margin:0}a{color:#315B4B;text-underline-offset:3px;overflow-wrap:anywhere}nav{display:flex;gap:18px;flex-wrap:wrap}nav a{padding:10px 0;min-height:24px}.brand{font-weight:800;font-size:25px}.muted{color:#526D60}li{margin:10px 0}footer{border-top:1px solid #D7DED0;padding-top:24px}*:focus-visible{outline:3px solid #A65C3B;outline-offset:4px}</style></head><body><main><header><div class="brand">Krokli Driver</div><nav aria-label="Informations publiques"><a href="/driver/support">Assistance</a><a href="/driver/privacy">Confidentialité</a><a href="/driver/">Accès livreur</a></nav><h1>${title}</h1><p class="muted">Livreurs indépendants · Service Bibou’s Burgers<br>Mis à jour le ${UPDATED}</p></header>${sections.map(([heading,text])=>`<section><h2>${esc(heading)}</h2><p>${esc(text)}</p></section>`).join('')}${kind==='privacy'?`<section><h2>Documents utiles</h2><ul>${links.map(([label,url])=>`<li><a href="${esc(url)}" rel="noreferrer">${esc(label)}</a></li>`).join('')}</ul></section>`:''}<footer><p>Bibou & Co · 153 quai Georges V, 76600 Le Havre</p><p><a href="mailto:${CONTACT}">${CONTACT}</a></p><p class="muted">Cette page publique ne demande ni connexion, ni GPS, ni coordonnées bancaires.</p></footer></main></body></html>`;
+}
+function page(kind) {
+  const html = informationPage(kind);
+  return kind === 'support' ? html.replace('</nav>', '<a href="/driver/password">Changer mon mot de passe</a></nav>') : html;
 }
 module.exports = { page, PRIVACY, SUPPORT, CONTACT, UPDATED };
