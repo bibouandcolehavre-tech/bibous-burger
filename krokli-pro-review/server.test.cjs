@@ -1,0 +1,25 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),{spawn}=require('node:child_process'),path=require('node:path'),{once}=require('node:events');
+const {page}=require('./public-pages.cjs'),{fixture}=require('./fixture.cjs');
+test('public pages identify Pro and its real v1 limits without scripts or forms',()=>{for(const kind of ['privacy','support']){const html=page(kind);assert.match(html,/Krokli Pro/);assert.match(html,/arrière-plan/);assert.doesNotMatch(html,/<(?:script|iframe|input|form)\b/i);}assert.match(page('support'),/impression/i);assert.throws(()=>page('anything'));});
+test('review fixture is synthetic, dated in Paris and has no real contact',()=>{const data=fixture(new Date('2026-10-18T12:00:00Z'));assert.equal(data.customers[0].crmPreferences.birthday,'10-18');assert.equal(data.orders.length,3);for(const o of data.orders){assert.equal(o.serviceDate,'2026-10-18');assert.equal(o.reviewMode,true);assert.equal(o.deliveryAddress,undefined);}assert.equal(data.customers[0].phone,'+33600000000');});
+test('review backend cannot make a fetch or HTTP/TLS provider connection',async()=>{const isolation=path.join(__dirname,'network-isolation.cjs');const code="const assert=require('node:assert/strict');assert.throws(()=>require('node:https').request('https://example.invalid'));assert.throws(()=>require('node:net').connect(443,'example.invalid'));fetch('https://example.invalid').then(()=>process.exit(1),()=>process.exit(0));";const child=spawn(process.execPath,['--require',isolation,'-e',code],{env:{PATH:process.env.PATH},stdio:'ignore'});assert.equal((await once(child,'exit'))[0],0);});
+test('actual isolated backend and full dashboard: authentication, birthday, state transition and no production routes', {timeout:25000},async t=>{
+ const child=spawn(process.execPath,[path.join(__dirname,'server.cjs')],{env:{PATH:process.env.PATH,PORT:'0',SUMUP_API_KEY:'must-never-reach-child',PUSH_ENABLED:'true'},stdio:['ignore','pipe','pipe']});
+ t.after(async()=>{child.kill();if(child.exitCode===null)await once(child,'exit');});
+ const base=await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{const m=String(d).match(/listening on (\d+)/);if(m)resolve('http://127.0.0.1:'+m[1]);});child.once('error',reject);child.once('exit',code=>reject(Error('Review server exited '+code)));});
+ const req=async(p,token,body,method)=>{const r=await fetch(base+p,{method:method||(body?'POST':'GET'),headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};};
+ assert.equal((await req('/health')).data.externalProviders,false);
+ assert.equal((await req('/api/dashboard/orders')).status,401);
+ const login=await req('/api/dashboard/auth/login',null,{password:'KrokliProExemple2026'});assert.equal(login.status,200);const token=login.data.token;assert.match(token,/^[\w-]{43}$/);
+ assert.equal((await req('/api/dashboard/orders','a'.repeat(43))).status,401);
+ const orders=(await req('/api/dashboard/orders',token)).data.orders;assert.equal(orders.length,3);assert.equal(orders[0].reviewMode,true);
+ const updated=await req('/api/dashboard/orders/'+orders[0].id,token,{status:'preparing'},'PATCH');assert.equal(updated.status,200);
+ assert.equal((await req('/api/dashboard/birthdays',token)).data.todayCustomers.length,1);
+ for(const route of ['/api/orders','/api/auth/request-code','/api/krokly-driver/login','/api/review/session'])assert.equal((await req(route,token,{})).status,403);
+ const html=await(await fetch(base)).text();assert.match(html,/EXEMPLES UNIQUEMENT/);assert.doesNotMatch(html,/<script src="\.\/pwa\.js/);
+ const js=await(await fetch(base+'/app.js')).text();assert.ok(js.startsWith("const API_BASE_URL = window.location.origin + '/api';"));
+ const page=await fetch(base+'/privacy');assert.equal(page.status,200);assert.match(page.headers.get('content-security-policy'),/default-src 'none'/);
+ for(const route of ['/server/data.json','/.env','/network-isolation.cjs','/sw.js'])assert.equal((await fetch(base+route)).status,404);
+ await req('/api/dashboard/auth/logout',token,{});assert.equal((await req('/api/dashboard/orders',token)).status,401);
+});
