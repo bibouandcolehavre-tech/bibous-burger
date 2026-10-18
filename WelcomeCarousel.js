@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import useSundayService from './useSundayService';
 import { AccessibilityInfo, Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, Ellipse, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
@@ -86,6 +87,8 @@ function BookingArt({ height }) {
 const ART = [PickupArt, DeliveryArt, BookingArt];
 
 export default function WelcomeCarousel() {
+  const sundayService = useSundayService();
+  const scenes = sundayService ? SCENES.slice(0, 2) : SCENES;
   const { height } = useWindowDimensions();
   const compact = height < 750;
   const [index, setIndex] = useState(0);
@@ -102,9 +105,9 @@ export default function WelcomeCarousel() {
   }, [reduceMotion]);
   useEffect(() => {
     if (reduceMotion) return undefined;
-    const timer = setInterval(() => setIndex(current => (current + 1) % SCENES.length), 4400);
+    const timer = setInterval(() => setIndex(current => (current + 1) % scenes.length), 4400);
     return () => clearInterval(timer);
-  }, [reduceMotion]);
+  }, [reduceMotion, scenes.length]);
   useEffect(() => {
     if (reduceMotion) { opacity.setValue(1); arrival.setValue(0); bob.setValue(0); return undefined; }
     opacity.setValue(0);
@@ -122,17 +125,18 @@ export default function WelcomeCarousel() {
     return () => { entrance.stop(); motion.stop(); };
   }, [index, reduceMotion, opacity, arrival, bob]);
 
-  const scene = SCENES[index];
-  const Illustration = ART[index];
+  const activeIndex = Math.min(index, scenes.length - 1);
+  const scene = scenes[activeIndex];
+  const Illustration = ART[activeIndex];
   const movement = bob.interpolate({ inputRange: [0, 1], outputRange: index === 1 ? [-10, 22] : [0, -7] });
-  return <View style={styles.wrap} accessibilityLabel="Découvrir Bibou : retrait, livraison et réservation">
+  return <View style={styles.wrap} accessibilityLabel={sundayService ? 'Découvrir Bibou : click & collect et livraison uniquement le dimanche' : 'Découvrir Bibou : retrait, livraison et réservation'}>
     <Animated.View style={[styles.slide, compact && styles.slideCompact, { opacity, transform: [{ translateX: arrival }] }]}>
       <Text style={styles.eyebrow}>{scene.eyebrow}</Text>
       <Text style={[styles.title, compact && styles.titleCompact]}>{scene.title}</Text>
       <Animated.View style={[styles.art, compact && styles.artCompact, { transform: [{ translateX: index === 1 ? movement : 0 }, { translateY: index === 1 ? 0 : movement }] }]}><Illustration height={compact ? 165 : 205} /></Animated.View>
       <Text style={[styles.caption, compact && styles.captionCompact]}>{scene.caption}</Text>
     </Animated.View>
-    <View style={styles.dots}>{SCENES.map((item, itemIndex) => <Pressable key={item.name} accessibilityRole="button" accessibilityLabel={`Voir ${item.name.toLowerCase()}`} accessibilityState={{ selected: itemIndex === index }} onPress={() => setIndex(itemIndex)} style={styles.dotTap}><View style={[styles.dot, itemIndex === index && styles.dotActive]} /></Pressable>)}</View>
+    <View style={styles.dots}>{scenes.map((item, itemIndex) => <Pressable key={item.name} accessibilityRole="button" accessibilityLabel={`Voir ${item.name.toLowerCase()}`} accessibilityState={{ selected: itemIndex === activeIndex }} onPress={() => setIndex(itemIndex)} style={styles.dotTap}><View style={[styles.dot, itemIndex === activeIndex && styles.dotActive]} /></Pressable>)}</View>
   </View>;
 }
 
