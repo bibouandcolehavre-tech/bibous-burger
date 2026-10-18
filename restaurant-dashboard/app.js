@@ -19,6 +19,7 @@ let customerRequest = 0;
 let customerDetailRequest = 0;
 let customerSearchTimer = null;
 let customerLastUpdate = 0;
+let customerPageChanged = false;
 let filter = "all";
 let archiveSearch = "";
 let selectedOrderId = null;
@@ -82,6 +83,7 @@ let promotionsPanel = null;
 let notificationsPanel = null;
 let smsPanel = null;
 let crmPanel = null;
+let birthdaysPanel = null;
 let schedulePanel = null;
 let dispatchPanel = null;
 let statisticsPanel = null;
@@ -97,13 +99,13 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.KrokliProWeb?.authenticated(false); window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Krokli Pro — Bibou’s Burgers"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
   if (token) void fetch(`${API_BASE_URL}/dashboard/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
 };
-const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; };
+const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; window.KrokliProWeb?.authenticated(true); void birthdaysPanel?.load(); };
 
 const cashDue = order => order?.kioskCash === true && order.status === 'awaiting_payment' && order.payment?.provider === 'cash' && order.payment.status === 'CASH_DUE';
 const cashChanges = new Set();
@@ -305,7 +307,7 @@ function renderOrders() {
   document.querySelector('#archive-search-wrap').hidden = !historyView;
   if (!visible.some(order => order.apiId === selectedOrderId)) selectedOrderId = visible[0]?.apiId || null;
   document.querySelector('#order-queue').hidden = completedView || historyView || !visible.length;
-  document.querySelector('#order-queue').innerHTML = completedView || historyView ? '' : visible.map(order => `<button class="queue-order ${order.apiId === selectedOrderId ? 'selected' : ''}" data-select-order="${escapeHtml(order.apiId)}" aria-pressed="${order.apiId === selectedOrderId}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><b>${euro(order.total)}</b></span><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></button>`).join('');
+  document.querySelector('#order-queue').innerHTML = completedView || historyView ? '' : visible.map(order => `<button class="queue-order ${order.apiId === selectedOrderId ? 'selected' : ''}" data-select-order="${escapeHtml(order.apiId)}" aria-pressed="${order.apiId === selectedOrderId}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><b>${euro(order.total)}</b></span><small>${escapeHtml(order.type)}${order.raw?.serviceDate ? ` · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''}</small><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></button>`).join('');
   document.querySelectorAll('[data-select-order]').forEach(button => button.onclick = () => { selectedOrderId = button.dataset.selectOrder; renderOrders(); });
   const shown = completedView || historyView ? visible : visible.filter(order => order.apiId === selectedOrderId);
   document.querySelector("#orders-list").innerHTML = shown.length ? shown.map((order) => {
@@ -317,7 +319,7 @@ function renderOrders() {
     const step = stages.indexOf(order.status);
     const progress = step < 0 ? '' : `<ol class="order-progress" aria-label="Progression de la commande">${stages.map((stage, index) => `<li class="${index < step ? 'done' : index === step ? 'current' : ''}" ${index === step ? 'aria-current="step"' : ''}><b>${index < step ? '✓' : index + 1}</b><span>${stage === 'Acceptée' ? 'En cuisine' : stage === 'Nouvelle' ? 'À accepter' : stage}</span></li>`).join('')}</ol>`;
     const printControls = cashDue(order.raw) ? '': `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Imprimer</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Récapitulatif de commande, sans détail de TVA.')}</span></div>`;
-    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}</span><strong>${escapeHtml(order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details" data-order-disclosure="payment:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`payment:${order.apiId}`) ? 'open' : ''}><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Paiement en espèces attendu' : 'Espèces encaissées') : order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
+    const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}${order.raw?.serviceDate ? ` · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''}</span><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details" data-order-disclosure="payment:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`payment:${order.apiId}`) ? 'open' : ''}><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Paiement en espèces attendu' : 'Espèces encaissées') : order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
     if (completedView || historyView) return `<details class="order-card completed-order" data-order-disclosure="order:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`order:${order.apiId}`) ? 'open' : ''}><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small><span class="closed-order-label">Ouvrir la commande</span><span class="open-order-label">Fermer la commande</span></small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}<button type="button" class="secondary-button" data-close-order="${escapeHtml(order.apiId)}">Fermer la commande</button></div></details>`;
     return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
@@ -394,6 +396,7 @@ function refreshMetrics() {
 
 function renderHome() {
   const pending = orders.filter(order => order.status === 'Nouvelle');
+  window.KrokliProWeb?.update({waiting:pending.length,syncedAt:feedHealth.orders.lastSuccess,error:feedHealth.orders.error});
   const pendingTables = reservations.filter(table => table.status === 'pending');
   const loaded = Boolean(feedHealth.orders.lastSuccess && feedHealth.reservations.lastSuccess);
   updateText('#home-priority-title', !loaded ? 'Connexion à votre restaurant…' : pending.length ? `${pending.length} commande${pending.length > 1 ? 's' : ''} vous attend${pending.length > 1 ? 'ent' : ''} !` : pendingTables.length ? `${pendingTables.length} table${pendingTables.length > 1 ? 's' : ''} à confirmer` : 'Tout est à jour pour le service.');
@@ -403,7 +406,7 @@ function renderHome() {
   updateText('#home-tables', feedHealth.reservations.lastSuccess ? String(reservations.filter(table => table.serviceDate === todayDateKey() && table.status !== 'cancelled').length) : '—');
   const period = document.querySelector('#home-period').value || 'today';
   updateText('#home-revenue', feedHealth.orders.lastSuccess ? euro(revenue[period]) : '—');
-  document.querySelector('#home-orders').innerHTML = active().slice(0, 4).map(order => `<button class="home-row" data-home-order="${escapeHtml(order.apiId)}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)}</small></span><span><strong>${euro(order.total)}</strong><small>${escapeHtml(order.status)}</small></span></button>`).join('') || `<p class="workspace-empty">${feedHealth.orders.lastSuccess ? 'Aucune commande en cours. Prêts pour la prochaine !' : 'Chargement des commandes…'}</p>`;
+  document.querySelector('#home-orders').innerHTML = active().slice(0, 4).map(order => `<button class="home-row" data-home-order="${escapeHtml(order.apiId)}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><small>${escapeHtml(order.type)}${order.raw?.serviceDate ? ` · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''}</small><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong></span><span><strong>${euro(order.total)}</strong><small>${escapeHtml(order.status)}</small></span></button>`).join('') || `<p class="workspace-empty">${feedHealth.orders.lastSuccess ? 'Aucune commande en cours. Prêts pour la prochaine !' : 'Chargement des commandes…'}</p>`;
   document.querySelector('#home-reservations').innerHTML = reservations.filter(table => table.serviceDate >= todayDateKey() && table.status !== 'cancelled').sort((a,b) => `${a.serviceDate} ${a.slot}`.localeCompare(`${b.serviceDate} ${b.slot}`)).slice(0,4).map(table => `<button class="home-row" data-home-table><span><strong>${escapeHtml(table.customer)}</strong><small>${escapeHtml(table.date)} · ${escapeHtml(table.slot)}</small></span><span><strong>${Number(table.guests)} pers.</strong><small>${reservationStatusLabel[table.status]}</small></span></button>`).join('') || `<p class="workspace-empty">${feedHealth.reservations.lastSuccess ? 'Aucune table à venir pour le moment.' : 'Chargement des réservations…'}</p>`;
   document.querySelectorAll('[data-home-order]').forEach(button => button.onclick = () => { selectedOrderId = button.dataset.homeOrder; setOrderFilter('all'); showView('orders'); });
   document.querySelectorAll('[data-home-table]').forEach(button => button.onclick = () => showView('reservations'));
@@ -428,11 +431,12 @@ function updateAttention(orderCount, reservationCount, rewardCount) {
     document.querySelector(selector).classList.toggle("needs-attention", count > 0);
   }
   const total = orderCount + reservationCount + rewardCount;
-  document.title = `${total ? `(${total}) ` : ""}Bibou's Burgers — Espace restaurant`;
+  document.title = `${total ? `(${total}) ` : ""}Krokli Pro — Bibou’s Burgers`;
 }
 
 function updateSoundControls() {
   const state = soundPlayer.state();
+  window.KrokliProWeb?.sound(state);
   document.querySelector('#audio-warning').hidden = Boolean(state.ready);
   document.querySelector('#enable-alerts-button').disabled = !state.supported;
   updateText('#audio-warning-text', !state.supported ? 'Ce navigateur ne peut pas sonner. Ouvrez le tableau dans Safari ou Chrome.' : 'Le navigateur a suspendu le son. Touchez « Activer les alertes sonores » pour recevoir les commandes.');
@@ -451,6 +455,7 @@ function updateConnectionStatus() {
   const status = BibouAlerts.connectionStatus(Object.values(feedHealth), navigator.onLine);
   updateText("#connection-status", status.text);
   document.querySelector("#connection-status").classList.toggle("connection-warning", status.warning);
+  window.KrokliProWeb?.update({waiting:orders.filter(order=>order.status==='Nouvelle').length,syncedAt:feedHealth.orders.lastSuccess,error:feedHealth.orders.error});
 }
 
 function announceArrivals(kind, count) {
@@ -788,6 +793,9 @@ document.querySelector("#menu-search").addEventListener("input", renderMenu);
 document.querySelector("#menu-filter").addEventListener("change", renderMenu);
 
 function clearCustomerView() {
+  birthdaysPanel?.clear();
+  customerPageChanged=false;
+  closeCustomerDetail(false);
   customerData = null;
   selectedCustomerId = null;
   customerOffset = 0;
@@ -801,6 +809,8 @@ function clearCustomerView() {
   document.querySelector("#customer-page").textContent = "";
   document.querySelector("#customer-previous").disabled = true;
   document.querySelector("#customer-next").disabled = true;
+  for(const id of ['#customer-page-bottom','#customer-page-buttons','#customer-page-buttons-bottom']) document.querySelector(id).textContent='';
+  for(const id of ['#customer-previous-bottom','#customer-next-bottom']) document.querySelector(id).disabled=true;
 }
 const customerDate = (value) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium" }).format(new Date(value)) : "Non renseigné";
 const customerNumber = (value) => Number(value || 0).toLocaleString("fr-FR");
@@ -810,10 +820,23 @@ function renderCustomers() {
   if (!customerData) return;
   const { customers, summary, total, offset, limit } = customerData;
   for (const [key, value] of Object.entries({ total: summary.customers, plus: summary.bibouPlus, referrals: summary.validatedReferrals, points: summary.points })) document.querySelector(`#customer-${key}`).textContent = customerNumber(value);
-  document.querySelector("#customer-list").innerHTML = customers.length ? customers.map((customer) => `<article class="customer-card ${customer.id === selectedCustomerId ? "selected" : ""}"><div class="customer-card-heading"><div><h3>${escapeHtml(customer.name)}</h3><p>${escapeHtml(customer.phone || "Téléphone non renseigné")}</p></div><strong class="customer-balance">${customerNumber(customer.points)}<small>points</small></strong></div><p class="customer-prestige">${escapeHtml(customerPrestige(customer))}${customer.bibouPlus.active ? '<span class="plus-label">Bibou +</span>' : ""}</p><p class="customer-card-meta">${customerNumber(customer.orders.count)} commande(s) payée(s) · ${customerNumber(customer.referrals.validated)} parrainage(s) validé(s)</p><button type="button" class="secondary-button" data-customer-id="${escapeHtml(customer.id)}" aria-label="Voir la fiche de ${escapeHtml(customer.name)}" aria-pressed="${customer.id === selectedCustomerId}">Voir la fiche →</button></article>`).join("") : '<p class="empty">Aucun client ne correspond à votre recherche.</p>';
+  const list = document.querySelector("#customer-list");
+  const scrollTop = list.scrollTop;
+  list.innerHTML = customers.length ? `<table class="customer-table"><thead><tr><th scope="col">Client · ouvrir sa fiche</th><th scope="col">Points</th><th scope="col" class="customer-secondary-column">Commandes</th><th scope="col" class="customer-secondary-column">Parrainages</th><th scope="col">Bibou +</th></tr></thead><tbody>${customers.map(customer => `<tr class="${customer.id === selectedCustomerId ? 'selected' : ''}"><td><button type="button" class="customer-open" data-customer-id="${escapeHtml(customer.id)}" aria-label="Voir la fiche de ${escapeHtml(customer.name)}" aria-haspopup="dialog" aria-pressed="${customer.id === selectedCustomerId}"><strong>${escapeHtml(customer.name)}</strong><small>${escapeHtml(customer.phone || 'Téléphone non renseigné')}</small></button></td><td class="customer-points">${customerNumber(customer.points)}</td><td class="customer-secondary-column">${customerNumber(customer.orders.count)}</td><td class="customer-secondary-column">${customerNumber(customer.referrals.validated)}</td><td>${customer.bibouPlus.active ? '<span class="plus-label">Actif</span>' : '—'}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">Aucun client ne correspond à votre recherche.</p>';
+  list.scrollTop = scrollTop;
   document.querySelector("#customer-page").textContent = total ? `${offset + 1}–${Math.min(offset + limit, total)} sur ${total}` : "0 résultat";
   document.querySelector("#customer-previous").disabled = offset <= 0;
   document.querySelector("#customer-next").disabled = offset + limit >= total;
+  const page = Math.floor(offset/limit)+1, pages=Math.max(1,Math.ceil(total/limit));
+  const shown=[...new Set([1,page-1,page,page+1,pages])].filter(p=>p>=1&&p<=pages).sort((a,b)=>a-b);
+  const pageButtons=shown.map((p,i)=>`${i && p>shown[i-1]+1?'<span aria-hidden="true">…</span>':''}<button type="button" data-customer-page="${p}" aria-label="Page ${p}" ${p===page?'aria-current="page"':''}>${p}</button>`).join('');
+  for (const suffix of ['', '-bottom']) {
+    document.querySelector('#customer-page-buttons'+suffix).innerHTML=pageButtons;
+    document.querySelector('#customer-page'+suffix).textContent=total?`${offset+1}–${Math.min(offset+limit,total)} sur ${total}`:'0 résultat';
+    document.querySelector('#customer-previous'+suffix).disabled=offset<=0;
+    document.querySelector('#customer-next'+suffix).disabled=offset+limit>=total;
+  }
+  document.querySelectorAll('[data-customer-page]').forEach(button=>button.addEventListener('click',()=>{customerOffset=(Number(button.dataset.customerPage)-1)*limit;customerPageChanged=true;void loadCustomers();}));
   document.querySelectorAll("[data-customer-id]").forEach((button) => button.addEventListener("click", () => loadCustomerDetail(button.dataset.customerId, true)));
 }
 
@@ -827,16 +850,24 @@ async function loadCustomers() {
   const filter = encodeURIComponent(document.querySelector("#customer-filter").value || "all");
   document.querySelector("#customer-feedback").textContent = "Actualisation des clients…";
   try {
-    const response = await fetch(`${API_BASE_URL}/dashboard/customers?q=${query}&filter=${filter}&offset=${customerOffset}&limit=10`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
+    const requestedLimit = Number(document.querySelector('#customer-limit')?.value);
+    const limit = [6,12,24,48].includes(requestedLimit) ? requestedLimit : 12;
+    const response = await fetch(`${API_BASE_URL}/dashboard/customers?q=${query}&filter=${filter}&offset=${customerOffset}&limit=${limit}`, { headers: dashboardHeaders(), cache: "no-store", signal: controller.signal });
     if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
     if (response.status === 401) return showLogin("Votre session a expiré. Connectez-vous à nouveau.");
     if (!response.ok) throw new Error("Impossible de charger les clients. Cliquez sur Actualiser pour réessayer.");
     const payload = await response.json();
     if (requestId !== customerRequest || token !== dashboardToken || currentView !== "customers") return;
+    const firstDirectoryLoad = !customerData;
     customerData = payload;
     customerOffset = payload.offset;
     customerLastUpdate = Date.now();
     renderCustomers();
+    if (firstDirectoryLoad || customerPageChanged) {
+      customerPageChanged=false;
+      document.querySelector('#customers-view').scrollIntoView?.({ block: 'start', behavior: 'instant' });
+      document.querySelector('#customer-directory-title')?.focus({ preventScroll: true });
+    }
     document.querySelector("#customer-feedback").textContent = `À jour à ${new Date().toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })} · clients classés par points décroissants.`;
     if (selectedCustomerId) void loadCustomerDetail(selectedCustomerId);
   } catch (error) {
@@ -872,7 +903,14 @@ async function loadCustomerDetail(id, focus = false) {
   const token = dashboardToken;
   const requestId = ++customerDetailRequest;
   selectedCustomerId = id;
-  if (focus) { renderCustomers(); document.querySelector("#customer-detail").innerHTML = '<p class="empty">Chargement de la fiche…</p>'; }
+  if (focus) {
+    renderCustomers();
+    const detail = document.querySelector('#customer-detail');
+    detail.innerHTML = '<p class="empty" role="status">Chargement de la fiche…</p>';
+    detail.scrollTop = 0;
+    const drawer = document.querySelector('#customer-detail-drawer');
+    if (drawer && !drawer.open) drawer.showModal?.();
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
@@ -888,18 +926,48 @@ async function loadCustomerDetail(id, focus = false) {
   } finally { clearTimeout(timeout); }
 }
 function searchCustomers() {
+  customerPageChanged=false;
+  closeCustomerDetail(false);
   ++customerRequest;
   ++customerDetailRequest;
   selectedCustomerId = null;
   customerOffset = 0;
+  document.querySelector('#customer-list').scrollTop = 0;
   document.querySelector("#customer-detail").innerHTML = '<p class="empty">Sélectionnez un client pour consulter sa fiche.</p>';
   clearTimeout(customerSearchTimer);
   customerSearchTimer = setTimeout(() => { void loadCustomers(); }, 250);
 }
 document.querySelector("#customer-search").addEventListener("input", searchCustomers);
 document.querySelector("#customer-filter").addEventListener("change", searchCustomers);
-document.querySelector("#customer-previous").addEventListener("click", () => { customerOffset = Math.max(0, customerOffset - (customerData?.limit || 25)); void loadCustomers(); });
-document.querySelector("#customer-next").addEventListener("click", () => { customerOffset += customerData?.limit || 25; void loadCustomers(); });
+document.querySelector('#customer-limit')?.addEventListener('change', searchCustomers);
+if (window.matchMedia?.('(max-width:700px)').matches) document.querySelector('#customer-limit').value='6';
+for(const kind of ['filter','limit']) document.querySelectorAll(`[data-customer-${kind}]`).forEach(button=>button.addEventListener('click',()=>{
+  document.querySelector('#customer-'+kind).value=button.dataset[kind==='filter'?'customerFilter':'customerLimit'];
+  document.querySelectorAll(`[data-customer-${kind}]`).forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+  searchCustomers();
+}));
+document.querySelectorAll('[data-customer-limit]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.customerLimit===document.querySelector('#customer-limit').value)));
+function closeCustomerDetail(restoreFocus = true) {
+  const drawer = document.querySelector('#customer-detail-drawer');
+  if (drawer?.open) drawer.close();
+  if (restoreFocus) {
+    const button = Array.from(document.querySelectorAll('[data-customer-id]')).find(item => item.dataset.customerId === selectedCustomerId);
+    button?.focus({ preventScroll: true });
+  }
+}
+document.querySelector('#customer-detail-close')?.addEventListener('click', () => closeCustomerDetail());
+document.querySelector('#customer-detail-drawer')?.addEventListener('cancel', event => { event.preventDefault(); closeCustomerDetail(); });
+function changeCustomerPage(direction) {
+  closeCustomerDetail(false);
+  customerOffset = Math.max(0, customerOffset + direction * (customerData?.limit || 12));
+  customerPageChanged=true;
+  document.querySelector('#customer-list').scrollTop = 0;
+  void loadCustomers();
+}
+document.querySelector("#customer-previous").addEventListener("click", () => changeCustomerPage(-1));
+document.querySelector("#customer-next").addEventListener("click", () => changeCustomerPage(1));
+document.querySelector('#customer-previous-bottom').addEventListener('click',()=>changeCustomerPage(-1));
+document.querySelector('#customer-next-bottom').addEventListener('click',()=>changeCustomerPage(1));
 
 let backupBusy = false;
 const backupDate = (value) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -958,9 +1026,12 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "tools", "account", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (view !== 'customers') closeCustomerDetail(false);
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
+  document.querySelector('#pro-rubrics-view').hidden = view !== 'tools';
+  document.querySelector('#pro-account-view').hidden = view !== 'account';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
   document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications','marketing-sms'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
@@ -982,6 +1053,7 @@ function showView(view) {
   document.querySelector("#settings-view").hidden = view !== "settings";
   document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', dispatch: 'Répartir les courses', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
   updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',dispatch:'Choisissez votre livreur et suivez chaque livraison ici.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
+  if (['home','orders','tools','account'].includes(view)) document.querySelector('#dashboard-title').textContent={home:'Votre service',orders:'Commandes en cours',tools:'Mon restaurant',account:'Mon compte'}[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing','marketing-sms':'marketing',backups:'settings'}[view] || view;
@@ -1004,6 +1076,10 @@ document.querySelectorAll('[data-jump]').forEach(button => button.addEventListen
   if (button.dataset.orderFilter) setOrderFilter(button.dataset.orderFilter);
   showView(button.dataset.jump);
 }));
+document.querySelector('#pro-birthday-open').addEventListener('click',()=>birthdaysPanel?.open());
+document.querySelector('#pro-enable-alerts').addEventListener('click',()=>document.querySelector('#enable-alerts-button').click());
+document.querySelector('#pro-logout').addEventListener('click',()=>{const dialog=document.querySelector('#pro-logout-dialog');dialog.returnValue='cancel';dialog.showModal();});
+document.querySelector('#pro-logout-dialog').addEventListener('close',event=>{if(event.target.returnValue==='logout')logoutDashboard();});
 document.addEventListener('click', event => { if (event.target.closest('[data-open-dispatch]')) showView('dispatch'); });
 document.querySelector('#home-period').addEventListener('change', renderHome);
 document.querySelector('#home-priority').addEventListener('click', () => {
@@ -1069,6 +1145,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
+  void birthdaysPanel?.load(true);
   if (["crm", "settings"].includes(currentView)) return crmPanel?.load();
   if (currentView === "schedule") return schedulePanel?.load();
   if (currentView === 'statistics') return statisticsPanel?.load();
@@ -1120,6 +1197,7 @@ if (typeof window.BibouMarketingSms === 'function') smsPanel = window.BibouMarke
 if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSchedule({root:document.querySelector('#schedule-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:showLogin});
 if (window.BibouDispatch?.create) dispatchPanel = window.BibouDispatch.create({root:document.querySelector('#dispatch-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onOrdersChanged:()=>loadOrders(),getOrder:id=>orders.find(order=>order.apiId===id)});
 if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });
+if (typeof window.BibouBirthdays === 'function') birthdaysPanel = window.BibouBirthdays({banner:document.querySelector('#birthday-alert'),dialog:document.querySelector('#birthday-dialog'),openButton:document.querySelector('#birthday-open'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onPreparePush:target=>{showView('notifications');notificationsPanel?.prepareBirthday(target);}});
 refreshMetrics();
 updateSoundControls();
 updateConnectionStatus();
@@ -1132,6 +1210,7 @@ window.BibouRestaurantApp?.start(showView);
 if (dashboardToken) { showDashboard(); void ensureServiceSound(); void refreshFeeds({ notify: false }); } else { showLogin(); }
 const resumeUpdates = () => {
   if (!dashboardToken) return;
+  if (!document.hidden) void birthdaysPanel?.load();
   updateConnectionStatus();
   updateSoundControls();
   if (!soundPlayer.state().ready && !document.hidden) void ensureServiceSound();
