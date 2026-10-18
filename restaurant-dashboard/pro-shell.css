@@ -1,0 +1,75 @@
+/* Krokli Pro Apple build 2: web presentation, keeping the original operations. */
+:root{--pro-terracotta:#a55c43;--pro-clay:#ead7cc;--pro-sage:#e7eade;--pro-paper:#fbf3e6;--pro-line:#e4d8cb;--muted:#6e645b}
+body{background:var(--pro-paper);color:#292d29;font-family:Arial,Helvetica,sans-serif}
+[hidden]{display:none!important}
+button,a,input,select,textarea{touch-action:manipulation}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #315b4b;outline-offset:3px}
+.app-shell{display:block;min-height:100dvh}
+.main-panel{max-width:1160px;padding:0 26px calc(115px + env(safe-area-inset-bottom));margin:0 auto}
+.app-brandbar,#dashboard-app[data-page=customers] .app-brandbar{min-height:94px;padding:18px 0;margin:0 0 26px;background:var(--pro-paper);color:#315b4b;border-bottom:1px solid var(--pro-line);display:flex;flex-wrap:nowrap;justify-content:space-between;gap:18px}
+.app-brand-home.pro-brand{display:grid;gap:4px;text-align:left;padding:0;min-width:0}
+.pro-brand strong{font-size:29px;font-weight:800;color:var(--pro-terracotta);line-height:1.1}
+.pro-brand span{font-size:15px;color:var(--muted);font-weight:400}
+.pro-account-button,.pro-secondary{background:var(--pro-sage);color:#315b4b;border:0;border-radius:14px;padding:16px 20px;font-weight:700;font-size:17px;min-height:52px;line-height:1.35}
+.pro-account-button{font-size:16px;flex-shrink:0}
+.app-navigation{display:none}
+.topbar{margin:0 0 12px;align-items:center}
+.topbar h1,#dashboard-app[data-page=customers] .topbar h1{font-size:34px;line-height:1.2;letter-spacing:-.7px;margin:0;color:#315b4b;font-weight:800}
+#service-date-heading{display:none}
+.view-description{color:var(--muted);font-size:15px}
+#dashboard-app[data-page=home] #view-description,#dashboard-app[data-page=tools] #view-description,#dashboard-app[data-page=account] #view-description{display:none}
+#home-view{max-width:820px;margin:0 auto}
+.pro-sync,.pro-note{font-size:15px;color:var(--muted);line-height:1.6}
+.pro-sync{margin:0 0 22px}
+.pro-hero{border-radius:20px;background:var(--pro-clay);padding:26px;margin:0 0 18px;color:#7f402c}
+.pro-pending-count{font-size:64px;font-weight:800;line-height:1.1}
+.pro-hero>p{font-size:22px;font-weight:600;margin:12px 0 18px}
+.login-button,.primary-button,.accept,.advance{background:var(--pro-terracotta);color:#fffdf8;border-radius:13px;min-height:50px;font-size:17px}
+.login-button:hover,.primary-button:hover,.accept:hover,.advance:hover{background:#87472f}
+.pro-hero>.login-button,.pro-tools-shortcut{width:100%;padding:17px 22px}
+.pro-service-card{background:#fffdf8;border:1px solid var(--pro-line);border-radius:18px;padding:22px;margin:18px 0;line-height:1.6}
+.pro-service-card h2{font-size:22px;color:#315b4b;margin:0 0 15px}
+.pro-service-card>.pro-secondary{width:100%;margin:12px 0 0}
+.pro-awake-row{display:flex;align-items:center;gap:12px;position:relative;min-height:48px;font-size:17px;cursor:pointer}
+.pro-awake-row>span:first-child{flex:1}
+.pro-awake-row>input{position:absolute;right:0;width:54px;height:34px;opacity:0;margin:0;cursor:pointer;z-index:1}
+.pro-switch{width:54px;height:34px;border-radius:30px;background:#d7cec7;display:block;position:relative;flex-shrink:0}
+.pro-switch:after{content:'';position:absolute;top:3px;left:3px;width:28px;height:28px;background:white;border-radius:50%;transition:transform .12s}
+.pro-awake-row>input:checked+.pro-switch{background:#bb7258}
+.pro-awake-row>input:checked+.pro-switch:after{transform:translateX(20px)}
+.pro-awake-row>input:focus-visible+.pro-switch{outline:3px solid #315b4b;outline-offset:3px}
+.pro-note:empty{display:none}
+.pro-bottom-tabs{position:fixed;z-index:20;bottom:0;left:0;right:0;display:flex;gap:8px;justify-content:center;padding:12px 18px calc(12px + env(safe-area-inset-bottom));background:var(--pro-paper);border-top:1px solid var(--pro-line)}
+.pro-bottom-tabs>button{flex:1;max-width:360px;min-height:52px;border-radius:14px;padding:14px 8px;font-size:16px;font-weight:600;background:transparent;color:var(--muted)}
+.pro-bottom-tabs>button[aria-current=page]{background:var(--pro-clay);color:#7f402c;font-weight:800}
+#pro-orders-badge{background:var(--pro-terracotta);color:white;border-radius:15px;font-size:12px;padding:3px 7px;margin-left:4px}
+.app-rubrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:24px 0 16px}
+.app-rubrics button,.app-rubrics button:first-child{background:var(--pro-sage);color:#315b4b;min-height:88px;padding:22px;border:0;border-radius:16px;gap:6px}
+.app-rubrics button:first-child small,.app-rubrics small{color:var(--muted);font-size:14px}
+.app-rubrics button>span{display:none}
+.app-rubrics strong{font-size:21px}
+.app-rubrics strong:after{content:' →'}
+.app-rubrics button:hover{background:#dde4d5}
+.pro-extra-rubrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+#pro-account-view{max-width:820px;margin:0 auto}
+#pro-account-view>button{width:100%;margin:8px 0}
+.service-alerts{font-size:12px;margin:0 0 18px;padding:12px 14px;border-radius:12px;border:1px solid var(--pro-line);background:#fffdf8;gap:6px 16px}
+.service-alerts p{font-size:12px;margin:0}.attention-links button{min-height:36px;font-size:12px}
+#pro-status-home .service-alerts{margin:16px 0 0;border:0;border-top:1px solid var(--pro-line);border-radius:0;padding:16px 0 0}
+#dashboard-app[data-page=home] #audio-warning{display:none}
+.audio-warning{border-radius:12px}
+.order-alarm{position:relative;top:auto;z-index:2;background:#f8e5da;color:#7f402c;border-radius:16px;box-shadow:none;border:1px solid #d9b4a3}
+.alarm-copy>small{color:#7f402c}.alarm-bell{background:#ead7cc}
+.birthday-alert{border-left:0;border-radius:18px;background:#fffdf8;border-color:var(--pro-line);padding:22px}
+.birthday-alert strong{font-size:22px;color:#315b4b}
+.birthday-alert .login-button{font-size:16px}
+.login-panel{max-width:480px;background:var(--pro-paper);box-shadow:none;border:0}
+.pro-login-brand{color:var(--pro-terracotta);font-size:36px;text-align:center;margin:10px 0}
+.pro-login-restaurant{font-weight:700;color:#315b4b}
+.login-logo{background:#315b4b;width:180px;height:88px;margin-bottom:18px}
+.login-panel .login-button{width:100%}
+.toast{bottom:100px;z-index:40}
+.customer-detail-drawer,.birthday-dialog,.app-install-dialog{z-index:50}
+@media(min-width:821px){#dashboard-app[data-page=home] .topbar{max-width:820px;margin-left:auto;margin-right:auto}.pro-service-card{padding:26px}.orders-workspace{grid-template-columns:minmax(270px,.75fr) minmax(0,1.4fr)}}
+@media(max-width:700px){.main-panel{padding-left:18px;padding-right:18px}.pro-brand strong{font-size:25px}.app-brandbar,#dashboard-app[data-page=customers] .app-brandbar{padding:18px 0;min-height:90px;margin-bottom:22px}.pro-account-button{padding:12px 15px;font-size:15px}.topbar h1,#dashboard-app[data-page=customers] .topbar h1{font-size:30px}.topbar-actions .secondary-button{font-size:12px}.pro-hero{padding:22px}.pro-pending-count{font-size:54px}.pro-hero>p{font-size:20px}.pro-service-card{padding:18px}.app-rubrics,.pro-extra-rubrics{grid-template-columns:1fr;gap:14px}.app-rubrics button{min-height:74px;padding:20px}.app-rubrics strong{font-size:19px}.pro-bottom-tabs{padding-left:10px;padding-right:10px}.pro-bottom-tabs>button{font-size:14px;padding:14px 4px}.pro-awake-row{font-size:16px}.service-alerts{padding:10px}.order-card{padding:18px}}
+@media(prefers-reduced-motion:reduce){.pro-switch:after{transition:none}}
