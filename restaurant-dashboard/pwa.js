@@ -1,7 +1,7 @@
 /* Shell only: no client records, session tokens or API responses are cached here. */
 (() => {
-  const routes = new Set(['home','orders','dispatch','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
-  const labels = {home:'Accueil',orders:'Commandes',dispatch:'Répartition des livreurs',reservations:'Réservations',rewards:'Récompenses',menu:'Carte & produits',backups:'Sauvegardes',customers:'Clients & fidélité',marketing:'Marketing',promotions:'Codes promo',notifications:'Notifications', 'marketing-sms':'SMS commerciaux',crm:'Offres & statistiques',settings:'Réglages',schedule:'Créneaux',statistics:'Statistiques'};
+  const routes = new Set(['home','tools','account','orders','dispatch','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
+  const labels = {home:'Accueil',tools:'Rubriques',account:'Mon compte',orders:'Commandes',dispatch:'Répartition des livreurs',reservations:'Réservations',rewards:'Récompenses',menu:'Carte & produits',backups:'Sauvegardes',customers:'Clients & fidélité',marketing:'Marketing',promotions:'Codes promo',notifications:'Notifications', 'marketing-sms':'SMS commerciaux',crm:'Offres & statistiques',settings:'Réglages',schedule:'Créneaux',statistics:'Statistiques'};
   const route = () => {const candidate = location.hash.slice(1); return routes.has(candidate) ? candidate : 'home';};
   const initialRoute = route();
   let current = 'home', installPrompt = null, fromHistory = false;
@@ -14,15 +14,19 @@
       const moved = view !== current;
       current = view;
       document.querySelector('#dashboard-app').dataset.page = view;
+      window.KrokliProWeb?.view(view);
       document.querySelector('#app-current').textContent = view === 'orders' && filter === 'Historique' ? 'Historique' : labels[view];
+      const selectedTab=['home','orders','account'].includes(view)?view:'tools';
+      document.querySelectorAll('.pro-bottom-tabs [data-jump]').forEach(button=>button.setAttribute('aria-current',button.dataset.jump===selectedTab?'page':'false'));
       if (!fromHistory && location.hash !== `#${view}`) history.pushState(null, '', `#${view}`);
       if (view === 'home') {
-        document.querySelector('#dashboard-title').textContent = 'Que souhaites-tu gérer ?';
-        document.querySelector('#view-description').textContent = 'Choisis une rubrique, comme sur la borne.';
+        document.querySelector('#dashboard-title').textContent = 'Votre service';
+        document.querySelector('#view-description').textContent = 'Votre restaurant, à portée de main.';
       }
       if (moved) {
         window.scrollTo({top:0,behavior:'instant'});
-        const heading = document.querySelector('#dashboard-title');
+        if (view === 'customers') document.querySelector('#customers-view').scrollIntoView({block:'start',behavior:'instant'});
+        const heading = document.querySelector(view === 'customers' ? '#customer-directory-title' : '#dashboard-title');
         heading.setAttribute('tabindex','-1'); heading.focus({preventScroll:true});
       }
     },
