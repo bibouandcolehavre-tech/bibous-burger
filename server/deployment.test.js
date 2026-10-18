@@ -29,12 +29,16 @@ test('Le paquet Docker démarre avec tous les modules des actualités', { timeou
       // copy arbitrary JSON such as local customer databases or credentials.
       await fs.mkdir(to, { recursive: true });
       for (const file of await fs.readdir(from)) {
-        if (['iban-registry.json','krokli-review-access.json'].includes(file)||file.endsWith('.js')&&!file.endsWith('.test.js')) await fs.copyFile(path.join(from, file), path.join(to, file));
+        if (['iban-registry.json','krokli-review-access.json','krokli-field-test-access.json'].includes(file)||file.endsWith('.js')&&!file.endsWith('.test.js')) await fs.copyFile(path.join(from, file), path.join(to, file));
       }
       const reviewAccess = JSON.parse(await fs.readFile(path.join(to, 'krokli-review-access.json'), 'utf8'));
       assert.deepEqual(Object.keys(reviewAccess).sort(), ['passwordHash','username']);
       assert.equal(reviewAccess.username, 'store-review-krokli');
       assert.match(reviewAccess.passwordHash, /^(?:[a-f0-9]{64})?$/);
+      const fieldAccess = JSON.parse(await fs.readFile(path.join(to, 'krokli-field-test-access.json'), 'utf8'));
+      assert.deepEqual(Object.keys(fieldAccess).sort(), ['accessHash','enabled','expiresAt']);
+      assert.equal(typeof fieldAccess.enabled, 'boolean');
+      assert.match(fieldAccess.accessHash, /^(?:[a-f0-9]{64})?$/);
     } else if (source === 'driver-app') {
       const expected = ['app.js', 'apple-touch-icon.png', 'gps.js', 'guidance-core.js', 'guidance.js', 'icon-192.png', 'icon-512.png', 'icon.svg', 'index.html', 'leaflet-LICENSE.txt', 'leaflet.css', 'leaflet.js', 'manifest.webmanifest', 'navigation-core.js', 'navigation.js', 'style.css', 'sw.js'];
       assert.deepEqual((await fs.readdir(from)).sort(), expected, 'Le paquet livreur ne doit contenir que les fichiers publics prévus.');
