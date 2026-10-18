@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Bibou's Burgers — Espace restaurant</title>
+    <title>Krokli Pro — Bibou’s Burgers</title>
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="theme-color" content="#315B4B" />
+    <meta name="theme-color" content="#FBF3E6" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Bibou Restaurant" />
@@ -19,19 +19,22 @@
     <link rel="stylesheet" href="./workspace.css?v=simple-slots-audio-20261001" />
     <link rel="stylesheet" href="./promotions.css?v=1" />
     <link rel="stylesheet" href="./dispatch.css?v=1" />
-    <link rel="stylesheet" href="./pwa.css?v=restaurant-pwa-20261011" />
+    <link rel="stylesheet" href="./pwa.css?v=pickup-time-20261016" />
+    <link rel="stylesheet" href="./customers-compact.css?v=pages-20261018" />
+    <link rel="stylesheet" href="./birthdays.css?v=20261018" />
+    <link rel="stylesheet" href="./pro-shell.css?v=20261018" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
       <div class="login-panel">
         <img class="login-logo" src="./restaurant-wordmark.png" alt="Bibou’s Burgers" width="225" height="112" />
-        <p class="eyebrow">ESPACE RESTAURANT</p>
-        <h1>Bonjour, l’équipe !</h1>
-        <p>Connectez-vous pour voir et gérer les commandes en direct.</p>
+        <h1 class="pro-login-brand">Krokli Pro</h1>
+        <p>Votre restaurant, à portée de main.</p>
+        <p class="pro-login-restaurant">Bibou’s Burgers · espace restaurant</p>
         <label for="dashboard-password">Mot de passe</label>
         <input id="dashboard-password" type="password" autocomplete="current-password" placeholder="Votre mot de passe" />
         <p id="login-error" class="login-error" role="alert"></p>
-        <button id="dashboard-login" class="login-button">Accéder aux commandes</button>
+        <button id="dashboard-login" class="login-button">Accéder à mon restaurant</button>
         <small>Accès réservé à l’équipe Bibou’s Burgers.</small>
         <button type="button" class="pwa-install-link" data-install-app>Installer sur cet appareil</button>
         <a class="app-legacy" href="./ancienne-interface.html">Ouvrir l’ancienne interface</a>
@@ -61,13 +64,13 @@
 
       <main class="main-panel">
         <header class="app-brandbar">
-          <button type="button" class="app-brand-home" data-jump="home" aria-label="Accueil du restaurant"><img src="./restaurant-wordmark.png" alt="Bibou’s Burgers" width="210" height="100" /></button>
-          <div class="app-brand-title"><strong>Restaurant</strong><span>Le Havre · espace responsable</span></div>
-          <button type="button" class="pwa-install-link" data-install-app>Installer l’application</button>
+          <button type="button" class="app-brand-home pro-brand" data-jump="home" aria-label="Accueil Krokli Pro"><strong>Krokli Pro</strong><span>Bibou’s Burgers</span></button>
+          <button type="button" class="pro-account-button" data-jump="account">Mon compte</button>
         </header>
         <nav class="app-navigation" aria-label="Navigation de l’application">
-          <button type="button" class="app-home" data-jump="home">▦ Toutes les rubriques</button>
+          <button type="button" class="app-home" data-jump="tools">← Toutes les rubriques</button>
           <span id="app-current" aria-live="polite">Accueil</span>
+          <button type="button" id="birthday-open" class="app-home birthday-open">🎂 Anniversaires</button>
           <a class="app-legacy" href="./ancienne-interface.html">Ancienne interface</a>
         </nav>
         <p id="app-offline" class="app-offline" role="alert" hidden>Connexion coupée. Les informations affichées peuvent être anciennes. Reconnectez l’iPad avant toute action.</p>
@@ -82,6 +85,8 @@
           </div>
         </header>
 
+        <dialog id="birthday-dialog" class="birthday-dialog" aria-labelledby="birthday-dialog-title"></dialog>
+        <div id="pro-status-global"></div>
         <section id="order-alarm" class="order-alarm" hidden aria-label="Commandes en attente">
           <div class="alarm-bell" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4M2 8a10 10 0 0 1 2-5M22 8a10 10 0 0 0-2-5"/></svg></div>
           <div class="alarm-copy" aria-live="polite" aria-atomic="true"><small>N’ATTEND PLUS QUE VOUS</small><strong id="order-alarm-title"></strong><p id="order-alarm-detail"></p></div>
@@ -113,6 +118,25 @@
         <nav class="workspace-subnav" id="marketing-subnav" aria-label="Marketing" hidden><button class="nav-item" data-view="marketing">Actualités & concours</button><button class="nav-item" data-view="promotions">Codes promo</button><button class="nav-item" data-view="crm">Offres & statistiques CRM</button><button class="nav-item" data-view="notifications">Notifications push</button><button class="nav-item" data-view="marketing-sms">SMS commerciaux</button></nav>
         <nav class="workspace-subnav" id="settings-subnav" aria-label="Réglages" hidden><button class="nav-item" data-view="settings">Paramètres & connexions</button><button class="nav-item" data-view="backups">Sauvegardes</button></nav>
         <section id="home-view" class="home-view" aria-label="Vue d’ensemble">
+          <p class="pro-sync" id="pro-sync" role="status">Connexion au restaurant…</p>
+          <section class="pro-hero" aria-label="Commandes à accepter">
+            <strong id="pro-pending-count" class="pro-pending-count">—</strong>
+            <p id="pro-pending-label">Vérification des commandes…</p>
+            <button type="button" class="login-button" data-jump="orders" data-order-filter="all">Voir les commandes</button>
+          </section>
+          <section id="birthday-alert" class="birthday-alert" role="status" aria-live="polite" hidden></section>
+          <section class="pro-service-card" aria-labelledby="pro-service-title">
+            <h2 id="pro-service-title">Pendant le service</h2>
+            <label class="pro-awake-row" for="pro-keep-awake"><span>Maintenir l’écran allumé</span><input id="pro-keep-awake" type="checkbox" role="switch" /><span class="pro-switch" aria-hidden="true"></span></label>
+            <p id="pro-awake-feedback" class="pro-note" role="status"></p>
+            <button type="button" id="pro-enable-alerts" class="pro-secondary">Activer les alertes de cet écran</button>
+            <p id="pro-alert-feedback" class="pro-note" role="status">Gardez cette page ouverte pendant le service. Les alertes dépendent des autorisations du navigateur et du volume de l’appareil.</p>
+            <div id="pro-status-home"></div>
+          </section>
+          <button type="button" class="pro-secondary pro-tools-shortcut" data-jump="tools">Toutes les rubriques du restaurant</button>
+        </section>
+        <section id="pro-rubrics-view" hidden aria-label="Rubriques du restaurant">
+          <p class="pro-note">Retrouvez toutes les fonctions de votre restaurant dans Krokli Pro.</p>
           <nav class="app-rubrics" aria-label="Ouvrir une rubrique">
             <button type="button" data-jump="orders" data-order-filter="all"><span aria-hidden="true">▤</span><strong>Commandes</strong><small>Accepter, préparer, remettre</small></button>
             <button type="button" data-jump="orders" data-order-filter="Historique"><span aria-hidden="true">◷</span><strong>Historique</strong><small>Retrouver une commande</small></button>
@@ -125,6 +149,14 @@
             <button type="button" data-jump="statistics"><span aria-hidden="true">↗</span><strong>Statistiques</strong><small>Chiffre d’affaires & clients qui reviennent</small></button>
             <button type="button" data-jump="settings"><span aria-hidden="true">⚙</span><strong>Réglages</strong><small>Tickets, alertes et sauvegardes</small></button>
           </nav>
+          <div class="pro-extra-rubrics"><button type="button" id="pro-birthday-open" class="pro-secondary">🎂 Anniversaires →</button><button type="button" class="pro-secondary" data-jump="rewards">Récompenses à remettre →</button><button type="button" class="pro-secondary" data-jump="notifications">Notifications clients →</button><button type="button" class="pro-secondary" data-jump="backups">Sauvegardes & sécurité →</button></div>
+        </section>
+        <section id="pro-account-view" hidden aria-label="Mon compte restaurant">
+          <article class="pro-service-card"><h2>Bibou’s Burgers</h2><p>Vous utilisez le même compte restaurant et les mêmes données que dans Krokli Pro. La déconnexion ci-dessous concerne ce navigateur uniquement.</p><p class="pro-note">Votre session reste enregistrée sur cet appareil. Ne partagez pas votre accès ; déconnectez-vous sur un ordinateur partagé.</p></article>
+          <button type="button" class="pro-secondary" data-jump="settings">Réglages du restaurant</button>
+          <button type="button" class="pro-secondary" data-install-app>Installer sur cet appareil</button>
+          <button type="button" id="pro-logout" class="login-button">Me déconnecter de cet appareil</button>
+        </section>
           <!-- Retain the previous home nodes for the existing read-only renderers. -->
           <div class="previous-home" hidden>
           <div class="home-hero"><div><p class="eyebrow">LE SERVICE, EN UN COUP D’ŒIL</p><h2 id="home-priority-title">On prépare votre tableau…</h2><p id="home-priority-detail">Les informations se mettent à jour automatiquement.</p></div><button class="primary-button" id="home-priority">Voir les commandes →</button></div>
@@ -140,7 +172,6 @@
             <button data-jump="crm"><span>↗</span><strong>Développer la fidélité<small>Offres et résultats</small></strong><b>→</b></button>
           </div>
           </div>
-        </section>
 
         <section id="marketing-view" hidden></section>
         <section id="statistics-view" hidden aria-label="Statistiques réelles du restaurant"></section>
@@ -214,11 +245,13 @@
           <p class="menu-note">Les quantités des boissons, accompagnements, suppléments et desserts comptent aussi lorsqu’ils sont choisis dans un menu. Un burger seul et son menu partagent le même compteur, mais conservent leurs boutons de rupture séparés. Les stocks ne sont pas remis à zéro au changement de jour. Une annulation payée ne remet pas automatiquement un produit préparé en stock : corrigez la quantité si vous pouvez réellement le vendre à nouveau. Les paiements déjà ouverts restent à vérifier.</p>
         </section>
         <section id="customers-view" class="customers-section" hidden>
-          <div class="menu-intro"><p class="eyebrow">LE CLUB BIBOU, CÔTÉ RESTAURANT</p><h2>Vos clients fidèles, en un coup d’œil.</h2><p>Retrouvez leurs points, leurs avantages et leurs parrainages. Cet espace est en consultation uniquement : aucun point n’est ajouté ou retiré ici.</p></div>
+          <div class="customer-directory-heading"><h2 id="customer-directory-title" tabindex="-1">Clients & fidélité</h2><button type="button" class="secondary-button" data-jump="tools">← Toutes les rubriques</button></div>
+          <p class="customer-list-intro">Cliquez sur un nom pour ouvrir sa fiche, sans quitter la liste.</p>
           <div class="metrics customer-metrics" aria-label="Ensemble des comptes clients"><article><div><strong id="customer-total">—</strong><small>comptes clients</small></div></article><article><div><strong id="customer-plus">—</strong><small>membres Bibou + actifs</small></div></article><article><div><strong id="customer-referrals">—</strong><small>parrainages validés</small></div></article><article><div><strong id="customer-points">—</strong><small>points cumulés des clients</small></div></article></div>
-          <div class="menu-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><label for="customer-filter">Afficher<select id="customer-filter"><option value="all">Tous les clients</option><option value="plus">Membres Bibou + actifs</option><option value="sponsors">Clients avec des filleuls</option></select></label></div>
+          <div class="menu-toolbar customer-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><div class="customer-button-options"><strong>Afficher</strong><input id="customer-filter" type="hidden" value="all"><div role="group" aria-label="Filtrer les clients"><button type="button" data-customer-filter="all" aria-pressed="true">Tous</button><button type="button" data-customer-filter="plus" aria-pressed="false">Bibou +</button><button type="button" data-customer-filter="sponsors" aria-pressed="false">Parrains</button></div></div><div class="customer-button-options"><strong>Clients par page</strong><input id="customer-limit" type="hidden" value="12"><div role="group" aria-label="Nombre de clients par page"><button type="button" data-customer-limit="6" aria-pressed="false">6</button><button type="button" data-customer-limit="12" aria-pressed="true">12</button><button type="button" data-customer-limit="24" aria-pressed="false">24</button><button type="button" data-customer-limit="48" aria-pressed="false">48</button></div></div></div>
           <p id="customer-feedback" class="menu-feedback" role="status" aria-live="polite"></p>
-          <div class="customers-layout"><div><div id="customer-list" class="customer-list"></div><div class="customer-pagination"><button type="button" id="customer-previous" class="secondary-button" disabled>← Précédents</button><span id="customer-page"></span><button type="button" id="customer-next" class="secondary-button" disabled>Suivants →</button></div></div><section id="customer-detail" class="customer-detail" aria-label="Fiche client"><p class="empty">Sélectionnez un client pour consulter sa fiche.</p></section></div>
+          <div class="customers-layout"><div class="customer-directory"><nav class="customer-pagination" aria-label="Pages des clients"><button type="button" id="customer-previous" class="secondary-button" disabled>←</button><div id="customer-page-buttons" class="customer-page-buttons"></div><button type="button" id="customer-next" class="secondary-button" disabled>→</button><span id="customer-page" role="status" aria-live="polite"></span></nav><div id="customer-list" class="customer-list"></div><nav class="customer-pagination" aria-label="Pages des clients en bas de liste"><button type="button" id="customer-previous-bottom" class="secondary-button" disabled>←</button><div id="customer-page-buttons-bottom" class="customer-page-buttons"></div><button type="button" id="customer-next-bottom" class="secondary-button" disabled>→</button><span id="customer-page-bottom"></span></nav></div></div>
+          <dialog id="customer-detail-drawer" class="customer-detail-drawer" aria-labelledby="customer-drawer-title"><div class="customer-drawer-toolbar"><strong id="customer-drawer-title">Fiche client</strong><button type="button" id="customer-detail-close" class="secondary-button">Fermer ✕</button></div><section id="customer-detail" class="customer-detail" aria-label="Fiche client"><p class="empty">Sélectionnez un client pour consulter sa fiche.</p></section></dialog>
           <p class="menu-note">Les compteurs du haut concernent tous les comptes encore présents, indépendamment de la recherche. Un parrainage est validé après la première commande payée non annulée et l’attribution du bonus de 100 points. Ce suivi ne constitue pas un classement de concours.</p>
           <p class="menu-note">Les montants affichés excluent les commandes annulées dans l’application. Un remboursement effectué uniquement dans SumUp n’est pas encore synchronisé ici : pensez aussi à annuler la commande dans le tableau restaurant.</p>
         </section>
@@ -233,10 +266,20 @@
           <p class="menu-note">Une récupération doit être vérifiée avant de remplacer les données en service. Aucun bouton ici n’efface ou ne restaure la production. Les fichiers de l’application restent sauvegardés séparément dans GitHub.</p>
         </section>
       </main>
+      <nav class="pro-bottom-tabs" aria-label="Navigation principale Krokli Pro">
+        <button type="button" data-jump="home" aria-current="page">Accueil</button>
+        <button type="button" data-jump="orders" data-order-filter="all">Commandes <span id="pro-orders-badge" hidden></span></button>
+        <button type="button" data-jump="tools">Rubriques</button>
+      </nav>
     </div>
     <div id="toast" class="toast" role="status"></div>
+    <dialog id="pro-logout-dialog" class="app-install-dialog" aria-labelledby="pro-logout-title">
+      <h2 id="pro-logout-title">Déconnecter cet appareil ?</h2>
+      <p>La session Krokli Pro sera retirée de ce navigateur. Les autres appareils restent connectés.</p>
+      <form method="dialog"><button type="submit" class="pro-secondary" value="cancel">Rester connecté</button><button type="submit" class="login-button" value="logout">Confirmer la déconnexion</button></form>
+    </dialog>
     <dialog id="app-install-dialog" class="app-install-dialog" aria-labelledby="app-install-title">
-      <h2 id="app-install-title">Bibou Restaurant sur l’iPad</h2>
+      <h2 id="app-install-title">Votre espace Krokli Pro</h2>
       <p>Dans <strong>Safari</strong>, ouvrez le back-office, puis :</p>
       <ol><li>Touchez <strong>Partager</strong>.</li><li>Choisissez <strong>Sur l’écran d’accueil</strong>.</li><li>Si proposé, gardez <strong>Ouvrir comme app web</strong> activé, puis touchez <strong>Ajouter</strong>.</li></ol>
       <p>L’icône Bibou ouvre une application à part. Le multitâche à côté d’Uber dépend du modèle et de la version de votre iPad.</p>
@@ -248,17 +291,20 @@
     <script src="./contest-prizes.js?v=classement-hors-instagram-20261015"></script>
     <script src="./statistics.js?v=simple-ca-20261013"></script>
     <script src="./contest-periods.js?v=activite-bibou-hors-tirage-20261015"></script>
-    <script src="./marketing.js?v=concours-audit-20261015"></script>
+    <script src="./wheel-rewards.js?v=roue-80-classique-20261015"></script>
+    <script src="./marketing.js?v=referral-inline-confirm-20261017"></script>
     <script src="./promotions.js?v=5"></script>
-    <script src="./notifications.js?v=push-3"></script>
+    <script src="./notifications.js?v=birthday-target-20261018"></script>
     <script src="./marketing-sms.js?v=sms-2"></script>
     <script src="./crm.js?v=terminal-session-1"></script>
     <script src="./planner.js?v=simple-slots-audio-20261001"></script>
     <script src="./order-amendments.js?v=2"></script>
     <script src="./uber-direct.js?v=dispatch-20261007"></script>
     <script src="./dispatch.js?v=2"></script>
-    <script src="./epson-print.js?v=solo-tenders-bold-20261014"></script>
-    <script src="./pwa.js?v=simple-ca-20261013"></script>
-    <script src="./app.js?v=customer-gains-20261014"></script>
+    <script src="./epson-print.js?v=pickup-ticket-time-20261016"></script>
+    <script src="./pwa.js?v=krokli-pro-20261018"></script>
+    <script src="./birthdays.js?v=20261018"></script>
+    <script src="./pro-shell.js?v=20261018"></script>
+    <script src="./app.js?v=krokli-pro-web-20261018"></script>
   </body>
 </html>
