@@ -1,7 +1,7 @@
 window.BibouNotifications = function ({ root, api, token, onUnauthorized }) {
-  let state = null, preview = null, busy = false, epoch = 0, requestId = null;
+  let state = null, preview = null, busy = false, epoch = 0, requestId = null, birthdayTarget = null;
   const e = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const destinations = { menu: 'La carte', loyalty: 'Club Bibou', 'bibou-plus': 'Bibou +', reservation: 'Réserver une table' };
+  const destinations = { menu: 'La carte', loyalty: 'Club Bibou', 'bibou-plus': 'Bibou +', reservation: 'Réserver une table', account:'Mon compte · Mes offres' };
   root.innerHTML = `<div class="marketing-intro"><p class="eyebrow">GARDER LE LIEN</p><h2>Un message, au bon moment.</h2><p>Les commandes et réservations ont leurs alertes automatiques. Ici, préparez vos promotions pour les clients qui les ont acceptées.</p></div>
     <p id="push-feedback" role="status" aria-live="polite"></p><div id="push-status" class="push-status"></div><p class="push-status" id="push-stage">1. Écrivez votre message → 2. Vérifiez les destinataires → 3. Confirmez et envoyez.</p>
     <div class="push-layout"><section class="marketing-panel"><h2>Préparer une notification</h2><form id="push-form"><label>Titre<input name="title" maxlength="65" required placeholder="Le burger du mois est arrivé 🍔" /></label><label>Message<textarea name="body" maxlength="220" rows="4" required placeholder="Présentez votre actualité en quelques mots…"></textarea></label><div class="marketing-grid"><label>Destinataires<select name="audience"><option value="all">Tous les clients ayant accepté les promotions</option><option value="plus">Abonnés Bibou + ayant accepté les promotions</option></select></label><label>Au clic, ouvrir<select name="screen">${Object.entries(destinations).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></label></div><p class="push-muted">Ni SMS ni publicité automatique. Maximum deux campagnes par 24 heures. L’aperçu n’envoie rien.</p><button class="login-button" type="submit">Vérifier les destinataires</button></form></section>
@@ -10,8 +10,11 @@ window.BibouNotifications = function ({ root, api, token, onUnauthorized }) {
     <section class="marketing-panel"><h2>Suivi automatique</h2><p>Commande transmise après paiement vérifié, acceptée, prête, en livraison, terminée ou annulée ; table confirmée ou annulée. Uniquement pour les clients ayant activé ce suivi.</p><p>Les messages ne contiennent ni adresse, ni téléphone, ni détail de paiement. Les anciens changements de statut ne sont pas envoyés rétroactivement.</p></section>`;
   const q = selector => root.querySelector(selector);
   const message = value => { q('#push-feedback').textContent = value; };
-  const fields = () => Object.fromEntries(new FormData(q('#push-form')));
-  const freeze = value => { busy = value; root.querySelectorAll('button,input,textarea,select').forEach(el => { el.disabled = value; }); updateSend(); };
+  const fields = () => ({...Object.fromEntries(new FormData(q('#push-form'))),...(birthdayTarget ? {audience:'birthday',customerIds:[birthdayTarget.id],birthdayDate:birthdayTarget.date} : {})});
+  q('#push-form').insertAdjacentHTML?.('afterbegin','<div id="push-birthday-target" hidden></div>');
+  q('[name="audience"]').insertAdjacentHTML?.('beforeend','<option value="birthday" disabled>Ce client uniquement · anniversaire</option>');
+  const targetNotice = q('#push-birthday-target');
+  const freeze = value => { busy = value; root.querySelectorAll('button,input,textarea,select').forEach(el => { el.disabled = value; }); if(birthdayTarget)q('[name="audience"]').disabled=true; updateSend(); };
   const updateSend = () => {
     q('#push-send').disabled = busy || !preview || !Array.isArray(preview.recipients) || !q('#push-consent').checked || !state?.enabled || !state.platforms.length || !preview.devices || preview.status !== 'draft' || preview.previewExpiresAt <= Date.now();
     q('#push-send-help').textContent = !preview ? 'Préparez d’abord l’aperçu.' : preview.status !== 'draft' ? 'Cet envoi est déjà enregistré. Consultez son suivi ci-dessous.' : !state?.enabled || !state.platforms.length ? 'Envois sur téléphone non activés.' : !preview.devices ? 'Aucun téléphone joignable pour ces destinataires. Le client doit accepter les promotions et autoriser les notifications dans l’application installée.' : preview.previewExpiresAt <= Date.now() ? 'Aperçu expiré : vérifiez de nouveau les destinataires.' : !q('#push-consent').checked ? 'Cochez la confirmation ci-dessus, puis appuyez sur Envoyer.' : 'Prêt à envoyer aux destinataires indiqués.';
@@ -81,6 +84,19 @@ window.BibouNotifications = function ({ root, api, token, onUnauthorized }) {
     catch (error) { if (generation === epoch) message(error.message); }
     finally { if (generation === epoch) freeze(false); }
   }
-  function clear() { epoch += 1; state = preview = requestId = null; q('#push-form').reset(); invalidate(); q('#push-status').textContent = ''; q('#push-history').textContent = ''; message(''); freeze(false); }
-  return { load, clear };
+  function resetBirthdayTarget() { birthdayTarget=null; targetNotice.hidden=true; targetNotice.textContent='';q('[name="audience"]').value='all';q('[name="audience"]').disabled=busy;invalidate(); }
+  function prepareBirthday(target) {
+    birthdayTarget={id:target.id,date:target.date};
+    q('[name="title"]').value='Joyeux anniversaire 🎂';
+    q('[name="body"]').value=target.offer?.status==='available' ? `Toute l’équipe Bibou’s Burgers te souhaite un joyeux anniversaire ! Ton offre personnelle de −${target.offer.discountPercent} % t’attend dans Mon compte → Mes offres. Consulte ses conditions.` : 'Toute l’équipe Bibou’s Burgers te souhaite un très bel anniversaire ! À bientôt chez Bibou’s Burgers 🎂';
+    q('[name="screen"]').value=target.offer?.status==='available' ? 'account' : 'menu';
+    q('[name="audience"]').value='birthday'; q('[name="audience"]').disabled=true;
+    targetNotice.hidden=false;
+    targetNotice.innerHTML=`<p><strong>🎂 Destinataire unique : ${e(target.name)}</strong><br>Ce message ne sera proposé qu’à ce client, sur ses téléphones autorisés. Aucun envoi aux autres clients.</p><button type="button" class="secondary-button">Quitter le ciblage anniversaire</button>`;
+    targetNotice.querySelector('button').addEventListener('click',resetBirthdayTarget);
+    invalidate(); message('Message anniversaire préparé. Vérifiez les destinataires avant de confirmer l’envoi.');
+    q('#push-form').scrollIntoView?.({block:'start',behavior:'instant'}); q('[name="title"]').focus?.({preventScroll:true});
+  }
+  function clear() { epoch += 1; state = preview = requestId = birthdayTarget = null; targetNotice.hidden=true;targetNotice.textContent='';q('#push-form').reset(); invalidate(); q('#push-status').textContent = ''; q('#push-history').textContent = ''; message(''); freeze(false); }
+  return { load, clear, prepareBirthday };
 };
