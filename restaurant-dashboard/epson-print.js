@@ -39,6 +39,17 @@
       order.dineIn ? `ARRIVEE A ${serviceTime(order.slot)}` : order.method === 'pickup' ? `A ${serviceTime(order.slot)}` : `CRENEAU ${serviceTime(order.slot)}`,
       ...(order.dineIn ? [`TABLE DE ${Number(order.tableGuests) || '?'} PERSONNE(S)`] : [])];
   };
+  // The service time must stand out on paper, not only in the dashboard.
+  // Keep the label/date separate so the large hour fits even on narrow rolls.
+  // Explicitly restore size afterwards: products and remarks keep their layout.
+  const serviceHeadingMarkup = order => serviceHeading(order).flatMap((heading, index) => {
+    if (index !== 2) return [line(heading)]; // Immediate kiosk orders have no scheduled time.
+    const time = serviceTime(order.slot);
+    const width = time.length <= 10 ? 3 : time.length <= 16 ? 2 : 1;
+    const label = order.dineIn ? 'ARRIVEE A' : order.method === 'pickup' ? 'HEURE DE RETRAIT' : 'CRENEAU DE LIVRAISON';
+    return [line(label), `<text width="${width}" height="3" em="true"/>`, line(time),
+      '<text width="1" height="2" em="true"/>'];
+  });
   const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
 
   const statusEnvelope = () => wrap('');
@@ -68,7 +79,7 @@
       ...(duplicateTest ? [line('DUPLICATA TEST - NE PAS PREPARER'), line('COMMANDE DEJA TERMINEE')] : []),
       line('TICKET DE PREPARATION - NON FISCAL'),
       '<text align="center" dw="false" dh="true" em="true"/>',
-      ...serviceHeading(order).map(line),
+      ...serviceHeadingMarkup(order),
       '<text align="left" dw="false" dh="false" em="false"/>',
       line(''),
       line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
@@ -126,7 +137,7 @@
       '<text align="center" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
       '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),
       '<text dw="false" dh="true" em="true"/>',
-      ...serviceHeading(order).map(line),
+      ...serviceHeadingMarkup(order),
       line(''),
       '<text align="left" dw="false" dh="false" em="false"/>',
       line(`Paiement : ${date}`),
