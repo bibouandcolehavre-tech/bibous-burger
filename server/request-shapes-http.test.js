@@ -40,6 +40,25 @@ test('HTTP livraison : pas de distance inventée ; anciens tarifs préservés et
   }
 });
 
+test('HTTP livraison : le panier envoyé par le client calcule le tarif et le délai sans modifier la base', { timeout: 20000 }, async t => {
+  const fx = await fixture(t);
+  const before = await fs.readFile(fx.file, 'utf8');
+  const address = { address: '1 rue fictive', postalCode: '76600', city: 'Le Havre',
+    subtotal: 23.61, serviceDate: parisDateKey(new Date(Date.now() + 86400000)), slot: '19:00' };
+  await fs.writeFile(fx.routeFile, JSON.stringify({ routes: [{ distanceMeters: 1500, duration: '420s' }] }));
+  const result = await fx.request('/delivery-quote', address);
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.distanceKm, 1.5);
+  assert.equal(result.body.deliveryFee, 3.99);
+  assert.equal(result.body.withinZone, true);
+  assert.equal(result.body.timing.version, 'bibou-delivery-timing-v1');
+  assert.equal(typeof result.body.timing.available, 'boolean');
+  const legacy = await fx.request('/delivery-quote', { address: address.address, postalCode: address.postalCode, city: address.city });
+  assert.equal(legacy.status, 200, JSON.stringify(legacy.body));
+  assert.equal(legacy.body.timing, null);
+  assert.equal(await fs.readFile(fx.file, 'utf8'), before, 'Un devis ne crée ni commande ni paiement et ne modifie aucun client');
+});
+
 test('HTTP : paniers ou options incomplets sont refusés sans panne et sans commande créée', { timeout: 20000 }, async t => {
   const fx = await fixture(t), failures = [];
   for (const items of [[null], [false], [7], ['invalid'], [[]],

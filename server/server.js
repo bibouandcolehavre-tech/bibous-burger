@@ -982,6 +982,7 @@ const server = http.createServer(async (request, response) => {
       if(input.subtotal!==undefined&&(typeof input.subtotal!=='number'||!Number.isFinite(input.subtotal)||input.subtotal<0||input.subtotal>1_000_000))return send(response,400,{error:'Montant du panier invalide.'});
       try {
         const quote = await calculateDeliveryQuote(input);
+        const database = await readDatabase();
         const timing=input.subtotal===undefined?null:deliveryTiming.customerTiming(database,{id:'quote-only',method:'delivery',status:'confirmed',payment:{status:'PAID'},subtotal:input.subtotal,serviceDate:input.serviceDate||parisDateKey(new Date()),slot:input.slot||'00:00',deliveryTravelSeconds:quote.deliveryTravelSeconds});
         return send(response, 200, { ...quote,timing, withinZone: quote.deliveryFee !== null });
       } catch (error) {
