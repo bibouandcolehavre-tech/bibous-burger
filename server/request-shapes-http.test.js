@@ -75,3 +75,30 @@ test('HTTP : paniers ou options incomplets sont refusés sans panne et sans comm
   assert.deepEqual(failures, []);
   assert.deepEqual(JSON.parse(await fs.readFile(fx.file, 'utf8')).orders, []);
 });
+
+test('HTTP : livraison toutes les 15 minutes, trois places indépendantes et retrait inchangé', { timeout: 20000 }, async t => {
+  const fx = await fixture(t), date = parisDateKey(new Date(Date.now() + 86400000));
+  await fs.writeFile(fx.routeFile, JSON.stringify({ routes: [{ distanceMeters: 1500, duration: '420s' }] }));
+  const delivery = await fx.request(`/availability?date=${date}&method=delivery&grid=20`, undefined, 'GET');
+  assert.equal(delivery.status, 200); assert.equal(delivery.body.slotMinutes, 15);
+  assert.deepEqual(Object.keys(delivery.body.slots).filter(s => s.startsWith('19:')), ['19:00','19:15','19:30','19:45']);
+  const pickup = await fx.request(`/availability?date=${date}&method=pickup&grid=20`, undefined, 'GET');
+  assert.equal(pickup.body.slotMinutes, 20);
+  assert.deepEqual(Object.keys(pickup.body.slots).filter(s => s.startsWith('19:')), ['19:00','19:20','19:40']);
+  const input = { customerId: fx.customer.id, method: 'delivery', serviceDate: date, slot: '19:15', slotGrid: 20,
+    items: [{ productId: 'frites-maison', quantity: 1, selections: [] }] };
+  for (let i = 0; i < 3; i++) {
+    const created = await fx.request('/orders', { ...input, requestId: `fictitious-quarter-hour-${i}` });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.order.slotDurationMinutes, 15);
+    assert.equal(created.body.order.payment, undefined, 'aucun paiement initié');
+  }
+  const rejected = await fx.request('/orders', { ...input, requestId: 'fictitious-quarter-hour-full' });
+  assert.equal(rejected.status, 409, JSON.stringify(rejected.body));
+  const updated = (await fx.request(`/availability?date=${date}&method=delivery&grid=20`, undefined, 'GET')).body.slots;
+  assert.equal(updated['19:15'].full, true);
+  assert.equal(updated['19:00'].remaining, 3); assert.equal(updated['19:30'].remaining, 3);
+  const next = await fx.request('/orders', { ...input, slot: '19:30', requestId: 'fictitious-quarter-hour-next' });
+  assert.equal(next.status, 201, JSON.stringify(next.body));
+  assert.equal(JSON.parse(await fs.readFile(fx.file, 'utf8')).orders.length, 4);
+});

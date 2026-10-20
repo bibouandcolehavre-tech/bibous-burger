@@ -67,8 +67,8 @@ test("les retraits ne consomment aucune place de livraison", () => {
   assert.equal(availabilityForDate({ orders: [order(), order({ id: 'second' }), order({ id: 'third' })] }, dateKey, now, 'pickup')[slot].full, false);
 });
 
-test("retrait, livraison et tables : trois créneaux fixes par heure", () => {
-  for (const method of ["pickup", "reservation", "delivery"]) {
+test("retrait et tables : trois créneaux fixes par heure inchangés", () => {
+  for (const method of ["pickup", "reservation"]) {
     const slots = slotsForDate(dateKey, method);
     assert.deepEqual(slots.slice(0, 4), ["12:00", "12:20", "12:40", "13:00"]);
     assert.equal(slots.length, 15);
@@ -82,9 +82,19 @@ test("retrait, livraison et tables : trois créneaux fixes par heure", () => {
     if (method === 'reservation') assert.deepEqual(slotsForDate("2026-09-20", method), []);
     else assert.equal(slotsForDate("2026-09-20", method).at(-1), "20:40");
   }
-  assert.equal(slotsForDate(dateKey).length, 15);
+  assert.equal(slotsForDate(dateKey).length, 20);
   assert.equal(validateServiceSlot(dateKey, slot, now), null);
-  assert.match(validateServiceSlot(dateKey, "19:15", now), /pas disponible/);
+  assert.equal(validateServiceSlot(dateKey, "19:15", now), null);
+});
+
+test('livraison : quatre départs par heure sans étendre les horaires de service', () => {
+  const slots = slotsForDate(dateKey, 'delivery');
+  assert.deepEqual(slots.slice(0, 5), ['12:00', '12:15', '12:30', '12:45', '13:00']);
+  assert.deepEqual(slots.slice(-4), ['21:00', '21:15', '21:30', '21:45']);
+  assert.equal(slots.includes('14:00'), false);
+  assert.equal(slots.includes('22:00'), false);
+  assert.match(validateServiceSlot(dateKey, '19:20', now), /pas disponible/);
+  assert.equal(slotsForDate('2026-09-20', 'delivery').at(-1), '20:45');
 });
 
 test("bonus retrait : limite exacte de 30 minutes, heure de Paris été/hiver", () => {

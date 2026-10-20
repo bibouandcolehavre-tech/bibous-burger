@@ -1,4 +1,4 @@
-const { candidateSlots, regularSlotsForDate, serviceClosureReason, recurringServiceClosureReason, validateServiceDate, parisDateKey, scheduleOverride, bookingWindow, slotWindow, windowsOverlap } = require('./availability');
+const { candidateSlots, regularSlotsForDate, serviceClosureReason, recurringServiceClosureReason, validateServiceDate, parisDateKey, scheduleOverride, bookingWindow, slotWindow, windowsOverlap, slotMinutesForMethod } = require('./availability');
 const METHODS = ['pickup', 'delivery', 'reservation'];
 const failure = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 function assertDate(date, now) {
@@ -13,8 +13,8 @@ function dashboard(database, date, now = new Date()) {
     return [method, candidateSlots(method).map(slot => ({ slot, standard: standard.has(slot),
       open: scheduleOverride(database, date, slot, method) ?? (standard.has(slot) && !serviceClosureReason(date, slot, method)),
       committed: method === 'reservation'
-        ? (database.reservations || []).filter(r => r.serviceDate === date && r.status !== 'cancelled' && windowsOverlap(bookingWindow(r, method), slotWindow(slot))).length
-        : (database.orders || []).filter(o => o.serviceDate === date && o.method === method && o.status !== 'cancelled' && (o.payment?.status === 'PAID' || o.status === 'awaiting_payment') && windowsOverlap(bookingWindow(o), slotWindow(slot))).length
+        ? (database.reservations || []).filter(r => r.serviceDate === date && r.status !== 'cancelled' && windowsOverlap(bookingWindow(r, method), slotWindow(slot, slotMinutesForMethod(method)))).length
+        : (database.orders || []).filter(o => o.serviceDate === date && o.method === method && o.status !== 'cancelled' && (o.payment?.status === 'PAID' || o.status === 'awaiting_payment') && windowsOverlap(bookingWindow(o), slotWindow(slot, slotMinutesForMethod(method)))).length
     }))];
   }));
   return { date, revision: saved?.revision || 0, services, timeZone: 'Europe/Paris', today: parisDateKey(now),
@@ -43,10 +43,11 @@ function save(database, input, now = new Date()) {
   }
   database.serviceSchedule ||= { dates: {} };
   database.serviceSchedule.dates ||= {};
-  database.serviceSchedule.dates[input.date] = { revision: current.revision + 1, slotMinutes: 20, services, updatedAt: now.toISOString() };
+  const slotMinutesByMethod = Object.fromEntries(METHODS.map(method => [method, slotMinutesForMethod(method)]));
+  database.serviceSchedule.dates[input.date] = { revision: current.revision + 1, slotMinutes: 20, slotMinutesByMethod, services, updatedAt: now.toISOString() };
   // Each day's changes remain available for an audit without customer details.
   database.serviceSchedule.history ||= [];
-  database.serviceSchedule.history.push({ date: input.date, revision: current.revision + 1, slotMinutes: 20, services, at: now.toISOString() });
+  database.serviceSchedule.history.push({ date: input.date, revision: current.revision + 1, slotMinutes: 20, slotMinutesByMethod, services, at: now.toISOString() });
   database.serviceSchedule.history = database.serviceSchedule.history.slice(-200);
 }
 module.exports = { dashboard, save, METHODS };

@@ -8,9 +8,9 @@ const reservationAvailabilityForDate=(db,date,now)=>require('./reservations').re
 const now=new Date('2026-09-25T08:00:00Z'), date='2026-09-26';
 const draft=(db,d=date)=>{const state=schedule.dashboard(db,d,now);return {date:d,revision:state.revision,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))};};
 test('extra hours are authoritative for each service, persisted and isolated by date',()=>{
- const db={};const input=draft(db);input.services.pickup['22:40']=true;input.services.delivery['22:40']=true;input.services.reservation['22:40']=true;schedule.save(db,input,now);
+ const db={};const input=draft(db);input.services.pickup['22:40']=true;input.services.delivery['22:45']=true;input.services.reservation['22:40']=true;schedule.save(db,input,now);
  const restored=JSON.parse(JSON.stringify(db));
- for(const [m,slot] of [['pickup','22:40'],['delivery','22:40'],['reservation','22:40']]){
+ for(const [m,slot] of [['pickup','22:40'],['delivery','22:45'],['reservation','22:40']]){
   assert.equal(validateServiceSlot(date,slot,now,m,restored),null);
   const statuses=m==='reservation'?reservationAvailabilityForDate(restored,date,now):availabilityForDate(restored,date,now,m);
   assert.equal(statuses[slot].unavailable,false);assert.match(validateServiceSlot('2026-09-27',slot,now,m,restored),m==='reservation'?/dimanche soir/:/pas disponible/);

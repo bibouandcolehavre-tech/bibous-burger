@@ -1403,7 +1403,7 @@ const server = http.createServer(async (request, response) => {
       const validationError = validateServiceDate(serviceDate);
       if (validationError) return send(response, 400, { error: validationError });
       const slots = availabilityForDate(database, serviceDate, new Date(), method, subtotal, grid);
-      return send(response, 200, { serviceDate, method, capacity: method === "delivery" ? SLOT_CAPACITY : null, slots });
+      return send(response, 200, { serviceDate, method, slotMinutes: slotMinutesForMethod(method, grid), capacity: method === "delivery" ? SLOT_CAPACITY : null, slots });
     }
 
     if (request.method === "GET" && url.pathname === "/api/reservation-availability") {
@@ -2177,7 +2177,7 @@ const server = http.createServer(async (request, response) => {
           createdOrder.tableNote = table.note;
           createdOrder.dineIn = true;
         }
-        createdOrder.slotDurationMinutes = grid === 20 ? 20 : input.method === 'delivery' ? 30 : 15;
+        createdOrder.slotDurationMinutes = slotMinutesForMethod(input.method, grid);
         if (immediate) Object.assign(createdOrder, immediate, { kioskGuest:Boolean(customer.isKioskGuest), slotDurationMinutes:0 });
         createdOrder.requestId = requestId;
         if (request.headers['x-bibou-replacement-choices'] === '1' && !request.kioskSession && !promotionContext.isKiosk) createdOrder.replacementChoicesVersion = 1;

@@ -14,12 +14,12 @@ test('schedule HTTP: private changes, extra pickup/table bookings, closed checko
  const admin=(await request('/dashboard/auth/login','','POST',{password:'test-schedule-only'})).data.token;
  const state=(await request(route,admin)).data;
  const input={date,revision:state.revision,services:Object.fromEntries(Object.entries(state.services).map(([m,rows])=>[m,Object.fromEntries(rows.map(r=>[r.slot,r.open]))]))};
- input.services.pickup['22:40']=true;input.services.reservation['22:40']=true;input.services.delivery['22:40']=true;
+ input.services.pickup['22:40']=true;input.services.reservation['22:40']=true;input.services.delivery['22:45']=true;
  assert.equal((await request('/dashboard/service-schedule',admin,'PATCH',input)).status,200);
  assert.equal((await request('/dashboard/service-schedule',admin,'PATCH',input)).status,409);
  assert.equal((await request('/availability?date='+date+'&method=pickup&grid=20')).data.slots['22:40'].unavailable,false);
  assert.equal((await request('/reservation-availability?date='+date+'&grid=20')).data.slots['22:40'].unavailable,false);
- assert.equal((await request('/availability?date='+date+'&grid=20')).data.slots['22:40'].unavailable,false);
+ assert.equal((await request('/availability?date='+date+'&grid=20')).data.slots['22:45'].unavailable,false);
  const order=(await request('/orders',customer,'POST',{customerId:'c1',method:'pickup',serviceDate:date,slot:'22:40',slotGrid:20,items:[{productId:'drink-coca',quantity:1,selections:[]}]}));
  assert.equal(order.status,201,JSON.stringify(order.data));
  assert.equal((await request('/reservations',customer,'POST',{name:'Fictif',phone:'+33600000001',guests:2,serviceDate:date,slot:'22:40',slotGrid:20})).status,201);

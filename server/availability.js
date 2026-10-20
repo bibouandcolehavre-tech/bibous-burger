@@ -1,5 +1,9 @@
 const { SLOT_MINUTES, preparationMinutes, clock, clockMinutes, regularSlotsForWeekday } = require('../service-policy');
-const slotMinutesForMethod = () => SLOT_MINUTES;
+// grid=20 is the installed clients' precise-appointment protocol, not a promise
+// that every service has the same interval. Older range-based clients stay valid.
+const slotMinutesForMethod = (method, grid = 20) => grid === 20
+  ? method === 'delivery' ? 15 : SLOT_MINUTES
+  : legacySlotMinutes(method);
 const SLOT_CAPACITY = 3;
 const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
@@ -9,7 +13,7 @@ const TIME_ZONE = "Europe/Paris";
 const serviceClosureReason = (dateKey, slot, method = "delivery", database = {}, grid = 20) => {
   const recurring = recurringServiceClosureReason(dateKey, slot, method);
   if (recurring) return recurring;
-  const override = scheduleOverride(database, dateKey, slot, method, slotWindow(slot, grid === 20 ? 20 : legacySlotMinutes(method)));
+  const override = scheduleOverride(database, dateKey, slot, method, slotWindow(slot, slotMinutesForMethod(method, grid)));
   if (typeof override === "boolean") return override ? null : "Ce créneau est exceptionnellement fermé. Choisis un autre horaire.";
   return dateKey === "2026-09-25" && String(slot).slice(0, 5) >= "19:00"
     ? "Le restaurant est exceptionnellement fermé ce vendredi 25 septembre au soir. Choisis un autre jour." : null;
@@ -42,7 +46,7 @@ const recurringServiceClosureReason = (dateKey, slot, method) => {
 const regularSlotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
   if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
-  return regularSlotsForWeekday(date.getUTCDay()).filter(slot => !recurringServiceClosureReason(dateKey, slot, method));
+  return regularSlotsForWeekday(date.getUTCDay(), slotMinutesForMethod(method)).filter(slot => !recurringServiceClosureReason(dateKey, slot, method));
 };
 const legacySlotsForDate = (dateKey, method) => {
   const date = dateFromKey(dateKey);
@@ -57,7 +61,7 @@ const legacySlotsForDate = (dateKey, method) => {
 };
 
 const candidateSlots = (method = 'delivery', grid = 20) => {
-  const step = grid === 20 ? SLOT_MINUTES : legacySlotMinutes(method);
+  const step = slotMinutesForMethod(method, grid);
   return Array.from({ length: 1440 / step }, (_, index) => {
     const minute = index * step;
     return grid === 20 || method !== 'delivery' ? clock(minute) : `${clock(minute)} – ${clock((minute + step) % 1440)}`;
@@ -92,7 +96,7 @@ const scheduleOverride = (database, dateKey, slot, method, window = slotWindow(s
   const saved = database.serviceSchedule?.dates?.[dateKey];
   const entries = Object.entries(saved?.services?.[method] || {});
   if (!window || !entries.length) return undefined;
-  const duration = saved.slotMinutes === 20 ? 20 : method === 'delivery' ? 30 : 15;
+  const duration = saved.slotMinutesByMethod?.[method] || (saved.slotMinutes === 20 ? 20 : method === 'delivery' ? 30 : 15);
   const affected = entries.map(([key, open]) => ({ window: slotWindow(key, duration), open }))
     .filter(entry => typeof entry.open === 'boolean' && windowsOverlap(window, entry.window));
   if (!affected.length) return undefined;
@@ -108,7 +112,7 @@ const scheduleOverride = (database, dateKey, slot, method, window = slotWindow(s
 const slotsForDate = (dateKey, method = "delivery", database = {}, grid = 15) => {
   const regular = grid === 20 ? regularSlotsForDate(dateKey, method) : legacySlotsForDate(dateKey, method);
   if (!dateFromKey(dateKey) || !["delivery", "pickup", "reservation"].includes(method)) return [];
-  const extra = candidateSlots(method, grid).filter(slot => scheduleOverride(database, dateKey, slot, method, slotWindow(slot, grid === 20 ? 20 : legacySlotMinutes(method))) !== undefined);
+  const extra = candidateSlots(method, grid).filter(slot => scheduleOverride(database, dateKey, slot, method, slotWindow(slot, slotMinutesForMethod(method, grid))) !== undefined);
   return [...new Set([...regular, ...extra])].filter(slot => !recurringServiceClosureReason(dateKey, slot, method)).sort();
 };
 
@@ -185,7 +189,7 @@ const storedServiceSlotOpen = (order, database) => {
 };
 
 const holdsDeliverySlot = (order, dateKey, slot, now = new Date()) => {
-  if (order.method !== "delivery" || order.serviceDate !== dateKey || !windowsOverlap(bookingWindow(order), slotWindow(slot)) || order.status === "cancelled") return false;
+  if (order.method !== "delivery" || order.serviceDate !== dateKey || !windowsOverlap(bookingWindow(order), slotWindow(slot, slotMinutesForMethod('delivery'))) || order.status === "cancelled") return false;
   if (order.payment?.status === "PAID") return true;
   if (order.status !== "awaiting_payment") return false;
   const createdAt = new Date(order.createdAt).getTime();

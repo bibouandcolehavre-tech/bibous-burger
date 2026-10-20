@@ -56,7 +56,7 @@ test('HTTP : dimanche sans tables, ancien Android bloqué, livraison/retrait con
     assert.equal(tables.status, 200); assert.deepEqual(tables.data.slots, {});
     for (const method of ['pickup', 'delivery']) {
       const slots = (await request(`/availability?date=${day}&method=${method}&grid=${grid}`)).data.slots;
-      assert.equal(Object.keys(slots).length, grid === 20 ? 6 : method === 'pickup' ? 8 : 4);
+      assert.equal(Object.keys(slots).length, grid === 20 ? method === 'delivery' ? 8 : 6 : method === 'pickup' ? 8 : 4);
       assert.equal(Object.values(slots).some(slot => !slot.unavailable), true);
     }
   }

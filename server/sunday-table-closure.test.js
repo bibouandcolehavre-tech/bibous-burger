@@ -39,7 +39,7 @@ test('les anciens réglages ne peuvent pas rouvrir une table le dimanche soir', 
 test('livraison et click & collect restent disponibles le dimanche de 19 h à 21 h', () => {
   for (const date of sundays) for (const method of ['pickup', 'delivery']) for (const grid of [15, 20]) {
     const slots = availability.slotsForDate(date, method, {}, grid);
-    assert.equal(slots.length, grid === 20 ? 6 : method === 'pickup' ? 8 : 4);
+    assert.equal(slots.length, grid === 20 ? method === 'delivery' ? 8 : 6 : method === 'pickup' ? 8 : 4);
     assert.equal(slots[0].slice(0, 5), '19:00');
     assert.equal(availability.validateServiceSlot(date, slots[0], now, method, {}, 10, grid), null);
     assert.equal(availability.serviceClosureReason(date, slots[0], method), null);
