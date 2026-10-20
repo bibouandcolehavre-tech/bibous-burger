@@ -1,6 +1,6 @@
 const { SLOT_MINUTES, preparationMinutes, clock, clockMinutes, regularSlotsForWeekday } = require('../service-policy');
 const slotMinutesForMethod = () => SLOT_MINUTES;
-const SLOT_CAPACITY = 2;
+const SLOT_CAPACITY = 3;
 const PENDING_RESERVATION_MS = 15 * 60 * 1000;
 const TIME_ZONE = "Europe/Paris";
 

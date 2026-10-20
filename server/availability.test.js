@@ -37,26 +37,34 @@ test("refuse un horaire déjà passé le jour même", () => {
   assert.match(validateServiceSlot("2026-09-17", "12:00", new Date("2026-09-17T14:30:00Z")), /déjà passé/);
 });
 
-test("bloque le troisième créneau de livraison", () => {
+test("deux commandes laissent la troisième place de livraison disponible", () => {
   const database = { orders: [order(), order({ id: "second" })] };
-  assert.deepEqual(remainingDeliveryPlaces(database, dateKey, slot, now), { capacity: 2, reserved: 2, remaining: 0, full: true });
+  assert.deepEqual(remainingDeliveryPlaces(database, dateKey, slot, now), { capacity: 3, reserved: 2, remaining: 1, full: false });
+  assert.equal(availabilityForDate(database, dateKey, now)[slot].full, false);
+});
+
+test("trois commandes remplissent le créneau de livraison et bloquent la quatrième", () => {
+  const database = { orders: [order(), order({ id: "second" }), order({ id: "third" })] };
+  assert.deepEqual(remainingDeliveryPlaces(database, dateKey, slot, now), { capacity: 3, reserved: 3, remaining: 0, full: true });
   assert.equal(availabilityForDate(database, dateKey, now)[slot].full, true);
+  assert.deepEqual(remainingDeliveryPlaces({ orders: [...database.orders, order({ id: "legacy-fourth" })] }, dateKey, slot, now), { capacity: 3, reserved: 4, remaining: 0, full: true });
 });
 
 test("libère une réservation impayée après quinze minutes", () => {
   const expired = order({ createdAt: new Date(now.getTime() - PENDING_RESERVATION_MS - 1).toISOString() });
-  assert.equal(remainingDeliveryPlaces({ orders: [expired] }, dateKey, slot, now).remaining, 2);
+  assert.equal(remainingDeliveryPlaces({ orders: [expired] }, dateKey, slot, now).remaining, 3);
 });
 
 test("conserve une commande payée et libère une commande annulée", () => {
   const paid = order({ payment: { status: "PAID" }, createdAt: "2026-09-01T10:00:00Z", status: "confirmed" });
   const cancelled = order({ id: "cancelled", payment: { status: "PAID" }, status: "cancelled" });
-  assert.equal(remainingDeliveryPlaces({ orders: [paid, cancelled] }, dateKey, slot, now).remaining, 1);
+  assert.equal(remainingDeliveryPlaces({ orders: [paid, cancelled] }, dateKey, slot, now).remaining, 2);
 });
 
 test("les retraits ne consomment aucune place de livraison", () => {
   const database = { orders: [order({ method: "pickup" }), order({ id: "pickup-2", method: "pickup" })] };
-  assert.equal(remainingDeliveryPlaces(database, dateKey, slot, now).remaining, 2);
+  assert.equal(remainingDeliveryPlaces(database, dateKey, slot, now).remaining, 3);
+  assert.equal(availabilityForDate({ orders: [order(), order({ id: 'second' }), order({ id: 'third' })] }, dateKey, now, 'pickup')[slot].full, false);
 });
 
 test("retrait, livraison et tables : trois créneaux fixes par heure", () => {
