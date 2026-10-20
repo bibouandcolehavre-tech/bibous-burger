@@ -10,10 +10,42 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
   })[character]);
   const clean = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
-  const address = value => typeof value === 'string' ? clean(value) : value && typeof value === 'object'
-    ? [value.address, value.postalCode, value.city].map(part => clean(part)).filter(Boolean).join(' ') : '';
   const line = value => `<text>${xml(clean(value))}&#10;</text>`;
   const indentedLine = value => `<text>&#32;&#32;${xml(clean(value))}&#10;</text>`;
+  // Double-width text has 16 columns on a narrow 32-column roll. Wrap values
+  // before XML escaping, never truncate an address, and restore all text state.
+  const contactValue = value => typeof value === 'string' || typeof value === 'number' ? clean(value) : '';
+  const contactLines = value => {
+    const lines = [], limit = 16;
+    let current = '';
+    for (const word of contactValue(value).split(/\s+/).filter(Boolean)) {
+      if (current && Array.from(`${current} ${word}`).length <= limit) { current += ` ${word}`; continue; }
+      if (current) { lines.push(current); current = ''; }
+      const letters = Array.from(word);
+      while (letters.length > limit) lines.push(letters.splice(0, limit).join(''));
+      current = letters.join('');
+    }
+    if (current) lines.push(current);
+    return lines;
+  };
+  const customerContact = order => {
+    const field = (label, values) => [
+      '<text align="left" width="1" height="1" em="true"/>', line(label),
+      '<text align="left" width="2" height="2" em="true"/>',
+      ...values.flatMap(contactLines).map(line),
+      '<text align="left" width="1" height="1" em="false"/>', line(''),
+    ];
+    const parts = [line(''), ...field('CLIENT', [contactValue(order.customerName) || 'NON RENSEIGNE']),
+      ...field('TELEPHONE', [contactValue(order.customerPhone) || 'NON RENSEIGNE'])];
+    if (order.method === 'delivery' && !order.dineIn) {
+      const address = order.deliveryAddress;
+      const values = typeof address === 'string' ? address.split(/\r\n|[\r\n\u2028\u2029]/).map(contactValue).filter(Boolean)
+        : address && typeof address === 'object'
+          ? [contactValue(address.address), [contactValue(address.postalCode), contactValue(address.city)].filter(Boolean).join(' ')].filter(Boolean) : [];
+      parts.push(...field('ADRESSE DE LIVRAISON', values.length ? values : ['NON RENSEIGNEE']));
+    }
+    return parts;
+  };
   // The customer leaves one remark for the whole order. Print that same saved
   // text on every ticket, prominently before the products, never as XML markup.
   const customerRemark = order => {
@@ -81,12 +113,9 @@
       '<text align="center" dw="false" dh="true" em="true"/>',
       ...serviceHeadingMarkup(order),
       '<text align="left" dw="false" dh="false" em="false"/>',
-      line(''),
-      line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
+      ...customerContact(order),
     ];
-    if (order.customerPhone) parts.push(line(`Tel : ${order.customerPhone}`));
     if (order.dineIn && order.tableNote) parts.push(line(`Table : ${order.tableNote}`));
-    if (method === 'LIVRAISON' && address(order.deliveryAddress)) parts.push(line(`Adresse : ${address(order.deliveryAddress)}`));
     parts.push(...customerRemark(order), line('--------------------------------'));
     for (const item of order.items) {
       const quantity = Number(item.quantity);
@@ -141,11 +170,10 @@
       line(''),
       '<text align="left" dw="false" dh="false" em="false"/>',
       line(`Paiement : ${date}`),
-      line(`Client : ${clean(order.customerName) || 'Non renseigne'}`),
       line(''),
       line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),
       line('RECAPITULATIF - NON FACTURE TVA'),
-      line(''),
+      ...customerContact(order),
       ...customerRemark(order),
       line('--------------------------------'),
     ];
