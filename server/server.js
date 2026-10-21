@@ -1004,7 +1004,7 @@ const server = http.createServer(async (request, response) => {
       try {
         const quote = await calculateDeliveryQuote(input);
         const database = await readDatabase();
-        const timing=input.subtotal===undefined?null:deliveryTiming.customerTiming(database,{id:'quote-only',method:'delivery',status:'confirmed',payment:{status:'PAID'},subtotal:input.subtotal,serviceDate:input.serviceDate||parisDateKey(new Date()),slot:input.slot||'00:00',deliveryTravelSeconds:quote.deliveryTravelSeconds});
+        const timing=input.subtotal===undefined?null:deliveryTiming.customerTiming(database,{id:'quote-only',method:'delivery',status:'confirmed',payment:{status:'PAID'},subtotal:input.subtotal,serviceDate:input.serviceDate||parisDateKey(new Date()),slot:input.slot||'00:00',deliveryTravelSeconds:quote.deliveryTravelSeconds},Date.now(),{preview:true});
         return send(response, 200, { ...quote,timing, withinZone: quote.deliveryFee !== null });
       } catch (error) {
         return send(response, 422, { error: error.message || "Impossible de calculer la livraison." });

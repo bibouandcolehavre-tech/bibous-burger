@@ -2,24 +2,60 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const T=require('./delivery-timing'),L=require('./timing-learning'),C=require('../delivery-tracking-client');
 const now=Date.parse('2026-10-16T17:00:00Z'),iso=ms=>new Date(ms).toISOString();
 const order=(id,extra={})=>({id,serviceDate:'2026-10-16',slot:'19:00',method:'delivery',status:'preparing',payment:{status:'PAID'},subtotal:20,items:[{productId:'classique',quantity:1}],kitchenAcceptedAt:iso(now),deliveryTravelSeconds:480,...extra});
+const preview=(db,o,at)=>T.customerTiming(db,o,at,{preview:true});
 test('customer delay adds Google road time to preparation; never treats the kitchen band as a total',()=>{
-  const o=order('a'),db={orders:[o]},s=T.customerTiming(db,o,now);
+  const o=order('a'),db={orders:[o]},s=preview(db,o,now);
   assert.equal(s.remainingMinutes,23);assert.equal(s.preparationMinutes,15);assert.equal(s.travelMinutes,8);assert.equal(s.queueMinutes,0);
-  assert.equal(T.customerTiming(db,o,now+5*60000).remainingMinutes,18);
+  assert.equal(preview(db,o,now+5*60000).remainingMinutes,18);
 });
 test('two meals prepare in parallel; third waits, and early Ready shortens its remaining delay',()=>{
   const a=order('a'),b=order('b'),c=order('c'),db={orders:[a,b,c]};
-  assert.equal(T.customerTiming(db,a,now).remainingMinutes,23);
-  assert.equal(T.customerTiming(db,b,now).remainingMinutes,23);
-  assert.equal(T.customerTiming(db,c,now).remainingMinutes,38);
+  assert.equal(preview(db,a,now).remainingMinutes,23);
+  assert.equal(preview(db,b,now).remainingMinutes,23);
+  assert.equal(preview(db,c,now).remainingMinutes,38);
   a.status='ready';a.kitchenReadyAt=iso(now+5*60000);
-  assert.equal(T.customerTiming(db,c,now+5*60000).remainingMinutes,23);
-  b.status='cancelled';b.updatedAt=iso(now+5*60000);assert.equal(T.customerTiming(db,c,now+5*60000).remainingMinutes,23);
+  assert.equal(preview(db,c,now+5*60000).remainingMinutes,23);
+  b.status='cancelled';b.updatedAt=iso(now+5*60000);assert.equal(preview(db,c,now+5*60000).remainingMinutes,23);
 });
 test('future delivery arrival slot subtracts the road leg for kitchen scheduling, rather than adding it twice',()=>{
   const o=order('a',{slot:'21:00'}),db={orders:[o]},f=T.kitchenForecast(db,o,now);
   assert.equal(iso(f.readyAt),'2026-10-16T18:52:00.000Z');
-  assert.equal(T.customerTiming(db,o,now).remainingMinutes,120);
+  assert.equal(preview(db,o,now).remainingMinutes,120);
+});
+test('accepted courier waiting for pickup never promises five minutes, even twenty-five minutes later',()=>{
+  const o=order('waiting',{status:'ready',kitchenReadyAt:iso(now+15*60000),deliveryTravelSeconds:300,kroklyDriver:{driverId:'d1',status:'accepted'}}),db={orders:[o]};
+  for(const minutes of [15,20,40]) {
+    const timing=T.customerTiming(db,o,now+minutes*60000);
+    assert.equal(timing.available,false);assert.equal(timing.reason,'waiting-for-driver');assert.equal(timing.remainingMinutes,undefined);
+    assert.doesNotMatch(C.delayLabel(timing),/\b5 min/);
+  }
+});
+test('preparing and unaccepted orders do not turn a conditional kitchen forecast into an arrival countdown',()=>{
+  for(const status of ['confirmed','preparing']) {
+    const o=order('cooking',{status,kroklyDriver:{status:'accepted'},deliveryTravelSeconds:300}),db={orders:[o]};
+    const timing=T.customerTiming(db,o,now+14*60000);
+    assert.equal(timing.available,false);assert.equal(timing.remainingMinutes,undefined);
+    assert.equal(preview(db,o,now+14*60000).remainingMinutes,6);
+  }
+});
+test('physical departure starts one countdown; unknown, future and overdue departure never reset it',()=>{
+  const o=order('departed',{status:'out_for_delivery',deliveryTravelSeconds:300,kroklyDriver:{driverId:'d1',status:'picked_up',pickedUpAt:iso(now+15*60000)}}),db={orders:[o]};
+  assert.equal(T.customerTiming(db,o,now+15*60000).remainingMinutes,5);
+  assert.equal(T.customerTiming(db,o,now+17*60000).remainingMinutes,3);
+  assert.equal(T.customerTiming(db,o,now+40*60000).reason,'journey-update-needed');
+  assert.equal(T.customerTiming(db,o,now+14*60000).available,false);
+  delete o.kroklyDriver.pickedUpAt;assert.equal(T.customerTiming(db,o,now+17*60000).available,false);
+  o.updatedAt=iso(now+15*60000);assert.equal(T.customerTiming(db,o,now+17*60000).remainingMinutes,3);
+});
+test('grouped Bibou or imported Uber work never pretends each stop is a direct route from the restaurant',()=>{
+  const o=order('a',{status:'out_for_delivery',kroklyDriver:{driverId:'d1',status:'picked_up',pickedUpAt:iso(now)}});
+  for(const collection of ['orders','externalDeliveries']) {
+    const db={orders:[o],externalDeliveries:[]};
+    const other=order('b',{status:'out_for_delivery',kroklyDriver:{driverId:'d1',status:'picked_up',pickedUpAt:iso(now)}});
+    db[collection].push(other);
+    assert.equal(T.customerTiming(db,o,now+60000).available,false);
+    other.status='delivered';assert.equal(T.customerTiming(db,o,now+60000).remainingMinutes,7);
+  }
 });
 test('missing route, unknown late meal, no courier and overdue journey never invent a reliable countdown',()=>{
   const o=order('a'),db={orders:[o]};

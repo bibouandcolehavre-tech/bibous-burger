@@ -18,7 +18,7 @@ function harness() {
   vm.runInContext(source, context);
   const module = context.window.BibouDispatch;
   const panel = module.create({ root, api: '/api', token: () => session, onUnauthorized: () => { unauthorized++; session = ''; panel.clear(); }, onOrdersChanged: () => { refreshed++; }, getOrder: () => ({ customer: '<script>Client</script>' }) });
-  return { context, module, panel, root, element, handlers, setSession: value => { session = value; }, unauthorized: () => unauthorized, refreshed: () => refreshed, click: () => handlers.click({ target: { closest: () => ({ disabled: false, dataset: { dispatchAssign: 'o1' } }) } }) };
+  return { context, module, panel, root, element, handlers, setSession: value => { session = value; }, unauthorized: () => unauthorized, refreshed: () => refreshed, click: () => handlers.click({ target: { closest: selector => selector==='[data-dispatch-assign]'?({ disabled: false, dataset: { dispatchAssign: 'o1' } }):null } }) };
 }
 
 test('dispatch uses the dashboard session, escapes content, and does not ask for another login', async () => {
@@ -105,7 +105,7 @@ test('Krokly order controls stay in the back office and never invite a duplicate
   const html = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/index.html'), 'utf8');
   assert.equal((html.match(/data-view="dispatch"/g) || []).length, 2);
   assert.match(html, /id="dispatch-view"/);
-  assert.match(html, /dispatch\.js\?v=2/);
+  assert.match(html, /dispatch\.js\?v=external-20261021/);
 });
 
 test('dispatch gateway HTML errors stay readable and leave assignment disabled', async () => {

@@ -49,14 +49,21 @@ function kitchenForecast(database,target,now=Date.now()) {
   }
   return null;
 }
-function customerTiming(database,order,now=Date.now()) {
+function customerTiming(database,order,now=Date.now(),{preview=false}={}) {
   if(order?.method!=='delivery'||order.payment?.status!=='PAID'||order.reviewMode||
     !['confirmed','preparing','ready','out_for_delivery'].includes(order.status))return null;
   const base={version:VERSION,computedAt:new Date(now).toISOString(),stage:order.status,estimate:true};
   const travel=learning.roadSeconds(travelSeconds(order),learning.model(database,now));
   if(travel===null)return {...base,available:false,reason:'travel-unavailable'};
-  const pickedUp=timestamp(order.kroklyDriver?.pickedUpAt)||(order.status==='out_for_delivery'?timestamp(order.updatedAt):null);
-  if(pickedUp!==null) {
+  if(order.status==='out_for_delivery') {
+    // Accepting a job does not mean that the courier has collected the meal.
+    // Nor does a restaurant-to-customer route describe a grouped delivery tour.
+    const driverId=order.kroklyDriver?.driverId;
+    const grouped=driverId&&(database.orders||[]).concat(database.externalDeliveries||[]).some(other=>
+      other.id!==order.id&&!['delivered','cancelled'].includes(other.status)&&
+      other.kroklyDriver?.driverId===driverId&&['accepted','picked_up','issue'].includes(other.kroklyDriver.status));
+    const pickedUp=timestamp(order.kroklyDriver?.pickedUpAt)??timestamp(order.updatedAt);
+    if(grouped||order.kroklyDriver?.status==='issue'||pickedUp===null||pickedUp>now)return {...base,available:false,reason:'journey-update-needed'};
     const end=pickedUp+travel*1000;
     if(end<=now)return {...base,available:false,reason:'journey-update-needed'};
     return {...base,available:true,remainingMinutes:Math.max(1,Math.ceil((end-now)/MINUTE)),preparationMinutes:0,queueMinutes:0,travelMinutes:Math.ceil(travel/60)};
@@ -64,7 +71,10 @@ function customerTiming(database,order,now=Date.now()) {
   const forecast=kitchenForecast(database,order,now);
   if(!forecast)return {...base,available:false,reason:'kitchen-unavailable'};
   if(forecast.overdue||forecast.queueUncertain)return {...base,available:false,reason:'kitchen-update-needed'};
-  if(order.status==='ready'&&!['accepted','picked_up'].includes(order.kroklyDriver?.status))return {...base,available:false,reason:'waiting-for-driver'};
+  // Until physical pickup, courier travel-to-restaurant and waiting time are
+  // unknown. Never turn the road leg alone into a rolling "5 min" promise.
+  // Only the pre-checkout quote may expose the conditional kitchen+road forecast.
+  if(!preview)return {...base,available:false,reason:order.status==='ready'?'waiting-for-driver':order.status==='confirmed'?'awaiting-restaurant':'preparing',preparationMinutes:forecast.preparationMinutes,queueMinutes:forecast.queueMinutes};
   const end=Math.max(now,forecast.readyAt)+travel*1000;
   return {...base,available:true,remainingMinutes:Math.max(1,Math.ceil((end-now)/MINUTE)),preparationMinutes:forecast.preparationMinutes,queueMinutes:forecast.queueMinutes,travelMinutes:Math.ceil(travel/60)};
 }
