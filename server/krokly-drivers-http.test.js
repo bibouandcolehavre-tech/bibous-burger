@@ -42,7 +42,9 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
     });
     return { status: response.status, data: await response.json(), headers: response.headers };
   }
-  assert.equal((await fetch(`${base}/driver/`)).status, 200);
+  const driverPage = await fetch(`${base}/driver/`);
+  assert.equal(driverPage.status, 200);
+  assert.doesNotMatch(await driverPage.text(), /metro-trip|METRO Le Havre|rue Desmarais/);
   const manifestResponse = await fetch(`${base}/driver/manifest.webmanifest`);
   assert.match(manifestResponse.headers.get('content-type'), /application\/manifest\+json/);
   const manifest = await manifestResponse.json();
@@ -103,6 +105,14 @@ test('Krokli Driver HTTP: accounts, isolation, attribution and order status', { 
   assert.equal((await request('/api/krokly-driver/gps/position', linaToken, 'POST', { ...continuous.data, position: { ...fix, timestamp: Date.now() } })).status, 200);
   await request('/api/krokly-driver/gps/stop', linaToken, 'POST', continuous.data);
   assert.deepEqual((await request('/api/dashboard/krokly-drivers', owner)).data.gpsPositions, []);
+  const customerGps = await request('/api/krokly-driver/gps/start', linaToken, 'POST', { consentVersion: 'bibou-foreground-gps-customer-v3', customerTracking: true });
+  assert.equal(customerGps.status, 200); assert.equal(customerGps.data.customerTracking, true);
+  assert.equal(customerGps.data.sharingMode, 'until-stopped'); assert.equal(customerGps.data.expiresAt, null);
+  await request('/api/krokly-driver/gps/stop', linaToken, 'POST', customerGps.data);
+  const nativeGps = await request('/api/krokly-driver/gps/start', linaToken, 'POST', { consentVersion: 'bibou-native-gps-customer-v3', customerTracking: true });
+  assert.equal(nativeGps.status, 200); assert.equal(nativeGps.data.customerTracking, true);
+  assert.equal((await request('/api/krokly-driver/gps/position', linaToken, 'POST', { ...nativeGps.data, position: { ...fix, timestamp: Date.now() } })).status, 200);
+  await request('/api/krokly-driver/gps/stop', linaToken, 'POST', nativeGps.data);
   assert.equal(firstState.orders.length, 0);
   const renameRoute = '/api/dashboard/krokly-drivers/' + lina.data.driver.id + '/name';
   assert.equal((await request(renameRoute, '', 'PATCH', { name: 'Lina (surnom)' })).status, 401);

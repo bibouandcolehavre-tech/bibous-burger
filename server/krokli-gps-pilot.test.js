@@ -121,3 +121,49 @@ test('late start after logout/stop is cancelled before accessing phone GPS', asy
   const pending = h.client.start(true); await h.client.stop(); resolve({ sessionId: 'late', expiresAt: new Date(Date.now() + SESSION_MS).toISOString() }); await pending;
   assert.equal(h.client.snapshot().active, false); assert.deepEqual(h.clears, []); assert.equal(h.sends.at(-1).action, 'stop');
 });
+
+test('browser GPS reports actionable startup failures without leaking server details or starting location collection', async () => {
+  for (const [failure, expected] of [
+    [{ status: 401 }, /reconnecte-toi/i],
+    [{ status: 403 }, /compte livreur/i],
+    [{ status: 400 }, /actualisé/i],
+    [{ status: 409 }, /actualisé/i],
+    [{ status: 429 }, /une minute/i],
+    [{ status: 503 }, /serveur.*indisponible/i],
+    [{ name: 'SecurityError' }, /localisation.*bloquée/i],
+    [{ name: 'NotAllowedError' }, /réglages/i],
+    [{ name: 'AbortError' }, /Internet/i],
+    [new TypeError('private diagnostic'), /Internet/i]
+  ]) {
+    const h = clientHarness();
+    h.setSend(async () => { throw Object.assign(Error('private diagnostic'), failure); });
+    // Preserve the TypeError identity for the network failure branch.
+    if (failure instanceof TypeError) h.setSend(async () => { throw failure; });
+    await h.client.start(true);
+    assert.equal(h.client.snapshot().active, false);
+    assert.equal(h.client.snapshot().pending, false);
+    assert.match(h.client.snapshot().message, expected);
+    assert.doesNotMatch(h.client.snapshot().message, /private diagnostic/);
+    assert.equal(h.sends.some(s => s.action === 'position'), false);
+    assert.deepEqual(h.clears, []);
+  }
+});
+
+test('browser distinguishes GPS permission, missing signal and timeout without requiring GPS for deliveries', async () => {
+  for (const [code, expected, active] of [[1, /réglages.*autorise/i, false], [2, /localisation du téléphone.*activée/i, true], [3, /trop de temps/i, true]]) {
+    const h = clientHarness(); await h.client.start(true); h.error(code); await flush();
+    assert.match(h.client.snapshot().message, expected);
+    assert.equal(h.client.snapshot().active, active);
+    assert.equal(h.sends.some(s => s.action === 'position'), false);
+    await h.client.stop();
+  }
+});
+
+test('a mismatched GPS server grant is closed and its incompatibility remains visible', async () => {
+  const h = clientHarness();
+  h.setSend(async (action, data) => { h.sends.push({ action, data }); return action === 'start' ? { sessionId: 'old-version-session', expiresAt: new Date().toISOString() } : {}; });
+  await h.client.start(true);
+  assert.equal(h.client.snapshot().active, false);
+  assert.match(h.client.snapshot().message, /actualisé/);
+  assert.equal(h.sends.at(-1).action, 'stop');
+});

@@ -1,6 +1,12 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../driver-app/app.js'), 'utf8');
+test('production Driver has no hard-coded METRO trip or address', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../driver-app/index.html'), 'utf8');
+  assert.doesNotMatch(html + source, /metro-trip|METRO Le Havre|rue Desmarais|0\.149494/);
+  assert.match(html, /La position ne se partage pas/);
+  assert.match(source, /data-navigate-order/);
+});
 const result = (data, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => data });
 const state = (name = 'Livreur fictif', status = 'accepted') => ({ driver: { id: 'd1', name }, push: { enabled: false }, orders: [{ id: 'o1', number: 1, status, restaurant: 'Restaurant fictif', customerName: 'Client fictif', customerPhone: '0600000000', deliveryAddress: { address: 'Adresse privée fictive' } }] });
 const flush = () => new Promise(resolve => setImmediate(resolve));
