@@ -87,8 +87,8 @@ async function main() {
           else {
             await page.locator('#guidance-provider').getByRole('button',{name:'Waze',exact:true}).click();const url=new URL(await launch.getAttribute('href'));check('Waze also receives current destination',url.searchParams.get('q')==='1 rue Fictive & angle #2, 76600 Le Havre'&&url.searchParams.get('navigate')==='yes');
             await context.setOffline(true);await page.waitForFunction(()=>document.querySelector('#guidance-launch').getAttribute('aria-disabled')==='true');check('offline handoff is disabled',await launch.getAttribute('href')===null);await context.setOffline(false);await page.waitForFunction(()=>document.querySelector('#guidance-launch').getAttribute('aria-disabled')==='false');
-            await page.locator('#guidance-close').click();await page.locator('#metro-trip').click();check('METRO opens without GPS sharing or IGN calculation',new URL(await launch.getAttribute('href')).searchParams.get('ll')==='49.489123,0.149494');
-            await page.locator('#guidance-provider').getByRole('button',{name:'Google Maps',exact:true}).click();await page.reload();await page.locator('#metro-trip').click();check('GPS preference survives reopening',await page.locator('[data-guidance-provider="google"]').getAttribute('aria-pressed')==='true');
+            check('no public test destination or METRO shortcut',await page.locator('#metro-trip').count()===0);
+            await page.locator('#guidance-provider').getByRole('button',{name:'Google Maps',exact:true}).click();await page.reload();await nav().click();check('GPS preference survives reopening',await page.locator('[data-guidance-provider="google"]').getAttribute('aria-pressed')==='true');
           }
           check('no horizontal overflow',await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
           if(!native)await page.locator('#guidance-panel').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'start'}));
