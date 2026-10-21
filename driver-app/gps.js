@@ -59,7 +59,9 @@
           if (!lastSent) void transmit();
         }, error => {
           if (current === epoch) {
-            if (error.code === 1) void stop('Autorisation GPS refusée ou retirée. Aucun blocage des livraisons.');
+            if (error.code === 1) void stop('Autorisation GPS refusée ou retirée. Dans les réglages du téléphone ou du navigateur, autorise la localisation pour Driver, puis réessaie à l’arrêt. Les livraisons restent accessibles.');
+            else if (error.code === 2) show('Position introuvable. Vérifie que la localisation du téléphone est activée et garde Driver ouvert. Le partage reste demandé ; les livraisons restent accessibles.');
+            else if (error.code === 3) show('La recherche GPS prend trop de temps. Garde Driver ouvert et attends une meilleure réception, à l’arrêt. Le partage reste demandé.');
             else show('Signal GPS indisponible. Le partage reste demandé ; attends une meilleure réception.');
           }
         }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
@@ -68,8 +70,17 @@
           if (!latest && now() - startedAt >= 60_000) show('Aucune position reçue. Le partage reste demandé ; vérifie le GPS à l’arrêt.');
           else void transmit();
         }, 10000);
-      } catch {
-        if (current === epoch) void stop('Impossible de démarrer le GPS. Les livraisons restent accessibles.');
+      } catch (error) {
+        if (current !== epoch) return;
+        let reason = 'Impossible de démarrer le GPS. Actualise Driver puis réessaie à l’arrêt.';
+        if (error.status === 401 || error.status === 403) reason = 'La connexion ne permet plus le partage GPS. Déconnecte-toi puis reconnecte-toi à ton compte livreur.';
+        else if (error.status === 400 || error.status === 409 || error.message === 'Version du partage GPS à actualiser.') reason = 'Le partage GPS doit être actualisé. Ferme puis rouvre Driver avant de réessayer.';
+        else if (error.status === 429) reason = 'Trop de demandes GPS rapprochées. Attends une minute puis réessaie à l’arrêt.';
+        else if (error.status >= 500) reason = 'Le serveur de partage GPS est momentanément indisponible. Réessaie dans quelques instants.';
+        else if (error.name === 'SecurityError' || error.name === 'NotAllowedError') reason = 'La localisation est bloquée par le téléphone ou le navigateur. Autorise-la pour Driver dans les réglages, puis réessaie à l’arrêt.';
+        else if (error.name === 'AbortError' || error.name === 'TimeoutError') reason = 'Le serveur GPS ne répond pas à temps. Vérifie la connexion Internet puis réessaie.';
+        else if (error instanceof TypeError) reason = 'Connexion au serveur GPS impossible. Vérifie Internet puis réessaie.';
+        await stop(`${reason} Les livraisons restent accessibles.`);
       }
     }
     return { start, stop, snapshot: () => ({ ...state }) };

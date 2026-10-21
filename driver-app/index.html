@@ -51,14 +51,13 @@
         <section id="gps-pilot" class="card" hidden aria-labelledby="gps-heading">
           <p class="eyebrow">Partage volontaire · jusqu’à ton arrêt</p><h3 id="gps-heading">Partager ma position avec Bibou</h3>
           <p>Pas de coupure après 30 minutes : utilise « Arrêter le partage GPS » quand tu as terminé. Sur cette version web, garde cette page au premier plan : le suivi peut être suspendu avec Plans ouvert ou le téléphone verrouillé. Fermer la page ou te déconnecter arrête le partage. Aucun historique des trajets n’est conservé.</p>
-          <p>Seule l’équipe connectée du restaurant voit ta dernière position reçue ; les clients ne la voient pas. Elle disparaît au plus tard après 90 secondes sans réception. Cet essai ne bloque aucune étape de livraison.</p>
+          <p>Sans l’option de suivi client ci-dessous, seule l’équipe connectée du restaurant voit ta dernière position reçue. Elle disparaît au plus tard après 90 secondes sans réception. Le GPS ne bloque aucune étape de livraison.</p>
           <label class="password-toggle"><input type="checkbox" id="gps-consent">J’ai compris : je partage ma position avec Bibou jusqu’à mon arrêt ou ma déconnexion.</label>
           <label class="password-toggle"><input type="checkbox" id="gps-customer-consent">J’autorise aussi le client de ma livraison en cours à voir ma position, seulement après la récupération du repas et jusqu’à la remise. Aucun suivi client hors de cette course.</label>
           <div class="actions"><button id="gps-start" class="primary" type="button">Démarrer le partage GPS</button><button id="gps-stop" class="danger" type="button" hidden>Arrêter le partage GPS</button></div>
           <p id="gps-status" role="status" aria-live="polite">GPS facultatif · aucune position partagée.</p>
           <p class="muted">Fais les réglages à l’arrêt, jamais en roulant. En cas de problème, continue avec le fonctionnement habituel ou contacte le restaurant.</p>
-          <button id="metro-trip" class="secondary" type="button">Mon trajet réel vers METRO Le Havre</button>
-          <p class="muted">Destination : 2 rue Desmarais, Le Havre. Ouvre ton GPS avec l’adresse déjà renseignée, sans créer de commande ni paiement.</p>
+          <details><summary>La position ne se partage pas ?</summary><p>Autorise la localisation pour Krokli Driver ou pour le navigateur utilisé dans les réglages du téléphone. Sur Android, vérifie aussi que la localisation du téléphone est activée. Si tu utilises cette version web, garde Driver au premier plan. Ne change ces réglages qu’à l’arrêt.</p></details>
         </section>
         <section id="guidance-panel" class="card" hidden aria-labelledby="guidance-title">
           <p class="eyebrow">Guidage GPS · voiture</p><h3 id="guidance-title"></h3>

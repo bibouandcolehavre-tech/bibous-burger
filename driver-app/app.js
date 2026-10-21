@@ -58,14 +58,10 @@ document.querySelector('#gps-start').addEventListener('click', () => {
     });
     gpsPilot = controller || null;
   }
-  if (!gpsPilot) { document.querySelector('#gps-status').textContent = 'Essai GPS indisponible. Actualise la page ; tes courses restent accessibles.'; return; }
+  if (!gpsPilot) { document.querySelector('#gps-status').textContent = 'Partage GPS indisponible. Actualise la page ; tes courses restent accessibles.'; return; }
   void gpsPilot.start(document.querySelector('#gps-consent').checked,{customerTracking:document.querySelector('#gps-customer-consent').checked});
 });
 document.querySelector('#gps-stop').addEventListener('click', () => stopGps());
-document.querySelector('#metro-trip')?.addEventListener('click', () => {
-  if (!token || mode !== 'driver') return;
-  window.KrokliGuidance?.open({ key: 'metro-trip', title: 'Trajet réel · METRO Le Havre', address: '2 rue Desmarais, 76600 Le Havre', coordinates: [0.149494,49.489123] });
-});
 document.addEventListener('click', event => {
   const button=event.target.closest?.('[data-navigate-order]'); if(!button||!fresh||busy||loading||mode!=='driver')return;
   const order=currentState?.orders?.find(o=>o.id===button.dataset.navigateOrder);
@@ -271,7 +267,7 @@ function driverCard(order) {
 function renderDriver() {
   const orders = currentState.orders || [];
   const guidanceKey=window.KrokliGuidance?.activeKey();
-  if(guidanceKey && guidanceKey!=='metro-trip' && !orders.some(o=>`${o.id}:${o.status}`===guidanceKey && ['accepted','picked_up'].includes(o.status))) window.KrokliGuidance.close();
+  if(guidanceKey && !orders.some(o=>`${o.id}:${o.status}`===guidanceKey && ['accepted','picked_up'].includes(o.status))) window.KrokliGuidance.close();
   const push = currentState.push || {};
   const notificationPanel = push.enabled
     ? `<div class="card push-card"><h3>Alertes de courses · à tester</h3><p>Sur iPhone et iPad, installe d’abord Krokli Driver avec l’aide en haut de cette page, puis ouvre son icône. Appuie ensuite sur « Activer les alertes » et accepte la demande du téléphone.</p><div class="actions"><button class="primary" data-push-enable>Activer les alertes</button><button class="secondary" data-push-test>Tester dans 15 secondes</button></div><p class="muted">Lance le test, verrouille le téléphone et vérifie la réception. Tant que cet essai n’est pas réussi sur ton appareil, surveille aussi les courses à l’écran. Même ensuite, le réseau et les réglages du téléphone peuvent retarder une alerte.</p></div>`
