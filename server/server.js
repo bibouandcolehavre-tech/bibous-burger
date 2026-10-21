@@ -61,6 +61,8 @@ const uber = require("./uber-direct");
 const keyyo = require('./keyyo-call-sms');
 const orderSms = require('./order-sms');
 const kroklyDrivers = require('./krokly-drivers');
+const externalDeliveries = require('./external-deliveries');
+const externalDeliveryQuote = require('./external-delivery-quote');
 const driverAccount = require('./krokli-driver-account');
 const driverFeedback = require('./driver-feedback');
 const driverTips = require('./driver-tips');
@@ -640,6 +642,14 @@ const server = http.createServer(async (request, response) => {
         if (admin && !authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
         const input = ['POST', 'PATCH'].includes(request.method) ? await readBody(request) : {};
         if (!input || typeof input !== 'object' || Array.isArray(input)) return send(response, 400, { error: 'Données invalides.' });
+        if (url.pathname === '/api/dashboard/krokly-drivers/external-deliveries/quote' && request.method === 'POST') {
+          if(Object.keys(input).some(key=>!['address','postalCode','city'].includes(key)))return send(response,400,{error:'Informations de calcul invalides.'});
+          const address=externalDeliveryQuote.address(input);
+          try {
+            const result=await calculateDeliveryQuote(address);
+            return send(response,200,externalDeliveryQuote.sign(address,result,kroklyTokenSecret));
+          }catch(error){return send(response,[400,409,422].includes(error.statusCode)?error.statusCode:503,{error:error.statusCode?error.message:'Le trajet n’a pas pu être calculé. Vérifiez l’adresse et réessayez.'});}
+        }
         if (url.pathname === '/api/krokly-driver/login' && request.method === 'POST') {
           const key = `${request.socket.remoteAddress || 'unknown'}:${String(input.username || '').trim().toLowerCase().slice(0, 32)}`;
           const limit = kroklyLoginLimiter.consume(key);
@@ -764,7 +774,7 @@ const server = http.createServer(async (request, response) => {
           const action = /^\/api\/krokly-driver\/orders\/([^/]+)\/(accept|decline|pickup|deliver)$/.exec(url.pathname);
           if (action && request.method === 'POST') {
             const order = kroklyDrivers.transition(database, decodeURIComponent(action[1]), driver.id, action[2]);
-            if (['pickup', 'deliver'].includes(action[2])) push.queueServiceNotification(database, order, 'order', action[2] === 'pickup' ? 'ready' : 'out_for_delivery', pushConfig);
+            if (!externalDeliveries.isExternal(order.id) && ['pickup', 'deliver'].includes(action[2])) push.queueServiceNotification(database, order, 'order', action[2] === 'pickup' ? 'ready' : 'out_for_delivery', pushConfig);
             await writeDatabase(database);
             return send(response, 200, { driver: { id: driver.id, name: driver.name, username: driver.username }, availability: krokliAutoDispatch.availabilityView(driver), orders: kroklyDrivers.assigned(database, driver.id) });
           }
@@ -772,6 +782,17 @@ const server = http.createServer(async (request, response) => {
         }
         const expired = kroklyDrivers.expireOffers(database);
         if (expired) await writeDatabase(database);
+        if (url.pathname === '/api/dashboard/krokly-drivers/external-deliveries' && request.method === 'POST') {
+          const result = externalDeliveries.create(database, input, Date.now(), {quoteSecret:kroklyTokenSecret});
+          await writeDatabase(database);
+          return send(response, result.created ? 201 : 200, result);
+        }
+        const externalAction = /^\/api\/dashboard\/krokly-drivers\/external-deliveries\/(external-[0-9a-f-]{36})\/(ready|cancel)$/.exec(url.pathname);
+        if (externalAction && request.method === 'POST') {
+          if (Object.keys(input).length !== 1 || input.confirmed !== true) return send(response, 400, {error:'Confirmez cette action sur la course externe.'});
+          const delivery = externalAction[2] === 'ready' ? externalDeliveries.markReady(database, externalAction[1]) : externalDeliveries.cancel(database, externalAction[1]);
+          await writeDatabase(database); return send(response, 200, {delivery});
+        }
         if(url.pathname==='/api/dashboard/krokly-drivers/payment-requests'&&request.method==='GET')return send(response,200,driverSettlements.managerState(database));
         const settlementRoute=/^\/api\/dashboard\/krokly-drivers\/payment-requests\/([^/]+)\/(bank|paid|reject)$/.exec(url.pathname);
         if(settlementRoute){

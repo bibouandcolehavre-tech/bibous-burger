@@ -2,6 +2,7 @@
 // Exact allowlisted projections only. Never return completed-order contacts.
 const fail=(message,statusCode=400)=>{throw Object.assign(Error(message),{statusCode});};
 const FEES=new Set(require('../delivery-pricing').DELIVERY_FEE_CENTS);
+const externalDeliveries=require('./external-deliveries');
 function cents(value){return typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1000000&&Math.abs(value*100-Math.round(value*100))<.00001?Math.round(value*100):null;}
 function dateKey(value){const n=Date.parse(value);if(!Number.isFinite(n))return null;return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(n);}
 function shift(key,days){return new Date(Date.parse(`${key}T12:00:00Z`)+days*86400000).toISOString().slice(0,10);}
@@ -26,7 +27,7 @@ function account(db,driver,{week,offset=0,limit=50,tipsEnabled=false}={},now=new
   if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>100)fail('Pagination invalide.');
   const current=weekFor(now.toISOString());const start=week?validWeek(week):current.startDate;
   if(start>current.startDate)fail('Cette semaine n’a pas encore commencé.');
-  const orders=(db.orders||[]).filter(o=>completed(o,driver.id));
+  const orders=(db.orders||[]).concat(externalDeliveries.ledgerOrders(db)).filter(o=>completed(o,driver.id));
   const rows=orders.map(o=>historyRow(db,o)).filter(r=>r.deliveredAt).sort((a,b)=>b.deliveredAt.localeCompare(a.deliveredAt)||b.number-a.number||String(a.orderId).localeCompare(String(b.orderId)));
   const weeks=[...new Set([current.startDate,start,...rows.map(r=>weekFor(r.deliveredAt).startDate)])].sort().reverse();
   const selected=rows.filter(r=>weekFor(r.deliveredAt).startDate===start);

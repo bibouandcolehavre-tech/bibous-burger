@@ -1,5 +1,6 @@
 // Native Driver devices only: never reuse customer tokens, jobs or campaigns.
 const crypto = require('node:crypto');
+const externalDeliveries = require('./external-deliveries');
 const preparation = require('./krokli-preparation');
 const PROJECT_ID = '8f737171-95c6-449a-8c34-4ce9f0ee747c';
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -57,7 +58,7 @@ function revokeDriver(db, driverId) {
 }
 function queue(db, driverId, orderId, now = Date.now()) {
   prune(db, now);
-  const s = store(db), order = (db.orders || []).find(o => o.id === orderId);
+  const s = store(db), order = (db.orders || []).find(o => o.id === orderId) || externalDeliveries.get(db, orderId);
   const offer = order?.kroklyDriver;
   const expiresAt = Date.parse(offer?.expiresAt);
   if (!validOffer(order, driverId, now) || !Number.isFinite(expiresAt)) return 0;
@@ -71,6 +72,7 @@ function queue(db, driverId, orderId, now = Date.now()) {
   return added;
 }
 function validOffer(order, driverId, now) {
+  if (externalDeliveries.isExternal(order?.id)) return externalDeliveries.offerValid(order, driverId, now);
   const u = order?.uberDirect;
   return preparation.kitchenOrder(order) && (order.status === 'ready' || preparation.due(order, now)) &&
     order.kroklyDriver?.driverId === driverId && order.kroklyDriver.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) > now &&
@@ -78,7 +80,7 @@ function validOffer(order, driverId, now) {
 }
 function deviceForJob(db, job, now) {
   const d = store(db).devices.find(d => d.installationId === job.installationId && d.driverId === job.driverId);
-  const o = (db.orders || []).find(o => o.id === job.orderId);
+  const o = (db.orders || []).find(o => o.id === job.orderId) || externalDeliveries.get(db, job.orderId);
   return liveDevice(db, d, now) && validOffer(o, job.driverId, now) && o.kroklyDriver.offeredAt === job.offeredAt && job.expiresAt > now ? d : null;
 }
 const errorCode = value => ['DeviceNotRegistered', 'InvalidCredentials', 'MessageTooBig', 'MessageRateExceeded', 'MismatchSenderId'].includes(value) ? value : 'ProviderError';

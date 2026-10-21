@@ -2,6 +2,7 @@
 const crypto = require('node:crypto');
 const P = require('./krokli-preparation');
 const K = require('./krokly-drivers');
+const externalDeliveries = require('./external-deliveries');
 
 const MAX_SESSION_MS = 12 * 3600_000;
 // Public BAN housenumber match (2026-10-16): 153 Quai George V, 76600 Le Havre,
@@ -49,7 +50,7 @@ function configure(db, input, now = Date.now()) {
   return P.settings(db);
 }
 function busy(db, driverId, now) {
-  return (db.orders || []).some(o => o.status !== 'cancelled' && o.status !== 'delivered' &&
+  return (db.orders || []).concat(externalDeliveries.list(db)).some(o => o.status !== 'cancelled' && o.status !== 'delivered' &&
     o.kroklyDriver?.driverId === driverId && (['accepted','picked_up','issue'].includes(o.kroklyDriver.status) ||
       o.kroklyDriver.status === 'offered' && Date.parse(o.kroklyDriver.expiresAt) > now));
 }

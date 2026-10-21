@@ -4,6 +4,7 @@ const webPush = require('./krokly-web-push');
 const nativePush = require('./krokli-native-push');
 const preparation = require('./krokli-preparation');
 const driverAccount = require('./krokli-driver-account');
+const externalDeliveries = require('./external-deliveries');
 
 const OFFER_MS = 5 * 60 * 1000;
 const SESSION_MS = 12 * 60 * 60 * 1000;
@@ -143,7 +144,7 @@ function eligible(order, now = Date.now()) {
 }
 
 function expireOffers(db, now = Date.now()) {
-  let changed = false;
+  let changed = externalDeliveries.expireOffers(db, now);
   for (const order of db.orders || []) {
     if (order.kroklyDriver?.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) <= now) {
       order.kroklyDriver.status = 'expired';
@@ -155,6 +156,7 @@ function expireOffers(db, now = Date.now()) {
 }
 
 function assign(db, orderId, driverId, now = Date.now(), { source = 'manual' } = {}) {
+  if (externalDeliveries.isExternal(orderId)) return externalDeliveries.assign(db, orderId, driverId, now);
   const order = (db.orders || []).find(item => item.id === orderId);
   const driver = (db.kroklyDrivers || []).find(item => item.id === driverId && item.active);
   if (!driver) fail('Livreur actif introuvable.', 404);
@@ -174,6 +176,7 @@ function currentAssignment(order) {
 }
 
 function transition(db, orderId, driverId, action, now = Date.now()) {
+  if (externalDeliveries.isExternal(orderId)) return externalDeliveries.transition(db, orderId, driverId, action, now);
   const order = (db.orders || []).find(item => item.id === orderId);
   if (!order || order.kroklyDriver?.driverId !== driverId) fail('Course non attribuée à ce livreur.', 404);
   if (!currentAssignment(order)) fail('Cette course n’est plus disponible.');
@@ -217,7 +220,7 @@ function project(order) {
 function assigned(db, driverId) {
   // Imported/old inconsistent assignments must not re-expose contacts for a
   // finished, refunded or transferred delivery. Never alter the real order.
-  return (db.orders || []).filter(order=>order.kroklyDriver?.driverId===driverId&&currentAssignment(order)).map(project);
+  return (db.orders || []).filter(order=>order.kroklyDriver?.driverId===driverId&&currentAssignment(order)).map(project).concat(externalDeliveries.assigned(db, driverId));
 }
 
 function dispatchState(db, now = Date.now()) {
@@ -225,7 +228,7 @@ function dispatchState(db, now = Date.now()) {
     drivers: drivers(db).map(driver => ({ ...driver, pushDevices: (db.kroklyPushSubscriptions || []).filter(item => item.driverId === driver.id).length })),
     orders: (db.orders || [])
       .filter(order => order.method === 'delivery' && order.payment?.status === 'PAID' && order.serviceDate === parisDateKey(new Date(now)) && ['preparing','ready', 'out_for_delivery'].includes(order.status))
-      .map(order => ({ id: order.id, number: order.number, status: order.status, serviceDate: order.serviceDate, slot: order.slot, eligible: eligible(order, now), preparation: preparation.view(order, now), assignment: order.kroklyDriver || null }))
+      .map(order => ({ id: order.id, number: order.number, status: order.status, serviceDate: order.serviceDate, slot: order.slot, eligible: eligible(order, now), preparation: preparation.view(order, now), assignment: order.kroklyDriver || null })).concat(externalDeliveries.dispatchState(db, now))
   };
 }
 

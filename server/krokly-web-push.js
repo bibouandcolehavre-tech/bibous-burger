@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const externalDeliveries = require('./external-deliveries');
 const preparation = require('./krokli-preparation');
 
 const PUSH_HOSTS = new Set(['fcm.googleapis.com', 'updates.push.services.mozilla.com']);
@@ -98,8 +99,8 @@ function claim(db, now = Date.now(), limit = 5) {
     if (job.status !== 'pending' || job.availableAt > now) continue;
     const driver = (db.kroklyDrivers || []).find(item => item.id === job.driverId && item.active);
     const subscription = subscriptions(db).find(item => item.id === job.subscriptionId && item.driverId === job.driverId);
-    const order = job.orderId && (db.orders || []).find(item => item.id === job.orderId);
-    const validOrder = !job.orderId || (preparation.kitchenOrder(order) && (order.status === 'ready' || preparation.due(order, now)) &&
+    const order = job.orderId && ((db.orders || []).find(item => item.id === job.orderId) || externalDeliveries.get(db, job.orderId));
+    const validOrder = !job.orderId || externalDeliveries.offerValid(order, job.driverId, now) || (preparation.kitchenOrder(order) && (order.status === 'ready' || preparation.due(order, now)) &&
       order.kroklyDriver?.driverId === job.driverId && order.kroklyDriver.status === 'offered' && Date.parse(order.kroklyDriver.expiresAt) > now);
     if (!driver || !subscription || !validOrder || job.expiresAt <= now) { job.status = 'discarded'; continue; }
     job.attempts += 1;
