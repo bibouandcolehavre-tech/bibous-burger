@@ -99,13 +99,13 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.KrokliProWeb?.authenticated(false); window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Krokli Pro — Bibou’s Burgers"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
   if (token) void fetch(`${API_BASE_URL}/dashboard/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
 };
-const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; void birthdaysPanel?.load(); };
+const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; window.KrokliProWeb?.authenticated(true); void birthdaysPanel?.load(); };
 
 const cashDue = order => order?.kioskCash === true && order.status === 'awaiting_payment' && order.payment?.provider === 'cash' && order.payment.status === 'CASH_DUE';
 const cashChanges = new Set();
@@ -396,6 +396,7 @@ function refreshMetrics() {
 
 function renderHome() {
   const pending = orders.filter(order => order.status === 'Nouvelle');
+  window.KrokliProWeb?.update({waiting:pending.length,syncedAt:feedHealth.orders.lastSuccess,error:feedHealth.orders.error});
   const pendingTables = reservations.filter(table => table.status === 'pending');
   const loaded = Boolean(feedHealth.orders.lastSuccess && feedHealth.reservations.lastSuccess);
   updateText('#home-priority-title', !loaded ? 'Connexion à votre restaurant…' : pending.length ? `${pending.length} commande${pending.length > 1 ? 's' : ''} vous attend${pending.length > 1 ? 'ent' : ''} !` : pendingTables.length ? `${pendingTables.length} table${pendingTables.length > 1 ? 's' : ''} à confirmer` : 'Tout est à jour pour le service.');
@@ -430,11 +431,12 @@ function updateAttention(orderCount, reservationCount, rewardCount) {
     document.querySelector(selector).classList.toggle("needs-attention", count > 0);
   }
   const total = orderCount + reservationCount + rewardCount;
-  document.title = `${total ? `(${total}) ` : ""}Bibou's Burgers — Espace restaurant`;
+  document.title = `${total ? `(${total}) ` : ""}Krokli Pro — Bibou’s Burgers`;
 }
 
 function updateSoundControls() {
   const state = soundPlayer.state();
+  window.KrokliProWeb?.sound(state);
   document.querySelector('#audio-warning').hidden = Boolean(state.ready);
   document.querySelector('#enable-alerts-button').disabled = !state.supported;
   updateText('#audio-warning-text', !state.supported ? 'Ce navigateur ne peut pas sonner. Ouvrez le tableau dans Safari ou Chrome.' : 'Le navigateur a suspendu le son. Touchez « Activer les alertes sonores » pour recevoir les commandes.');
@@ -453,6 +455,7 @@ function updateConnectionStatus() {
   const status = BibouAlerts.connectionStatus(Object.values(feedHealth), navigator.onLine);
   updateText("#connection-status", status.text);
   document.querySelector("#connection-status").classList.toggle("connection-warning", status.warning);
+  window.KrokliProWeb?.update({waiting:orders.filter(order=>order.status==='Nouvelle').length,syncedAt:feedHealth.orders.lastSuccess,error:feedHealth.orders.error});
 }
 
 function announceArrivals(kind, count) {
@@ -1023,10 +1026,12 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "tools", "account", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   if (view !== 'customers') closeCustomerDetail(false);
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
+  document.querySelector('#pro-rubrics-view').hidden = view !== 'tools';
+  document.querySelector('#pro-account-view').hidden = view !== 'account';
   document.querySelector('#clients-subnav').hidden = !['customers','rewards'].includes(view);
   document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications','marketing-sms'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
@@ -1048,6 +1053,7 @@ function showView(view) {
   document.querySelector("#settings-view").hidden = view !== "settings";
   document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', dispatch: 'Répartir les courses', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
   updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',dispatch:'Choisissez votre livreur et suivez chaque livraison ici.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
+  if (['home','orders','tools','account'].includes(view)) document.querySelector('#dashboard-title').textContent={home:'Votre service',orders:'Commandes en cours',tools:'Mon restaurant',account:'Mon compte'}[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing','marketing-sms':'marketing',backups:'settings'}[view] || view;
@@ -1070,6 +1076,10 @@ document.querySelectorAll('[data-jump]').forEach(button => button.addEventListen
   if (button.dataset.orderFilter) setOrderFilter(button.dataset.orderFilter);
   showView(button.dataset.jump);
 }));
+document.querySelector('#pro-birthday-open').addEventListener('click',()=>birthdaysPanel?.open());
+document.querySelector('#pro-enable-alerts').addEventListener('click',()=>document.querySelector('#enable-alerts-button').click());
+document.querySelector('#pro-logout').addEventListener('click',()=>{const dialog=document.querySelector('#pro-logout-dialog');dialog.returnValue='cancel';dialog.showModal();});
+document.querySelector('#pro-logout-dialog').addEventListener('close',event=>{if(event.target.returnValue==='logout')logoutDashboard();});
 document.addEventListener('click', event => { if (event.target.closest('[data-open-dispatch]')) showView('dispatch'); });
 document.querySelector('#home-period').addEventListener('change', renderHome);
 document.querySelector('#home-priority').addEventListener('click', () => {
