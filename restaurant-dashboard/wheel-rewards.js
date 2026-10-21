@@ -3,6 +3,7 @@ window.BibouWheelRewards = function ({ root, api, token, onUnauthorized }) {
   let data = null, busy = false, generation = 0;
   root.innerHTML = '<section class="marketing-panel"><h2>La roue Bibou · gains immédiats</h2><p>Cette roue ne change ni le classement jusqu’au 31 décembre ni les tirages Instagram.</p><p data-wheel-status role="status" aria-live="polite"></p><details><summary>Lire le nouveau règlement et les probabilités</summary><pre data-wheel-rules style="white-space:pre-wrap;font:inherit"></pre></details><button type="button" class="login-button" data-wheel-activate disabled>Publier les 80 % de gains et le Classique mensuel</button><p>Une chance de 1 % par tour réel admissible pour le Classique tant qu’il reste disponible ; au maximum un gagnant pour tout le restaurant par mois, sans tirage de rattrapage ni gagnant garanti. Ne publier qu’après sauvegarde et vérification des parcours clients.</p></section>';
   const status = text => { root.querySelector('[data-wheel-status]').textContent = text; };
+  const stbLink = document.createElement('a'); stbLink.href = './stb.html'; stbLink.textContent = 'Gérer les deux places STB →'; root.querySelector('section').append(stbLink);
   async function request(body) {
     const current = token();
     if (!current) throw Error('Reconnectez-vous au back-office.');
