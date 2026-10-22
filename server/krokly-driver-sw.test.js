@@ -36,7 +36,7 @@ test('hors ligne, le shell public est lu uniquement dans le cache Krokli actif',
   const h = harness(); h.offline(); let response;
   h.handlers.fetch({ request: { method: 'GET', url: 'https://example.test/driver/', headers: { has: () => false } }, respondWith: promise => { response = promise; } });
   assert.equal((await response).ok, true);
-  assert.deepEqual(h.reads, [{ name: 'krokly-driver-shell-v12', url: 'https://example.test/driver/' }]);
+  assert.deepEqual(h.reads, [{ name: 'krokly-driver-shell-v13', url: 'https://example.test/driver/' }]);
   const installed=harness();let ready;installed.handlers.install({waitUntil:p=>{ready=p;}});await ready;
   assert.ok(installed.cached.every(url=>!/(leaflet|navigation-core|\/navigation\.js)/.test(url)));
 });

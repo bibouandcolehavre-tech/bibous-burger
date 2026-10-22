@@ -105,7 +105,7 @@ test('Krokly order controls stay in the back office and never invite a duplicate
   const html = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard/index.html'), 'utf8');
   assert.equal((html.match(/data-view="dispatch"/g) || []).length, 2);
   assert.match(html, /id="dispatch-view"/);
-  assert.match(html, /dispatch\.js\?v=external-20261021/);
+  assert.match(html, /dispatch\.js\?v=call-client-20261022/);
 });
 
 test('dispatch gateway HTML errors stay readable and leave assignment disabled', async () => {

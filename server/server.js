@@ -607,6 +607,7 @@ const server = http.createServer(async (request, response) => {
       '/driver/gps.js': ['gps.js', 'text/javascript; charset=utf-8'],
       '/driver/guidance-core.js': ['guidance-core.js', 'text/javascript; charset=utf-8'],
       '/driver/guidance.js': ['guidance.js', 'text/javascript; charset=utf-8'],
+      '/driver/phone-contact.js': ['phone-contact.js', 'text/javascript; charset=utf-8'],
       '/driver/navigation.js': ['navigation.js', 'text/javascript; charset=utf-8'],
       '/driver/navigation-core.js': ['navigation-core.js', 'text/javascript; charset=utf-8'],
       '/driver/leaflet.js': ['leaflet.js', 'text/javascript; charset=utf-8'],
