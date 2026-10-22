@@ -36,7 +36,7 @@ function rateFor(item, order, settings) {
   // Do not infer alcohol tax from a name or absorb an unknown new option at 10%.
   if (options.some(o => !object(o) || /bi[eè]re|alcool|\bbeer\b|\bwine\b/i.test(String(o.label || o.name || o.id || ''))))
     fail('La TVA de cette option doit être validée par le restaurant.');
-  const softChoices = new Set(['coca', 'coca-cherry', 'coca-zero', 'coca-vanille', 'fanta-orange', 'fanta', 'fuse-menthe', 'lipton-framboise', 'lipton-peche', 'oasis-pomme', 'oasis-tropical', 'perrier', 'tropico', 'tropico-exotique', 'cristaline']);
+  const softChoices = new Set(['coca', 'coca-cherry', 'coca-zero', 'coca-vanille', 'fanta-orange', 'fanta', 'fanta-dragon', 'fuse-menthe', 'lipton', 'lipton-framboise', 'lipton-peche', 'oasis', 'oasis-pomme', 'oasis-tropical', 'perrier', 'tropico', 'tropico-exotique', 'cristaline', 'eau']);
   if (options.some(o => ['drink', 'duo-drink-one', 'duo-drink-two'].includes(o.groupId) && !softChoices.has(o.id)))
     fail('Une nouvelle boisson du menu doit être vérifiée avant facturation.');
   if (MENU_IDS.has(id)) return 1000; // owner-confirmed whole-menu, highest-rate method, no alcohol

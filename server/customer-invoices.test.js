@@ -27,6 +27,24 @@ test('invoice VAT: a separately purchased can is 5.5%, mixed delivery and discou
   const dineIn = prepare(order({ items, subtotal: 11.7, discount: 0, deliveryFee: 0, total: 11.7, dineIn: true }), customer, settings, now);
   assert.deepEqual(dineIn.tax.map(r => r.rate), [1000]);
 });
+test('invoice VAT: current menu soft-drink identifiers are recognized without opening unknown drinks', () => {
+  for (const id of ['coca', 'coca-cherry', 'coca-zero', 'coca-vanille', 'fanta-orange', 'fanta', 'fanta-dragon', 'fuse-menthe', 'lipton', 'lipton-framboise', 'lipton-peche', 'oasis', 'oasis-pomme', 'oasis-tropical', 'perrier', 'tropico', 'tropico-exotique', 'cristaline', 'eau']) {
+    const sample = order(); sample.items[0].options[0].id = id;
+    assert.equal(prepare(sample, customer, settings, now).tax[0].rate, 1000, id);
+  }
+  const unknown = order(); unknown.items[0].options[0].id = 'future-drink';
+  assert.throws(() => prepare(unknown, customer, settings, now), /boisson/);
+});
+test('invoice VAT: owner-confirmed closed tiramisu pots are mapped individually, not inferred for future desserts', () => {
+  const productRates = Object.fromEntries(['dessert-oreo', 'dessert-cookie', 'dessert-speculoos'].map(id => [id, { dineIn: 1000, takeaway: 550 }]));
+  const mapped = validateSettings({ ...settings, productRates });
+  for (const productId of Object.keys(productRates)) {
+    const sample = order({ items: [{ productId, name: 'Tiramisu', quantity: 2, price: 3.9, options: [] }], subtotal: 7.8, discount: 0, deliveryFee: 0, total: 7.8 });
+    assert.equal(prepare(sample, customer, mapped, now).tax[0].rate, 550);
+    assert.equal(prepare({ ...sample, dineIn: true }, customer, mapped, now).tax[0].rate, 1000);
+  }
+  assert.throws(() => validateSettings({ ...settings, productRates: { 'dessert-future': { dineIn: 1000, takeaway: 550 } } }), /Validation des desserts/);
+});
 test('private billing details: a pickup customer can provide an address or explicitly omit it, never alter order totals', async t => {
   const pickup = order({ method: 'pickup', deliveryFee: 0, total: 17.01, deliveryAddress: null });
   assert.throws(() => prepare(pickup, customer, settings, now), /adresse/);
