@@ -4,7 +4,7 @@ const RESTAURANT = {
   origin: 'https://bibous-burger-app.onrender.com',
   page: '/restaurant-le-havre.html',
   heading: "Bibou's Burgers, restaurant de burgers au Havre",
-  description: "Commandez chez Bibou's Burgers au Havre : burgers, menus, livraison dans un rayon de 5 km, click & collect et réservation de table au 153 quai Georges V.",
+  description: "Commandez chez Bibou's Burgers au Havre : burgers, menus, livraison jusqu’à 7 km par la route, click & collect et réservation de table au 153 quai Georges V.",
   introduction: "Retrouvez nos burgers dans un pain brioché maison, nos menus avec frites et boisson et nos petites faims. Commandez directement auprès du restaurant pour une livraison ou un retrait sur place, ou demandez une table.",
   street: '153 quai Georges V', postalCode: '76600', city: 'Le Havre', country: 'FR',
   hours: [
@@ -13,7 +13,7 @@ const RESTAURANT = {
     { label: 'Dimanche', text: '19 h – 21 h', days: ['Sunday'], periods: [['19:00', '21:00']] },
   ],
   services: [
-    { title: 'Livraison au Havre', text: 'Nous livrons nous-mêmes dans un rayon de 5 km autour du restaurant. Les frais sont de 3,99 € jusqu’à 1,5 km, 4,99 € au-delà de 1,5 km et jusqu’à 3 km, puis 5,99 € au-delà de 3 km et jusqu’à 5 km. L’adresse et les créneaux disponibles sont vérifiés avant le paiement.' },
+    { title: 'Livraison au Havre', text: 'Nous livrons jusqu’à 7 km par la route depuis le restaurant. Les frais sont de 3,99 € jusqu’à 1,5 km, 4,99 € au-delà de 1,5 km et jusqu’à 3 km, 5,99 € au-delà de 3 km et jusqu’à 5 km, puis 6,99 € au-delà de 5 km et jusqu’à 7 km. L’adresse et les créneaux disponibles sont vérifiés avant le paiement.' },
     { title: 'Click & collect', text: 'Commandez en ligne et retirez votre repas au 153 quai Georges V. Choisissez une heure de retrait parmi les créneaux disponibles du service. Aucun frais de livraison pour le retrait.' },
     { title: 'Réservation de table', text: 'Demandez une table pour 1 à 4 personnes et choisissez votre heure d’arrivée. Les conditions de réservation et tout paiement éventuel sont précisés avant validation. La réservation est confirmée lorsque le restaurant accepte la demande.' },
   ],

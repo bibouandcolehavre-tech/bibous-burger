@@ -1,8 +1,10 @@
 import { createContext, useState } from 'react';
 import { Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { AnimatedOrderAction } from './ExperienceActions';
 const { CUSTOMER_CATEGORIES, loyaltyMilestoneProgress } = require('./customer-journey');
 const { PARTNERS } = require('./partners');
+const { DELIVERY_PRICING, DELIVERY_MAX_KM } = require('./delivery-pricing');
 const logo = require('./assets/bibous-official-wordmark-preview.png');
 const money = value => Number(value).toFixed(2).replace('.', ',') + ' €';
 // Stable web-only styling hooks, rather than generated React Native class names.
@@ -46,27 +48,30 @@ export function CustomerLoyaltyStrip({ signedIn, points, rewards, onLogin, onRew
   const p = loyaltyMilestoneProgress(points, rewards);
   return <Pressable accessibilityRole="button" accessibilityLabel={'Club Bibou : ' + p.points + ' points. ' + (p.next ? 'Il te manque ' + (p.next.points - p.points) + ' points pour ' + p.next.title : 'Les cinq paliers sont débloqués')} onPress={onRewards} style={[s.loyalty, s.loyaltyColumn]}><Text style={s.giftTitle}>{p.points.toLocaleString('fr-FR')} points · Club Bibou</Text><View style={s.stages}>{p.stages.map(r => <View key={r.id} style={s.stage}><Text>{r.emoji}</Text><View style={s.track}><View style={[s.fill, { width: (r.fraction * 100) + '%' }]} /></View><Text style={s.small}>{r.points.toLocaleString('fr-FR')}</Text></View>)}</View><Text style={s.body}>{p.next ? 'Il te manque ' + (p.next.points - p.points).toLocaleString('fr-FR') + ' points pour débloquer : ' + p.next.title.toLowerCase() + '.' : 'Tu as débloqué les cinq paliers !'}</Text></Pressable>;
 }
-export function CustomerJourneyHome({ frame, loyalty, contestEntry, customer, onOrder, onReserve, onClub, onPlus, onNews, onPartners, onResumePayment, pendingPayment, reviews, stockMessage }) {
-  return <CustomerJourneyFrame {...frame} title="Que souhaites-tu faire ?" eyebrow={customer?.name ? 'Bonjour ' + customer.name.split(' ')[0] : 'Bienvenue chez Bibou'}>{contestEntry}{loyalty}{pendingPayment && <View style={s.panel}><Text style={s.body}>Une tentative de paiement reste à vérifier. Tu peux consulter la carte librement.</Text><Action label="Retrouver ma tentative" onPress={onResumePayment} secondary /></View>}<View style={s.grid}>
-    <Tile label="Commander" detail="Retrait ou livraison" icon="🛍️" onPress={onOrder} selected />
-    <Tile label="Réserver une table" detail="Avec ou sans repas" icon="🍽️" onPress={onReserve} />
-    <Tile label="Mes commandes" detail="Suivi et réservations" icon="🧾" onPress={frame.onOrders} />
-    <Tile label="Club Bibou" detail="Points, roue et gains" icon="🎁" onPress={onClub} />
-    <Tile label="Mon compte" detail="Profil et notifications" icon="👤" onPress={frame.onAccount} />
-    <Tile label="Nos actualités" detail="La vie de Bibou" icon="📰" onPress={onNews} />
-    <Tile label="Bibou +" detail="Tes avantages 30 jours" icon="✨" onPress={onPlus} partner />
-    <Tile label="Nos partenaires" detail="Les bonnes adresses" icon="🤝" onPress={onPartners} partner />
-  </View>{stockMessage ? <Text style={s.small}>{stockMessage}</Text> : null}{reviews}</CustomerJourneyFrame>;
+export function CustomerJourneyHome({ frame, loyalty, customer, onOrder, onReserve, onClub, onPlus, onNews, onPartners, onReferral, onReplayOpening, onResumePayment, pendingPayment, reviews, stockMessage, news, contest, reviewTools }) {
+  return <CustomerJourneyFrame {...frame} title="Une petite faim ?" eyebrow={customer?.name ? 'Bonjour ' + customer.name.split(' ')[0] : 'Bienvenue chez Bibou’s Burgers'}>
+    <Text style={s.body}>Retrait au restaurant ou livraison chez toi.</Text><AnimatedOrderAction onPress={onOrder} />
+    {pendingPayment && <View style={s.panel}><Text style={s.body}>Une tentative de paiement reste à vérifier. Tu peux consulter la carte librement.</Text><Action label="Retrouver ma tentative" onPress={onResumePayment} secondary /></View>}
+    <View style={s.shortcutRow}><View style={s.shortcut}><Action label="Mes commandes" onPress={frame.onOrders} secondary /></View><View style={s.shortcut}><Action label="Réserver une table" onPress={onReserve} secondary /></View></View>
+    {reviewTools}{news}{contest}
+    <View style={s.panel}>{[['Club Bibou · points et roue', onClub], ['Parrainer un proche', onReferral], ['Bibou Plus', onPlus], ['Actualités & réseaux', onNews], ['Nos partenaires', onPartners], ['Mon compte', frame.onAccount]].map(([label, callback]) => <Pressable key={label} accessibilityRole="button" onPress={callback} style={s.listLink}><Text style={s.listLabel}>{label}</Text><Text style={s.listLabel}>›</Text></Pressable>)}</View>
+    {loyalty}{stockMessage ? <Text style={s.small}>{stockMessage}</Text> : null}{reviews}
+    <Action label="Revoir la petite moto d’ouverture" onPress={onReplayOpening} secondary />
+  </CustomerJourneyFrame>;
 }
 export function CustomerServiceScreen({ frame, onSelect, onReserve, loyalty }) {
-  return <CustomerJourneyFrame {...frame} title="Comment profiter de Bibou ?">{loyalty}<View style={s.grid}><Tile label="Click & collect" detail="Ton burger t’attend chez Bibou" icon="🛍️" onPress={() => onSelect('pickup')} /><Tile label="Livraison" detail="Le goût de Bibou vient jusqu’à toi" icon="🛵" onPress={() => onSelect('delivery')} delivery /></View><Action label="Réserver une table" onPress={onReserve} secondary /><Text style={s.small}>Le dimanche soir : click & collect et livraison uniquement.</Text></CustomerJourneyFrame>;
+  return <CustomerJourneyFrame {...frame} title="Comment profiter de Bibou ?">{loyalty}<View style={s.grid}><Tile label="Click & collect" detail="Ton burger t’attend chez Bibou" icon="🛍️" onPress={() => onSelect('pickup')} /><Tile label="Livraison" detail="Le goût de Bibou vient jusqu’à toi" icon="🛵" onPress={() => onSelect('delivery')} delivery /></View><Text style={s.small}>Livraison jusqu’à {DELIVERY_MAX_KM} km par la route. Plus de 5 km et jusqu’à {DELIVERY_MAX_KM} km : {money(DELIVERY_PRICING[DELIVERY_PRICING.length - 1].price)}.</Text><Action label="Réserver une table" onPress={onReserve} secondary /><Text style={s.small}>Le dimanche soir : click & collect et livraison uniquement.</Text></CustomerJourneyFrame>;
 }
 export function CustomerCategoriesScreen({ frame, loyalty, showNaans, onCategory, onCustom, service, reservation }) {
   return <CustomerJourneyFrame {...frame} title="Qu’est-ce qui te fait envie ?" eyebrow={reservation ? 'Pour ta table' : service === 'delivery' ? 'En livraison' : 'Click & collect'}>{loyalty}<View style={s.grid}><Tile label="Compose ton burger" detail="Ta protéine, ton pain, ton fromage : à toi de choisir !" icon="👨‍🍳" onPress={onCustom} wide />{CUSTOMER_CATEGORIES.filter(c => c.id !== 'naans' || showNaans).map(c => <Tile key={c.id} label={c.label} detail={c.detail} icon={c.icon} onPress={() => onCategory(c.id)} />)}</View>{reservation && <View style={s.panel}><Text style={s.body}>Repas pour ta table · {reservation.guests} personne(s) · {reservation.dayLabel} à {reservation.slot}</Text></View>}</CustomerJourneyFrame>;
 }
-export function CustomerCatalogScreen({ frame, loyalty, category, products, onProduct, onQuickAdd, stockMessage }) {
+export function CustomerCatalogScreen({ frame, loyalty, category, products, onProduct, onQuickAdd, stockMessage, onCustom, onCategory, showNaans, service, onService, contest }) {
   const c = CUSTOMER_CATEGORIES.find(c => c.id === category);
-  return <CustomerJourneyFrame {...frame} title={c?.label || 'La carte'}>{loyalty}{stockMessage ? <Text style={s.small}>{stockMessage}</Text> : null}<View dataSet={webPart('catalogue')}>{products.map(p => <View key={p.id} style={[s.product, p.kind !== 'naan' && s.horizontalProduct]}>
+  return <CustomerJourneyFrame {...frame}>{loyalty}<Text accessibilityRole="header" style={s.title}>Qu’est-ce qui te fait envie ?</Text>
+    {onService && <View style={s.shortcutRow}>{[['pickup', 'Retrait'], ['delivery', 'Livraison']].map(([id, label]) => <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected: service === id }} onPress={() => onService(id)} style={[s.serviceChoice, service === id && s.serviceChosen]}><Text style={[s.serviceText, service === id && s.serviceChosenText]}>{label}</Text></Pressable>)}</View>}
+    {onCustom && <Pressable accessibilityRole="button" onPress={onCustom} style={s.compose}><Text style={s.productTitle}>👨‍🍳 Compose ton burger</Text><Text style={s.small}>Ta protéine, ton pain, ton fromage : à toi de choisir ! →</Text></Pressable>}
+    {onCategory && <View style={s.categories}>{CUSTOMER_CATEGORIES.filter(item => item.id !== 'naans' || showNaans).map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => onCategory(item.id)} style={[s.category, category === item.id && s.serviceChosen]}><Text style={[s.serviceText, category === item.id && s.serviceChosenText]}>{item.label}</Text></Pressable>)}</View>}
+    {contest}{stockMessage ? <Text style={s.small}>{stockMessage}</Text> : null}<Text style={s.productTitle}>{c?.label || 'La carte'}</Text><View dataSet={webPart('catalogue')}>{products.map(p => <View key={p.id} style={[s.product, p.kind !== 'naan' && s.horizontalProduct]}>
     {p.image && (p.kind === 'naan' ? <NaanPhoto source={p.image} name={p.name} /> : <Image source={p.image} resizeMode="contain" style={s.productImage} accessibilityLabel={p.name} />)}
     <View style={s.productCopy}>
     <Text style={s.productTitle}>{p.isMenu ? 'Menu · ' : ''}{p.name}</Text>
@@ -81,6 +86,7 @@ export function CustomerPartnersScreen({ frame }) {
   return <CustomerJourneyFrame {...frame} title="Nos partenaires" eyebrow="Le Havre · nos liens">{PARTNERS.map(p => <View key={p.id} style={s.panel}><Text style={s.productTitle}>{p.name}</Text><Text style={s.body}>{p.detail}</Text><Pressable accessibilityRole="link" onPress={() => Linking.openURL(p.url)} style={s.action}><Text style={s.actionText}>Découvrir son site ↗</Text></Pressable></View>)}</CustomerJourneyFrame>;
 }
 const s = StyleSheet.create({
+  shortcutRow: { flexDirection: 'row', gap: 9, marginVertical: 6 }, shortcut: { flex: 1 }, listLink: { minHeight: 52, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderBottomWidth: 1, borderBottomColor: '#E3E4D9' }, listLabel: { color: '#315B4B', fontSize: 15, fontWeight: '700', flexShrink: 1 }, compose: { backgroundColor: '#FFFDF8', borderColor: '#315B4B', borderWidth: 1, padding: 15, borderRadius: 15, marginVertical: 13 }, categories: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginVertical: 8 }, category: { minHeight: 44, borderRadius: 22, paddingVertical: 11, paddingHorizontal: 13, backgroundColor: '#DCEBE2' }, serviceChoice: { flex: 1, minHeight: 48, padding: 12, backgroundColor: '#DCEBE2', borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, serviceChosen: { backgroundColor: '#315B4B' }, serviceText: { color: '#315B4B', fontWeight: '700', fontSize: 14 }, serviceChosenText: { color: '#FFFDF8' },
   safe: { flex: 1, backgroundColor: '#FBF3E6' }, embedded: { flex: 1, width: '100%', maxWidth: 430, alignSelf: 'center' }, scroll: { flexGrow: 1, paddingBottom: 20 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#315B4B', padding: 12, gap: 8 }, headerButton: { minHeight: 48, minWidth: 48, justifyContent: 'center', alignItems: 'center' }, white: { color: '#FFFDF8', fontSize: 20 }, logo: { width: 142, height: 59 },
   content: { width: '100%', maxWidth: 430, alignSelf: 'center', padding: 18 }, eyebrow: { color: '#315B4B', fontSize: 13, marginBottom: 6 }, title: { color: '#243B31', fontSize: 27, fontWeight: '700', marginBottom: 18 },

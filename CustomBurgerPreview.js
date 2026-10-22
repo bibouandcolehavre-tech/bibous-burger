@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+const { experiencePhoto } = require('./experience-photos');
 const { BASE_CENTS, PROTEINS, BREADS, CHEESES, SAUCES, CRUDITES, EXTRAS, EXTRA_STOCK_IDS, initialBurger, priceCents, pricedOptions, selectionEntries, parseSelectionEntries, stockAvailable } = require('./custom-burger-preview');
 
 const euro = (cents) => `${(cents / 100).toFixed(2).replace('.', ',')} €`;
@@ -8,7 +9,9 @@ const signatureBreadIncluded = (protein) => ['canard', 'agneau', 'pork', 'hambag
 const nameOf = (options, id) => options.find((option) => option.id === id)?.label || '';
 
 export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialItem, hideBack = false }) {
-  const [selection, setSelection] = useState(() => initialItem ? parseSelectionEntries(initialItem.selections) : initialBurger());
+  const [selection, setSelection] = useState(() => initialItem ? parseSelectionEntries(initialItem.selections) : { ...initialBurger(), sauces: [], crudites: [] });
+  const [sauceConfirmed, setSauceConfirmed] = useState(Boolean(initialItem));
+  const [cruditesConfirmed, setCruditesConfirmed] = useState(Boolean(initialItem));
   const [step, setStep] = useState(0);
   const scrollRef = useRef(null);
   const protein = PROTEINS.find((option) => option.id === selection.protein);
@@ -18,7 +21,8 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialIte
   const unavailableChoice = entries.some(({ groupId, id }) => catalog?.options?.[`${groupId}:${id}`] === false)
     || !stockAvailable(catalog, protein?.productId)
     || selection.extras.some((id) => !stockAvailable(catalog, EXTRA_STOCK_IDS[id]));
-  const canOrder = Boolean(productStatus?.available) && !unavailableChoice;
+  const canOrder = Boolean(productStatus?.available) && !unavailableChoice && sauceConfirmed && cruditesConfirmed;
+  const canContinue = step === 2 ? sauceConfirmed : step === 3 ? cruditesConfirmed : true;
 
   const goTo = (nextStep) => {
     setStep(nextStep);
@@ -26,9 +30,10 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialIte
   };
   const choose = (group, option) => {
     if (group === 'protein') {
+      setSauceConfirmed(false);
       setSelection((current) => ({
         ...current, protein: option.id, bread: option.recipe.bread, cheese: option.recipe.cheese,
-        sauces: [option.recipe.sauce], extras: current.extras.filter((id) => !((current.halal && EXTRAS.find((extra) => extra.id === id)?.pork)))
+        sauces: [], extras: current.extras.filter((id) => !((current.halal && EXTRAS.find((extra) => extra.id === id)?.pork)))
       }));
       return;
     }
@@ -36,6 +41,8 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialIte
       setSelection((current) => ({ ...current, [group]: option.id }));
       return;
     }
+    if (group === 'sauces') setSauceConfirmed(selection.sauces.includes(option.id) ? selection.sauces.length > 1 : true);
+    if (group === 'crudites') setCruditesConfirmed(selection.crudites.includes(option.id) ? selection.crudites.length > 1 : true);
     setSelection((current) => ({
       ...current,
       [group]: current[group].includes(option.id)
@@ -71,7 +78,9 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialIte
   const renderOption = (group, option) => {
     const selected = Array.isArray(selection[group]) ? selection[group].includes(option.id) : selection[group] === option.id;
     const disabled = blocked(group, option);
+    const picture = experiencePhoto({ protein: 'custom-protein', crudites: 'custom-crudite', extras: 'custom-extra' }[group], option.id);
     return <Pressable key={option.id} accessibilityRole={['sauces', 'crudites', 'extras'].includes(group) ? 'checkbox' : 'radio'} accessibilityState={{ checked: selected, disabled }} disabled={disabled} onPress={() => choose(group, option)} style={[s.option, selected && s.optionSelected, disabled && s.disabled]}>
+      {picture && <Image source={picture} resizeMode="contain" style={s.optionImage} />}
       <View style={s.optionCopy}>
         <Text style={s.optionName}>{option.label}</Text>
         {disabled ? <Text style={s.optionNote}>{selection.halal && option.pork ? 'Contient du porc · non halal' : 'Actuellement indisponible'}</Text> : null}
@@ -112,10 +121,12 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialIte
     {step === 2 && <>
       <Text style={s.question}>Quelle sauce ?</Text><Text style={s.hint}>Une sauce est comprise. Tu peux en ajouter d’autres à +0,50 € chacune.</Text>
       {renderList('sauces', SAUCES)}
+      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: sauceConfirmed && !selection.sauces.length }} onPress={() => { setSelection(current => ({ ...current, sauces: [] })); setSauceConfirmed(true); }} style={s.option}><Text style={s.optionName}>Pas de sauce</Text></Pressable>
     </>}
     {step === 3 && <>
       <Text style={s.question}>Quelles crudités ?</Text><Text style={s.hint}>Choisis jusqu’à cinq crudités comprises. Après, c’est +0,50 € chacune.</Text>
       {renderList('crudites', CRUDITES)}
+      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: cruditesConfirmed && !selection.crudites.length }} onPress={() => { setSelection(current => ({ ...current, crudites: [] })); setCruditesConfirmed(true); }} style={s.option}><Text style={s.optionName}>Pas de crudités</Text></Pressable>
     </>}
     {step === 4 && <>
       <Text style={s.question}>Un petit plus ?</Text><Text style={s.hint}>C’est facultatif : tu peux passer cette étape sans rien ajouter.</Text>
@@ -139,7 +150,7 @@ export default function CustomBurgerPreview({ catalog, onBack, onAdd, initialIte
 
     <View style={s.bottom}>
       <View style={s.totalRow}><Text style={s.totalLabel}>Ton burger</Text><Text accessibilityLiveRegion="polite" style={s.totalPrice}>{euro(price)}</Text></View>
-      <View style={s.actions}><Pressable accessibilityRole="button" disabled={step === 0} onPress={() => goTo(step - 1)} style={[s.previous, step === 0 && s.disabled]}><Text style={s.previousText}>Retour</Text></Pressable><Pressable accessibilityRole="button" disabled={step === 5 && !canOrder} onPress={() => step === 5 ? addBurger() : goTo(step + 1)} style={[s.next, step === 5 && !canOrder && s.disabled]}><Text style={s.nextText}>{step === 5 ? 'Ajouter au panier' : step === 4 ? 'Voir mon burger' : 'Continuer'}</Text></Pressable></View>
+      <View style={s.actions}><Pressable accessibilityRole="button" disabled={step === 0} onPress={() => goTo(step - 1)} style={[s.previous, step === 0 && s.disabled]}><Text style={s.previousText}>Retour</Text></Pressable><Pressable accessibilityRole="button" disabled={!canContinue || (step === 5 && !canOrder)} onPress={() => step === 5 ? addBurger() : goTo(step + 1)} style={[s.next, (!canContinue || (step === 5 && !canOrder)) && s.disabled]}><Text style={s.nextText}>{step === 5 ? 'Ajouter au panier' : step === 4 ? 'Voir mon burger' : 'Continuer'}</Text></Pressable></View>
     </View>
   </ScrollView></SafeAreaView>;
 }
@@ -149,6 +160,7 @@ function ReviewRow({ label, value }) {
 }
 
 const s = StyleSheet.create({
+  optionImage: { width: 58, height: 58, borderRadius: 9, backgroundColor: '#FFFDF8' },
   safe: { flex: 1, backgroundColor: '#F7F3EB' },
   content: { width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 54 },
   back: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#D9EEE5', alignItems: 'center', justifyContent: 'center', marginBottom: 22 },

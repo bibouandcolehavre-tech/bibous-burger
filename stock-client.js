@@ -7,12 +7,14 @@ const applyProductStock = (product, catalog) => {
 // Existing products keep their previous behaviour during a temporary API error.
 const visibleCustomerProducts = (products, catalog) => products.filter(product => {
   const state = catalog?.products?.find(entry => entry.id === product.id);
+  if (product.requiresCatalogSupport && !state) return false;
   return product.lunchOnly ? state?.visible === true : state?.visible !== false;
 });
 
 const availableOptionGroups = (groups, catalog) => groups.map((group) => ({
   ...group,
-  options: group.options.map((option) => ({ ...option, soldOut: catalog?.options?.[`${group.id}:${option.id}`] === false }))
+  options: group.options.filter(option => !option.requiresCatalogSupport || catalog?.products?.some(product => product.id === `drink-${option.id}`))
+    .map((option) => ({ ...option, soldOut: catalog?.options?.[`${group.id}:${option.id}`] === false }))
 }));
 
 const cartStockProblem = (items, catalog) => {

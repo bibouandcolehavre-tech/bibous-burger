@@ -23,7 +23,7 @@ function contestPresentation(contest, participation, now = Date.now()) {
 }
 function authDestination({ phonePairing, loginDestination, isNewCustomer, preferencesChosen, nativeAccountFirst }) {
   if (phonePairing) return 'kiosk-phone-approval';
-  if (loginDestination === 'contest') return 'contest';
+  if (['contest','referral'].includes(loginDestination)) return loginDestination;
   return isNewCustomer || preferencesChosen ? (nativeAccountFirst ? 'notifications-welcome' : 'crm-welcome') : loginDestination;
 }
 module.exports = { INSTAGRAM_REEL, INSTAGRAM_PROFILE, contestPresentation, authDestination };

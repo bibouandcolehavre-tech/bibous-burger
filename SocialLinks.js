@@ -5,10 +5,10 @@ import { customerAlert } from "./customer-alert";
 const icons = require("./social-icons");
 const { SOCIAL_PROFILES, isSocialProfileUrl, openSocialProfile } = require("./social-links");
 
-export default function SocialLinks({ style }) {
-  return <View style={[styles.section, style]}>
-    <Text accessibilityRole="header" style={styles.title}>Suivez-nous</Text>
-    <Text style={styles.description}>Les nouveautés et les coulisses de Bibou’s Burgers.</Text>
+export default function SocialLinks({ style, compact = false }) {
+  return <View style={[styles.section, compact && styles.compactSection, style]}>
+    <Text accessibilityRole="header" style={[styles.title, compact && styles.compactTitle]}>{compact ? 'Retrouve-nous sur nos réseaux' : 'Suivez-nous'}</Text>
+    {!compact && <Text style={styles.description}>Les nouveautés et les coulisses de Bibou’s Burgers.</Text>}
     <View style={styles.links}>
       {SOCIAL_PROFILES.filter(isSocialProfileUrl).map((profile) => {
         const icon = icons[profile.icon];
@@ -20,13 +20,13 @@ export default function SocialLinks({ style }) {
           accessibilityRole="link"
           accessibilityLabel={`Suivre Bibou’s Burgers sur ${profile.label}`}
           accessibilityHint={Platform.OS === "web" ? "Ouvre un nouvel onglet" : "Ouvre le réseau social ou le navigateur"}
-          style={({ pressed, focused, hovered }) => [styles.link, (focused || hovered) && styles.focused, pressed && styles.pressed]}>
-          <View style={[styles.icon, { backgroundColor: profile.color }]}>
+          style={({ pressed, focused, hovered }) => [styles.link, compact && styles.compactLink, (focused || hovered) && styles.focused, pressed && styles.pressed]}>
+          <View style={[styles.icon, compact && styles.compactIcon, { backgroundColor: profile.color }]}>
             <Svg width={26} height={28} viewBox={icon.viewBox} accessible={false} aria-hidden={true} focusable={false}>
               <Path d={icon.path} fill="#FFFFFF" />
             </Svg>
           </View>
-          <Text style={styles.label}>{profile.label}</Text>
+          <Text style={[styles.label, compact && styles.compactLabel]}>{profile.label}</Text>
         </Pressable>;
       })}
     </View>
@@ -34,6 +34,7 @@ export default function SocialLinks({ style }) {
 }
 
 const styles = StyleSheet.create({
+  compactSection: { height: 126, borderRadius: 16, backgroundColor: '#FFFDF8', padding: 12 }, compactTitle: { color: '#315B4B', fontSize: 15, lineHeight: 19 }, compactLabel: { color: '#315B4B', fontSize: 12 }, compactLink: { minHeight: 65, paddingVertical: 2 }, compactIcon: { width: 36, height: 36 },
   section: { height: 190, padding: 14, borderRadius: 23, backgroundColor: "#1D1917", justifyContent: "center" },
   title: { color: "#FFFFFF", fontSize: 25, lineHeight: 30, fontWeight: "800" },
   description: { color: "#F5DECA", fontSize: 13, lineHeight: 18, marginTop: 4 },

@@ -2,15 +2,15 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import ContestCampaignCards from './ContestCampaignCards';
 import useContestOverview from './useContestOverview';
 import AppDownloadLinks from './AppDownloadLinks';
-export default function ContestWelcome({ apiBaseUrl, token, onOpenContest, onContinue }) {
+export default function ContestWelcome({ apiBaseUrl, token, onOpenContest, onOpenReferral, onContinue }) {
   const data = useContestOverview(apiBaseUrl, token);
   return <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
     <View style={s.content}>
       <Image accessibilityLabel="Bibou’s Burgers" source={require('./assets/bibous-official-wordmark-preview.png')} resizeMode="contain" style={s.logo} />
       <Text style={s.eyebrow}>POUR FÊTER LA SORTIE DE L’APPLICATION</Text>
-      <ContestCampaignCards data={data} onOpenContest={onOpenContest} />
+      <ContestCampaignCards data={data} onOpenContest={onOpenContest} onOpenReferral={onOpenReferral} />
       {!data && <View style={s.fallback}><Text style={s.text}>Découvre les concours Bibou et leurs conditions de participation.</Text><Pressable accessibilityRole="button" onPress={onOpenContest} style={s.button}><Text style={s.buttonText}>Découvrir les concours</Text></Pressable></View>}
-      <Pressable accessibilityRole="button" onPress={onContinue} style={s.continue}><Text style={s.continueText}>Continuer dans Bibou →</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={onContinue} style={s.continue}><Text style={s.continueText}>Entrer dans l’application</Text></Pressable>
       <Text style={s.note}>Participer reste facultatif. Tu peux commander et retrouver tous tes avantages comme avant.</Text>
       <AppDownloadLinks />
     </View>

@@ -17,7 +17,14 @@ const RECIPE_PROTEINS = {
 };
 function consumerRecipeGroup(group, choices, product) {
   const result = kioskRecipeGroup(group, choices);
-  if (group.id === 'protein') return { ...result, options: result.options.map(option => option.id === 'viande' ? { ...option, label: RECIPE_PROTEINS[product.id.replace(/-menu$/, '')] || product.name } : option) };
+  if (group.id === 'protein') {
+    const key = product.id.replace(/-menu$/, '');
+    const secondary = { montagnes: 'bacon', 'gros-lard': 'lard fumé' }[key];
+    return { ...result, helper: secondary ? 'Galette seule : le bacon ou le lard reste. Burger végétarien : toutes les viandes sont retirées.' : 'Choisis la recette originale ou sa version végétarienne.', options: result.options.filter(option => option.id !== 'galette-base' || secondary).map(option => option.id === 'viande'
+      ? { ...option, label: RECIPE_PROTEINS[key] || product.name }
+      : option.id === 'galette-base' ? { ...option, label: `Galette de pommes de terre · ${secondary} conservé` }
+      : { ...option, label: secondary ? `Burger végétarien · sans ${secondary}` : 'Burger végétarien' }) };
+  }
   if (group.id === 'sauces') return { ...result, options: result.options.map(option => option.id === 'bleu' ? { ...option, label: 'Sauce au bleu (faite maison)' } : option) };
   return result;
 }
@@ -70,7 +77,7 @@ function customerServiceSlots(items, slots) {
 }
 function customerNavigationTab(screen) {
   if (['orders', 'review', 'success'].includes(screen)) return 'orders';
-  if (['account', 'identity', 'login', 'offers', 'crm-welcome', 'notifications', 'notifications-welcome', 'loyalty', 'bibou-plus', 'bibou-plus-pending', 'delete-account', 'privacy', 'reservations'].includes(screen)) return 'account';
+  if (['account', 'club-referral', 'wheel', 'identity', 'login', 'offers', 'crm-welcome', 'notifications', 'notifications-welcome', 'loyalty', 'bibou-plus', 'bibou-plus-pending', 'delete-account', 'privacy', 'reservations'].includes(screen)) return 'account';
   if (['customer-service', 'customer-categories', 'customer-catalog', 'product', 'custom-burger-preview', 'cart', 'delivery', 'details', 'payment', 'payment-pending', 'reservation-meal', 'reservation-payment-pending'].includes(screen)) return 'card';
   return 'home';
 }
