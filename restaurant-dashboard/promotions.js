@@ -39,7 +39,8 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     q('#promo-form').innerHTML = `<div class="promo-fields">
       <label>Code à partager<input data-field="code" maxlength="40" autocomplete="off" value="${esc(draft.code)}" required></label>
       <label>Type d’offre<select data-field="type"><option value="percent_burger" ${draft.type==='percent_burger'?'selected':''}>Réduction sur un burger</option><option value="percent_order" ${draft.type==='percent_order'?'selected':''}>Réduction sur la commande</option><option value="bogo_burger" ${draft.type==='bogo_burger'?'selected':''}>Un burger acheté, un offert</option><option value="buy3_get1_burger" ${draft.type==='buy3_get1_burger'?'selected':''}>Trois burgers seuls achetés, le quatrième offert</option><option value="buy3_get1_menu" ${draft.type==='buy3_get1_menu'?'selected':''}>Trois menus burgers achetés, le quatrième offert</option><option value="free_delivery" ${draft.type==='free_delivery'?'selected':''}>Livraison offerte</option></select></label>
-      ${draft.type === 'percent_burger' ? `<label>Burger concerné<select data-field="productId"><option value="">Choisir le burger</option>${products}</select></label>` : ''}
+      ${['percent_burger','bogo_burger'].includes(draft.type) ? `<label>Burger concerné<select data-field="productId"><option value="">${draft.type==='bogo_burger'?'Tous les burgers seuls':'Choisir le burger'}</option>${products}</select></label>` : ''}
+      ${draft.type==='bogo_burger'?`<label class="promo-check promo-wide"><input data-field="automatic" type="checkbox" ${draft.automatic?'checked':''}> Appliquer automatiquement, sans code (burger précis obligatoire)</label><p class="promo-wide">Le client doit ajouter deux burgers de la recette choisie. Une seule unité reste au prix normal. Les menus et suppléments payants sont exclus. Les anciennes applications nécessitent une mise à jour pour afficher ce calcul dans leur panier.</p>`:''}
       ${draft.type.startsWith('percent_') ? `<label>Réduction (%)<input data-field="percent" type="number" min="1" max="50" step="1" value="${Number(draft.percent)||10}"></label>` : ''}
       <label>Minimum de produits (€)<input data-field="minimum" type="number" min="0" max="10000" step="0.01" value="${Number(draft.minimum)||0}"></label>
       <label>Début (facultatif)<input data-field="startsAt" type="datetime-local" value="${localTime(draft.startsAt)}"></label>
@@ -76,7 +77,8 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     q('#promo-form').querySelectorAll('[data-window-index]').forEach(field => {
       draft.activeWindows[Number(field.dataset.windowIndex)][field.dataset.boundary] = isoTime(field.value);
     });
-    if (draft.type !== 'percent_burger') draft.productId = null;
+    if (!['percent_burger','bogo_burger'].includes(draft.type)) draft.productId = null;
+    if (draft.type !== 'bogo_burger') delete draft.automatic;
     if (!draft.type.startsWith('percent_')) draft.percent = 0;
     if (q('#promo-service-enabled').checked) draft.serviceConditions = {
       serviceDate:q('#promo-service-date').value, startSlot:q('#promo-service-start').value,
@@ -123,6 +125,10 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
     if (event.target.id === 'promo-confirm-cancel') { pendingActivation = null; q('#promo-confirmation').innerHTML = ''; feedback('Activation annulée. Aucun changement enregistré.'); }
   });
   root.addEventListener('input', () => { if (pendingActivation) { pendingActivation = null; q('#promo-confirmation').innerHTML = ''; } });
-  root.addEventListener('change', event => { if (['type', 'combineWelcome'].includes(event.target.dataset.field) || event.target.id === 'promo-service-enabled') { readForm(); renderForm(); } });
+  root.addEventListener('change', event => {
+    if (event.target.dataset.field==='automatic' && event.target.checked) {
+      readForm(); draft.oncePerCustomer=false; draft.usageLimit=null; renderForm();
+    } else if (['type','combineWelcome'].includes(event.target.dataset.field) || event.target.id==='promo-service-enabled') { readForm(); renderForm(); }
+  });
   return { async load() { if (busy) return; try { data = await request(); renderList(); renderForm(); feedback('Les offres sont à jour.'); } catch (error) { feedback(error.message); } }, clear() { data = draft = pendingActivation = null; q('#promo-list').innerHTML = ''; q('#promo-form').innerHTML = ''; } };
 };
