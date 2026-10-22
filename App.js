@@ -49,6 +49,8 @@ const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 const { slotAlreadyStarted } = require('./client-slots');
 const { repriceOfferCart } = require('./product-offer');
+const {automaticCartPricing,chooseCheaperPricing}=require('./automatic-offer-client');
+import AutomaticOfferNotice from './AutomaticOfferNotice';
 const { quantityOf, cartUnitCount, cartTotal, changeCartQuantity, replaceCartLine, choicesFromLine, serializeCartItems } = require('./cart-client');
 const { preparationMinutes, PREPARATION_LABEL, regularSlotsForWeekday } = require('./service-policy');
 const { containsPork, porkOption } = require('./dietary-policy');
@@ -117,7 +119,7 @@ const customerHasBibouPlus = (customer) => {
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 };
 const customerHasWelcomeReward = (customer) => customer?.welcomeReward?.status === "available";
-const customerOrderPricing = (subtotal, standardDeliveryFee, customer, isDelivery = true) => {
+const customerOrderPricing = (subtotal, standardDeliveryFee, customer, isDelivery = true, cart = null) => {
   const bibouPlus = customerHasBibouPlus(customer);
   const baseRate = customerHasWelcomeReward(customer) ? WELCOME_DISCOUNT_RATE : bibouPlus ? BIBOU_PLUS_DISCOUNT_RATE : 0;
   const offer = bestClientOffer(customer?.crmOffers,subtotal,baseRate);
@@ -125,7 +127,8 @@ const customerOrderPricing = (subtotal, standardDeliveryFee, customer, isDeliver
   const discount = Math.round(subtotal * discountRate * 100) / 100;
   const deliveryFee = bibouPlus && isDelivery ? 0 : standardDeliveryFee;
   const discountLabel = offer ? `Offre personnelle · −${offer.discountPercent} %` : customerHasWelcomeReward(customer) ? 'Cadeau de bienvenue · −10 %' : 'Remise Bibou + · −5 %';
-  return { bibouPlus, discountRate, discount, discountLabel, deliveryFee, total: Math.round((subtotal - discount + deliveryFee) * 100) / 100 };
+  const base={ bibouPlus, discountRate, discount, discountLabel, deliveryFee, total: Math.round((subtotal - discount + deliveryFee) * 100) / 100 };
+  return automaticCartPricing(base,cart,baseRate);
 };
 const deliveryCostForDistance = (distanceKm) => DELIVERY_PRICING.find((tier) => distanceKm <= tier.maxKm)?.price;
 const deliveryCost = (method) => method === "delivery" ? deliveryCostForDistance(0) : 0;
@@ -638,6 +641,7 @@ function ProductScreen({ product, catalog, onBack, onAdd, initialItem }) {
       <Image source={product.image} resizeMode="contain" style={[styles.detailImage, product.kind === 'solo' && styles.detailImageSolo, product.kind === 'naan' && { height: undefined, aspectRatio: 3 / 4 }]} />
       <View style={styles.priceRow}><Text style={styles.detailTitle}>{product.name}</Text><Text style={styles.detailPrice}>{money(product.price)}</Text></View>
       <Text style={styles.detailDescription}>{NEW_PROTEIN_CHOICES && choices.protein?.includes('vegetarian') ? vegetarianInstruction : product.detail}</Text>
+      <AutomaticOfferNotice product={product} />
       {hasPork && !(NEW_PROTEIN_CHOICES && choices.protein?.includes('vegetarian')) && <View accessibilityRole="alert" style={styles.porkNotice}><Text style={styles.dietaryNoticeTitle}>CONTIENT DU PORC</Text><Text style={styles.dietaryNoticeText}>Cette recette n’existe pas en version halal.</Text></View>}
       {product.isMenu && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>MENU COMPLET</Text><Text style={styles.menuIncludedText}>Burger + frites + boisson inclus dans ce prix.</Text></View>}
       {product.kind === 'solo' && <View style={styles.menuIncludedNotice}><Text style={styles.menuIncludedTitle}>MENU SOLO COMPLET</Text><Text style={styles.menuIncludedText}>3 tenders XL + 1 portion de frites + 1 boisson au choix. Frites maison incluses ; cheddar bacon en remplacement pour +2,50 €.</Text></View>}
@@ -689,7 +693,7 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
   const [expanded, setExpanded] = useState({});
   const [extraCategory, setExtraCategory] = useState('fries');
   const standardFee = cart ? (cart.delivery.fee ?? deliveryCost(cart.delivery.method)) : 0;
-  const pricing = cart ? customerOrderPricing(cart.total, standardFee, customer, cart.delivery.method === "delivery") : { total: 0, deliveryFee: 0, discount: 0, bibouPlus: false };
+  const pricing = cart ? customerOrderPricing(cart.total, standardFee, customer, cart.delivery.method === "delivery",cart) : { total: 0, deliveryFee: 0, discount: 0, bibouPlus: false };
   const hasExactFee = cart?.delivery.fee !== undefined || pricing.bibouPlus;
   const productIds = new Set(cart?.items?.map((item) => item.product.id) || []);
   const stockProblem = cartStockProblem(cart?.items, catalog);
@@ -709,6 +713,7 @@ function CartScreen({ cart, customer, catalog, reservationDraft, onBack, onCheck
           <Text style={styles.productPrice}>{money(item.total * quantityOf(item))}</Text>
         </View>)}</View>
         <Pressable onPress={onAddMore} style={styles.addMoreButton}><Text style={styles.addMoreButtonText}>＋ Ajouter autre chose</Text></Pressable>
+        <AutomaticOfferNotice cart={cart} />
         <View style={styles.cartSuggestions}><Text style={styles.cartSuggestionsTitle}>Un petit plus ?</Text><Text style={styles.cartSuggestionsIntro}>Frites, boissons et desserts à la carte, en supplément de ton repas.</Text><View style={styles.methodRow}>{[['fries', 'Frites'], ['drinks', 'Boissons'], ['desserts', 'Desserts à la carte']].map(([id, label]) => <ChoiceChip key={id} label={label} selected={extraCategory === id} onPress={() => setExtraCategory(id)} />)}</View>{suggestions.map((product) => <Pressable key={product.id} onPress={() => onQuickAdd(product)} style={styles.cartSuggestion}><View style={styles.cartSuggestionVisual}>{product.image ? <Image source={product.image} resizeMode="contain" style={[styles.cartSuggestionImage, product.kind === "drink" && styles.drinkSuggestionImage]} /> : <Text style={styles.cartSuggestionEmoji}>{product.emoji}</Text>}</View><View style={styles.cartSuggestionCopy}><Text style={styles.cartSuggestionName}>{product.name}</Text><Text style={styles.cartSuggestionPrice}>{money(product.price)}</Text></View><View style={styles.cartSuggestionAdd}><Text style={styles.cartSuggestionAddText}>+ Ajouter</Text></View></Pressable>)}{!suggestions.length && <Text style={styles.cartSuggestionsIntro}>Aucun article disponible dans cette rubrique.</Text>}</View>
         <View style={styles.receipt}><ReceiptLine label="Sous-total" value={money(cart.total)} />{pricing.discount > 0 && <ReceiptLine label={pricing.discountLabel} value={`− ${money(pricing.discount)}`} />}<ReceiptLine label={reservationDraft ? 'À table' : cart.delivery.method === "delivery" && !hasExactFee ? "Livraison (dès)" : cart.delivery.method === "delivery" ? "Livraison" : "Retrait"} value={pricing.deliveryFee ? money(pricing.deliveryFee) : "Offert"} /><View style={styles.receiptDivider} /><ReceiptLine label={cart.delivery.method === "delivery" && !hasExactFee ? "Total estimé" : "Total"} value={money(pricing.total)} strong /></View>
         {pricing.bibouPlus && cart.delivery.method === "delivery" && <Text style={styles.bibouPlusApplied}>✦ Livraison offerte avec Bibou +</Text>}
@@ -828,7 +833,7 @@ function ReservationMealScreen({ draft, cart, customer, catalog, stockMessage, o
     { id: 'drinks', title: 'Boissons', products: DRINK_PRODUCTS.map(product => applyProductStock(product, catalog)) },
   ];
   const itemCount = cart?.items?.length || 0;
-  const price = cart ? customerOrderPricing(cart.total, 0, customer, false).total : 0;
+  const price = cart ? customerOrderPricing(cart.total, 0, customer, false,cart).total : 0;
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
       <Header onBack={onBack} />
@@ -870,7 +875,7 @@ function DeliveryScreen({ cart, customer, onBack, onChange, onContinue, onOpenBi
   const [availabilityKey, setAvailabilityKey] = useState(null);
   const [slotRetry, setSlotRetry] = useState(0);
   const [clockNow, setClockNow] = useState(() => new Date());
-  const pricing = customerOrderPricing(cart.total, deliveryCost(delivery.method), customer, delivery.method === "delivery");
+  const pricing = customerOrderPricing(cart.total, deliveryCost(delivery.method), customer, delivery.method === "delivery",cart);
   const minimumPreparation = preparationMinutes(cart.total);
   const selectedDay = UPCOMING_DELIVERY_DAYS.find((day) => day.date === delivery.date) || DEFAULT_DELIVERY_DAY;
   useEffect(() => {
@@ -974,7 +979,7 @@ function CheckoutDetailsScreen({ cart, customer, dineIn, authToken, onChange, on
     }
   };
   const hasExactFee = !isDelivery || quoteReady;
-  const pricing = customerOrderPricing(cart.total, standardDeliveryFee ?? deliveryCostForDistance(0), customer, isDelivery);
+  const pricing = customerOrderPricing(cart.total, standardDeliveryFee ?? deliveryCostForDistance(0), customer, isDelivery,cart);
   const restaurantComment = <><Text style={styles.deliveryLabel}>COMMENTAIRE POUR LE RESTAURANT · FACULTATIF</Text><TextInput value={cart.comment || ""} onChangeText={onCommentChange} placeholder="Exemple : merci de bien cuire le steak" placeholderTextColor="#9B877B" style={styles.reservationNote} multiline maxLength={500} textAlignVertical="top" /></>;
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Tes coordonnées</Text><Text style={styles.detailsIntro}>Elles permettent au restaurant de préparer et de suivre ta commande.</Text><Text style={styles.deliveryLabel}>CONTACT</Text><TextInput value={customer.name} editable={!hasCompleteIdentity(customer)} onChangeText={(value) => update("name", value)} placeholder="Prénom et nom" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" />{hasCompleteIdentity(customer) && <Pressable accessibilityRole="button" onPress={onEditIdentity} style={styles.loginSecondary}><Text style={styles.loginSecondaryText}>Modifier mon prénom / nom</Text></Pressable>}<TextInput value={customer.phone} onChangeText={(value) => update("phone", value)} placeholder="Téléphone" placeholderTextColor="#9B877B" style={styles.fieldInput} keyboardType="phone-pad" /><Text style={styles.deliveryLabel}>PARRAINAGE · FACULTATIF</Text>{customer.referredByCustomerId ? <View style={styles.referralApplied}><Text style={styles.referralAppliedText}>✓ Ton parrain est déjà enregistré</Text></View> : <TextInput value={customer.sponsorCode || ""} onChangeText={(value) => update("sponsorCode", value.toUpperCase())} placeholder="Exemple : BIBOU-A1B2C3" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="characters" autoCorrect={false} />}<Text style={styles.referralFieldHint}>Le parrain gagne 100 points après ta première commande réellement payée.</Text>{isDelivery ? <><Text style={styles.deliveryLabel}>ADRESSE DE LIVRAISON</Text><TextInput value={customer.address} onChangeText={(value) => update("address", value)} placeholder="Numéro et nom de rue" placeholderTextColor="#9B877B" style={styles.fieldInput} autoCapitalize="words" /><View style={styles.fieldRow}><TextInput value={customer.postalCode} onChangeText={(value) => update("postalCode", value)} placeholder="Code postal" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldHalf]} keyboardType="number-pad" maxLength={5} /><TextInput value={customer.city} onChangeText={(value) => update("city", value)} placeholder="Ville" placeholderTextColor="#9B877B" style={[styles.fieldInput, styles.fieldCity]} autoCapitalize="words" /></View><View style={[styles.distanceCard, quote?.status === "error" && styles.distanceCardError]}><Text style={styles.distanceTitle}>Vérification de la zone</Text><Text style={styles.distanceText}>Ton adresse sert à calculer l’itinéraire et à vérifier la limite de 7 km par la route.</Text><Pressable onPress={calculateQuote} disabled={quote?.status === "loading"} style={[styles.quoteButton, quote?.status === "loading" && styles.quoteButtonDisabled]}><Text style={styles.quoteButtonText}>{quote?.status === "loading" ? "Calcul en cours…" : "Calculer mon tarif"}</Text></Pressable>{quote?.status === "success" && quote.withinZone && <Text style={styles.distanceSuccess}>✓ À {quote.distanceKm.toFixed(2).replace(".", ",")} km · {pricing.bibouPlus ? `Livraison offerte au lieu de ${money(quote.deliveryFee)}` : `Livraison ${money(quote.deliveryFee)}`}</Text>}{quote?.status === "success" && quote.withinZone && quote.timing ? <Text style={styles.distanceSuccess}>{deliveryDelayLabel(quote.timing)}</Text> : null}{quote?.status === "success" && !quote.withinZone && <Text style={styles.distanceError}>Cette adresse est hors de la zone de livraison de 7 km par la route.</Text>}{quote?.status === "error" && <Text style={styles.distanceError}>{quote.error}</Text>}</View></> : <View style={styles.pickupCard}><Text style={styles.pickupTitle}>{dineIn ? 'Repas à ta table' : 'Retrait au restaurant'}</Text><Text style={styles.pickupText}>{RESTAURANT_ADDRESS}</Text><Text style={styles.pickupText}>{dineIn ? `Ta table est prévue le ${cart.delivery.dayLabel} à ${cart.delivery.slot}. Les plats seront préparés pour ton arrivée après paiement confirmé.` : 'Aucun frais de livraison.'}</Text></View>}{restaurantComment}<Text style={styles.detailsFinePrint}>{isDelivery ? "La livraison peut être confiée à Uber Direct. Les coordonnées et les articles nécessaires lui seront transmis pour assurer la livraison. " : ""}Les remises et avantages sont vérifiés une dernière fois par le serveur avant le paiement.</Text></ScrollView><View style={styles.stickyAction}>{!complete && <Text style={styles.requiredHint}>{isDelivery && !quoteReady ? "Calcule ton tarif de livraison pour continuer." : "Complète les informations pour continuer."}</Text>}<Pressable disabled={!complete} style={[styles.primaryButton, !complete && styles.primaryButtonDisabled]} onPress={() => onContinue(standardDeliveryFee)}><Text style={styles.primaryButtonText}>Vérifier et payer · {!hasExactFee ? "dès " : ""}{money(pricing.total)}</Text></Pressable></View></SafeAreaView>;
 }
@@ -984,7 +989,9 @@ function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onVali
   const standardFee = cart.delivery.fee ?? deliveryCost(cart.delivery.method);
   const [promotion, setPromotion] = useState(null);
   const [promoPending, setPromoPending] = useState(false);
-  const pricing = previewPromotion(customerOrderPricing(cart.total, standardFee, promotion?.id ? { ...customer, crmOffers: [] } : customer, isDelivery), cart.total, promotion, cart.delivery.method);
+  const regularPricing=previewPromotion(customerOrderPricing(cart.total,standardFee,promotion?.id?{...customer,crmOffers:[]}:customer,isDelivery),cart.total,promotion,cart.delivery.method);
+  const automaticPricing=customerOrderPricing(cart.total,standardFee,promotion?{...customer,crmOffers:[]}:customer,isDelivery,cart);
+  const pricing=automaticPricing.automaticPromotion?chooseCheaperPricing(regularPricing,automaticPricing):regularPricing;
   const gifted = Boolean(promotion && pricing.total === 0);
   const [paying, setPaying] = useState(false);
   const paymentInFlight = useRef(false);
@@ -992,13 +999,15 @@ function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onVali
     if (paymentInFlight.current || promoPending) return;
     paymentInFlight.current = true;
     setPaying(true);
-    try { await onPay(promotion?.code || ''); } finally { paymentInFlight.current = false; setPaying(false); }
+    try { await onPay(promotion?.code || '',pricing.total); } finally { paymentInFlight.current = false; setPaying(false); }
   };
   return <SafeAreaView style={styles.safeArea}>
     <ScrollView contentContainerStyle={styles.detailsContent} keyboardShouldPersistTaps="handled">
       <Header onBack={onBack} /><Text style={styles.title}>{reservationDraft ? 'Vérifie ta table et ton repas' : 'Vérifie ta commande'}</Text>
       <Text style={styles.deliveryIntro}>{reservationDraft ? 'Ta table sera confirmée avec le paiement de ton repas. Le restaurant prépare les plats pour ton heure d’arrivée.' : promotion?.pickupOnly ? 'Tes deux menus sont offerts en Click & Collect. Tu peux aussi les manger sur place.' : gifted ? 'Ta commande est offerte. Vérifie les détails avant de la confirmer.' : promotion ? 'Ton code est appliqué. Vérifie le total avant le paiement.' : 'Tout est prêt pour le paiement sécurisé.'}</Text>
       <PromoCodeField promotion={promotion} onChange={setPromotion} onPendingChange={setPromoPending} onValidate={onValidatePromo} disabled={paying} />
+      <AutomaticOfferNotice cart={cart} />
+      {promotion && pricing.automaticPromotion && <Text style={styles.detailsFinePrint}>L’offre automatique est plus avantageuse que ce code : elle est appliquée à sa place, sans cumuler deux promotions sur le burger offert.</Text>}
       <View style={styles.paymentSummary}>
         <Text style={styles.paymentProduct}>{cart.items.map(item => item.product.isMenu ? `Menu · ${item.product.name}` : item.product.name).join(' · ')}</Text>
         <Text style={styles.paymentLine}>{cart.delivery.dayLabel} · {cart.delivery.slot}{reservationDraft ? ` · table de ${reservationDraft.guests}` : ''}</Text><View style={styles.receiptDivider} />
@@ -1230,7 +1239,7 @@ function AppContent({ onReviewModeChange }) {
       if (loading) return;
       loading = true;
       try {
-        const response = await customerFetch(`${API_BASE_URL}/catalog`, { headers: isReviewToken(authToken) ? { Authorization: `Bearer ${authToken}` } : {} });
+        const response = await customerFetch(`${API_BASE_URL}/catalog?automaticOffers=1`, { headers: isReviewToken(authToken) ? { Authorization: `Bearer ${authToken}` } : {} });
         const payload = await response.json();
         if (!response.ok || !Array.isArray(payload.products) || !payload.options) throw new Error("Catalogue indisponible");
         if (!stopped) { setCatalog(payload); setStockMessage(""); }
@@ -1260,7 +1269,8 @@ function AppContent({ onReviewModeChange }) {
   const [activeProduct, setActiveProduct] = useState(null);
   const [editingCartLine, setEditingCartLine] = useState('');
   const [productReturnScreen, setProductReturnScreen] = useState('menu');
-  const [cart, setCart] = useState(null);
+  const [storedCart, setCart] = useState(null);
+  const cart=storedCart ? {...storedCart,automaticPromotions:catalog?.automaticPromotions || []} : null;
   const [reservationDraft, setReservationDraft] = useState(null);
   const [customer, setCustomer] = useState({ name: "", phone: "", address: "", postalCode: "", city: "Le Havre", distance: "", sponsorCode: referralCodeFromUrl() });
   const [loyalty, setLoyalty] = useState({ points: 0, orders: 0 });
@@ -1544,7 +1554,7 @@ function AppContent({ onReviewModeChange }) {
     try {
       const response = await customerFetch(`${API_BASE_URL}${route}`, {
         method: body === undefined ? "GET" : "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, 'X-Bibou-Replacement-Choices': '1', ...(Platform.OS === 'web' ? {} : { 'X-Bibou-Platform': Platform.OS }) },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, 'X-Bibou-Replacement-Choices': '1', 'X-Bibou-Automatic-Offers':'1', ...(Platform.OS === 'web' ? {} : { 'X-Bibou-Platform': Platform.OS }) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: controller.signal,
       });
@@ -1738,7 +1748,7 @@ function AppContent({ onReviewModeChange }) {
       return response.ok && payload.capabilities?.tablePreorders === 1;
     } catch { return false; }
   };
-  const pay = async (promoCode = '') => {
+  const pay = async (promoCode = '',expectedTotal) => {
     if (!authToken || !customer.id || !cart?.items?.length) { setScreen('login'); return; }
     const currentCart = repriceOfferCart(cart);
     if (currentCart.total !== cart.total) {
@@ -1753,6 +1763,8 @@ function AppContent({ onReviewModeChange }) {
     const input = { customerId: customer.id, items: serializeCartItems(cart), method: cart.delivery.method, serviceDate: cart.delivery.date, slot: cart.delivery.slot, slotGrid: 20, comment: cart.comment?.trim() || "" };
     if (reservationDraft) input.tableReservation = { guests: reservationDraft.guests, note: reservationDraft.note || '' };
     if (promoCode) input.promoCode = promoCode;
+    if (!Number.isFinite(expectedTotal) || expectedTotal < 0) { Alert.alert('Montant à vérifier','Vérifie le total de ta commande avant de continuer. Aucun paiement lancé.'); return; }
+    input.expectedTotalCents=Math.round(expectedTotal*100);
     await beginPayment('order', input);
   };
   const payTableDeposit = async draft => {

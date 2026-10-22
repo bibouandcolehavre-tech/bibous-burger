@@ -2,6 +2,7 @@ import { createContext, useState } from 'react';
 import { Image, Linking, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { AnimatedOrderAction } from './ExperienceActions';
+import AutomaticOfferNotice from './AutomaticOfferNotice';
 const { CUSTOMER_CATEGORIES, loyaltyMilestoneProgress } = require('./customer-journey');
 const { PARTNERS } = require('./partners');
 const { DELIVERY_PRICING, DELIVERY_MAX_KM } = require('./delivery-pricing');
@@ -77,7 +78,7 @@ export function CustomerCatalogScreen({ frame, loyalty, category, products, onPr
     <Text style={s.productTitle}>{p.isMenu ? 'Menu · ' : ''}{p.name}</Text>
     {p.isMenu && <Text style={s.body}>Burger + frites + boisson</Text>}
     {p.kind === 'naan' && <Text style={s.body}>Uniquement le midi · seul {money(p.price)} · menu {money(p.menuPrice)}<Text>{'\n'}Naan + boisson + frites OU dessert</Text></Text>}
-    <Text style={s.small}>{p.description}</Text><Satisfaction product={p} />
+    <Text style={s.small}>{p.description}</Text><AutomaticOfferNotice product={p} /><Satisfaction product={p} />
     <View style={s.row}><Text style={s.price}>{p.soldOut ? 'Épuisé' : money(p.price)}</Text><Action label="Choisir" disabled={p.soldOut} onPress={() => p.isMenu || ['naan', 'solo', 'duo'].includes(p.kind) || category === 'burgers' ? onProduct(p) : onQuickAdd(p)} /></View>
     </View>
   </View>)}</View>{!products.length && <Text style={s.body}>Aucun article disponible dans cette rubrique pour le moment.</Text>}</CustomerJourneyFrame>;
