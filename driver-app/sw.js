@@ -1,7 +1,7 @@
-const CACHE = 'krokly-driver-shell-v12';
+const CACHE = 'krokly-driver-shell-v13';
 // Only this public shell is stored. Never intercept APIs, authenticated
 // requests, query strings or future routes that may contain private data.
-const STATIC = ['/driver/', '/driver/app.js', '/driver/gps.js', '/driver/guidance-core.js', '/driver/guidance.js', '/driver/style.css', '/driver/icon.svg', '/driver/icon-192.png', '/driver/icon-512.png', '/driver/apple-touch-icon.png', '/driver/manifest.webmanifest'];
+const STATIC = ['/driver/', '/driver/app.js', '/driver/gps.js', '/driver/phone-contact.js', '/driver/guidance-core.js', '/driver/guidance.js', '/driver/style.css', '/driver/icon.svg', '/driver/icon-192.png', '/driver/icon-512.png', '/driver/apple-touch-icon.png', '/driver/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)).then(() => self.skipWaiting()));
 });
