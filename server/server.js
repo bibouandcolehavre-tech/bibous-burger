@@ -87,6 +87,8 @@ const { statistics: dashboardStatistics } = require('./dashboard-statistics');
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 const { destinationForLegacyPath } = require('./domain-forwarding');
 const wheelGame = require('./wheel');
+const { createInvoiceStore } = require('./customer-invoices');
+const { createInvoiceHttp } = require('./customer-invoice-http');
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -148,6 +150,7 @@ const dashboardSessions = createDashboardSessionStore(path.join(path.dirname(dat
 const kroklyTokenSecret = crypto.createHmac('sha256', customerSessionSecret).update('krokly-drivers-v1').digest('hex');
 const reviewSandbox = createReviewSandbox({ enabled: process.env.STORE_REVIEW_ENABLED !== 'false' });
 const acquireDatabase = createDatabaseLock();
+const customerInvoices = createInvoiceStore(path.join(path.dirname(databasePath), 'customer-invoices.json'));
 // A client channel hint is not device attestation. Benefit ownership, quotas,
 // dates and authenticated access are always checked separately on the server.
 const contestPrizeContext = request => ({ appPlatform: !request.headers.origin && ['ios', 'android'].includes(request.headers['x-bibou-platform']) ? request.headers['x-bibou-platform'] : null,
@@ -207,7 +210,7 @@ const backupStore = createBackupStore({
       // Read existing data only: a missing file must not silently restore seed data.
       const database = JSON.parse(await fs.readFile(databasePath, "utf8"));
       const stock = await productStockStore.read();
-      return { database: contestPrizeAlerts.backupDatabase(orderSms.backupDatabase(database)), stock, keyyoCallSms: await keyyoSms.backupState() };
+      return { database: contestPrizeAlerts.backupDatabase(orderSms.backupDatabase(database)), stock, keyyoCallSms: await keyyoSms.backupState(), customerInvoices: await customerInvoices.read() };
     } finally { release(); }
   }
 });
@@ -528,6 +531,8 @@ const openPayment = async (record, database, { merchantCode, expiresAt, descript
   if (!record.payment.checkoutUrl && record.payment.status !== "PAID") throw paymentError();
 };
 
+const invoiceHttp = createInvoiceHttp({ store: customerInvoices, readDatabase, acquireDatabase, authenticatedCustomer, authenticatedDashboard, readBody, send,
+  smsConfig: { ...keyyo.configFromEnv(process.env), enabled: true } });
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   let url;
@@ -1105,6 +1110,8 @@ const server = http.createServer(async (request, response) => {
       return response.end(`<!doctype html><html lang="fr"><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><title>SMS · Bibou's Burgers</title><style>body{background:#faf1e3;color:#25473b;font:18px system-ui;padding:24px}main{max-width:560px;margin:40px auto;background:#d6eee3;padding:24px;border-radius:20px}button{background:#315b4b;color:white;font:700 18px system-ui;border:0;border-radius:12px;padding:18px;width:100%}p{line-height:1.6}</style><main><h1>Les SMS de Bibou</h1>${request.method === 'POST' ? '<p>Tu es désinscrit des SMS promotionnels. Les SMS nécessaires à la connexion ne sont pas concernés.</p>' : `<p>Tu peux arrêter les SMS promotionnels en appuyant ci-dessous. Cela ne change pas tes commandes ni tes points fidélité.</p><form method="post" action="/sms-stop/${token}?confirm=1"><button>Ne plus recevoir les SMS promotionnels</button></form>`}</main></html>`);
     }
 
+    // Invoice endpoints are isolated from legacy read-time migrations and order writes.
+    if (await invoiceHttp(request, response, url)) return;
     // Financial reporting is read-only, before all legacy read-time migrations.
     if (url.pathname === '/api/dashboard/statistics') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Connexion restaurant requise.' });
@@ -2402,7 +2409,7 @@ const server = http.createServer(async (request, response) => {
     return send(response, 404, { error: "Route introuvable" });
   } catch (error) {
     console.error(error);
-    if ([400, 403, 404, 408, 409, 413, 429, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
+    if ([400, 401, 403, 404, 408, 409, 413, 429, 502, 503].includes(error.statusCode)) return send(response, error.statusCode, { error: error.message });
     return send(response, error.message === "Invalid JSON" ? 400 : 500, { error: "Une erreur serveur est survenue." });
   } finally {
     releaseDatabase?.();

@@ -15,6 +15,7 @@ async function extractBackup(file, destination) {
   try {
     const sections = [["data.json", snapshot.data.database], ["product-stock.json", snapshot.data.stock]];
     if (snapshot.data.keyyoCallSms) sections.push(["keyyo-call-sms.json", snapshot.data.keyyoCallSms]);
+    if (snapshot.data.customerInvoices) sections.push(["customer-invoices.json", snapshot.data.customerInvoices]);
     for (const [name, data] of sections) {
       await fs.writeFile(path.join(destination, name), `${JSON.stringify(data, null, 2)}\n`, { flag: "wx", mode: 0o600 });
     }
