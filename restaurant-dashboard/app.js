@@ -313,7 +313,7 @@ function renderOrders() {
   document.querySelector("#orders-list").innerHTML = shown.length ? shown.map((order) => {
     const lines = order.items.map(orderItemMarkup).join("");
     const address = order.deliveryAddress;
-    const contact = `<div class="order-contact"><div>Téléphone : ${escapeHtml(order.phone || "Non enregistré sur cette commande")}</div>${order.type === "Livraison" ? `<div><strong>Adresse de livraison</strong>${address?.address ? `<div>${escapeHtml(address.address)}</div><div>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(" "))}</div>` : `<div>Adresse non enregistrée sur cette commande</div>`}</div>` : ""}</div>`;
+    const contact = `<div class="order-contact"><div>${window.KrokliPhoneContact?.markup(order.phone) || `Téléphone : ${escapeHtml(order.phone || "Non enregistré sur cette commande")}`}</div>${order.type === "Livraison" ? `<div><strong>Adresse de livraison</strong>${address?.address ? `<div>${escapeHtml(address.address)}</div><div>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(" "))}</div>` : `<div>Adresse non enregistrée sur cette commande</div>`}</div>` : ""}</div>`;
     const comment = order.comment ? `<div class="order-comment"><strong>Commentaire client</strong><p>${escapeHtml(order.comment)}</p></div>` : "";
     const stages = ['Nouvelle', 'Acceptée', 'Prête', ...(order.type === 'Livraison' ? ['En livraison'] : []), 'Terminée'];
     const step = stages.indexOf(order.status);

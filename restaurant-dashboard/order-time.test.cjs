@@ -59,7 +59,7 @@ test('large bold styling is scoped to order times and asset URLs are refreshed',
   assert.match(css, /\.queue-order \.order-time,\.home-row \.order-time\{[^}]*font-size:26px;[^}]*font-weight:900/);
   assert.match(css, /\.order-appointment>\.order-time\{[^}]*font-size:clamp\(32px,5vw,40px\);[^}]*font-weight:900/);
   assert.ok(html.includes('pwa.css?v=pickup-time-20261016'));
-  assert.ok(html.includes('app.js?v=krokli-pro-web-20261018'));
+  assert.ok(html.includes('app.js?v=krokli-pro-web-call-client-20261022'));
 });
 
 module.exports = { renderFixture };

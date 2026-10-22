@@ -277,3 +277,9 @@ nav { margin-top:29px; display:grid; gap:7px; }.nav-item { text-align:left; colo
 .stock-quantity-summary { font-size:12px; line-height:1.5; color:var(--muted); }
 .stock-quantity-warning { padding:10px; background:#fff0d6; color:#7a420e; border-left:3px solid #e77a30; border-radius:6px; font-size:12px; line-height:1.5; }
 .stock-quantity-form input:focus-visible,.stock-quantity-actions button:focus-visible { outline:3px solid #e77a30; outline-offset:3px; }
+.customer-call { display:inline-flex; align-items:center; gap:12px; box-sizing:border-box; min-height:48px; max-width:100%; margin:8px 0; padding:11px 15px; border:1px solid #315b4b; border-radius:12px; background:#e7eade; color:#234d3e; font-size:14px; font-weight:700; line-height:1.4; text-decoration:none; touch-action:manipulation; }
+.customer-call>span[aria-hidden] { font-size:24px; }
+.customer-call-number { display:block; font-size:18px; overflow-wrap:anywhere; }
+.customer-call:focus-visible { outline:3px solid #a55c43; outline-offset:3px; }
+.customer-call:active { background:#d3e2d4; }
+.customer-call-unavailable { color:#6e645b; overflow-wrap:anywhere; }
