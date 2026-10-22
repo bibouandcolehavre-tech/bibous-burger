@@ -51,14 +51,16 @@
         if (!config.configured && status.status !== 'issued') {
           element.innerHTML = shell(`<h3>Activer les factures de l’application</h3><p>Série distincte WEB-année-numéro. Une seule facture conservée par commande, sans nouveau paiement et sans modification des commandes.</p>
           <form data-settings><label>Dénomination<input name="name" value="BIBOU &amp; CO" required></label><label>Enseigne<input name="tradeName" value="Bibou's Burgers" required></label><label>Adresse<input name="address" value="153 Quai Georges V, 76600 Le Havre" required></label><label>SIRET<input name="siret" inputmode="numeric" value="93882354900010" pattern="[0-9]{14}" required></label><label>Numéro de TVA<input name="vatNumber" value="FR96938823549" required></label><label>Forme juridique<input name="legalForm" value="SAS" required></label><label>RCS<input name="rcs" value="RCS Le Havre 938 823 549" required></label><label>Capital en euros<input name="capital" type="number" min="0" step="0.01" value="1000" required></label>
-          <p>Menus sans alcool : traitement global à 10 %. Canettes vendues séparément à emporter : 5,5 %. Les desserts dont le taux reste à confirmer nécessitent une validation avant émission.</p>
+          <p>Menus sans alcool : traitement global à 10 %. Canettes vendues séparément à emporter : 5,5 %. Sur place : 10 %.</p>
+          <label><input name="closedDesserts" type="checkbox"> Les tiramisus Oreo, cookie et spéculoos à emporter sont vendus en pots fermés permettant leur conservation au réfrigérateur : appliquer 5,5 % lorsqu’ils sont achetés séparément (10 % sur place ou inclus dans un menu traité globalement à 10 %). Sans cette confirmation, ces desserts restent à vérifier avant émission.</label>
           <label><input name="sameSale" type="checkbox" required> Ces factures correspondent aux commandes Bibou déjà payées. Elles seront rapprochées de la caisse et des ventes pour ne pas comptabiliser une seconde recette ou TVA.</label><button type="submit">Activer les factures web avec ces informations</button></form>${importForm()}`);
           element.querySelectorAll('form label').forEach(label => label.style.cssText = 'display:block;margin:12px 0');
           element.querySelectorAll('input:not([type=checkbox])').forEach(input => input.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:11px;font:inherit;border:1px solid #bccdbc;border-radius:9px');
           element.querySelector('[data-settings]').onsubmit = event => { event.preventDefault(); void perform(async () => {
             const form = new FormData(event.currentTarget), seller = Object.fromEntries(['name','tradeName','address','siret','vatNumber','legalForm','rcs'].map(k => [k, String(form.get(k) || '')]));
             seller.capitalCents = Math.round(Number(form.get('capital')) * 100);
-            await request('/dashboard/invoices/settings', { confirm: 'ACTIVER LES FACTURES WEB', sameSaleReconciliation: form.get('sameSale') === 'on', menuPolicy: 'whole-menu-10', seller });
+            const productRates = form.get('closedDesserts') === 'on' ? Object.fromEntries(['dessert-oreo', 'dessert-cookie', 'dessert-speculoos'].map(id => [id, { dineIn: 1000, takeaway: 550 }])) : {};
+            await request('/dashboard/invoices/settings', { confirm: 'ACTIVER LES FACTURES WEB', sameSaleReconciliation: form.get('sameSale') === 'on', menuPolicy: 'whole-menu-10', seller, productRates });
             await render();
           }); }; bind(); bindImport(); return;
         }
