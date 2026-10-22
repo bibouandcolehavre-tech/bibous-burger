@@ -28,6 +28,17 @@ function paymentState(record, kind, now = Date.now()) {
   return 'pending';
 }
 
+// Accept only the authenticated server's matching, confirmed order. Restoring
+// the app may show that confirmation, but must never reopen a payment page or
+// infer success from a URL, a local timestamp or another account's record.
+function confirmedRecoveredOrder(payload, attempt) {
+  const record = payload?.record;
+  return attempt?.kind === 'order' && payload?.kind === 'order' &&
+    typeof record?.id === 'string' && record.id.length > 0 &&
+    record.customerId === attempt.customerId &&
+    paymentState(record, 'order') === 'paid' ? record : null;
+}
+
 function safeCheckoutUrl(value) {
   try {
     const url = new URL(value);
@@ -44,4 +55,4 @@ async function openCheckoutUrl(value, windowObject, linking) {
   await linking.openURL(value);
 }
 
-module.exports = { createAttempt, parseAttempt, paymentState, safeCheckoutUrl, openCheckoutUrl };
+module.exports = { createAttempt, parseAttempt, paymentState, confirmedRecoveredOrder, safeCheckoutUrl, openCheckoutUrl };

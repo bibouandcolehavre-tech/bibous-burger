@@ -8,6 +8,7 @@ const {delayLabel:deliveryDelayLabel}=require('./delivery-tracking-client');
 const {createSessionRecovery}=require('./session-recovery');
 import ArticleReviews from './ArticleReviews';
 import DeliveryFeedback from './DeliveryFeedback';
+import CustomerInvoiceButton from './CustomerInvoiceButton';
 import BibouPlusAfterPayment from './BibouPlusAfterPayment';
 import PromoCodeField from './PromoCodeField';
 const { previewPromotion, differentPendingPromo } = require('./promo-client');
@@ -29,6 +30,7 @@ import KioskPhoneApproval from './KioskPhoneApproval';
 const { kioskPairingFromLocation } = require('./kiosk-qr-client');
 const PHONE_PAIRING = Platform.OS === 'web' && typeof window !== 'undefined' ? kioskPairingFromLocation(window.location.href) : null;
 import WheelAfterPayment from './WheelAfterPayment';
+import WheelAvailableNotice from './WheelAvailableNotice';
 const { hasCompleteIdentity } = require('./customer-identity');
 const { isReviewToken, reviewApiBase, createCustomerFetch } = require("./review-client");
 const { readAuthResponse } = require("./auth-response");
@@ -42,7 +44,7 @@ const { observeBrowserFocus } = require('./browser-focus');
 import { syncPushDevice, detachPushDevice, observePush } from "./push-client";
 import { customerAlert as Alert } from "./customer-alert";
 import { readSession, saveSession, clearSession, clearSessionIf, readAttempt, saveAttempt, clearAttempt } from "./client-storage";
-const { createAttempt, parseAttempt, paymentState, openCheckoutUrl } = require("./payment-recovery");
+const { createAttempt, parseAttempt, paymentState, confirmedRecoveredOrder, openCheckoutUrl } = require("./payment-recovery");
 const { normalizeFrenchMobile } = require("./phone");
 const { applyProductStock, cartStockProblem, availableOptionGroups } = require("./stock-client");
 const { slotAlreadyStarted } = require('./client-slots');
@@ -557,7 +559,7 @@ function OrdersTrackingScreen({ orders, onBack, onRefresh, onDecide, busy, api, 
   const activeMessage = activeOrder?.status === "awaiting_customer" ? activeOrder.amendment?.mode === 'category-choice' ? activeOrder.amendment.phase === 'submitted' ? 'Tes nouveaux choix attendent la confirmation du restaurant.' : 'Un article est indisponible : choisis son remplacement ou annule la commande.' : "Le restaurant attend ton accord sur le nouveau panier." : activeOrder?.progress === 0 ? "Le restaurant a bien reçu ta commande." : activeOrder?.progress === 1 ? "Le restaurant prépare ta commande." : activeOrder?.progress === 2 ? activeOrder.dineIn ? "Ton repas est prêt pour ta table." : "Ta commande est prête : le livreur arrive." : activeOrder?.dineIn ? "Ton repas est servi à table." : "Ton livreur est en route.";
   const activeSteps = activeOrder?.dineIn ? ["Confirmée", "En préparation", "Prête", "Servie"] : ORDER_STEPS;
   const labelForOrder = (order) => order.status === "cancelled" ? "Annulée" : order.status === "awaiting_customer" ? "Ton accord est attendu" : ORDER_STEPS[order.progress];
-  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy} api={api} token={token} onUpdated={onRefresh}/>{orders.filter(o=>o.uberDelivery).map(order=><View key={order.apiId} style={styles.trackingCard}><Text style={styles.trackingOrder}>{order.id} · Livraison Uber Direct</Text><Text style={styles.trackingMessage}>{{pending:"Recherche de coursier",pickup:"Le coursier arrive au restaurant",pickup_complete:"Commande récupérée",dropoff:"Le coursier est en route",delivered:"Livraison terminée",canceled:"Course annulée : contacte le restaurant",returned:"Commande retournée au restaurant"}[order.uberDelivery.status] || "Suivi en cours"}</Text>{order.uberDelivery.dropoffEta && <Text>Arrivée estimée : {new Date(order.uberDelivery.dropoffEta).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</Text>}{order.uberDelivery.trackingUrl && <Pressable accessibilityRole="link" onPress={()=>Linking.openURL(order.uberDelivery.trackingUrl).catch(()=>Alert.alert("Suivi indisponible","Réessaie dans un instant."))} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Suivre mon coursier Uber</Text></Pressable>}</View>)}{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.dineIn ? "Repas à table" : activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{activeSteps.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text>{activeOrder.method === "delivery" && !activeOrder.uberDelivery ? <DeliveryTracking key={activeOrder.apiId + ":" + token} api={api} token={token} orderId={activeOrder.apiId} status={activeOrder.status} onStatusChanged={onRefresh} /> : null}</View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View>)}</ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.accountContent} showsVerticalScrollIndicator={false}><Header onBack={onBack} /><Text style={styles.title}>Mes commandes</Text><OrderAmendments orders={orders} onDecide={onDecide} busy={busy} api={api} token={token} onUpdated={onRefresh}/>{orders.filter(o=>o.uberDelivery).map(order=><View key={order.apiId} style={styles.trackingCard}><Text style={styles.trackingOrder}>{order.id} · Livraison Uber Direct</Text><Text style={styles.trackingMessage}>{{pending:"Recherche de coursier",pickup:"Le coursier arrive au restaurant",pickup_complete:"Commande récupérée",dropoff:"Le coursier est en route",delivered:"Livraison terminée",canceled:"Course annulée : contacte le restaurant",returned:"Commande retournée au restaurant"}[order.uberDelivery.status] || "Suivi en cours"}</Text>{order.uberDelivery.dropoffEta && <Text>Arrivée estimée : {new Date(order.uberDelivery.dropoffEta).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</Text>}{order.uberDelivery.trackingUrl && <Pressable accessibilityRole="link" onPress={()=>Linking.openURL(order.uberDelivery.trackingUrl).catch(()=>Alert.alert("Suivi indisponible","Réessaie dans un instant."))} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Suivre mon coursier Uber</Text></Pressable>}</View>)}{activeOrder && <><Text style={styles.sectionTitle}>Suivi en direct</Text><View style={styles.trackingCard}><View style={styles.trackingHeader}><View><Text style={styles.trackingOrder}>{activeOrder.id} · {activeOrder.product}</Text><Text style={styles.trackingMeta}>{activeOrder.dineIn ? "Repas à table" : activeOrder.method === "delivery" ? "Livraison" : "Retrait"} · {activeOrder.slot}</Text></View><Text style={styles.trackingPrice}>{money(activeOrder.total)}</Text></View>{activeOrder.status !== "awaiting_customer" && <View style={styles.trackingSteps}>{activeSteps.map((step, index) => <View key={step} style={styles.trackingStep}><View style={[styles.trackingDot, index <= activeOrder.progress && styles.trackingDotDone]}>{index <= activeOrder.progress && <Text style={styles.trackingCheck}>✓</Text>}</View><Text style={[styles.trackingLabel, index <= activeOrder.progress && styles.trackingLabelDone]}>{step}</Text></View>)}</View>}<Text style={styles.trackingMessage}>{activeMessage}</Text>{activeOrder.method === "delivery" && !activeOrder.uberDelivery ? <DeliveryTracking key={activeOrder.apiId + ":" + token} api={api} token={token} orderId={activeOrder.apiId} status={activeOrder.status} onStatusChanged={onRefresh} /> : null}</View><Pressable onPress={onRefresh} style={styles.simulateButton}><Text style={styles.simulateButtonText}>Actualiser le suivi</Text><Text style={styles.simulateHint}>Voir la dernière mise à jour du restaurant</Text></Pressable></>}<Text style={styles.sectionTitle}>Historique</Text>{orders.map((order) => <View key={order.id} style={{marginBottom:12}}><View style={styles.historyOrder}><View style={styles.historyIcon}><Text>{order.status === "delivered" ? "✓" : order.status === "cancelled" ? "×" : "◷"}</Text></View><View style={styles.historyCopy}><Text style={styles.historyTitle}>{order.product}</Text><Text style={styles.historyMeta}>{order.id} · {labelForOrder(order)} · {order.date}</Text></View><Text style={styles.historyPrice}>{money(order.total)}</Text></View><CustomerInvoiceButton api={api} token={token} orderId={order.apiId}/></View>)}</ScrollView></SafeAreaView>;
 }
 
 function ReservationsScreen({ reservations, onBack, onRefresh, onCancel }) {
@@ -1674,9 +1676,19 @@ function AppContent({ onReviewModeChange }) {
     paymentAttempt.current = attempt;
     // Legal links remain readable even when a payment needs checking.
     if (['privacy', 'delete-account'].includes(initialScreenFromUrl())) return;
-    // In the next native journey, signing in must never reopen an old checkout.
-    // Keep the saved reference and let the customer request verification explicitly.
-    if (CUSTOMER_JOURNEY_SHELL) { setStockFeedback('Une tentative sauvegardée peut être vérifiée depuis l’accueil, sans bloquer la carte.'); return; }
+    // Reopening Android/iPhone after the bank page used to stop at the home
+    // screen, even when the order was already paid. Restore the confirmation
+    // and its wheel automatically, using a read-only authenticated lookup.
+    if (CUSTOMER_JOURNEY_SHELL) {
+      try {
+        const found = await apiRequest(`/customer/payment-attempts/${encodeURIComponent(attempt.requestId)}`, token, undefined, 12000);
+        if (sessionTokenRef.current !== token || paymentAttempt.current?.requestId !== attempt.requestId) return;
+        const paid = found.ok ? confirmedRecoveredOrder(found.payload, attempt) : null;
+        if (paid) { await finishPayment(attempt, paid, token); return; }
+      } catch { /* Keep the reference; no checkout or bank operation is reopened. */ }
+      if (sessionTokenRef.current === token) setStockFeedback('Une tentative sauvegardée peut être vérifiée depuis l’accueil, sans bloquer la carte.');
+      return;
+    }
     await runPayment(attempt, token);
   };
   const beginPayment = async (kind, input) => {
@@ -1782,6 +1794,27 @@ function AppContent({ onReviewModeChange }) {
   };
   const checkPayment = () => runPayment(paymentAttempt.current);
   const resumePayment = () => runPayment(paymentAttempt.current, authToken, true);
+  useEffect(() => {
+    if (!CUSTOMER_JOURNEY_SHELL || !authToken || screen !== 'menu') return;
+    let stopped = false, checking = false, checks = 0;
+    const refreshPaidReturn = async () => {
+      const attempt = paymentAttempt.current;
+      if (stopped || checking || checks >= 24 || attempt?.kind !== 'order' ||
+          ['background', 'inactive'].includes(AppState.currentState)) return;
+      checking = true; checks++;
+      try {
+        const found = await apiRequest(`/customer/payment-attempts/${encodeURIComponent(attempt.requestId)}`, authToken, undefined, 12000);
+        if (stopped || sessionTokenRef.current !== authToken || paymentAttempt.current?.requestId !== attempt.requestId) return;
+        const paid = found.ok ? confirmedRecoveredOrder(found.payload, attempt) : null;
+        if (paid) await finishPayment(attempt, paid, authToken);
+      } catch { /* Read-only retry: never create or reopen a bank payment. */ }
+      finally { checking = false; }
+    };
+    // A bank webhook can arrive after the app reopens. Briefly watch the saved
+    // attempt while at home, then offer its wheel when payment is confirmed.
+    const timer = setInterval(refreshPaidReturn, 5000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [screen, authToken]);
   useEffect(() => {
     if (!authToken || !['payment-pending', 'bibou-plus-pending', 'reservation-payment-pending'].includes(screen)) return;
     const refresh = () => { void runPayment(paymentAttempt.current); };
@@ -1939,10 +1972,11 @@ if (screen === "account") return authToken ? <AccountScreen onOpenWheel={() => s
   return <SafeAreaView style={styles.safeArea}><StatusBar barStyle="dark-content" /><MenuScreen onOpenReferral={openReferral} reservationDraft={reservationDraft} onCancelReservationMeal={() => { setReservationDraft(null); setCart(null); }} showCustomBurgerPreview={webCustomBurgerPreview} onOpenCustomBurger={() => setScreen('custom-burger-preview')} onOpenContest={() => setScreen("contest")} pendingPayment={Boolean(authToken && paymentAttempt.current)} onResumePayment={() => void runPayment(paymentAttempt.current)} catalog={catalog} stockMessage={stockFeedback || stockMessage} cartCount={cartCount} loyaltyPoints={loyalty.points} customer={customer} preferredMethod={preferredMethod} onChooseOrderMethod={(method) => { if (reservationDraft) { setReservationDraft(null); setCart(null); } setPreferredMethod(method); }} onOpenReservation={() => { if (reservationDraft) { setReservationDraft(null); setCart(null); } if (authToken) setScreen("reservation"); else { setLoginDestination("reservation"); setScreen("login"); } }} onOpenPrivacy={() => setScreen("privacy")} onOpenAccount={() => setScreen(authToken ? "account" : "login")} onOpenLoyalty={() => setScreen("loyalty")} onOpenBibouPlus={() => { setBibouPlusReturnScreen("menu"); setScreen("bibou-plus"); }} onOpenProduct={openProduct} onQuickAdd={addSimpleToCart} onOpenCart={() => setScreen("cart")} /></SafeAreaView>;
 };
   const content = renderJourneyScreen();
-  if (!CUSTOMER_JOURNEY_SHELL || ['menu', 'customer-service', 'customer-categories', 'customer-catalog', 'customer-news', 'partners'].includes(screen)) return content;
+  const withWheelShortcut = body => <View style={{flex:1}}>{body}<WheelAvailableNotice api={reviewApiBase(API_BASE_URL, authToken)} token={authToken} enabled={['menu', 'orders'].includes(screen)} onOpen={() => setScreen('wheel')} /></View>;
+  if (!CUSTOMER_JOURNEY_SHELL || ['menu', 'customer-service', 'customer-categories', 'customer-catalog', 'customer-news', 'partners'].includes(screen)) return withWheelShortcut(content);
   const backDestinations = { product: productReturnScreen, cart: reservationDraft ? 'reservation' : 'customer-categories', 'custom-burger-preview': editingCartLine ? 'cart' : 'customer-categories', delivery: 'cart', identity: identityReturnScreen, details: reservationDraft ? 'cart' : 'delivery', payment: 'details', review: 'orders', orders: 'account', 'club-referral': 'account', reservations: 'account', notifications: 'account', offers: 'account', 'bibou-plus': bibouPlusReturnScreen, 'delete-account': authToken ? 'account' : 'privacy' };
   const sharedBack = () => { if (screen === 'reservation' && reservationDraft) { setReservationDraft(null); setCart(null); } setScreen(backDestinations[screen] || 'menu'); };
-  return <CustomerJourneyFrame {...customerFrame} embedded onBack={sharedBack}><CustomerJourneyLegacyContext.Provider value={true}>{content}</CustomerJourneyLegacyContext.Provider></CustomerJourneyFrame>;
+  return withWheelShortcut(<CustomerJourneyFrame {...customerFrame} embedded onBack={sharedBack}><CustomerJourneyLegacyContext.Provider value={true}>{content}</CustomerJourneyLegacyContext.Provider></CustomerJourneyFrame>);
 }
 
 const APP_PALETTE = {

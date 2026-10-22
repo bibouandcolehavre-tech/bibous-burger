@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
+import WheelArtwork from './WheelArtwork';
 const { supportsNewCustomerJourneys } = require('./customer-experience-policy');
 const { fullWheelRules } = require('./wheel-rules-client');
 const { isReviewToken } = require('./review-client');
 const { wheelPresentation, wheelDiameter, wheelPrizeHint } = require('./wheel-presentation');
-
-const polar = (angle, radius = 105) => ({ x: 110 + radius * Math.cos((angle - 90) * Math.PI / 180), y: 110 + radius * Math.sin((angle - 90) * Math.PI / 180) });
-const sector = (start, end) => {
-  const first = polar(start), last = polar(end);
-  return `M 110 110 L ${first.x} ${first.y} A 105 105 0 ${end - start > 180 ? 1 : 0} 1 ${last.x} ${last.y} Z`;
-};
-const colors = { none: '#E5C7B5', 'points-20': '#A8D3C4', 'points-30': '#A8D3C4', 'points-40': '#86BDA9', 'points-60': '#6AA58D', drink: '#C37559', fries: '#E7A87D', dessert: '#D7A77D', classic: '#E9C569', 'discount-1': '#668F80', 'discount-2': '#4F7D69', 'discount-5': '#315B4B' };
-const label = id => id === 'none' ? '•' : id.startsWith('points') ? '★' : id === 'drink' ? '🥤' : id === 'fries' ? '🍟' : id === 'dessert' ? '🍰' : id === 'classic' ? '🍔' : id === 'stb-tickets' ? 'STB' : '%';
 
 function WheelRules({ rules, open, onOpen, onClose }) {
   if (!rules) return null;
@@ -40,7 +32,6 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
   const [reload, setReload] = useState(0);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [cardWidth, setCardWidth] = useState(0);
-  const [resultSegments, setResultSegments] = useState(null);
   const { width: screenWidth } = useWindowDimensions();
   const working = useRef(false);
   const epoch = useRef(0);
@@ -63,7 +54,6 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     const generation = ++epoch.current;
     setState(null);
     setResult(null);
-    setResultSegments(null);
     setBusy(false);
     working.current = false;
     pendingId.current = null;
@@ -120,17 +110,10 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
       if (!payload.spin || !payload.state) throw new Error('Le résultat doit être vérifié. Réessaie sans repasser commande.');
       clearTimeout(timer);
       pendingId.current = null;
-      const actualSegments = Array.isArray(payload.spin.rewardSegments) ? payload.spin.rewardSegments : segments;
-      setResultSegments(actualSegments);
-      let edge = 0;
-      const matching = actualSegments.map(([id, weight]) => {
-        const center = edge + weight / 2;
-        edge += weight;
-        return { id, center };
-      }).find(item => item.id === payload.spin.prizeId);
-      const target = (360 - (matching?.center || 25) * 3.6) % 360;
-      const delta = (target - rotationDegrees.current + 360) % 360;
-      const end = rotationDegrees.current + 1800 + delta;
+      // Decoration only: do not turn server weights into pie-chart areas.
+      // The displayed result remains exactly the server's persisted result.
+      const end = rotationDegrees.current + 1800 + 137;
+      const target = end % 360;
       Animated.timing(rotation, { toValue: end, duration: 2500, useNativeDriver: true }).start(() => {
         if (epoch.current !== generation) return;
         rotationDegrees.current = target;
@@ -148,7 +131,6 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     } finally { clearTimeout(timer); }
   };
 
-  const visibleSegments = result && resultSegments ? resultSegments : segments;
   return <View style={styles.card} onLayout={event => setCardWidth(event.nativeEvent.layout.width)}>
     <Text style={styles.eyebrow}>{accountMode ? 'CLUB BIBOU' : 'TA COMMANDE EST CONFIRMÉE'}</Text>
     <Text style={styles.title}>{turns ? 'Tes tours de roue' : result ? 'Merci d’avoir joué !' : 'Tes gains de la roue'}</Text>
@@ -166,12 +148,7 @@ export default function WheelAfterPayment({ api, token, order, accountMode = fal
     {canSpin ? <>
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={spin} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{busy ? 'La roue tourne…' : 'Tourner la roue maintenant'}</Text></Pressable>
       </> : null}
-      {(canSpin || result) && <View testID="wheel-large-display" style={[styles.wheelFrame, { width: diameter, height: diameter + 18 }]}><Text style={styles.pointer}>▼</Text><Animated.View style={{ width: diameter, height: diameter, transform: [{ rotate: rotation.interpolate({ inputRange: [0, 360], outputRange: ['0deg', '360deg'], extrapolate: 'extend' }) }] }}><Svg width={diameter} height={diameter} viewBox="0 0 220 220">{visibleSegments.map(([id, weight], index) => {
-        const start = visibleSegments.slice(0, index).reduce((sum, item) => sum + item[1], 0) * 3.6;
-        const end = start + weight * 3.6;
-        const point = polar((start + end) / 2, 74);
-        return <G key={`${id}-${index}`}><Path d={sector(start, end)} fill={colors[id] || '#A8D3C4'} stroke="#FFF7EA" strokeWidth={2} />{weight >= 5 && <SvgText x={point.x} y={point.y + 5} textAnchor="middle" fill="#203E33" fontSize={weight >= 10 ? 20 : 13}>{label(id)}</SvgText>}</G>;
-      })}<Circle cx={110} cy={110} r={39} fill="#FFF7EA" stroke="#315B4B" strokeWidth={5} /><SvgText x={110} y={116} textAnchor="middle" fill="#315B4B" fontSize={28}>✦</SvgText></Svg></Animated.View></View>}
+    {(canSpin || result) && <><WheelArtwork diameter={diameter} rotation={rotation} /><Text style={styles.prizeHint}>Animation illustrative · le résultat est tiré au sort. Les probabilités figurent dans le règlement.</Text></>}
     {result ? <Text accessibilityLiveRegion="polite" style={styles.result}>{result.label}</Text> : null}
     {state.monthlyClassic && <View style={styles.monthly}><Text style={styles.monthlyTitle}>🍔 Le Classique du mois</Text><Text style={styles.description}>{state.monthlyClassic.available ? 'À gagner directement sur la roue : 1 % de chance par tour admissible tant que le lot est disponible.' : 'Le Classique du mois n’est plus disponible pour tes tours actuels.'}</Text><Text style={styles.prizeHint}>Un seul lot pour tout le restaurant par mois, tous supports réunis. Sans tirage séparé ni gagnant garanti. Classique seul, sauce et crudités au choix, sans supplément.</Text></View>}
     {!hidePrizes && activePrizes.map(prize => <View key={prize.id} style={styles.prize}><Text style={styles.prizeLabel}>{prize.label}</Text><Text selectable style={styles.prizeCode}>{prize.code}</Text><Text style={styles.prizeHint}>{wheelPrizeHint(prize)} À saisir avant le {new Date(prize.expiresAt).toLocaleDateString('fr-FR')}. Usage unique ; un seul code promo par commande. Retrouve ce code dans Mon compte → Mes offres.</Text></View>)}
@@ -192,8 +169,6 @@ const styles = StyleSheet.create({
   counterText: { color: '#FFF7EA', fontSize: 31, lineHeight: 39, fontWeight: '900', textAlign: 'center' },
   counterHint: { color: '#FFF7EA', fontSize: 16, lineHeight: 23, fontWeight: '700', textAlign: 'center' },
   description: { color: '#315B4B', fontSize: 15, textAlign: 'center', marginVertical: 8 },
-  wheelFrame: { alignItems: 'center', marginVertical: 22 },
-  pointer: { position: 'absolute', zIndex: 2, top: -16, color: '#315B4B', fontSize: 31 },
   button: { width: '100%', backgroundColor: '#315B4B', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 18 },
   buttonText: { color: '#FFF7EA', fontWeight: '900', fontSize: 17, textAlign: 'center' },
   disabled: { opacity: .5 },
