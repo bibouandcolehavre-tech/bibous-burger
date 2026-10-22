@@ -14,6 +14,7 @@ const { validateIdentity, hasCompleteIdentity, normalizeName } = require('../cus
 const { validateRequestId, orderFingerprint } = require("./order-attempt");
 const { promotionForCode, assertPromotionAvailable, assertPromotionMethod, assertPromotionCart, applyPromotion, settlePromotionalOrder } = require('./promo-codes');
 const merchantPromotions = require('./merchant-promotions');
+const automaticPromotions = require('./automatic-promotions');
 const personalMenuGifts = require('./personal-menu-gifts');
 const { createBackupStore } = require("./backups");
 const { listDashboardCustomers, dashboardCustomerDetail } = require("./dashboard-customers");
@@ -215,7 +216,7 @@ const backupStore = createBackupStore({
   }
 });
 const send = (response, status, payload) => {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Bibou-Platform, X-Bibou-Replacement-Choices" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Bibou-Platform, X-Bibou-Replacement-Choices, X-Bibou-Automatic-Offers" });
   response.end(JSON.stringify(payload));
 };
 
@@ -938,6 +939,11 @@ const server = http.createServer(async (request, response) => {
       const catalogDatabase = await readDatabase();
       if (quantityStock.reconcile(catalogDatabase)) await writeDatabase(catalogDatabase);
       const catalog = quantityStock.catalog(catalogDatabase, await productStockStore.read(), new Date(), url.pathname === '/api/dashboard/catalog');
+      if (url.searchParams.get('automaticOffers') === '1') {
+        catalog.automaticPromotions = automaticPromotions.publicOffers(catalogDatabase);
+        catalog.products = catalog.products.map(product => ({ ...product,
+          automaticOffer:catalog.automaticPromotions.find(offer => offer.productId === product.id) || null }));
+      }
       const ratings = articleRatings.publicArticleRatings(catalogDatabase);
       catalog.products = catalog.products.map(product => ({ ...product, satisfaction: ratings[articleRatings.ratingKey(product.id)] || null }));
       // Draft products are manageable by the restaurant, but remain absent from
@@ -2115,6 +2121,7 @@ const server = http.createServer(async (request, response) => {
       await reconcileTablePreorders(database);
       const input = await readBody(request);
       const cash = cashRequested(input);
+      if (input.expectedTotalCents !== undefined && (!Number.isSafeInteger(input.expectedTotalCents) || input.expectedTotalCents < 0)) return send(response,400,{error:'Montant de commande invalide.'});
       if (cash && (input.method !== 'pickup' || !authorizeTerminal(request, { enabled:process.env.KIOSK_TERMINAL_ENABLED === 'true', deviceSecret:kioskDeviceSecret }))) return send(response, 403, { error:'Les espèces sont réservées à la borne du restaurant.' });
       if (cash && !validateRequestId(input.requestId)) return send(response, 400, { error:'Identifiant de tentative requis pour la borne.' });
       const comment = input.comment === undefined ? "" : typeof input.comment === "string" ? input.comment.trim() : null;
@@ -2174,7 +2181,7 @@ const server = http.createServer(async (request, response) => {
         assertStoredOrderAvailable(pricedCart.items, await productStockStore.read());
         const latestDatabase = await readDatabase();
         if (tableRequest && !(await serviceModuleStore.read()).modules.tables) throw Object.assign(new Error('Les réservations de table sont momentanément indisponibles.'), { statusCode: 409 });
-        const activePromotion = promotionForCode(input.promoCode, latestDatabase);
+        let activePromotion = promotionForCode(input.promoCode, latestDatabase);
         assertPromotionAvailable(latestDatabase, activePromotion, input.customerId, contestPrizeContext(request));
         assertPromotionMethod(activePromotion, input.method, promotionContext);
         assertPromotionCart(activePromotion, pricedCart.items);
@@ -2185,12 +2192,24 @@ const server = http.createServer(async (request, response) => {
         const sessionCustomer = authenticatedCustomer(request, latestDatabase);
         const benefitsAllowed = !latestCustomer.isKioskGuest && sessionCustomer?.id === latestCustomer.id;
         const bibouPlusActive = benefitsAllowed && bibouPlusStatus(latestCustomer).active;
-        const welcomeRewardApplied = (!activePromotion || (Boolean(activePromotion.id) && activePromotion.combineWelcome !== false)) && benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
+        const welcomeAvailable = benefitsAllowed && welcomeRewardAvailable(latestCustomer, latestDatabase.orders, new Date(), PENDING_RESERVATION_MS);
+        let welcomeRewardApplied = (!activePromotion || (Boolean(activePromotion.id) && activePromotion.combineWelcome !== false)) && welcomeAvailable;
         const baseRate = welcomeRewardApplied ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0;
-        const crmOffer = !activePromotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
+        let crmOffer = !activePromotion && benefitsAllowed ? crm.bestOffer(latestDatabase,latestCustomer,subtotal,baseRate) : null;
         const discountRate = crmOffer ? crmOffer.discountPercent / 100 : baseRate;
-        const pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items, promotionContext);
+        let pricing = applyPromotion(bibouPlusOrderPricing({ subtotal, deliveryFee, active: bibouPlusActive, discountRate }), activePromotion, input.method, pricedCart.items, promotionContext);
+        if (automaticPromotions.supported(request)) {
+          const selected = automaticPromotions.select(latestDatabase, pricedCart.items, promotionContext,
+            {promotion:activePromotion,pricing}, bibouPlusOrderPricing({subtotal,deliveryFee,active:bibouPlusActive,
+              discountRate:welcomeAvailable ? WELCOME_DISCOUNT_RATE : bibouPlusActive ? BIBOU_PLUS_DISCOUNT_RATE : 0}));
+          if (selected.automatic) {
+            activePromotion = selected.promotion; pricing = selected.pricing; crmOffer = null;
+            welcomeRewardApplied = Boolean(welcomeAvailable && activePromotion.combineWelcome !== false);
+            assertPromotionAvailable(latestDatabase,activePromotion,input.customerId,contestPrizeContext(request));
+          }
+        }
         const storedItems = pricedCart.items;
+        if (input.expectedTotalCents !== undefined && input.expectedTotalCents !== Math.round(pricing.total*100)) throw Object.assign(new Error('Le montant a changé. Actualise ton panier et vérifie le total avant de payer. Aucun paiement lancé.'),{statusCode:409,code:'PRICE_CHANGED'});
         const createdOrder = { id: `order-${latestDatabase.nextOrderNumber}`, number: latestDatabase.nextOrderNumber++, customerId: latestCustomer.id, customerName: latestCustomer.name, customerPhone: customer.phone || "", deliveryAddress: input.method === "delivery" ? { address: customer.address || "", postalCode: customer.postalCode || "", city: customer.city || "" } : null, comment, items: storedItems, subtotal: pricing.subtotal, discount: pricing.discount, discountRate: pricing.discountRate, standardDeliveryFee: pricing.standardDeliveryFee, deliveryFee: pricing.deliveryFee, distanceKm, total: pricing.total, method: input.method, serviceDate: input.serviceDate, slot: input.slot, wheelEurosPerTurn: wheelGame.EUROS_PER_TURN, bibouPlusApplied: bibouPlusActive, welcomeRewardApplied, loyaltyBasePoints: loyaltyPointsForItems(storedItems), status: "awaiting_payment", createdAt: new Date().toISOString() };
         if (input.method === 'delivery' && deliveryTravelSeconds !== null) createdOrder.deliveryTravelSeconds = deliveryTravelSeconds;
         if(input.method==='delivery'&&deliveryDestination)createdOrder.deliveryDestination=deliveryDestination;
@@ -2211,7 +2230,7 @@ const server = http.createServer(async (request, response) => {
         createdOrder.requestId = requestId;
         if (request.headers['x-bibou-replacement-choices'] === '1' && !request.kioskSession && !promotionContext.isKiosk) createdOrder.replacementChoicesVersion = 1;
         if (request.kioskSession) { createdOrder.kioskSessionId = request.kioskSession.id; createdOrder.kioskDeviceDigest = request.kioskSession.deviceDigest; }
-        if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `Code promo ${activePromotion.code}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
+        if (activePromotion) { createdOrder.promotion = activePromotion; createdOrder.discountLabel = `${activePromotion.automatic ? 'Offre automatique · 1 acheté = 1 offert' : `Code promo ${activePromotion.code}`}${welcomeRewardApplied ? ' + bienvenue' : ''}`; }
         if (activePromotion?.sourceContestPrize) { createdOrder.contestPrizePlatform = promotionContext.appPlatform; createdOrder.discountLabel = 'Menus gagnés au concours'; contestPrizes.reserve(latestDatabase, createdOrder); }
         if (activePromotion?.id) Object.assign(createdOrder, { promotionDiscount: pricing.promotionDiscount, promotionDeliveryDiscount: pricing.promotionDeliveryDiscount, baseDiscount: pricing.baseDiscount });
         if (crmOffer) { createdOrder.crmOfferId = crmOffer.id; createdOrder.crmRuleId = latestDatabase.crm.offers.find(o=>o.id===crmOffer.id).ruleId; createdOrder.discountLabel = crmOffer.title; createdOrder.welcomeRewardApplied = false; }

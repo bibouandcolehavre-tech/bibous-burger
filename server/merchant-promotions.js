@@ -18,7 +18,9 @@ const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filt
 const publicView = promotion => ({ id: promotion.id, code: promotion.code, type: promotion.type,
   percent: promotion.percent, productId: promotion.productId, minimum: promotion.minimum,
   message: promotion.message, combineWelcome: promotion.combineWelcome !== false,
-  ...(promotion.serviceConditions ? { serviceConditions: promotion.serviceConditions } : {}) });
+  ...(promotion.serviceConditions ? { serviceConditions: promotion.serviceConditions } : {}),
+  ...(promotion.automatic === true ? { automatic:true, startsAt:promotion.startsAt, endsAt:promotion.endsAt,
+    ...(promotion.activeWindows ? { activeWindows:promotion.activeWindows } : {}) } : {}) });
 
 function validateServiceConditions(input) {
   if (input === undefined || input === null) return undefined;
@@ -48,7 +50,7 @@ function assertServiceConditions(promotion, method, context = {}, { preview = fa
 
 function validate(input, existing = []) {
   if (!plain(input)) fail('Offre invalide.');
-  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome', 'serviceConditions'];
+  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome', 'serviceConditions', 'automatic'];
   if (Object.keys(input).some(key => !allowed.includes(key))) fail('Réglage de promotion inconnu.');
   const id = input.id === undefined ? crypto.randomUUID() : input.id;
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) fail('Identifiant d’offre invalide.');
@@ -63,8 +65,10 @@ function validate(input, existing = []) {
   if (input.type === 'free_classic') fail('Le Classique mensuel est attribué uniquement par la roue, pas par un code manuel.');
   const percent = input.type.startsWith('percent_') ? Number(input.percent) : 0;
   if (input.type.startsWith('percent_') && (!Number.isInteger(percent) || percent < 1 || percent > 50)) fail('Choisis une remise de 1 à 50 %.');
-  const productId = input.type === 'percent_burger' ? input.productId : null;
-  if (input.type === 'percent_burger' && !burgerIds.includes(productId)) fail('Choisis un burger seul de la carte.');
+  const productId = input.type === 'percent_burger' || input.type === 'bogo_burger' ? input.productId || null : null;
+  if ((input.type === 'percent_burger' || productId) && !burgerIds.includes(productId)) fail('Choisis un burger seul de la carte.');
+  if (input.automatic !== undefined && typeof input.automatic !== 'boolean') fail('Activation automatique invalide.');
+  if (input.automatic && (input.type !== 'bogo_burger' || !productId)) fail('Une offre automatique nécessite un burger seul précis.');
   const minimum = Number(input.minimum ?? 0);
   if (!Number.isFinite(minimum) || minimum < 0 || minimum > 10000 || money(minimum) !== minimum) fail('Minimum de commande invalide.');
   const startsAt = input.startsAt || null, endsAt = input.endsAt || null;
@@ -90,12 +94,14 @@ function validate(input, existing = []) {
   const usageLimit = input.usageLimit === null || input.usageLimit === undefined || input.usageLimit === '' ? null : Number(input.usageLimit);
   if (usageLimit !== null && (!Number.isInteger(usageLimit) || usageLimit < 1 || usageLimit > 100000)) fail('Limite d’utilisation invalide.');
   if (typeof input.oncePerCustomer !== 'boolean' || typeof input.enabled !== 'boolean') fail('Activation ou limite par client invalide.');
+  if (input.automatic && (input.oncePerCustomer || usageLimit !== null)) fail('Cette offre automatique doit rester sans limite d’utilisation.');
   if (input.combineWelcome !== undefined && typeof input.combineWelcome !== 'boolean') fail('Cumul avec la bienvenue invalide.');
   const message = String(input.message || '').trim();
   if (message.length > 180 || /[\u0000-\u001f]/.test(message)) fail('Description trop longue ou invalide.');
   const serviceConditions = validateServiceConditions(input.serviceConditions);
   return { id, revision, code, type: input.type, percent, productId, minimum, startsAt, endsAt, usageLimit,
     oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message, combineWelcome: input.combineWelcome !== false,
+    ...(input.automatic ? { automatic:true } : {}),
     ...(serviceConditions ? { serviceConditions } : {}),
     ...(activeWindows === undefined ? {} : { activeWindows }) };
 }
@@ -161,9 +167,9 @@ function discountFor(promotion, items, subtotal, deliveryFee = 0) {
     if (!products) fail('Ajoute le burger concerné pour utiliser ce code.');
   }
   if (promotion.type === 'bogo_burger') {
-    const prices = items.filter(item => burgerIds.includes(item.productId))
+    const prices = items.filter(item => burgerIds.includes(item.productId) && (!promotion.productId || item.productId === promotion.productId))
       .flatMap(item => Array(item.quantity).fill(burgerPriceForPromotion(item))).sort((a, b) => a - b);
-    if (prices.length < 2) fail('Ajoute au moins deux burgers seuls pour profiter de cette offre. Les menus ne comptent pas.');
+    if (prices.length < 2) fail(promotion.productId ? `Ajoute au moins deux ${PRODUCT_CATALOG[promotion.productId].name} seuls pour profiter de cette offre. Les menus ne comptent pas.` : 'Ajoute au moins deux burgers seuls pour profiter de cette offre. Les menus ne comptent pas.');
     products = money(prices.slice(0, Math.floor(prices.length / 2)).reduce((sum, price) => sum + price, 0));
   }
   if (promotion.type === 'buy3_get1_burger' || promotion.type === 'buy3_get1_menu') {
