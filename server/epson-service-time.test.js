@@ -31,7 +31,11 @@ for (const [name, render] of [['preparation', printer.preparationEnvelope], ['re
     assert.ok(runs.some(run => run.text === 'HEURE DE RETRAIT'));
     assert.ok(runs.some(run => run.text === 'POUR LE 16/10/2026'));
     assert.equal(JSON.stringify(order), before);
-    assert.deepEqual(runs.find(run => run.text === 'Client : Client de test'), { width: 1, height: 1, em: false, align: 'left', text: 'Client : Client de test' });
+    // The later owner-approved contact layout uses a separate large client
+    // block; verify its state and the reset, not the obsolete single-line label.
+    assert.deepEqual(runs.find(run => run.text === 'Client de test'), { width: 2, height: 2, em: true, align: 'left', text: 'Client de test' });
+    const separator = runs.find(run => run.text === '--------------------------------');
+    assert.equal(separator.width, 1); assert.equal(separator.height, 1); assert.equal(separator.em, false);
   });
   test(`${name}: delivery range fits a narrow 32-column receipt, with full original times`, () => {
     const run = textRuns(render({ ...order, method: 'delivery', slot: '19:00 – 19:20' })).find(run => run.text === '19:00 - 19:20');
@@ -56,6 +60,6 @@ test('both automatic and manual back-office printing use the corrected receipt g
   assert.equal((source.match(/BibouEpsonPrint\.orderReceiptEnvelope\(/g) || []).length, 2);
   for (const file of ['index.html', 'ancienne-interface.html', 'epson-test.html', 'epson-real-order-test.html']) {
     const html = fs.readFileSync(path.join(__dirname, '../restaurant-dashboard', file), 'utf8');
-    assert.match(html, /epson-print\.js\?v=pickup-ticket-time-20261016/);
+    assert.match(html, /epson-print\.js\?v=(?:pickup-ticket-time-20261016|customer-contact-large-20261020|thermal-invoice-20261023)/);
   }
 });

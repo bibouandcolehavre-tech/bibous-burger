@@ -23,7 +23,9 @@ function createInvoiceHttp({ store, readDatabase, acquireDatabase, authenticated
       if (!dashboard && (!customer || request.kioskSession)) fail('Connecte-toi depuis ton téléphone pour consulter ta facture.', 401);
       const order = db.orders.find(o => o.id === id && (dashboard || o.customerId === customer.id));
       if (!order || order.payment?.status !== 'PAID') fail('Commande introuvable.', 404);
-      const owner = dashboard ? db.customers.find(c => c.id === order.customerId) : customer;
+      const owner = dashboard ? (db.customers.find(c => c.id === order.customerId)
+        || (order.kioskGuest === true && order.kioskImmediate === true && typeof order.customerId === 'string' && order.customerId
+          ? { id: order.customerId, name: '', phone: '', isKioskGuest: true } : null)) : customer;
       if (!owner) fail('Compte client introuvable.', 404);
       return await fn(order, owner);
     } finally { release(); }
@@ -51,7 +53,7 @@ function createInvoiceHttp({ store, readDatabase, acquireDatabase, authenticated
       binary(response, pdf); return true;
     }
     const customerRoute = /^\/api\/customer\/orders\/(order-\d+)\/invoice(?:\/(pdf))?$/.exec(url.pathname);
-    const dashboardRoute = /^\/api\/dashboard\/invoices\/(order-\d+)\/(status|issue|pdf|sms|import)$/.exec(url.pathname);
+    const dashboardRoute = /^\/api\/dashboard\/invoices\/(order-\d+)\/(status|issue|pdf|print|sms|import)$/.exec(url.pathname);
     if (url.pathname === '/api/dashboard/invoices/settings') {
       if (!authenticatedDashboard(request)) fail('Connexion restaurant requise.', 401);
       if (request.method === 'GET') {
@@ -63,11 +65,12 @@ function createInvoiceHttp({ store, readDatabase, acquireDatabase, authenticated
     }
     if (!customerRoute && !dashboardRoute) return false;
     const dashboard = Boolean(dashboardRoute), id = (dashboardRoute || customerRoute)[1], action = dashboardRoute?.[2] || customerRoute[2] || 'status';
-    const allowed = action === 'status' || action === 'pdf' ? request.method === 'GET' || (!dashboard && action === 'status' && request.method === 'POST') : request.method === 'POST';
+    const allowed = ['status', 'pdf', 'print'].includes(action) ? request.method === 'GET' || (!dashboard && action === 'status' && request.method === 'POST') : request.method === 'POST';
     if (!allowed) { send(response, 405, { error: 'Action non disponible.' }); return true; }
     let sms;
     await withOrder(request, id, dashboard, async (order, customer) => {
       if (action === 'pdf') { binary(response, await store.pdf(id, dashboard ? undefined : customer.id)); return; }
+      if (action === 'print') { send(response, 200, { invoice: await store.printSnapshot(id) }); return; }
       if (action === 'status' && request.method === 'GET') { send(response, 200, await store.status(order, customer)); return; }
       const input = await readBody(request);
       if (action === 'import') { send(response, 200, await store.importOriginal(order, customer, input)); return; }
@@ -79,8 +82,8 @@ function createInvoiceHttp({ store, readDatabase, acquireDatabase, authenticated
         sms = { job, recipient: keyyo.phone(customer.phone), message: `Bibou's Burgers : votre facture : ${ORIGIN}/facture#${job.token} (lien valable 7 jours).` };
         return;
       }
-      if (Object.keys(input).some(k => !['confirm', 'billing'].includes(k)) || input.confirm !== true || (dashboard && input.billing !== undefined)) fail('Confirmez la demande de facture.');
-      const result = await store.issue(order, customer, { request: !dashboard, billing: input.billing });
+      if (Object.keys(input).some(k => !['confirm', 'billing'].includes(k)) || input.confirm !== true) fail('Confirmez la demande de facture.');
+      const result = await store.issue(order, customer, { request: !dashboard, billing: input.billing, dashboardGuest: dashboard && customer.isKioskGuest === true });
       send(response, result.status === 'requested' ? 202 : 200, result);
     });
     // A slow provider must never block order/payment processing under the shared DB lock.

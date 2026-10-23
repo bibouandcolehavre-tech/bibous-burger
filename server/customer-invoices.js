@@ -62,8 +62,9 @@ function allocate(total, weights) {
   return rows.map(row => row.value);
 }
 
-function prepare(order, customer, settings, now = new Date(), billing) {
-  if (!order || order.payment?.status !== 'PAID' || order.isTest || order.isReview || order.kioskGuest || order.source === 'uber' || order.externalSource)
+function prepare(order, customer, settings, now = new Date(), billing, { dashboardGuest = false } = {}) {
+  const guestAtCounter = dashboardGuest === true && order?.kioskGuest === true && order.kioskImmediate === true && customer?.isKioskGuest === true;
+  if (!order || order.payment?.status !== 'PAID' || order.isTest || order.isReview || (order.kioskGuest && !guestAtCounter) || order.source === 'uber' || order.externalSource)
     fail('Une commande Bibou réglée est nécessaire.');
   if (['cancelled', 'awaiting_payment', 'awaiting_customer'].includes(order.status) || order.refund || order.amendment || order.amendmentHistory?.length)
     fail('Commande modifiée ou remboursée : une vérification comptable est nécessaire.');
@@ -74,6 +75,7 @@ function prepare(order, customer, settings, now = new Date(), billing) {
     || typeof billing.name !== 'string' || billing.name.trim().length < 2 || billing.name.length > 180
     || typeof billing.address !== 'string' || billing.address.length > 240 || typeof billing.omitAddress !== 'boolean')) fail('Coordonnées de facturation invalides.', 400);
   const customerName = clean(billing?.name || order.customerName || customer.name);
+  if (guestAtCounter && (!billing || /^client borne$/i.test(customerName))) fail('Renseignez le nom complet du client qui demande la facture au comptoir.');
   if (!customerName || customerName === 'Client supprimé') fail('Identité de facturation à vérifier.');
   const totalCents = cents(order.paidTotal ?? order.total), subtotalCents = cents(order.subtotal), deliveryCents = cents(order.deliveryFee ?? 0);
   if (order.paidTotal !== undefined && cents(order.total) !== totalCents) fail('Le montant réglé diffère de la commande actuelle.');
@@ -108,7 +110,7 @@ function prepare(order, customer, settings, now = new Date(), billing) {
   if (!customerAddress && billing?.omitAddress !== true) fail('Renseigne ton adresse de facturation ou indique que tu ne souhaites pas la faire figurer.');
   return { version: 1, orderId: order.id, orderNumber: order.number, customerId: customer.id, customerName,
     customerAddress, customerAddressOmittedAtRequest: billing?.omitAddress === true, accountingPolicy: 'same-sale-already-paid',
-    serviceDate, issuedAt: new Date(now).toISOString(), method: order.dineIn ? 'Sur place' : order.method === 'delivery' ? 'Livraison' : 'Click & collect',
+    serviceDate, issuedAt: new Date(now).toISOString(), method: order.dineIn ? 'Sur place' : order.kioskImmediate ? 'À emporter' : order.method === 'delivery' ? 'Livraison' : 'Click & collect',
     items, subtotalCents, discountCents, discountLabel: clean(order.discountLabel || (order.welcomeRewardApplied ? 'Remise de bienvenue' : 'Remise')),
     deliveryCents, totalCents, htCents: tax.reduce((a, b) => a + b.htCents, 0), vatCents: tax.reduce((a, b) => a + b.vatCents, 0), tax,
     paymentMethod: order.payment.provider === 'cash' ? 'Espèces' : 'Carte bancaire', paidAt: order.payment.paidAt || null };
@@ -176,17 +178,17 @@ function createInvoiceStore(file, { now = () => new Date(), render = snapshot =>
     async status(order, customer) {
       const state = await read(), record = find(state, order.id);
       if (record) { if (record.customerId !== customer?.id) fail('Facture introuvable.', 404); return recordView(record); }
-      const address = order.deliveryAddress || {}, billing = { name: clean(order.customerName || customer?.name), address: clean([address.address, address.postalCode, address.city].filter(Boolean).join(', '), 240) };
+      const address = order.deliveryAddress || {}, billing = { name: order.kioskGuest ? '' : clean(order.customerName || customer?.name), address: clean([address.address, address.postalCode, address.city].filter(Boolean).join(', '), 240) };
       if (!state.settings) return { status: 'configuration_required', billing };
       try { prepare(order, customer, state.settings, now()); return { status: 'available', billing }; }
       catch { return { status: state.requests.some(r => r.orderId === order.id) ? 'requested' : 'validation_required', billing }; }
     },
-    async issue(order, customer, { request = false, billing } = {}) { return transact(async state => {
+    async issue(order, customer, { request = false, billing, dashboardGuest = false } = {}) { return transact(async state => {
       const previous = find(state, order.id);
       if (previous) { if (previous.customerId !== customer?.id) fail('Facture introuvable.', 404); return recordView(previous); }
       try {
         if (!state.settings) fail('Le restaurant doit activer la facturation avant émission.');
-        const snapshot = prepare(order, customer, state.settings, now(), billing), year = parisDay(snapshot.issuedAt).slice(0, 4);
+        const snapshot = prepare(order, customer, state.settings, now(), billing, { dashboardGuest }), year = parisDay(snapshot.issuedAt).slice(0, 4);
         const highest = Math.max(0, ...state.records.filter(r => r.snapshot.source !== 'laddition' && r.snapshot.number.startsWith('WEB-' + year + '-')).map(r => Number(r.snapshot.number.split('-').pop())));
         const sequence = state.nextByYear[year] ?? 1;
         if (!Number.isSafeInteger(sequence) || sequence !== highest + 1 || sequence > 999999) fail('Séquence comptable à vérifier.', 503);
@@ -230,6 +232,13 @@ function createInvoiceStore(file, { now = () => new Date(), render = snapshot =>
       await write(state); return recordView(record);
     }); },
     async pdf(orderId, customerId) { const record = find(await read(), orderId); if (!record || (customerId !== undefined && record.customerId !== customerId)) fail('Facture non émise.', 404); return { buffer: Buffer.from(record.pdfBase64, 'base64'), filename: filenameFor(record) }; },
+    // Read only: printing never assigns a number, re-renders a PDF or changes a sale.
+    async printSnapshot(orderId) {
+      const record = find(await read(), orderId);
+      if (!record) fail('Facture non émise.', 404);
+      if (record.snapshot.source === 'laddition') fail('Imprimez le PDF original de caisse : ses lignes et sa TVA ne peuvent pas être reconstruites.', 409);
+      return structuredClone(record.snapshot);
+    },
     async prepareSms(orderId, customer, expectedPhone) { return transact(async state => {
       const record = find(state, orderId);
       if (!record || record.customerId !== customer?.id) fail('Facture introuvable.', 404);

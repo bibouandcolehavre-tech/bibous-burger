@@ -93,7 +93,7 @@ test('duplicata contient la vraie commande mais interdit de la préparer et ne p
   assert.match(request, /<text>LIVRAISON&#10;<\/text><text>POUR LE 29\/09\/2026&#10;<\/text><text>CRENEAU DE LIVRAISON&#10;<\/text><text width="3" height="3" em="true"\/><text>20:20&#10;<\/text>/);
   assert.match(request, /Menu Classique/);
   assert.match(request, /Boisson citron/);
-  assert.match(request, /153 Quai Georges V 76600 Le Havre/);
+  assert.match(request, /153 Quai Georges&#10;<\/text><text>V&#10;<\/text><text>76600 Le Havre/);
   assert.doesNotMatch(request, /\[object Object\]/);
   assert.equal((request.match(/DUPLICATA TEST - NE PAS PREPARER/g) || []).length, 2);
   assert.match(request, /NON FISCAL/);

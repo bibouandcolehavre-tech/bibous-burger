@@ -4,7 +4,8 @@ test('invoice HTTP: strict ownership, no read-time mutations, no new payment/SMS
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'invoice-http-')), file = path.join(dir, 'data.json'), secret = 'fictional-invoice-secret'.repeat(3);
   const c = { id: 'c1', name: 'Client fictif', phone: '+33600000000', points: 99 }, other = { id: 'c2', name: 'Autre fictif' };
   const order = { id: 'order-1', number: 1, customerId: c.id, customerName: c.name, customerPhone: c.phone, deliveryAddress: { address: '1 rue fictive', postalCode: '75000', city: 'Ville fictive' }, method: 'delivery', status: 'delivered', serviceDate: '2026-10-19', items: [{ productId: 'duck-menu', name: 'Menu Duck', quantity: 1, price: 18.9, options: [] }], subtotal: 18.9, discount: 1.89, deliveryFee: 3.99, total: 21, payment: { status: 'PAID', provider: 'sumup' } };
-  await fs.writeFile(file, JSON.stringify({ customers: [c, other], orders: [order, { ...order, id: 'order-2', number: 2 }], reservations: [], nextOrderNumber: 3 }));
+  const guestOrder = { ...order, id: 'order-3', number: 3, customerId: 'guest-fictif', customerName: 'Client borne', customerPhone: '', kioskGuest: true, kioskImmediate: true, method: 'pickup', deliveryAddress: null };
+  await fs.writeFile(file, JSON.stringify({ customers: [c, other], orders: [order, { ...order, id: 'order-2', number: 2 }, guestOrder], reservations: [], nextOrderNumber: 4 }));
   const child = spawn(process.execPath, [path.join(__dirname, 'server.js')], { cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', LISTEN_HOST: '127.0.0.1', DATA_FILE_PATH: file, SESSION_SECRET: secret, RESTAURANT_DASHBOARD_PASSWORD: 'fixture-password' }, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
   let errors = ''; child.stderr.on('data', b => errors += b);
@@ -16,6 +17,10 @@ test('invoice HTTP: strict ownership, no read-time mutations, no new payment/SMS
   assert.equal((await request(route)).status, 401); assert.equal((await request(route, wrong)).status, 404);
   assert.equal((await request(route + '/pdf', wrong)).status, 404); assert.equal((await request(route, token)).status, 200);
   assert.equal((await request(route + '/pdf', token)).status, 404);
+  const printRoute = '/api/dashboard/invoices/order-1/print';
+  assert.equal((await request(printRoute, token)).status, 401);
+  assert.equal((await request(printRoute, owner)).status, 404);
+  assert.equal((await request(printRoute, owner, 'POST', {})).status, 405);
   assert.equal(await fs.readFile(file, 'utf8'), before);
   const config = { confirm: 'ACTIVER LES FACTURES WEB', sameSaleReconciliation: true, menuPolicy: 'whole-menu-10', seller: { name: 'FICTIF SAS', address: '1 rue fictive', siret: '00000000000000', vatNumber: 'FR00000000000', legalForm: 'SAS', rcs: 'RCS FICTIF', capitalCents: 100000 } };
   const settingsRoute = '/api/dashboard/invoices/settings';
@@ -28,6 +33,15 @@ test('invoice HTTP: strict ownership, no read-time mutations, no new payment/SMS
   assert.equal(a.status, 200); assert.equal(a.headers.get('content-type'), 'application/pdf'); assert.match(a.headers.get('cache-control'), /private/);
   const pdfBytes = Buffer.from(await a.arrayBuffer());
   assert.deepEqual(pdfBytes, Buffer.from(await b.arrayBuffer()));
+  const ledgerFile = path.join(dir, 'customer-invoices.json'), originalLedger = await fs.readFile(ledgerFile, 'utf8');
+  for (let i = 0; i < 3; i++) {
+    const printed = await request(printRoute, owner); assert.equal(printed.status, 200);
+    assert.match(printed.headers.get('cache-control'), /no-store/);
+    const data = (await printed.json()).invoice;
+    assert.equal(data.number, number); assert.equal(data.totalCents, 2100); assert.equal(data.tax[0].rate, 1000);
+    assert(!('pdfBase64' in data)); assert(!('links' in data));
+  }
+  assert.equal(await fs.readFile(ledgerFile, 'utf8'), originalLedger, 'Printing must not issue a new invoice or mutate its original PDF');
   const original = { confirm: true, sameSaleConfirmed: true, source: 'laddition', number: 'FICTIF-2/1', documentDate: '2026-10-20', totalCents: 2100, pdfBase64: pdfBytes.toString('base64') };
   const importRoute = '/api/dashboard/invoices/order-2/import';
   assert.equal((await request(importRoute, token, 'POST', original)).status, 401);
@@ -36,14 +50,27 @@ test('invoice HTTP: strict ownership, no read-time mutations, no new payment/SMS
   const originalPdf = await request('/api/customer/orders/order-2/invoice/pdf', token);
   assert.equal(originalPdf.status, 200); assert.match(originalPdf.headers.get('content-disposition'), /facture-commande-2-laddition/);
   assert.deepEqual(Buffer.from(await originalPdf.arrayBuffer()), pdfBytes);
+  assert.equal((await request('/api/dashboard/invoices/order-2/print', owner)).status, 409, 'An imported original must never be reconstructed from order data');
   assert.equal((await request('/api/customer/orders/order-2/invoice/pdf', wrong)).status, 404);
   const originalAgain = await request('/api/customer/orders/order-2/invoice', token, 'POST', { confirm: true });
   assert.equal((await originalAgain.json()).number, 'FICTIF-2/1');
   assert.equal((await request('/api/dashboard/invoices/order-1/pdf', token)).status, 401);
   assert.equal((await request('/api/dashboard/invoices/order-1/sms', owner, 'POST', { confirm: true, expectedPhone: c.phone })).status, 503);
   assert.equal((await request('/api/invoices/access', '', 'POST', { token: 'X'.repeat(32) })).status, 404);
+  const guestRoute = '/api/dashboard/invoices/order-3';
+  assert.equal((await request(guestRoute + '/status', token)).status, 401);
+  assert.equal((await request(guestRoute + '/status', owner)).status, 200);
+  assert.equal((await request(guestRoute + '/issue', owner, 'POST', { confirm: true })).status, 409);
+  const billing = { name: 'Client Fictif Comptoir', address: '', omitAddress: true };
+  const guestInvoice = await request(guestRoute + '/issue', owner, 'POST', { confirm: true, billing });
+  assert.equal(guestInvoice.status, 200, await guestInvoice.clone().text());
+  const guestNumber = (await guestInvoice.json()).number;
+  assert.notEqual(guestNumber, number);
+  assert.equal((await (await request(guestRoute + '/print', owner)).json()).invoice.customerName, billing.name);
+  assert.equal((await request('/api/customer/orders/order-3/invoice/pdf', token)).status, 404);
+  assert.equal((await request(guestRoute + '/issue', owner, 'POST', { confirm: true, billing })).status, 200);
   assert.equal(await fs.readFile(file, 'utf8'), before, 'Invoices must not mutate order/payment/loyalty records');
   const backup = await request('/api/dashboard/backups', owner, 'POST', {}); assert(backup.status < 300, await backup.text());
   const saved = JSON.parse(await fs.readFile(path.join(dir, 'customer-invoices.json'), 'utf8'));
-  assert.equal(saved.records.length, 2); assert.equal(saved.sms.length, 0);
+  assert.equal(saved.records.length, 3); assert.equal(saved.sms.length, 0);
 });
