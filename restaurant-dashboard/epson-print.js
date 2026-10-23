@@ -206,6 +206,78 @@
     return wrap(parts.join(''));
   }
 
+  // A narrow (32 normal-width columns) copy of the immutable issued invoice.
+  // Never accept a raw order here: tax, discounts and identity come from the ledger.
+  function invoiceLines(invoice) {
+    const fail = () => { throw new Error('Facture enregistrée incomplète : aucune impression envoyée.'); };
+    const integer = value => Number.isSafeInteger(value) && value >= 0;
+    if (!invoice || invoice.source === 'laddition' || invoice.accountingPolicy !== 'same-sale-already-paid'
+      || !/^WEB-\d{4}-\d{6}$/.test(invoice.number || '') || !invoice.seller?.name || !invoice.seller.address
+      || !invoice.seller.siret || !invoice.seller.vatNumber || !invoice.customerName
+      || !invoice.seller.legalForm || !invoice.seller.rcs || !integer(invoice.seller.capitalCents)
+      || !Array.isArray(invoice.items) || !invoice.items.length || invoice.items.length > 100
+      || !Array.isArray(invoice.tax) || !invoice.tax.length
+      || !['subtotalCents', 'discountCents', 'deliveryCents', 'totalCents', 'htCents', 'vatCents'].every(k => integer(invoice[k]))) fail();
+    for (const item of invoice.items) if (!item.name || !Number.isSafeInteger(item.quantity) || item.quantity < 1
+      || !['unitCents', 'grossCents', 'discountCents', 'ttcCents'].every(k => integer(item[k]))
+      || ![550, 1000, 2000].includes(item.rate) || item.unitCents * item.quantity !== item.grossCents
+      || item.grossCents - item.discountCents !== item.ttcCents) fail();
+    for (const row of invoice.tax) if (![550, 1000, 2000].includes(row.rate)
+      || !['htCents', 'vatCents', 'ttcCents'].every(k => integer(row[k])) || row.htCents + row.vatCents !== row.ttcCents) fail();
+    const sum = (rows, key) => rows.reduce((a, row) => a + row[key], 0);
+    if (sum(invoice.items, 'grossCents') !== invoice.subtotalCents || sum(invoice.items, 'discountCents') !== invoice.discountCents
+      || invoice.subtotalCents - invoice.discountCents + invoice.deliveryCents !== invoice.totalCents
+      || sum(invoice.tax, 'ttcCents') !== invoice.totalCents || sum(invoice.tax, 'htCents') !== invoice.htCents
+      || sum(invoice.tax, 'vatCents') !== invoice.vatCents) fail();
+    const money = cents => `${(cents / 100).toFixed(2).replace('.', ',')} EUR`;
+    const rate = value => `${String(value / 100).replace('.', ',')} %`;
+    const date = value => {
+      if (!Number.isFinite(Date.parse(value))) fail();
+      return new Date(value).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' });
+    };
+    const lines = [];
+    const add = value => {
+      for (const paragraph of String(value ?? '').split(/\r\n|[\r\n\u2028\u2029]/)) {
+        let rest = Array.from(clean(paragraph));
+        if (!rest.length) { lines.push(''); continue; }
+        while (rest.length > 32) {
+          let end = rest.slice(0, 33).lastIndexOf(' ');
+          if (end < 1) end = 32;
+          lines.push(rest.slice(0, end).join('')); rest = rest.slice(end);
+          while (rest[0] === ' ') rest.shift();
+        }
+        if (rest.length) lines.push(rest.join(''));
+      }
+    };
+    const separator = () => add('--------------------------------');
+    add(invoice.seller.tradeName || invoice.seller.name); add('FACTURE ACQUITTEE'); add(invoice.number);
+    add(`Emise le ${date(invoice.issuedAt)}`); add(`Commande #${invoice.orderNumber}`);
+    add(`Service du ${date(invoice.serviceDate + 'T12:00:00Z')}`); add(invoice.method); separator();
+    add(invoice.seller.name); add(invoice.seller.address); add(`SIRET ${invoice.seller.siret}`); add(`TVA ${invoice.seller.vatNumber}`);
+    add(`${invoice.seller.legalForm} - Capital ${money(invoice.seller.capitalCents)}`); add(invoice.seller.rcs); separator();
+    add('CLIENT'); add(invoice.customerName); if (invoice.customerAddress) add(invoice.customerAddress); separator();
+    for (const item of invoice.items) {
+      add(`${item.quantity} x ${item.name}`); if (item.detail) add(item.detail);
+      add(`P.U. HT ${money(Math.round(item.unitCents * 10000 / (10000 + item.rate)))}`);
+      add(`TVA ${rate(item.rate)}`); add(`Ligne TTC ${money(item.grossCents)}`);
+      if (item.discountCents) { add(`Remise ligne -${money(item.discountCents)}`); add(`Net TTC ${money(item.ttcCents)}`); }
+      add('');
+    }
+    separator(); add(`Sous-total TTC ${money(invoice.subtotalCents)}`);
+    if (invoice.discountCents) { add(invoice.discountLabel || 'Remise'); add(`Remise totale -${money(invoice.discountCents)}`); }
+    if (invoice.deliveryCents) add(`Livraison TTC ${money(invoice.deliveryCents)}`);
+    separator(); add('DETAIL TVA (remises incluses)');
+    for (const row of invoice.tax) { add(`Taux ${rate(row.rate)}`); add(`Base HT ${money(row.htCents)}`); add(`TVA ${money(row.vatCents)}`); add(`TTC ${money(row.ttcCents)}`); }
+    separator(); add(`TOTAL HT ${money(invoice.htCents)}`); add(`TOTAL TVA ${money(invoice.vatCents)}`); add(`TOTAL TTC ${money(invoice.totalCents)}`);
+    add(`Regle : ${invoice.paymentMethod}`); if (invoice.paidAt) add(`Paiement le ${date(invoice.paidAt)}`);
+    add('RESTE A PAYER 0,00 EUR'); separator();
+    add('Copie de la facture enregistree.'); add('Meme numero et meme vente.'); add('Aucun nouvel encaissement.');
+    add('P.U. HT avant remise.'); add('Ne pas comptabiliser deux fois.');
+    return lines;
+  }
+  const invoiceEnvelope = invoice => wrap('<text align="left" width="1" height="1" em="false"/>'
+    + invoiceLines(invoice).map(line).join('') + line('') + '<cut type="feed"/>');
+
   function endpoint(host, { secure = true, deviceId = 'local_printer' } = {}) {
     if (!/^([a-z0-9.-]+|\[[0-9a-f:]+\])$/i.test(String(host || ''))) throw new Error('Adresse imprimante invalide.');
     if (!/^[a-z0-9_-]{1,32}$/i.test(deviceId)) throw new Error('Identifiant imprimante invalide.');
@@ -242,5 +314,5 @@
 
   const probe = (host, options) => send(host, statusEnvelope(), options);
 
-  return { statusEnvelope, testEnvelope, completedOrderForTest, preparationEnvelope, orderReceiptEnvelope, endpoint, responseResult, probe, send };
+  return { statusEnvelope, testEnvelope, completedOrderForTest, preparationEnvelope, orderReceiptEnvelope, invoiceLines, invoiceEnvelope, endpoint, responseResult, probe, send };
 });

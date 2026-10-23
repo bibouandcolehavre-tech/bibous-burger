@@ -2,6 +2,14 @@
 (() => {
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   const euro = cents => (cents / 100).toFixed(2).replace('.', ',') + ' €';
+  const activePrints = new Set();
+  const uncertainPrints = new Set();
+  const printKey = order => `bibou-invoice-print-${order.id}`;
+  const uncertain = order => { try { return uncertainPrints.has(order.id) || sessionStorage.getItem(printKey(order)) === 'uncertain'; } catch { return uncertainPrints.has(order.id); } };
+  const markUncertain = (order, value) => {
+    if (value) uncertainPrints.add(order.id); else uncertainPrints.delete(order.id);
+    try { if (value) sessionStorage.setItem(printKey(order), 'uncertain'); else sessionStorage.removeItem(printKey(order)); } catch { /* In-memory protection remains active. */ }
+  };
   let closeCurrent = () => {};
   window.BibouInvoices = {
     clear() { closeCurrent(); },
@@ -25,7 +33,14 @@
         } finally { clearTimeout(timeout); }
       };
       const message = value => { const target = element.querySelector('[data-message]'); if (target && alive()) target.textContent = value; };
-      const bind = () => { element.querySelector('[data-close]').onclick = close; };
+      const bind = () => {
+        element.querySelector('[data-close]').onclick = close;
+        element.querySelectorAll('button').forEach(button => {
+          if (button.hasAttribute('data-close')) return;
+          button.style.cssText = 'width:100%;min-height:46px;padding:13px 15px;margin:12px 0;border:1px solid #315b4b;border-radius:12px;background:#315b4b;color:#fff;font:700 16px/1.4 system-ui;cursor:pointer';
+          if (button.hasAttribute('data-print-check')) button.style.cssText += ';background:#fff5d9;color:#62491e;border-color:#cbbf96';
+        });
+      };
       const importForm = () => `<details style="margin:20px 0"><summary>Associer le PDF déjà émis dans L’Addition</summary><form data-import><p>Aucun nouveau numéro : le PDF existant est conservé sans modification. Ce rattachement manuel sert à retrouver un ancien document ; ce n’est pas une synchronisation automatique de caisse.</p><label>Numéro exact de la facture<input name="number" required maxlength="70"></label><label>Date figurant sur le document<input name="documentDate" type="date" required></label><label>PDF de cette seule facture<input name="pdf" type="file" accept="application/pdf,.pdf" required></label><label><input name="sameSale" type="checkbox" required> J’ai vérifié les articles, remises, livraison et montant : il s’agit bien de cette vente, même si sa saisie en caisse a eu lieu plus tard.</label><button type="submit">Associer ce PDF à cette commande</button></form></details>`;
       const bindImport = () => {
         const target = element.querySelector('[data-import]'); if (!target) return;
@@ -39,11 +54,53 @@
           await render();
         }); };
       };
-      const perform = async fn => { if (busy || !alive()) return; busy = true; try { await fn(); } catch (error) { message(error.message); } finally { busy = false; } };
-      const download = async () => {
-        const response = await request(`/dashboard/invoices/${encodeURIComponent(order.id)}/pdf`), blob = await response.blob();
-        if (!alive()) return;
-        const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `facture-commande-${order.number}.pdf`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const perform = async fn => {
+        if (busy || !alive()) return; busy = true;
+        element.querySelectorAll('button:not([data-close])').forEach(button => button.disabled = true);
+        try { await fn(); } catch (error) { message(error.message); }
+        finally { busy = false; if (alive()) element.querySelectorAll('button:not([data-close])').forEach(button => button.disabled = button.dataset.sent === 'true'); }
+      };
+      const print = async () => {
+        if (activePrints.has(order.id)) throw Error('Une impression de cette facture est déjà en cours.');
+        if (uncertain(order)) throw Error('Impression précédente à vérifier sur le papier. Aucun nouvel envoi automatique : utilisez le bouton de vérification ci-dessous.');
+        const printer = window.BibouEpsonPrint;
+        if (!printer?.invoiceEnvelope) throw Error('Actualisez Krokli Pro pour charger le format facture.');
+        activePrints.add(order.id);
+        let sent = false;
+        try {
+          message('Préparation de la facture enregistrée…');
+          const { invoice } = await request(`/dashboard/invoices/${encodeURIComponent(order.id)}/print`);
+          const xml = printer.invoiceEnvelope(invoice);
+          message('Connexion à l’imprimante du restaurant…');
+          const ready = await printer.probe('192.168.192.50');
+          if (!ready.success) throw Error(`Imprimante non disponible (${ready.code || 'état à vérifier'}). Aucun document envoyé.`);
+          if (!alive()) throw Error('Session changée. Aucune impression envoyée.');
+          markUncertain(order, true); sent = true;
+          const result = await printer.send('192.168.192.50', xml);
+          if (!result.success) throw Error(`Réponse Epson ${result.code || 'à vérifier'}.`);
+          markUncertain(order, false);
+          message(`Impression confirmée par l’Epson · facture ${invoice.number}. Aucun nouveau numéro ni paiement.`);
+        } catch (error) {
+          if (sent) throw Error(`${error.message} Vérifiez le papier avant de réimprimer : le document a peut-être déjà été imprimé. Aucun renvoi automatique.`);
+          throw error;
+        } finally {
+          activePrints.delete(order.id);
+          if (alive()) { const check = element.querySelector('[data-print-check]'); if (check) check.hidden = !uncertain(order); }
+        }
+      };
+      const printOriginal = () => {
+        // Keep the imported original intact; never guess its item/tax allocation.
+        const tab = window.open('about:blank', '_blank');
+        if (!tab) { message('Autorisez l’ouverture du PDF original pour l’imprimer.'); return; }
+        tab.opener = null;
+        void perform(async () => {
+          try {
+            const response = await request(`/dashboard/invoices/${encodeURIComponent(order.id)}/pdf`), blob = await response.blob();
+            if (!alive()) { tab.close(); return; }
+            const url = URL.createObjectURL(blob); tab.location.replace(url); setTimeout(() => URL.revokeObjectURL(url), 60000);
+            message('PDF original ouvert : utilisez sa commande d’impression. Son format de caisse est conservé.');
+          } catch (error) { tab.close(); throw error; }
+        });
       };
       async function render() {
         const config = await request('/dashboard/invoices/settings');
@@ -65,23 +122,52 @@
           }); }; bind(); bindImport(); return;
         }
         const issued = status.status === 'issued';
-        element.innerHTML = shell(issued ? `<h3>Facture ${esc(status.number)}</h3><p>Document enregistré. Un nouveau téléchargement ne crée pas de deuxième facture.</p><button type="button" data-pdf>Télécharger le PDF</button><p>Envoyer uniquement à ce client : ${esc(String(order.customerPhone || '').replace(/.(?=.{4})/g, '•'))}</p><button type="button" data-show-sms>Préparer l’envoi par SMS</button><div data-sms-confirm hidden><p>Le lien personnel donnera accès à cette facture pendant 7 jours. Aucun message publicitaire et aucun nouveau paiement.</p><button type="button" data-sms>Confirmer l’envoi de la facture à ${esc(order.customerName)}</button></div>`
-          : `<p>La facture sera créée à partir du montant réellement payé. Les cas avec une TVA non validée, un remboursement ou une modification nécessitent une vérification.</p><button type="button" data-issue>Émettre la facture acquittée</button>${importForm()}`);
+        const imported = status.source === 'laddition';
+        const billingForm = `<form data-billing><p>Vérifiez avec le client les coordonnées à faire figurer sur sa facture. Aucun nouveau paiement.</p><label>Nom complet du client<input name="name" value="${esc(status.billing?.name || '')}" required minlength="2" maxlength="180" autocomplete="name"></label><label>Adresse de facturation<textarea name="address" maxlength="240" rows="3" autocomplete="street-address">${esc(status.billing?.address || '')}</textarea></label><label><input name="omitAddress" type="checkbox"> Le client particulier demande de ne pas faire figurer son adresse.</label><button type="submit" data-issue>Émettre et imprimer la facture</button></form>`;
+        element.innerHTML = shell(issued ? `<h3>Facture ${esc(status.number)}</h3><p>Copie du document enregistré : même numéro, même montant, même TVA. Pas de deuxième facture.</p>${imported
+          ? '<p>Facture de caisse importée : le PDF original garde sa mise en page. Ses taux de TVA ne sont pas reconstruits.</p><button type="button" data-original>Ouvrir l’original à imprimer</button>'
+          : `<p>Format ticket · Epson du restaurant · sans téléchargement.</p><button type="button" data-print>🖨 Imprimer la facture</button><button type="button" data-print-check ${uncertain(order) ? '' : 'hidden'}>J’ai vérifié le papier : autoriser une réimpression</button>`}
+          ${order.customerPhone ? `<p>Envoyer uniquement à ce client : ${esc(String(order.customerPhone).replace(/.(?=.{4})/g, '•'))}</p><button type="button" data-show-sms>Préparer l’envoi par SMS</button><div data-sms-confirm hidden><p>Le lien personnel donnera accès à cette facture pendant 7 jours. Aucun message publicitaire et aucun nouveau paiement.</p><button type="button" data-sms>Confirmer l’envoi de la facture à ${esc(order.customerName)}</button></div>` : ''}`
+          : `<p>La facture reprend le montant réellement payé. Une TVA non validée, un remboursement ou une modification nécessite une vérification.</p>${billingForm}${order.kioskGuest ? '' : importForm()}`);
         bind(); bindImport();
-        if (!issued) element.querySelector('[data-issue]').onclick = () => { void perform(async () => { await request(`/dashboard/invoices/${encodeURIComponent(order.id)}/issue`, { confirm: true }); await render(); }); };
+        if (!issued) {
+          const form = element.querySelector('[data-billing]');
+          form.querySelectorAll('label').forEach(label => label.style.cssText = 'display:block;margin:12px 0');
+          form.querySelectorAll('input:not([type=checkbox]),textarea').forEach(input => input.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:10px;font:inherit');
+          form.onsubmit = event => { event.preventDefault(); const data = new FormData(form); void perform(async () => {
+            const billing = { name: String(data.get('name') || '').trim(), address: String(data.get('address') || '').trim(), omitAddress: data.get('omitAddress') === 'on' };
+            if (!billing.address && !billing.omitAddress) throw Error('Renseignez l’adresse, ou confirmez que le client particulier demande de ne pas la faire figurer.');
+            await request(`/dashboard/invoices/${encodeURIComponent(order.id)}/issue`, { confirm: true, billing });
+            await render(); await print();
+          }); };
+        }
         else {
-          element.querySelector('[data-pdf]').onclick = () => { void perform(download); };
-          element.querySelector('[data-show-sms]').onclick = () => { element.querySelector('[data-sms-confirm]').hidden = false; };
-          element.querySelector('[data-sms]').onclick = () => { void perform(async () => {
+          if (imported) element.querySelector('[data-original]').onclick = printOriginal;
+          else {
+            element.querySelector('[data-print]').onclick = () => { void perform(print); };
+            element.querySelector('[data-print-check]').onclick = () => {
+              markUncertain(order, false); element.querySelector('[data-print-check]').hidden = true;
+              message('Vous pouvez réimprimer la même facture si nécessaire. Aucun envoi n’a été déclenché.');
+            };
+          }
+          const showSms = element.querySelector('[data-show-sms]');
+          if (showSms) showSms.onclick = () => { element.querySelector('[data-sms-confirm]').hidden = false; };
+          const smsButton = element.querySelector('[data-sms]');
+          if (smsButton) smsButton.onclick = () => { void perform(async () => {
             const result = await request(`/dashboard/invoices/${encodeURIComponent(order.id)}/sms`, { confirm: true, expectedPhone: order.customerPhone });
-            element.querySelector('[data-sms]').disabled = true;
+            element.querySelector('[data-sms]').dataset.sent = 'true';
             message(result.status === 'accepted' ? 'SMS accepté par le prestataire. La réception sur le téléphone n’est pas encore confirmée.' : 'Envoi à vérifier. Aucun renvoi automatique.');
           }); };
         }
       }
       element.innerHTML = shell('<p>Chargement…</p>'); document.body.appendChild(element); element.showModal(); bind();
       element.addEventListener('close', () => { current = false; element.remove(); });
-      try { await render(); } catch (error) { message(error.message); }
+      try {
+        await render();
+        // The order's explicit print button can print an already-issued invoice
+        // directly. Merely opening a PDF, refreshing or fetching status never prints.
+        if (context.printOnOpen && element.querySelector('[data-print]')) await perform(print);
+      } catch (error) { message(error.message); }
     }
   };
 })();
