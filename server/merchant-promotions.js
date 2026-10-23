@@ -17,6 +17,7 @@ const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filt
 });
 const publicView = promotion => ({ id: promotion.id, code: promotion.code, type: promotion.type,
   percent: promotion.percent, productId: promotion.productId, minimum: promotion.minimum,
+  ...(promotion.minimumAfterDiscounts === true ? { minimumAfterDiscounts:true } : {}),
   message: promotion.message, combineWelcome: promotion.combineWelcome !== false,
   ...(promotion.serviceConditions ? { serviceConditions: promotion.serviceConditions } : {}),
   ...(promotion.automatic === true ? { automatic:true, startsAt:promotion.startsAt, endsAt:promotion.endsAt,
@@ -50,7 +51,7 @@ function assertServiceConditions(promotion, method, context = {}, { preview = fa
 
 function validate(input, existing = []) {
   if (!plain(input)) fail('Offre invalide.');
-  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome', 'serviceConditions', 'automatic'];
+  const allowed = ['id', 'revision', 'code', 'type', 'percent', 'productId', 'minimum', 'minimumAfterDiscounts', 'startsAt', 'endsAt', 'activeWindows', 'usageLimit', 'oncePerCustomer', 'enabled', 'message', 'combineWelcome', 'serviceConditions', 'automatic'];
   if (Object.keys(input).some(key => !allowed.includes(key))) fail('Réglage de promotion inconnu.');
   const id = input.id === undefined ? crypto.randomUUID() : input.id;
   if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) fail('Identifiant d’offre invalide.');
@@ -71,6 +72,7 @@ function validate(input, existing = []) {
   if (input.automatic && (input.type !== 'bogo_burger' || !productId)) fail('Une offre automatique nécessite un burger seul précis.');
   const minimum = Number(input.minimum ?? 0);
   if (!Number.isFinite(minimum) || minimum < 0 || minimum > 10000 || money(minimum) !== minimum) fail('Minimum de commande invalide.');
+  if (input.minimumAfterDiscounts !== undefined && typeof input.minimumAfterDiscounts !== 'boolean') fail('Base du minimum de commande invalide.');
   const startsAt = input.startsAt || null, endsAt = input.endsAt || null;
   for (const [value, label] of [[startsAt, 'Début'], [endsAt, 'Fin']]) {
     if (value && (typeof value !== 'string' || !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value)) fail(`${label} de l’offre invalide.`);
@@ -101,6 +103,7 @@ function validate(input, existing = []) {
   const serviceConditions = validateServiceConditions(input.serviceConditions);
   return { id, revision, code, type: input.type, percent, productId, minimum, startsAt, endsAt, usageLimit,
     oncePerCustomer: input.oncePerCustomer, enabled: input.enabled, message, combineWelcome: input.combineWelcome !== false,
+    ...(input.minimumAfterDiscounts === true ? { minimumAfterDiscounts:true } : {}),
     ...(input.automatic ? { automatic:true } : {}),
     ...(serviceConditions ? { serviceConditions } : {}),
     ...(activeWindows === undefined ? {} : { activeWindows }) };
@@ -158,7 +161,7 @@ function assertAvailable(db, promotion, customerId, now = Date.now()) {
 
 function discountFor(promotion, items, subtotal, deliveryFee = 0) {
   if (!promotion?.id) return { products: 0, delivery: 0 };
-  if (subtotal < promotion.minimum) fail(`Ce code nécessite au moins ${promotion.minimum.toFixed(2).replace('.', ',')} € de produits.`);
+  if (promotion.minimumAfterDiscounts !== true && subtotal < promotion.minimum) fail(`Ce code nécessite au moins ${promotion.minimum.toFixed(2).replace('.', ',')} € de produits.`);
   let products = 0, delivery = 0;
   if (promotion.type === 'percent_order') products = money(subtotal * promotion.percent / 100);
   if (promotion.type === 'percent_burger') {
@@ -216,6 +219,12 @@ function apply(pricing, promotion, items) {
   const baseDiscount = money((pricing.subtotal - products) * baseRate);
   const discount = money(products + baseDiscount);
   const deliveryFee = money(pricing.deliveryFee - delivery);
+  // Opt-in only: existing offers retain their historical pre-discount minimum.
+  // Compare product cents after EVERY applied reduction, never delivery fees.
+  const netProducts = money(pricing.subtotal - discount);
+  if (promotion.minimumAfterDiscounts === true && Math.round(netProducts * 100) < Math.round(promotion.minimum * 100)) {
+    fail(`Ce code nécessite au moins ${promotion.minimum.toFixed(2).replace('.', ',')} € de produits à payer après toutes les remises, hors livraison. Ajoute des articles pour en profiter.`);
+  }
   return { ...pricing, discountRate: baseRate, discount, baseDiscount, promotionDiscount: products, promotionDeliveryDiscount: delivery,
     deliveryFee, total: money(pricing.subtotal - discount + deliveryFee) };
 }

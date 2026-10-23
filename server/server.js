@@ -2110,8 +2110,10 @@ const server = http.createServer(async (request, response) => {
         const pricedCart = validateAndPriceOrderItems(input.items, quantityStock.effectiveFlags(database, await productStockStore.read()), input);
         assertPromotionCart(promotion, pricedCart.items);
         if (promotion.id) {
-          promotion.previewProductDiscount = merchantPromotions.discountFor(promotion, pricedCart.items, pricedCart.subtotal, promotion.type === 'free_delivery' ? 1 : 0).products;
           promotion.previewBaseRate = promotion.combineWelcome !== false && welcomeRewardAvailable(customer, database.orders, new Date(), PENDING_RESERVATION_MS) ? WELCOME_DISCOUNT_RATE : bibouPlusStatus(customer).active ? BIBOU_PLUS_DISCOUNT_RATE : 0;
+          const preview = merchantPromotions.apply({ subtotal:pricedCart.subtotal,
+            deliveryFee:promotion.type === 'free_delivery' ? 1 : 0, discountRate:promotion.previewBaseRate }, promotion, pricedCart.items);
+          promotion.previewProductDiscount = preview.promotionDiscount;
         }
       }
       return send(response, 200, { promotion: merchantPromotions.compatiblePreview(promotion, url.searchParams.get('promoApi')) });

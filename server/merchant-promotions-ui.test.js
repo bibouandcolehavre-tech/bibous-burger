@@ -28,6 +28,19 @@ test('promo UI: quatrième burger non cumulable par défaut, deux appuis explici
   assert.equal(body.enabled,true); assert.equal(body.confirmActivation,true); assert.equal(body.combineWelcome,false);
   assert.equal(body.code,'QUATREBURGER');
 });
+
+test('promo UI: net minimum is opt-in and saved only after activation confirmation', async () => {
+  const h=harness(); await h.panel.load(); h.click('', 'bogo_burger');
+  assert.match(h.root.querySelector('#promo-form').innerHTML,/après toutes les remises, hors livraison/);
+  assert.doesNotMatch(h.root.querySelector('#promo-form').innerHTML,/data-field="minimumAfterDiscounts" type="checkbox" checked/);
+  h.fields.push({type:'number',dataset:{field:'minimum'},value:'15'},
+    {type:'checkbox',dataset:{field:'minimumAfterDiscounts'},checked:true});
+  h.click('promo-toggle'); await tick(); assert.equal(h.calls.length,1);
+  h.click('promo-confirm-save'); await tick();
+  const body=JSON.parse(h.calls[1].body);
+  assert.equal(body.minimum,15); assert.equal(body.minimumAfterDiscounts,true);
+  assert.equal(body.confirmActivation,true);
+});
 test('promo UI: annuler, modifier ou changer d’offre ne confirme jamais une activation périmée',async()=>{
   const h=harness(); await h.panel.load(); h.click('', 'buy3_get1_burger');
   h.click('promo-toggle'); h.click('promo-confirm-cancel'); h.click('promo-confirm-save'); await tick();
