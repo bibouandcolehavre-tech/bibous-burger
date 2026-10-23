@@ -43,6 +43,8 @@ window.BibouPromotions = function ({ root, api, token, onUnauthorized }) {
       ${draft.type==='bogo_burger'?`<label class="promo-check promo-wide"><input data-field="automatic" type="checkbox" ${draft.automatic?'checked':''}> Appliquer automatiquement, sans code (burger précis obligatoire)</label><p class="promo-wide">Le client doit ajouter deux burgers de la recette choisie. Une seule unité reste au prix normal. Les menus et suppléments payants sont exclus. Les anciennes applications nécessitent une mise à jour pour afficher ce calcul dans leur panier.</p>`:''}
       ${draft.type.startsWith('percent_') ? `<label>Réduction (%)<input data-field="percent" type="number" min="1" max="50" step="1" value="${Number(draft.percent)||10}"></label>` : ''}
       <label>Minimum de produits (€)<input data-field="minimum" type="number" min="0" max="10000" step="0.01" value="${Number(draft.minimum)||0}"></label>
+      <label class="promo-check promo-wide"><input data-field="minimumAfterDiscounts" type="checkbox" ${draft.minimumAfterDiscounts === true?'checked':''}> Vérifier le minimum après toutes les remises, hors livraison</label>
+      <p class="promo-wide">Sans cette option, le minimum porte sur les produits avant remise. Avec cette option, le montant des produits restant à payer doit atteindre le minimum, même après les 10 % de bienvenue ou Bibou +. Les frais de livraison ne comptent jamais.</p>
       <label>Début (facultatif)<input data-field="startsAt" type="datetime-local" value="${localTime(draft.startsAt)}"></label>
       <label>Fin (facultatif)<input data-field="endsAt" type="datetime-local" value="${localTime(draft.endsAt)}"></label>
       <div class="promo-wide"><h3>Service concerné (facultatif)</h3>
