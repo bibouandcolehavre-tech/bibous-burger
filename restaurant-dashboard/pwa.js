@@ -1,7 +1,7 @@
 /* Shell only: no client records, session tokens or API responses are cached here. */
 (() => {
-  const routes = new Set(['home','tools','account','orders','dispatch','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
-  const labels = {home:'Accueil',tools:'Rubriques',account:'Mon compte',orders:'Commandes',dispatch:'Répartition des livreurs',reservations:'Réservations',rewards:'Récompenses',menu:'Carte & produits',backups:'Sauvegardes',customers:'Clients & fidélité',marketing:'Marketing',promotions:'Codes promo',notifications:'Notifications', 'marketing-sms':'SMS commerciaux',crm:'Offres & statistiques',settings:'Réglages',schedule:'Créneaux',statistics:'Statistiques'};
+  const routes = new Set(['home','tools','account','orders','dispatch','enrolment','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
+  const labels = {home:'Accueil',tools:'Rubriques',account:'Mon compte',orders:'Commandes',dispatch:'Répartition des livreurs',enrolment:'Inscriptions Krokli',reservations:'Réservations',rewards:'Récompenses',menu:'Carte & produits',backups:'Sauvegardes',customers:'Clients & fidélité',marketing:'Marketing',promotions:'Codes promo',notifications:'Notifications', 'marketing-sms':'SMS commerciaux',crm:'Offres & statistiques',settings:'Réglages',schedule:'Créneaux',statistics:'Statistiques'};
   const route = () => {const candidate = location.hash.slice(1); return routes.has(candidate) ? candidate : 'home';};
   const initialRoute = route();
   let current = 'home', installPrompt = null, fromHistory = false;

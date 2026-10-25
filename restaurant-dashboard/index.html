@@ -48,6 +48,7 @@
           <button class="nav-item active" data-view="home"><span>⌂</span> Accueil</button>
           <button class="nav-item" data-view="orders"><span>▤</span> Commandes <b id="new-order-count">0</b></button>
           <button class="nav-item" data-view="dispatch"><span>↗</span> Répartir les courses</button>
+          <button class="nav-item" data-view="enrolment"><span>＋</span> Inscriptions Krokli</button>
           <button class="nav-item" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count">0</b></button>
           <button class="nav-item" data-view="schedule"><span>◷</span> Créneaux</button>
           <button class="nav-item" data-view="menu"><span>☰</span> Carte & produits</button>
@@ -106,6 +107,7 @@
           <button class="nav-item mobile-view-button active" data-view="home">⌂ Accueil</button>
           <button class="nav-item mobile-view-button" data-view="orders"><span>▤</span> Commandes</button>
           <button class="nav-item mobile-view-button" data-view="dispatch"><span>↗</span> Répartir les courses</button>
+          <button class="nav-item mobile-view-button" data-view="enrolment"><span>＋</span> Inscriptions Krokli</button>
           <button class="nav-item mobile-view-button" data-view="reservations"><span>▣</span> Réservations <b id="new-reservation-count-mobile">0</b></button>
           <button class="nav-item mobile-view-button" data-view="menu"><span>☰</span> Carte</button>
           <button class="nav-item mobile-view-button" data-view="customers"><span>♡</span> Clients <b id="new-reward-count-mobile">0</b></button>
@@ -145,6 +147,7 @@
             <button type="button" data-jump="menu"><span aria-hidden="true">☰</span><strong>Carte & produits</strong><small>Produits et disponibilités</small></button>
             <button type="button" data-jump="schedule"><span aria-hidden="true">▦</span><strong>Créneaux</strong><small>Horaires et services</small></button>
             <button type="button" data-jump="dispatch"><span aria-hidden="true">↗</span><strong>Répartition des livreurs</strong><small>Attribuer et suivre les courses</small></button>
+            <button type="button" data-jump="enrolment"><span aria-hidden="true">＋</span><strong>Inscriptions Krokli</strong><small>Dossiers livreurs et restaurants</small></button>
             <button type="button" data-jump="customers"><span aria-hidden="true">♡</span><strong>Clients & fidélité</strong><small>Comptes, points et avantages</small></button>
             <button type="button" data-jump="marketing"><span aria-hidden="true">✦</span><strong>Marketing</strong><small>Promotions et messages</small></button>
             <button type="button" data-jump="statistics"><span aria-hidden="true">↗</span><strong>Statistiques</strong><small>Chiffre d’affaires & clients qui reviennent</small></button>
@@ -175,6 +178,7 @@
           </div>
 
         <section id="marketing-view" hidden></section>
+        <section id="enrolment-view" hidden></section>
         <section id="statistics-view" hidden aria-label="Statistiques réelles du restaurant"></section>
         <section id="promotions-view" hidden></section>
         <section id="notifications-view" hidden></section>
@@ -310,6 +314,7 @@
     <script src="./birthdays.js?v=20261018"></script>
     <script src="./pro-shell.js?v=20261018"></script>
     <script src="./invoice-panel.js?v=thermal-invoice-20261023"></script>
-    <script src="./app.js?v=thermal-invoice-20261023"></script>
+    <script src="./enrolment.js?v=20261026"></script>
+    <script src="./app.js?v=enrolment-20261026"></script>
   </body>
 </html>
