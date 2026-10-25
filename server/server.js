@@ -90,6 +90,9 @@ const { destinationForLegacyPath } = require('./domain-forwarding');
 const wheelGame = require('./wheel');
 const { createInvoiceStore } = require('./customer-invoices');
 const { createInvoiceHttp } = require('./customer-invoice-http');
+const { createEnrolmentStore } = require('./krokli-enrolment');
+const { createEnrolmentHttp } = require('./krokli-enrolment-http');
+const enrolmentMail = require('./krokli-enrolment-mail');
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -534,6 +537,28 @@ const openPayment = async (record, database, { merchantCode, expiresAt, descript
 
 const invoiceHttp = createInvoiceHttp({ store: customerInvoices, readDatabase, acquireDatabase, authenticatedCustomer, authenticatedDashboard, readBody, send,
   smsConfig: { ...keyyo.configFromEnv(process.env), enabled: true } });
+// Candidate records remain separate from customers, sales and active couriers.
+// Only an explicit owner validation creates an active courier, idempotently.
+const enrolmentStore = configuredCustomerSessionSecret?.length >= 24 ? createEnrolmentStore({
+  directory: path.join(path.dirname(databasePath), 'krokli-enrolment'), secret: configuredCustomerSessionSecret,
+  approveDriver: async candidate => {
+    const release = await acquireDatabase();
+    try {
+      const db=await readDatabase();db.kroklyDrivers ||= [];
+      let driver=db.kroklyDrivers.find(d=>d.enrolmentId===candidate.id);
+      if(!driver){
+        driver={id:crypto.randomUUID(),username:'livreur-'+candidate.id.replaceAll('-','').slice(0,16),name:(candidate.profile.firstName+' '+candidate.profile.lastName).slice(0,60),salt:candidate.salt,passwordHash:candidate.passwordHash,passwordKdf:'scrypt-v2',active:true,authVersion:1,createdAt:new Date().toISOString(),enrolmentId:candidate.id};
+        db.kroklyDrivers.push(driver);await writeDatabase(db);
+      }
+      return {id:driver.id,username:driver.username};
+    } finally {release();}
+  }
+}) : null;
+const enrolmentHttp=enrolmentStore?createEnrolmentHttp({store:enrolmentStore,authenticatedDashboard,mailReady:enrolmentMail.configured()}):null;
+if(enrolmentStore)setInterval(()=>{void enrolmentStore.purge().catch(()=>{});},24*3600000).unref();
+if(enrolmentStore&&enrolmentMail.configured()){
+  let sending=false;setInterval(async()=>{if(sending)return;sending=true;try{await enrolmentStore.drainMail(enrolmentMail.sender());}catch{/* Retry only known unsent work; no applicant content in logs. */}finally{sending=false;}},15000).unref();
+}
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   let url;
@@ -541,6 +566,10 @@ const server = http.createServer(async (request, response) => {
   let releaseDatabase;
 
   try {
+    if (url.pathname==='/inscription'||url.pathname.startsWith('/inscription/')||url.pathname.startsWith('/api/krokli/enrolment')||url.pathname.startsWith('/api/dashboard/krokli-enrolment')) {
+      if(!enrolmentHttp)return send(response,503,{error:'Les inscriptions sont momentanément indisponibles.'});
+      if(await enrolmentHttp(request,response,url))return;
+    }
     const driverReviewToken = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
     // Reserved field credentials are dispatched before ANY real DB/auth route.
     // Expired/forged field tokens fail closed; never fall through to production.
@@ -675,7 +704,8 @@ const server = http.createServer(async (request, response) => {
             return send(response, 200, session);
           }
           const database = await readDatabase();
-          const session = kroklyDrivers.sessionFor(database, input.username, input.password, kroklyTokenSecret);
+          const courierUsername = enrolmentStore ? await enrolmentStore.activeUsername(input.username) : input.username;
+          const session = kroklyDrivers.sessionFor(database, courierUsername, input.password, kroklyTokenSecret);
           kroklyLoginLimiter.reset(key);
           return send(response, 200, session);
         }

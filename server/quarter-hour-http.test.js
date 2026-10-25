@@ -6,7 +6,7 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { once } = require("node:events");
 const { createCustomerSession } = require("./customer-session");
-const { parisDateKey } = require("./availability");
+const { parisDateKey, SLOT_CAPACITY } = require("./availability");
 
 test("API : quarts d’heure, bonus non falsifiable et capacité partagée atomique", { timeout: 15000 }, async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "bibou-hours-http-"));
@@ -39,7 +39,8 @@ test("API : quarts d’heure, bonus non falsifiable et capacité partagée atomi
   assert.equal(pickup.data.slots["19:15"].pickupAdvanceEligible, true);
   assert.equal(pickup.data.slots["19:00 – 19:30"], undefined);
   assert.equal(delivery.data.slots["19:15"], undefined);
-  assert.equal(delivery.data.slots["19:00 – 19:30"].remaining, 2);
+  // The deployed delivery policy has three places; table capacity stays two.
+  assert.equal(delivery.data.slots["19:00 – 19:30"].remaining, SLOT_CAPACITY);
   assert.equal(table.data.capacityWindowMinutes, 30);
   assert.equal((await request("/availability?method=bad&date=" + date)).status, 400);
 

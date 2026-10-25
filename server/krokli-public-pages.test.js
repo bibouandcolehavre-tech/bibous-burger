@@ -6,7 +6,10 @@ test('driver public privacy is independent, complete, accessible and free of tra
   const html = page('privacy');
   assert.match(html, /<html lang="fr">/); assert.match(html, /name="viewport"/);
   assert.match(html, /Livreurs indépendants/); assert.match(html, /Bibou &amp; Co/);
-  assert.equal(PRIVACY.length, 14);
+  assert.equal(PRIVACY.length, 15);
+  assert.match(html,/Candidature livreur et demande restaurant/);
+  assert.match(html,/carte d’identité recto verso/);
+  assert.match(html,/90 jours/);
   for (const text of ['90 secondes', '30 secondes', '12 heures', '24 heures', '7 jours', '10 ans', 'consent', 'CNIL', 'Francfort', 'Expo', 'Apple', 'Google']) {
     if (text === 'consent') assert.match(html, /accord facultatif/); else assert.equal(html.includes(text), true, text);
   }

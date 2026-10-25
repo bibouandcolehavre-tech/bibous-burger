@@ -42,6 +42,7 @@ function register(db, driver, input, sessionExpiresAt, now = Date.now()) {
   // Rebinding an installation never transfers queued offers to its new owner.
   if (previous?.driverId !== driver.id || previousToken !== input.token) s.jobs = s.jobs.filter(j => j.installationId !== p.id);
   s.devices.push({ installationId: p.id, secretHash: p.secretHash, token: input.token, platform: input.platform,
+    channelId: input.channelId === 'krokli-offers-v2' ? 'krokli-offers-v2' : 'krokli-offers-v1',
     driverId: driver.id, authVersion: driver.authVersion, sessionExpiresAt, updatedAt: now });
   return { registered: true, installationId: p.id, expiresAt: new Date(sessionExpiresAt).toISOString() };
 }
@@ -103,8 +104,8 @@ function createWorker({ config, transact, fetchImpl = fetch, clock = Date.now })
           const device = deviceForJob(db, job, now);
           if (!device) { job.status = 'cancelled'; continue; }
           job.status = 'sending'; job.attemptedAt = now; job.attempts++;
-          picked.push({ id: job.id, to: device.token, title: 'Krokli Driver', body: 'Une proposition de livraison t’attend. Ouvre l’application pour vérifier les détails.',
-            sound: 'default', channelId: 'krokli-offers-v1', priority: 'high', ttl: Math.max(1, Math.floor((job.expiresAt - now) / 1000)),
+          picked.push({ id: job.id, to: device.token, title: 'Nouvelle course à accepter', body: 'Ouvre Krokli Driver pour voir la proposition et répondre avant son expiration.',
+            sound: device.channelId==='krokli-offers-v2'?'krokli_delivery.wav':'default', channelId: device.channelId||'krokli-offers-v1', priority: 'high', ttl: Math.max(1, Math.floor((job.expiresAt - now) / 1000)),
             data: { kind: 'krokli-offer', remote: true, messageId: job.id, driverId: job.driverId, orderId: job.orderId, expiresAt: job.expiresAt } });
         }
         return picked;
