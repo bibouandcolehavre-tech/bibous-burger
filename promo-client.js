@@ -28,4 +28,12 @@ function differentPendingPromo(attempt, kind, input) {
   const code = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
   return code(attempt.input?.promoCode) !== code(input?.promoCode);
 }
-module.exports = { previewPromotion, differentPendingPromo };
+function promotionMinimum(promotion,subtotal,pricing){
+  if(!promotion?.id||!Number.isFinite(promotion.minimum)||promotion.minimum<=0)return null;
+  const afterDiscounts=promotion.minimumAfterDiscounts===true;
+  const basisCents=Math.round((afterDiscounts?subtotal-(pricing.discount||0):subtotal)*100);
+  const minimumCents=Math.round(promotion.minimum*100),missingCents=Math.max(0,minimumCents-basisCents);
+  const euro=cents=>(cents/100).toFixed(2).replace('.',',')+' €';
+  return {minimumCents,basisCents,missingCents,afterDiscounts,message:`Minimum du code : ${euro(minimumCents)} de produits${afterDiscounts?' après toutes les remises':''}, hors livraison.${missingCents?` Ton panier est à ${euro(basisCents)}${afterDiscounts?' après remises':''}. Ajoute des articles payants pour atteindre ce minimum.`:''}`};
+}
+module.exports = { previewPromotion, differentPendingPromo, promotionMinimum };

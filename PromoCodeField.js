@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 export default function PromoCodeField({ promotion, onChange, onPendingChange, onValidate, disabled }) {
   const [draft, setDraft] = useState('');
@@ -13,6 +13,7 @@ export default function PromoCodeField({ promotion, onChange, onPendingChange, o
   };
   const apply = async () => {
     if (checking || disabled || !draft.trim()) return;
+    Keyboard.dismiss();
     const current = ++revision.current;
     setChecking(true); setError('');
     try {
