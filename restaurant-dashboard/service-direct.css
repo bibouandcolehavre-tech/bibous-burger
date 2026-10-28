@@ -1,0 +1,87 @@
+/* Owner-approved Commandes visibles, web back office only. */
+.main-panel{max-width:1160px}
+.app-brandbar,#dashboard-app[data-page=customers] .app-brandbar{min-height:78px;margin-bottom:18px;padding:14px 0}
+.app-brand-home.pro-brand{display:flex;align-items:center;gap:12px}
+.app-brand-home.pro-brand .service-pro-icon{width:42px;height:42px;border-radius:11px;object-fit:cover}
+.service-brand-copy{display:grid;gap:3px}
+.pro-brand strong{font-size:23px}
+.pro-brand span{font-size:13px}
+.topbar h1,#dashboard-app[data-page=customers] .topbar h1{font-size:28px;color:#352c27}
+.topbar{gap:12px;margin-bottom:14px}
+.view-description{font-size:13px;margin:6px 0 0}
+#dashboard-app[data-page=orders] #view-description{display:none}
+.service-days{display:flex;gap:5px;padding:4px;border:1px solid var(--pro-line);border-radius:13px;margin:0 0 12px;max-width:650px}
+.service-days button{flex:1;min-height:46px;padding:10px 8px;border-radius:9px;background:transparent;color:#6e645b;font-size:15px;font-weight:600}
+.service-days button[aria-pressed=true]{background:#fffdf8;color:#7f402c;box-shadow:0 2px 6px #50341f12}
+.service-days span{font-variant-numeric:tabular-nums;margin-left:4px}
+.service-overview{color:#6e645b;font-size:13px;margin:0 0 14px;min-height:18px}
+.service-filter-details{margin:0 0 14px;border:0}
+.service-filter-details>summary{font-size:13px;color:#6e645b;min-height:44px;padding:11px 0;cursor:pointer}
+.service-filter-details .section-header{margin:0;padding:0}
+.service-filter-details .filters{flex-wrap:wrap;overflow:visible}
+.service-filter-details .filter{font-size:13px;min-height:44px}
+.orders-workspace{display:block}
+.orders-workspace>#orders-list{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
+.service-order-card{background:#fffdf8;border:1px solid var(--pro-line);border-radius:16px;padding:18px;min-width:0;box-shadow:none}
+.service-order-card.new{border-left:4px solid #a55c43}
+.service-order-card .order-head{gap:10px;align-items:flex-start;margin:0 0 13px}
+.service-order-card .order-head .order-time{display:block;font-size:28px;line-height:1.15;font-weight:800;color:#352c27;margin:0 0 5px}
+.service-order-card .order-meta{font-size:12px;line-height:1.5;color:#6e645b}
+.service-order-card .order-id{font-size:17px;color:#352c27;font-weight:700;overflow-wrap:anywhere}
+.service-order-card .status{font-size:11px;line-height:1.3;max-width:46%;white-space:normal;padding:6px 8px;border-radius:7px;background:#f0dfd2;color:#7f402c;text-align:right;flex-shrink:1}
+.service-order-card .status.Prête{background:#e4eee5;color:#335a45}
+.service-date-warning{padding:8px 10px;border-radius:8px;background:#f5e3d9;color:#7f402c;font-size:13px;margin:0 0 12px}
+.service-order-card .order-items{margin:12px 0}
+.service-order-card .order-line{padding:11px 0;border:0;border-bottom:1px solid var(--pro-line)}
+.service-order-card .order-line:last-child{border-bottom:0}
+.service-order-card .order-product-heading{gap:10px;align-items:baseline;flex-wrap:wrap}
+.service-order-card .order-product-name{font-size:15px}
+.service-order-card .order-product-heading>strong:last-child{font-size:13px;font-weight:500;color:#6e645b}
+.service-order-card .order-option-group{display:grid;grid-template-columns:92px minmax(0,1fr);gap:9px;margin:6px 0 0;align-items:start}
+.service-order-card .order-option-title{font-size:12px;color:#6e645b;font-weight:400;margin:0}
+.service-order-card .order-options{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:3px 10px}
+.service-order-card .order-options li{font-size:13px;padding:0;margin:0;display:inline-flex;gap:5px}
+.service-order-card .order-unit-price{font-size:12px}
+.service-order-card .order-comment{background:#fbf3e6;border-radius:8px;border:0;padding:10px 12px;margin:10px 0;font-size:13px}
+.service-order-card .order-comment p{margin:5px 0 0;font-size:13px;overflow-wrap:anywhere}
+.service-order-card .order-bottom{display:block;border-top:1px solid var(--pro-line);padding-top:13px;margin-top:14px}
+.service-order-card .order-details{font-size:12px;color:#6e645b;margin-bottom:10px}
+.service-order-card .actions{display:flex;gap:8px;flex-wrap:wrap}
+.service-order-card .actions>.accept,.service-order-card .actions>.advance{flex:1;min-width:120px;min-height:48px;font-size:15px;padding:12px;background:#88482f;color:#fffaf4}
+.service-order-card .actions>.service-order-extra{flex-basis:100%;margin:0}
+.service-order-extra{font-size:13px;margin:10px 0 0}
+.service-order-extra>summary{min-height:44px;padding:12px 0;color:#6e645b;cursor:pointer}
+.service-order-extra button{min-height:44px;margin:5px 6px 3px 0}
+.service-order-card .order-contact{padding:0;margin:0;display:block;border:0;background:transparent}
+.service-order-card .customer-call{width:auto;min-height:44px;font-size:13px;border-radius:8px;padding:9px 11px;display:inline-flex;gap:7px;background:#e7eade;color:#315b4b;margin-top:12px}
+.service-order-card .customer-call-number{font-size:12px;display:inline;margin-left:7px}
+.service-order-card .order-print{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding:0;border:0}
+.service-order-card .order-print button{flex:1;min-height:44px;padding:10px 8px;font-size:12px;background:#f0e8dc;color:#5b493a;border-radius:9px}
+.service-order-card .order-print [data-print-feedback]{flex-basis:100%;font-size:11px;line-height:1.4;color:#6e645b}
+.service-order-card .pricing-details{margin:12px 0 0;font-size:13px}
+.service-order-card .pricing-details>summary{min-height:44px;padding:12px 0}
+.service-order-card .amendment-notice{font-size:13px;padding:12px;margin:10px 0}
+.service-order-card .amendment-notice p{font-size:13px}
+.service-order-card .order-delivery-address{font-size:13px;line-height:1.5;margin:10px 0}
+#dashboard-app[data-page=orders] .order-alarm{padding:12px 16px;margin-bottom:12px;gap:10px}
+#dashboard-app[data-page=orders] .order-alarm strong{font-size:18px;margin:0}
+#dashboard-app[data-page=orders] .alarm-copy>small{display:none}
+#dashboard-app[data-page=orders] .order-alarm p{font-size:12px;margin-top:5px}
+#dashboard-app[data-page=orders] .order-alarm .alert-buttons{display:none}
+#dashboard-app[data-page=orders] .order-alarm .alarm-bell{width:38px;height:38px;font-size:21px}
+#dashboard-app[data-page=orders] .attention-links button:not(.needs-attention){display:none}
+#dashboard-app[data-page=orders] #attention-orders{display:none}
+#dashboard-app[data-page=orders] #sound-status{display:none}
+.service-alerts{padding:10px 12px;margin-bottom:14px}
+.audio-warning{padding:9px 11px}
+.audio-warning p{font-size:12px}
+.audio-warning button{min-height:44px;font-size:13px}
+.pro-bottom-tabs>button{max-width:480px}
+.app-rubrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.app-rubrics button,.app-rubrics button:first-child{min-height:76px;padding:16px}
+.app-rubrics strong{font-size:17px}
+.app-rubrics small,.app-rubrics button:first-child small{font-size:12px}
+.pro-extra-rubrics{gap:12px}
+#pro-rubrics-view .pro-service-card{margin-top:22px}
+@media(min-width:980px){.orders-workspace>#orders-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.main-panel{padding-left:14px;padding-right:14px}.app-brandbar,#dashboard-app[data-page=customers] .app-brandbar{min-height:74px;padding:13px 0;margin-bottom:16px}.pro-account-button{font-size:13px;padding:11px 12px;min-height:44px}.pro-brand strong{font-size:20px}.pro-brand span{font-size:12px}.topbar h1,#dashboard-app[data-page=customers] .topbar h1{font-size:25px}.service-order-card{padding:15px}.service-days button{font-size:13px;padding:9px 5px}.service-order-card .order-option-group{grid-template-columns:82px minmax(0,1fr);gap:6px}.app-rubrics{grid-template-columns:repeat(2,minmax(0,1fr))}.app-rubrics strong{font-size:15px}.app-rubrics button,.app-rubrics button:first-child{padding:13px;min-height:78px}.pro-extra-rubrics{grid-template-columns:1fr}.app-brand-home.pro-brand .service-pro-icon{width:37px;height:37px}.app-brand-home.pro-brand{gap:9px}.pro-bottom-tabs>button{min-height:48px}}

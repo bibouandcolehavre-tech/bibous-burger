@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="./customers-compact.css?v=pages-20261018" />
     <link rel="stylesheet" href="./birthdays.css?v=20261018" />
     <link rel="stylesheet" href="./pro-shell.css?v=20261018" />
+    <link rel="stylesheet" href="./service-direct.css?v=20261028" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -66,7 +67,7 @@
 
       <main class="main-panel">
         <header class="app-brandbar">
-          <button type="button" class="app-brand-home pro-brand" data-jump="home" aria-label="Accueil Krokli Pro"><strong>Krokli Pro</strong><span>Bibou’s Burgers</span></button>
+          <button type="button" class="app-brand-home pro-brand" data-jump="orders" aria-label="Commandes Krokli Pro"><img class="service-pro-icon" src="./krokli-pro-icon.png" alt="" width="42" height="42"><span class="service-brand-copy"><strong>Krokli Pro</strong><span>Bibou’s Burgers</span></span></button>
           <button type="button" class="pro-account-button" data-jump="account">Mon compte</button>
         </header>
         <nav class="app-navigation" aria-label="Navigation de l’application">
@@ -128,14 +129,6 @@
             <button type="button" class="login-button" data-jump="orders" data-order-filter="all">Voir les commandes</button>
           </section>
           <section id="birthday-alert" class="birthday-alert" role="status" aria-live="polite" hidden></section>
-          <section class="pro-service-card" aria-labelledby="pro-service-title">
-            <h2 id="pro-service-title">Pendant le service</h2>
-            <label class="pro-awake-row" for="pro-keep-awake"><span>Maintenir l’écran allumé</span><input id="pro-keep-awake" type="checkbox" role="switch" /><span class="pro-switch" aria-hidden="true"></span></label>
-            <p id="pro-awake-feedback" class="pro-note" role="status"></p>
-            <button type="button" id="pro-enable-alerts" class="pro-secondary">Activer les alertes de cet écran</button>
-            <p id="pro-alert-feedback" class="pro-note" role="status">Gardez cette page ouverte pendant le service. Les alertes dépendent des autorisations du navigateur et du volume de l’appareil.</p>
-            <div id="pro-status-home"></div>
-          </section>
           <button type="button" class="pro-secondary pro-tools-shortcut" data-jump="tools">Toutes les rubriques du restaurant</button>
         </section>
         <section id="pro-rubrics-view" hidden aria-label="Rubriques du restaurant">
@@ -154,6 +147,14 @@
             <button type="button" data-jump="settings"><span aria-hidden="true">⚙</span><strong>Réglages</strong><small>Tickets, alertes et sauvegardes</small></button>
           </nav>
           <div class="pro-extra-rubrics"><button type="button" id="pro-birthday-open" class="pro-secondary">🎂 Anniversaires →</button><button type="button" class="pro-secondary" data-jump="rewards">Récompenses à remettre →</button><button type="button" class="pro-secondary" data-jump="notifications">Notifications clients →</button><button type="button" class="pro-secondary" data-jump="backups">Sauvegardes & sécurité →</button></div>
+          <section class="pro-service-card" aria-labelledby="pro-service-title">
+            <h2 id="pro-service-title">Pendant le service</h2>
+            <label class="pro-awake-row" for="pro-keep-awake"><span>Maintenir l’écran allumé</span><input id="pro-keep-awake" type="checkbox" role="switch" /><span class="pro-switch" aria-hidden="true"></span></label>
+            <p id="pro-awake-feedback" class="pro-note" role="status"></p>
+            <button type="button" id="pro-enable-alerts" class="pro-secondary">Activer les alertes de cet écran</button>
+            <p id="pro-alert-feedback" class="pro-note" role="status">Gardez cette page ouverte pendant le service. Les alertes dépendent des autorisations du navigateur et du volume de l’appareil.</p>
+            <div id="pro-status-home"></div>
+          </section>
         </section>
         <section id="pro-account-view" hidden aria-label="Mon compte restaurant">
           <article class="pro-service-card"><h2>Bibou’s Burgers</h2><p>Vous utilisez le même compte restaurant et les mêmes données que dans Krokli Pro. La déconnexion ci-dessous concerne ce navigateur uniquement.</p><p class="pro-note">Votre session reste enregistrée sur cet appareil. Ne partagez pas votre accès ; déconnectez-vous sur un ordinateur partagé.</p></article>
@@ -187,7 +188,7 @@
         <section id="schedule-view" hidden></section>
         <section id="dispatch-view" hidden aria-label="Répartition des courses"></section>
         <section id="settings-view" hidden></section>
-        <details class="app-orders-stats"><summary>Activité & chiffre d’affaires</summary>
+        <details id="service-activity" class="app-orders-stats"><summary>Activité & chiffre d’affaires</summary>
         <section id="orders-metrics" class="metrics orders-metrics" aria-label="Résumé des commandes et chiffre d’affaires">
           <article><span class="metric-icon orange">◷</span><div><strong id="active-count">3</strong><small>commandes en cours</small></div></article>
           <article><span class="metric-icon red">●</span><div><strong id="new-count">1</strong><small>nouvelle à accepter</small></div></article>
@@ -199,6 +200,13 @@
 
         </details>
         <section id="orders-view" class="orders-section">
+          <nav class="service-days" aria-label="Période des commandes">
+            <button type="button" data-service-period="today" aria-pressed="true">Aujourd’hui <span id="service-today-count">—</span></button>
+            <button type="button" data-service-period="future" aria-pressed="false">À venir <span id="service-future-count">—</span></button>
+            <button type="button" data-service-period="history" aria-pressed="false">Historique</button>
+          </nav>
+          <p id="service-overview" class="service-overview" role="status" aria-live="polite">Chargement des commandes…</p>
+          <details class="service-filter-details"><summary>Filtrer par statut</summary>
           <div class="section-header">
             <div class="filters" role="tablist">
               <button class="filter active" data-filter="all">Toutes <span id="all-filter-count">3</span></button>
@@ -209,6 +217,7 @@
               <button class="filter" data-filter="Historique">Historique</button>
             </div>
           </div>
+          </details>
           <label id="archive-search-wrap" class="archive-search" for="archive-search" hidden>Retrouver une commande payée
             <input id="archive-search" type="search" autocomplete="off" placeholder="Numéro, client, téléphone ou date…" />
           </label>
@@ -272,12 +281,16 @@
         </section>
       </main>
       <nav class="pro-bottom-tabs" aria-label="Navigation principale Krokli Pro">
-        <button type="button" data-jump="home" aria-current="page">Accueil</button>
-        <button type="button" data-jump="orders" data-order-filter="all">Commandes <span id="pro-orders-badge" hidden></span></button>
-        <button type="button" data-jump="tools">Rubriques</button>
+        <button type="button" data-jump="orders" data-order-filter="all" aria-current="page">Commandes <span id="pro-orders-badge" hidden></span></button>
+        <button type="button" data-jump="tools">Restaurant</button>
       </nav>
     </div>
     <div id="toast" class="toast" role="status"></div>
+    <dialog id="service-confirm-dialog" class="app-install-dialog" aria-labelledby="service-confirm-title">
+      <h2 id="service-confirm-title">Confirmer cette étape</h2>
+      <p id="service-confirm-message"></p>
+      <form method="dialog"><button type="submit" class="secondary-button" value="cancel" autofocus>Retour</button><button type="submit" class="primary-button" value="confirm">Confirmer</button></form>
+    </dialog>
     <dialog id="pro-logout-dialog" class="app-install-dialog" aria-labelledby="pro-logout-title">
       <h2 id="pro-logout-title">Déconnecter cet appareil ?</h2>
       <p>La session Krokli Pro sera retirée de ce navigateur. Les autres appareils restent connectés.</p>
@@ -310,11 +323,12 @@
     <script src="./phone-contact.js?v=20261022"></script>
     <script src="./dispatch.js?v=call-client-20261022"></script>
     <script src="./epson-print.js?v=thermal-invoice-20261023"></script>
-    <script src="./pwa.js?v=krokli-pro-20261018"></script>
+    <script src="./pwa.js?v=service-direct-20261028"></script>
     <script src="./birthdays.js?v=20261018"></script>
-    <script src="./pro-shell.js?v=20261018"></script>
+    <script src="./pro-shell.js?v=service-direct-20261028"></script>
     <script src="./invoice-panel.js?v=thermal-invoice-20261023"></script>
     <script src="./enrolment.js?v=20261026"></script>
-    <script src="./app.js?v=enrolment-20261026"></script>
+    <script src="./service-orders.js?v=20261028"></script>
+    <script src="./app.js?v=service-direct-20261028"></script>
   </body>
 </html>

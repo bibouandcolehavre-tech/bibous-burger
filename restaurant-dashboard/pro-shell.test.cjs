@@ -9,13 +9,13 @@ function setup({wake=true}={}){
   vm.runInNewContext(read('pro-shell.js'),{window,document,navigator,Date,Boolean,String});
   return {node,document,events,api:window.KrokliProWeb,held,requests};
 }
-test('Pro web keeps every production operational ID and three main tabs',()=>{
+test('Pro web keeps every production operational ID and two direct service tabs',()=>{
   const html=read('index.html'),ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
   assert.equal(ids.length,new Set(ids).size);
   for(const id of ['birthday-alert','birthday-dialog','orders-list','customers-view','printer-status','order-alarm','enable-alerts-button'])assert.ok(ids.includes(id));
   const tabs=html.match(/<nav class="pro-bottom-tabs"[\s\S]*?<\/nav>/)[0];
-  assert.equal((tabs.match(/data-jump=/g)||[]).length,3);
-  assert.match(tabs,/Accueil/);assert.match(tabs,/Commandes/);assert.match(tabs,/Rubriques/);
+  assert.equal((tabs.match(/data-jump=/g)||[]).length,2);
+  assert.match(tabs,/Commandes/);assert.match(tabs,/Restaurant/);
   assert.match(html,/pro-rubrics-view/);assert.match(html,/pro-account-view/);
   assert.match(read('pro-shell.css'),/#a55c43/);assert.match(read('pro-shell.css'),/safe-area-inset-bottom/);
   assert.match(html,/pro-logout-dialog/);assert.match(read('app.js'),/returnValue==='logout'\)logoutDashboard\(\)/);

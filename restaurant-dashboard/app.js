@@ -21,6 +21,7 @@ let customerSearchTimer = null;
 let customerLastUpdate = 0;
 let customerPageChanged = false;
 let filter = "all";
+let servicePeriod = "today";
 let archiveSearch = "";
 let selectedOrderId = null;
 // Disclosure state belongs to this signed-in screen only, never to customer data.
@@ -56,7 +57,7 @@ function ensureServiceSound({ staffGesture = false } = {}) {
   soundActivationPending = attempt;
   return soundActivationPending;
 }
-let currentView = "home";
+let currentView = "orders";
 const dashboardTokenKey = 'bibous-dashboard-token';
 const savedDashboardToken = () => {
   let legacyToken = '';
@@ -131,7 +132,7 @@ function actionMarkup(order) {
   const u = order.raw?.uberDirect;
   if (u && ["sending", "uncertain", "created"].includes(u.phase) && !["canceled", "returned"].includes(u.status) && ["Prête", "En livraison"].includes(order.status)) return `<p>Le suivi de remise est synchronisé avec Uber Direct.</p>`;
   if (order.status === "Accord client attendu") return `<div class="actions"><button data-edit-order="${order.id}">Réviser la proposition</button><button class="reject" data-action="Refusée" data-id="${order.id}">Annuler la commande</button></div>`;
-  if (order.status === "Nouvelle") return `<div class="actions">${order.amendment?.status !== "accepted" ? `<button data-edit-order="${order.id}">Modifier le panier</button>` : ""}<button class="reject" data-action="Refusée" data-id="${order.id}">Annuler</button><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button></div>`;
+  if (order.status === "Nouvelle") return `<div class="actions"><button class="accept" data-action="Acceptée" data-id="${order.id}">Accepter</button><details class="service-order-extra" data-order-disclosure="actions:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`actions:${order.apiId}`) ? 'open' : ''}><summary>Modifier ou annuler</summary>${order.amendment?.status !== "accepted" ? `<button data-edit-order="${order.id}">Modifier le panier</button>` : ""}<button class="reject" data-action="Refusée" data-id="${order.id}">Annuler la commande</button></details></div>`;
   if (order.status === "Acceptée") return `<div class="actions"><button class="advance" data-action="Prête" data-id="${order.id}">Marquer prête</button></div>`;
   if (order.status === "Prête") return `<div class="actions"><button class="advance ready" data-action="${order.type === "Livraison" ? "En livraison" : "Terminée"}" data-id="${order.id}">${order.type === "Livraison" ? "Confier au livreur" : "Remettre au client"}</button></div>`;
   if (order.status === "En livraison") return `<div class="actions"><button class="advance delivery" data-action="Terminée" data-id="${order.id}">Terminer la commande</button></div>`;
@@ -295,6 +296,11 @@ function renderOrders() {
   const completedView = filter === "Terminée";
   const historyView = filter === "Historique";
   const archiveQuery = archiveSearch.trim().toLocaleLowerCase('fr-FR');
+  const service = window.KrokliServiceOrders;
+  const period = typeof servicePeriod === 'string' ? servicePeriod : 'today';
+  const today = typeof todayDateKey === 'function' ? todayDateKey() : '';
+  const activeOrders = active().filter((order) => filter === "all" || order.status === filter);
+  const serviceOrders = service ? service.select(activeOrders, period, today) : activeOrders;
   const visible = historyView
     ? orders.filter((order) => {
       if (!archiveQuery) return true;
@@ -304,13 +310,19 @@ function renderOrders() {
     })
       .sort((left, right) => Date.parse(right.raw?.payment?.paidAt || right.raw?.createdAt || 0) - Date.parse(left.raw?.payment?.paidAt || left.raw?.createdAt || 0))
       .slice(0, archiveQuery ? undefined : 100)
-    : completedView ? orders.filter((order) => order.status === "Terminée") : active().filter((order) => filter === "all" || order.status === filter);
+    : completedView ? orders.filter((order) => order.status === "Terminée") : serviceOrders;
+  if (service) {
+    document.querySelector('#service-today-count').textContent = feedHealth.orders.lastSuccess ? service.select(active(), 'today', today).length : '—';
+    document.querySelector('#service-future-count').textContent = feedHealth.orders.lastSuccess ? service.select(active(), 'future', today).length : '—';
+    document.querySelectorAll('[data-service-period]').forEach(button => button.setAttribute('aria-pressed', String(historyView || completedView ? button.dataset.servicePeriod === 'history' : button.dataset.servicePeriod === period)));
+    const at = feedHealth.orders.lastSuccess ? new Date(feedHealth.orders.lastSuccess).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '';
+    document.querySelector('#service-overview').textContent = !at ? 'Chargement des commandes…' : feedHealth.orders.error ? 'Actualisation impossible. Les commandes affichées peuvent être anciennes.' : `${visible.length} commande${visible.length > 1 ? 's' : ''} · ${historyView || completedView ? 'historique' : period === 'future' ? 'à venir' : 'aujourd’hui ou à vérifier'} · mise à jour ${at}`;
+  }
   document.querySelector('#archive-search-wrap').hidden = !historyView;
   if (!visible.some(order => order.apiId === selectedOrderId)) selectedOrderId = visible[0]?.apiId || null;
-  document.querySelector('#order-queue').hidden = completedView || historyView || !visible.length;
-  document.querySelector('#order-queue').innerHTML = completedView || historyView ? '' : visible.map(order => `<button class="queue-order ${order.apiId === selectedOrderId ? 'selected' : ''}" data-select-order="${escapeHtml(order.apiId)}" aria-pressed="${order.apiId === selectedOrderId}"><span><strong>#${Number(order.id)} · ${escapeHtml(order.customer || 'Client')}</strong><b>${euro(order.total)}</b></span><small>${escapeHtml(order.type)}${order.raw?.serviceDate ? ` · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''}</small><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></button>`).join('');
-  document.querySelectorAll('[data-select-order]').forEach(button => button.onclick = () => { selectedOrderId = button.dataset.selectOrder; renderOrders(); });
-  const shown = completedView || historyView ? visible : visible.filter(order => order.apiId === selectedOrderId);
+  document.querySelector('#order-queue').hidden = true;
+  document.querySelector('#order-queue').innerHTML = '';
+  const shown = visible;
   document.querySelector("#orders-list").innerHTML = shown.length ? shown.map((order) => {
     const lines = order.items.map(orderItemMarkup).join("");
     const address = order.deliveryAddress;
@@ -322,7 +334,12 @@ function renderOrders() {
     const printControls = cashDue(order.raw) ? '': `<div class="order-print"><button type="button" class="secondary-button print-order-button" data-print-order="${escapeHtml(order.apiId)}" ${pendingPrints.has(order.apiId) || uncertainPrints.has(order.apiId) ? 'disabled' : ''}>🖨 Ticket de commande</button><button type="button" class="secondary-button" data-order-invoice="${escapeHtml(order.apiId)}">🖨 Imprimer la facture</button><span data-print-feedback role="status" aria-live="polite">${escapeHtml(printFeedback.get(order.apiId) || 'Ticket de commande sans TVA détaillée · facture séparée.')}</span></div>`;
     const body = `${progress}<div class="order-appointment"><span>${escapeHtml(order.type)} prévu${order.type === 'Livraison' ? 'e' : ''}${order.raw?.serviceDate ? ` · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''}</span><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong></div>${contact}${comment}<div class="order-items">${lines}</div><details class="pricing-details" data-order-disclosure="payment:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`payment:${order.apiId}`) ? 'open' : ''}><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details>${amendmentMarkup(order)}${window.BibouDispatch?.markup(order.raw) || ""}${window.BibouUber?.markup(order.raw) || ""}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Paiement en espèces attendu' : 'Espèces encaissées') : order.raw?.promotion && !order.raw.promotion.id ? 'Commande offerte par code promo' : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div>${printControls}`;
     if (completedView || historyView) return `<details class="order-card completed-order" data-order-disclosure="order:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`order:${order.apiId}`) ? 'open' : ''}><summary><span><strong class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</strong><small>${escapeHtml(order.type)} · ${escapeHtml(order.slot)} · ${escapeHtml(order.status)}</small></span><span><strong>${euro(order.total)}</strong><small><span class="closed-order-label">Ouvrir la commande</span><span class="open-order-label">Fermer la commande</span></small></span></summary><div class="completed-order-body"><div class="order-head"><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${escapeHtml(order.status)}</span></div>${body}<button type="button" class="secondary-button" data-close-order="${escapeHtml(order.apiId)}">Fermer la commande</button></div></details>`;
-    return `<article class="order-card ${order.status === "Nouvelle" ? "new" : ""}"><div class="order-head"><div><div class="order-id">#${Number(order.id)} · ${escapeHtml(order.customer)}</div><div class="order-meta">${escapeHtml(order.age)} · ${escapeHtml(order.type)}</div></div><span class="status ${escapeHtml(order.status.replace(" ", "-"))}">${escapeHtml(order.status)}</span></div>${body}</article>`;
+    const needsCheck = service?.group(order, today) === 'check';
+    const dateWarning = needsCheck ? `<p class="service-date-warning">${order.refund?.status === 'due' ? 'Remboursement à vérifier' : 'Date de service à vérifier'}${order.raw?.serviceDate ? ` · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ' · date non renseignée'}</p>` : '';
+    const call = window.KrokliPhoneContact?.markup(order.phone) || `<span class="customer-call-unavailable">${escapeHtml(order.phone || 'Téléphone non renseigné')}</span>`;
+    const deliveryState = {offered:'réponse attendue',accepted:'repas à récupérer',picked_up:'en livraison',issue:'incident à vérifier',declined:'à réattribuer',expired:'à réattribuer',delivered:'livrée'}[order.raw?.kroklyDriver?.status] || (['sending','uncertain'].includes(order.raw?.uberDirect?.phase) ? 'demande Uber à vérifier' : order.raw?.uberDirect ? 'suivi Uber' : '');
+    const shipping = order.type === 'Livraison' ? `<details class="service-order-extra" data-order-disclosure="delivery:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`delivery:${order.apiId}`) ? 'open' : ''}><summary>Livraison & livreur${deliveryState ? ` · ${escapeHtml(deliveryState)}` : ''}</summary><div class="order-delivery-address">${address?.address ? `${escapeHtml(address.address)}<br>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(' '))}` : 'Adresse de livraison non enregistrée'}</div>${window.BibouDispatch?.markup(order.raw) || ''}${window.BibouUber?.markup(order.raw) || ''}</details>` : '';
+    return `<article class="order-card service-order-card ${order.status === "Nouvelle" ? "new" : ""}" data-service-order="${escapeHtml(order.apiId)}"><div class="order-head"><div><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong><div class="order-meta">${escapeHtml(order.type)}${order.raw?.serviceDate ? ` prévu${order.type === 'Livraison' ? 'e' : ''} · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''} · #${Number(order.id)}</div></div><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${order.status === 'Acceptée' ? 'En préparation' : escapeHtml(order.status)}</span></div><div class="order-id">${escapeHtml(order.customer)}</div>${dateWarning}<div class="order-items">${lines}</div>${comment}${amendmentMarkup(order)}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Espèces à encaisser' : 'Espèces encaissées') : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div><div class="order-contact">${call}</div>${printControls}${shipping}<details class="pricing-details" data-order-disclosure="payment:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`payment:${order.apiId}`) ? 'open' : ''}><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details></article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
   document.querySelectorAll('#orders-list [data-close-order]').forEach(button => button.onclick = () => {
     const detail = button.closest('details[data-order-disclosure]');
@@ -573,11 +590,27 @@ const loadReservations = (options) => loadFeed("reservations", options);
 const loadRewardClaims = (options) => loadFeed("rewards", options);
 const refreshFeeds = (options) => Promise.all([loadOrders(options), loadReservations(options), loadRewardClaims(options)]);
 
+function confirmServiceAction(message) {
+  const dialog = document.querySelector('#service-confirm-dialog');
+  if (dialog.open || typeof dialog.showModal !== 'function') return Promise.resolve(false);
+  document.querySelector('#service-confirm-message').textContent = message;
+  dialog.returnValue = 'cancel';
+  return new Promise(resolve => {
+    const closed = () => resolve(dialog.returnValue === 'confirm');
+    dialog.addEventListener('close', closed, {once:true});
+    try { dialog.showModal(); } catch { dialog.removeEventListener('close', closed); resolve(false); }
+  });
+}
+
 async function changeOrder(id, status) {
   const order = orders.find((item) => item.id === id);
   if (!order || pendingOrderChanges.has(id)) return;
-  if (status === "Refusée" && !window.confirm(`La commande #${id} a déjà été réglée. Confirmez son annulation uniquement après avoir organisé le remboursement dans SumUp.`)) return;
   const token = dashboardToken;
+  if (status === "Refusée" && !await confirmServiceAction(`La commande #${id} a déjà été réglée. Confirmez son annulation uniquement après avoir organisé le remboursement dans SumUp.`)) return;
+  if (status === 'Prête' && order.type === 'Livraison' && !await confirmServiceAction(`La commande #${id} est-elle prête ? Cette action peut prévenir le livreur.`)) return;
+  if (['En livraison', 'Terminée'].includes(status) && !await confirmServiceAction(`Confirmer ${status === 'En livraison' ? 'la remise au livreur' : 'la remise au client'} de la commande #${id} ?`)) return;
+  if (status === 'Acceptée' && window.KrokliServiceOrders?.group(order, todayDateKey()) === 'future' && !await confirmServiceAction(`Commande #${id} prévue le ${serviceDateLabel(order.raw.serviceDate)}. Confirmer son acceptation pour cette date ?`)) return;
+  if (token !== dashboardToken) return;
   pendingOrderChanges.add(id);
   renderOrders();
   try {
@@ -1046,7 +1079,8 @@ function showView(view) {
   document.querySelector('#enrolment-view').hidden = view !== 'enrolment';
   if(view!=='enrolment')enrolmentPanel?.clear();
   document.querySelector("#orders-view").hidden = view !== "orders";
-  document.querySelector("#orders-metrics").hidden = view !== "orders";
+  document.querySelector("#orders-metrics").hidden = view !== "tools";
+  document.querySelector('#service-activity').hidden = view !== 'tools';
   document.querySelector("#reservations-view").hidden = view !== "reservations";
   document.querySelector("#rewards-view").hidden = view !== "rewards";
   document.querySelector("#menu-view").hidden = view !== "menu";
@@ -1059,8 +1093,8 @@ function showView(view) {
   document.querySelector("#crm-view").hidden = view !== "crm";
   document.querySelector("#settings-view").hidden = view !== "settings";
   document.querySelector("#dashboard-title").textContent = { home: 'Bonjour, l’équipe !', dispatch: 'Répartir les courses', schedule: "Ouvrir ou fermer mes créneaux", orders: "Chaque commande, étape par étape", reservations: "Vos tables, en un coup d’œil", rewards: "Les récompenses à remettre", menu: "Votre carte, simplement", backups: "Sauvegardes & sécurité", customers: "Vos clients & leur fidélité", marketing: "Donner envie de revenir", promotions: "Créer mes promotions", notifications: "Écrire à vos clients", crm: "Offres & statistiques", settings: "Votre restaurant, vos réglages" }[view];
-  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',dispatch:'Choisissez votre livreur et suivez chaque livraison ici.',orders:'Choisissez une commande. Sa prochaine étape est toujours visible.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
-  if (['home','orders','tools','account'].includes(view)) document.querySelector('#dashboard-title').textContent={home:'Votre service',orders:'Commandes en cours',tools:'Mon restaurant',account:'Mon compte'}[view];
+  updateText('#view-description', {home:'Tout ce qui compte pour votre service, au même endroit.',dispatch:'Choisissez votre livreur et suivez chaque livraison ici.',orders:'Produits, remarques et prochaine action sur chaque commande.',reservations:'Une heure d’arrivée et une confirmation claire.',schedule:'Une date, un service, une heure. Vous gardez la main.',menu:'Un produit épuisé ? Rendez-le indisponible en un geste.',customers:'Retrouvez vos habitués, leurs points et leurs commandes.',rewards:'Le code du client vous permet de vérifier son avantage.',marketing:'Actualités, offres et messages : tout est réuni ici.',promotions:'Choisissez une idée, fixez ses règles et activez-la quand vous le souhaitez.',crm:'Des offres ciblées, avec un aperçu avant activation.',notifications:'Préparez votre message, puis vérifiez-le avant tout envoi.',settings:'Vos automatismes et vos connexions, au même endroit.',backups:'Gardez une copie privée des données de votre restaurant.'}[view]);
+  if (['home','orders','tools','account'].includes(view)) document.querySelector('#dashboard-title').textContent={home:'Votre service',orders:'Commandes',tools:'Restaurant',account:'Mon compte'}[view];
   document.querySelector("#refresh-orders").textContent = "↻ Actualiser";
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   const group = {rewards:'customers',promotions:'marketing',crm:'marketing',notifications:'marketing','marketing-sms':'marketing',backups:'settings'}[view] || view;
@@ -1083,7 +1117,13 @@ function showView(view) {
 enrolmentPanel=window.KrokliEnrolment?.({root:document.querySelector('#enrolment-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.')});
 document.querySelectorAll('[data-jump]').forEach(button => button.addEventListener('click', () => {
   if (button.dataset.orderFilter) setOrderFilter(button.dataset.orderFilter);
+  if (button.dataset.jump === 'orders' && button.dataset.orderFilter !== 'Historique') { servicePeriod = 'today'; renderOrders(); }
   showView(button.dataset.jump);
+}));
+document.querySelectorAll('[data-service-period]').forEach(button => button.addEventListener('click', () => {
+  const value = button.dataset.servicePeriod;
+  if (value === 'history') setOrderFilter('Historique');
+  else { servicePeriod = value === 'future' ? 'future' : 'today'; setOrderFilter('all'); }
 }));
 document.querySelector('#pro-birthday-open').addEventListener('click',()=>birthdaysPanel?.open());
 document.querySelector('#pro-enable-alerts').addEventListener('click',()=>document.querySelector('#enable-alerts-button').click());
@@ -1215,7 +1255,7 @@ document.querySelector("#service-date-heading").textContent = todayHeading();
 renderOrders();
 renderReservations();
 renderRewardClaims();
-showView('home');
+showView('orders');
 window.BibouRestaurantApp?.start(showView);
 if (dashboardToken) { showDashboard(); void ensureServiceSound(); void refreshFeeds({ notify: false }); } else { showLogin(); }
 const resumeUpdates = () => {

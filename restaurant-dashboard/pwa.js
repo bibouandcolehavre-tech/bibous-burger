@@ -2,9 +2,9 @@
 (() => {
   const routes = new Set(['home','tools','account','orders','dispatch','enrolment','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
   const labels = {home:'Accueil',tools:'Rubriques',account:'Mon compte',orders:'Commandes',dispatch:'Répartition des livreurs',enrolment:'Inscriptions Krokli',reservations:'Réservations',rewards:'Récompenses',menu:'Carte & produits',backups:'Sauvegardes',customers:'Clients & fidélité',marketing:'Marketing',promotions:'Codes promo',notifications:'Notifications', 'marketing-sms':'SMS commerciaux',crm:'Offres & statistiques',settings:'Réglages',schedule:'Créneaux',statistics:'Statistiques'};
-  const route = () => {const candidate = location.hash.slice(1); return routes.has(candidate) ? candidate : 'home';};
+  const route = () => {const candidate = location.hash.slice(1); return routes.has(candidate) ? candidate : 'orders';};
   const initialRoute = route();
-  let current = 'home', installPrompt = null, fromHistory = false;
+  let current = 'orders', installPrompt = null, fromHistory = false;
   const installed = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const updateInstallation = () => {document.querySelectorAll('[data-install-app]').forEach(button => {button.hidden = installed();});};
   const offline = () => {document.querySelector('#app-offline').hidden = navigator.onLine !== false;};
@@ -16,7 +16,7 @@
       document.querySelector('#dashboard-app').dataset.page = view;
       window.KrokliProWeb?.view(view);
       document.querySelector('#app-current').textContent = view === 'orders' && filter === 'Historique' ? 'Historique' : labels[view];
-      const selectedTab=['home','orders','account'].includes(view)?view:'tools';
+      const selectedTab=view==='orders'?'orders':'tools';
       document.querySelectorAll('.pro-bottom-tabs [data-jump]').forEach(button=>button.setAttribute('aria-current',button.dataset.jump===selectedTab?'page':'false'));
       if (!fromHistory && location.hash !== `#${view}`) history.pushState(null, '', `#${view}`);
       if (view === 'home') {

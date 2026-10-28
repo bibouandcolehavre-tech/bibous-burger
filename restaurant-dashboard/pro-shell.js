@@ -24,7 +24,7 @@
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void acquire();else{++generation;void release();}});
   window.addEventListener('pagehide',()=>{++generation;void release();});
   window.KrokliProWeb={
-    view(value){const alerts=q('.service-alerts'),destination=q(value==='home'?'#pro-status-home':'#pro-status-global');if(alerts&&destination&&alerts.parentElement!==destination)destination.append(alerts);},
+    view(value){const alerts=q('.service-alerts'),destination=q(value==='tools'?'#pro-status-home':'#pro-status-global');if(alerts&&destination&&alerts.parentElement!==destination)destination.append(alerts);},
     authenticated(value){authenticated=Boolean(value);if(!authenticated){requested=false;checkbox.checked=false;++generation;void release();put('#pro-pending-count','—');put('#pro-pending-label','Vérification des commandes…');put('#pro-sync','Connexion au restaurant…');const badge=q('#pro-orders-badge');badge.hidden=true;badge.textContent='';}},
     update({waiting,syncedAt,error=false}){
       put('#pro-pending-count',syncedAt?String(waiting):'—');

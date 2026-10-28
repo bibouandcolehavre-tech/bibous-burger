@@ -30,9 +30,10 @@ function renderFixture({ slot = '19:15', serviceDate = '2026-10-17', type = 'Ret
   return { queue: node('#order-queue').innerHTML, detail: node('#orders-list').innerHTML, home: node('#home-orders').innerHTML, order };
 }
 
-test('pickup time is a separate strong element in queue, detail and home; date is retained', () => {
+test('pickup time is visible directly on the card and home; date is retained without a queue selection', () => {
   const fixture = renderFixture();
-  for (const html of [fixture.queue, fixture.detail, fixture.home]) {
+  assert.equal(fixture.queue, '');
+  for (const html of [fixture.detail, fixture.home]) {
     assert.match(html, /<strong class="order-time">19:15<\/strong>/);
     assert.match(html, /Retrait(?: prévu)? · Demain/);
     assert.doesNotMatch(html, /order-time">Demain/);
@@ -59,7 +60,7 @@ test('large bold styling is scoped to order times and asset URLs are refreshed',
   assert.match(css, /\.queue-order \.order-time,\.home-row \.order-time\{[^}]*font-size:26px;[^}]*font-weight:900/);
   assert.match(css, /\.order-appointment>\.order-time\{[^}]*font-size:clamp\(32px,5vw,40px\);[^}]*font-weight:900/);
   assert.ok(html.includes('pwa.css?v=pickup-time-20261016'));
-  assert.ok(html.includes('app.js?v=thermal-invoice-20261023'));
+  assert.ok(html.includes('app.js?v=service-direct-20261028'));
 });
 
 module.exports = { renderFixture };
