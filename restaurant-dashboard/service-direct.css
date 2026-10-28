@@ -37,7 +37,7 @@
 .service-order-card .order-product-heading{gap:10px;align-items:baseline;flex-wrap:wrap}
 .service-order-card .order-product-name{font-size:15px}
 .service-order-card .order-product-heading>strong:last-child{font-size:13px;font-weight:500;color:#6e645b}
-.service-order-card .order-option-group{display:grid;grid-template-columns:92px minmax(0,1fr);gap:9px;margin:6px 0 0;align-items:start}
+.service-order-card .order-option-group{display:grid;grid-template-columns:minmax(0,112px) minmax(0,1fr);gap:9px;margin:6px 0 0;align-items:start}
 .service-order-card .order-option-title{font-size:12px;color:#6e645b;font-weight:400;margin:0}
 .service-order-card .order-options{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:3px 10px}
 .service-order-card .order-options li{font-size:13px;padding:0;margin:0;display:inline-flex;gap:5px}
@@ -84,4 +84,4 @@
 .pro-extra-rubrics{gap:12px}
 #pro-rubrics-view .pro-service-card{margin-top:22px}
 @media(min-width:980px){.orders-workspace>#orders-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){.main-panel{padding-left:14px;padding-right:14px}.app-brandbar,#dashboard-app[data-page=customers] .app-brandbar{min-height:74px;padding:13px 0;margin-bottom:16px}.pro-account-button{font-size:13px;padding:11px 12px;min-height:44px}.pro-brand strong{font-size:20px}.pro-brand span{font-size:12px}.topbar h1,#dashboard-app[data-page=customers] .topbar h1{font-size:25px}.service-order-card{padding:15px}.service-days button{font-size:13px;padding:9px 5px}.service-order-card .order-option-group{grid-template-columns:82px minmax(0,1fr);gap:6px}.app-rubrics{grid-template-columns:repeat(2,minmax(0,1fr))}.app-rubrics strong{font-size:15px}.app-rubrics button,.app-rubrics button:first-child{padding:13px;min-height:78px}.pro-extra-rubrics{grid-template-columns:1fr}.app-brand-home.pro-brand .service-pro-icon{width:37px;height:37px}.app-brand-home.pro-brand{gap:9px}.pro-bottom-tabs>button{min-height:48px}}
+@media(max-width:700px){.main-panel{padding-left:14px;padding-right:14px}.app-brandbar,#dashboard-app[data-page=customers] .app-brandbar{min-height:74px;padding:13px 0;margin-bottom:16px}.pro-account-button{font-size:13px;padding:11px 12px;min-height:44px}.pro-brand strong{font-size:20px}.pro-brand span{font-size:12px}.topbar h1,#dashboard-app[data-page=customers] .topbar h1{font-size:25px}.service-order-card{padding:15px}.service-days button{font-size:13px;padding:9px 5px}.service-order-card .order-option-group{grid-template-columns:minmax(0,112px) minmax(0,1fr);gap:6px}.app-rubrics{grid-template-columns:repeat(2,minmax(0,1fr))}.app-rubrics strong{font-size:15px}.app-rubrics button,.app-rubrics button:first-child{padding:13px;min-height:78px}.pro-extra-rubrics{grid-template-columns:1fr}.app-brand-home.pro-brand .service-pro-icon{width:37px;height:37px}.app-brand-home.pro-brand{gap:9px}.pro-bottom-tabs>button{min-height:48px}}
