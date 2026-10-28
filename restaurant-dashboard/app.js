@@ -558,6 +558,7 @@ function loadFeed(kind, { notify = true } = {}) {
       const items = payload[kind === "rewards" ? "claims" : kind];
       if (!Array.isArray(items)) throw new Error("Réponse invalide");
       const fresh = arrivalTracker.update(kind, items);
+      feedHealth[kind] = { lastSuccess: Date.now(), error: false };
       if (kind === "orders") {
         orders = items.filter((item) => (item.payment?.status === "PAID" && Object.hasOwn(statusLabel, item.status)) || cashDue(item)).map(orderFromApi);
         orderAlarm.sync(items);
@@ -568,7 +569,6 @@ function loadFeed(kind, { notify = true } = {}) {
       }
       else if (kind === "reservations") { reservations = items.map(reservationFromApi); renderReservations(); }
       else { rewardClaims = items.map(rewardClaimFromApi); renderRewardClaims(); }
-      feedHealth[kind] = { lastSuccess: Date.now(), error: false };
       refreshMetrics();
       if (notify) announceArrivals(kind, fresh.length);
       return true;
