@@ -59,3 +59,16 @@ test('STB fallback for 6 November awards both tickets once on 1 November at 19:5
   assert.equal(wheel.reconcileStbTickets(db, new Date(+draw + 60000), () => 0), false); assert.equal(db.stbTickets.awards.length, 1);
   assert.equal(stb.availableMatch(db, new Date(+draw + 60000)), null);
 });
+
+test('a currently published default wheel can be saved for the first time, without changing its dates or customer rights', () => {
+  const db = fixture(150); delete db.wheel;
+  const before = wheel.customerWheelState(db, 'fictional', now);
+  assert.equal(before.status, 'active');
+  assert.equal(policy.activate(db, activation, now, wheel.defaultWheel()), true);
+  const after = wheel.customerWheelState(db, 'fictional', now);
+  assert.equal(after.available, before.available); assert.equal(after.allSpinsWin, true);
+  assert.equal(db.wheel.startDate, wheel.defaultWheel().startDate); assert.equal(db.wheel.endDate, wheel.defaultWheel().endDate);
+  const draft = fixture(); draft.wheel.status = 'draft';
+  assert.throws(() => policy.activate(draft, activation, now, wheel.defaultWheel()), /déjà être publiée/);
+  assert.equal(draft.wheel.status, 'draft');
+});

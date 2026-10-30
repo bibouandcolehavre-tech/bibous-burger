@@ -1321,7 +1321,7 @@ const server = http.createServer(async (request, response) => {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });
       const policy = require('./wheel-rewards-policy');
       if (request.method === 'PATCH') {
-        if (policy.activate(database, await readBody(request))) await writeDatabase(database);
+        if (policy.activate(database, await readBody(request), new Date(), wheelGame.defaultWheel())) await writeDatabase(database);
       } else if (request.method !== 'GET') return send(response, 405, { error: 'Action indisponible.' });
       const preview = { ...(database.wheel || wheelGame.defaultWheel()), rewardsVersion: 2, allSpinsWin: true, monthlyClassicEnabled: true };
       const allSpinsWin = policy.guaranteed(database.wheel), match = stbTickets.availableMatch(database);

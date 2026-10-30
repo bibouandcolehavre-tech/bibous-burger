@@ -43,13 +43,14 @@ function officialRules(wheel) {
     ' Le concours de classement reste distinct : ses dates, son règlement et le bonus éventuel des points réellement gagnés à la roue se consultent dans la rubrique du concours. Les cadeaux et remises ne donnent pas de points de classement. Apple et Google ne sont ni organisateurs ni sponsors.';
 }
 
-function activate(db, input, now = new Date()) {
+function activate(db, input, now = new Date(), fallbackWheel = null) {
   if (!input || Object.keys(input).some(key => !['rewardsVersion', 'monthlyClassicEnabled', 'allSpinsWin'].includes(key)) ||
       input.rewardsVersion !== 2 || input.monthlyClassicEnabled !== true || input.allSpinsWin !== true)
     throw Object.assign(new Error('Utilisez le barème 100 % gagnant, avec les points majoritaires et les cadeaux existants.'), { statusCode: 400 });
-  if (db.wheel?.status !== 'published') throw Object.assign(new Error('La roue doit déjà être publiée. Son calendrier ne sera pas changé.'), { statusCode: 409 });
-  if (guaranteed(db.wheel) && db.wheel.monthlyClassicEnabled === true) return false;
-  db.wheel = { ...db.wheel, rewardsVersion: 2, allSpinsWin: true, monthlyClassicEnabled: true, rewardsPublishedAt: now.toISOString() };
+  const currentWheel = db.wheel || fallbackWheel;
+  if (currentWheel?.status !== 'published') throw Object.assign(new Error('La roue doit déjà être publiée. Son calendrier ne sera pas changé.'), { statusCode: 409 });
+  if (guaranteed(currentWheel) && currentWheel.monthlyClassicEnabled === true) return false;
+  db.wheel = { ...currentWheel, rewardsVersion: 2, allSpinsWin: true, monthlyClassicEnabled: true, rewardsPublishedAt: now.toISOString() };
   db.wheel.officialRules = officialRules(db.wheel);
   return true;
 }
