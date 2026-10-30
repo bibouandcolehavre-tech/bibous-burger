@@ -1323,10 +1323,16 @@ const server = http.createServer(async (request, response) => {
       if (request.method === 'PATCH') {
         if (policy.activate(database, await readBody(request))) await writeDatabase(database);
       } else if (request.method !== 'GET') return send(response, 405, { error: 'Action indisponible.' });
-      const preview = { ...(database.wheel || wheelGame.defaultWheel()), rewardsVersion: 2, monthlyClassicEnabled: true };
+      const preview = { ...(database.wheel || wheelGame.defaultWheel()), rewardsVersion: 2, allSpinsWin: true, monthlyClassicEnabled: true };
+      const allSpinsWin = policy.guaranteed(database.wheel), match = stbTickets.availableMatch(database);
+      const tickets = stbTickets.config(database);
       return send(response, 200, { rewardsVersion: database.wheel?.rewardsVersion || 1, monthlyClassicEnabled: database.wheel?.monthlyClassicEnabled === true,
+        allSpinsWin, winRatePercent: allSpinsWin ? 100 : policy.enabled(database.wheel) ? 80 : 50,
         currentMonth: policy.monthKey(new Date()), monthlyClassicAvailable: policy.classicAvailable(database),
-        previewRules: policy.officialRules(preview), previewSegments: policy.segments({ classic: true }), publishedAt: database.wheel?.rewardsPublishedAt || null });
+        previewRules: policy.officialRules(preview), previewSegments: policy.segments({ allSpinsWin: true, classic: allSpinsWin ? policy.classicAvailable(database) : true, stb: Boolean(match) }),
+        stb: { enabled: tickets.enabled, entries: tickets.entries.length, awards: tickets.awards.filter(a => a.fulfillment !== 'revoked').length,
+          nextPrize: match ? { opponent: match.opponent, matchAt: match.startAt, entriesCloseAt: new Date(stbTickets.drawAt(match)).toISOString(), quantity: 2, chancePercent: 1 } : null },
+        publishedAt: database.wheel?.rewardsPublishedAt || null });
     }
     if (url.pathname === '/api/dashboard/stb-tickets') {
       if (!authenticatedDashboard(request)) return send(response, 401, { error: 'Accès restaurant requis.' });

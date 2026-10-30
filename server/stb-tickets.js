@@ -17,7 +17,7 @@ function configure(database, input) {
     if (!m || typeof m.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(m.id) || seen.has(m.id) || typeof m.opponent !== 'string' || !m.opponent.trim() || m.opponent.length > 120 || !Number.isFinite(Date.parse(m.startAt)) || !Number.isFinite(Date.parse(m.opensAt)) || Date.parse(m.opensAt) >= drawAt(m) || typeof m.confirmed !== 'boolean') fail('Vérifie les dates, adversaires et fenêtres des matchs STB.');
     seen.add(m.id);
   }
-  if (input.enabled && (input.confirmation !== 'ACTIVER LES LOTS STB' || !input.rules.trim() || !input.matches.length || input.matches.some(m => !m.confirmed))) fail('Confirme le calendrier et le règlement avant activation.');
+  if (input.enabled && (!input.rules.trim() || !input.matches.length || input.matches.some(m => !m.confirmed))) fail('Le calendrier confirmé et le règlement sont nécessaires pour activer les lots.');
   const previous = config(database);
   if (previous.awards.some(a => !input.matches.some(m => m.id === a.matchId && m.startAt === previous.matches.find(old => old.id === m.id)?.startAt))) fail('Un match avec un lot attribué ne peut plus être supprimé ou déplacé.');
   database.stbTickets = { enabled: input.enabled, rules: input.rules.trim(), matches: input.matches.map(m => ({ id: m.id, opponent: m.opponent.trim(), startAt: m.startAt, opensAt: m.opensAt, confirmed: m.confirmed })), entries: previous.entries, awards: previous.awards };

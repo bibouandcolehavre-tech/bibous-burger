@@ -16,17 +16,22 @@ test('HTTP new wheel: owner-only activation, concurrent monthly cap, authentic c
     cwd: dir, env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', LISTEN_HOST: '127.0.0.1', DATA_FILE_PATH: file,
       SESSION_SECRET: 'fictional-wheel-http-only', RESTAURANT_DASHBOARD_PASSWORD: 'fictional-owner-only', FICTITIOUS_WHEEL_ROLL_FILE: roll }, stdio: ['ignore','pipe','pipe'] });
   t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
-  const base = await new Promise((resolve, reject) => { let log = ''; child.stdout.on('data', d => { log += d; const match = log.match(/http:\/\/localhost:(\d+)/); if (match) resolve('http://127.0.0.1:' + match[1] + '/api'); }); child.stderr.resume(); child.once('error', reject); child.once('exit', () => reject(Error('Fixture exited'))); });
+  const base = await new Promise((resolve, reject) => { let log = ''; child.stdout.on('data', d => { log += d; const match = log.match(/http:\/\/localhost:(\d+)/); if (match) resolve('http://127.0.0.1:' + match[1] + '/api'); }); let errors = ''; child.stderr.on('data', d => { errors += d; }); child.once('error', reject); child.once('exit', () => reject(Error('Fixture exited: ' + errors))); });
   const tokens = Object.fromEntries(customers.map(c => [c.id, createCustomerSession(c.id, 'fictional-wheel-http-only')]));
   const request = async (route, token = tokens.a, body, method = body ? 'POST' : 'GET') => {
     const r = await fetch(base + route, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: r.status, body: await r.json() };
   };
-  const activation = { rewardsVersion: 2, monthlyClassicEnabled: true, confirmation: 'ACTIVER LA ROUE 80' };
+  const activation = { rewardsVersion: 2, monthlyClassicEnabled: true, allSpinsWin: true };
   assert.equal((await request('/dashboard/wheel-rewards', tokens.a, activation, 'PATCH')).status, 401);
   const admin = (await request('/dashboard/auth/login', '', { password: 'fictional-owner-only' })).body.token;
   assert.equal((await request('/dashboard/wheel-rewards', admin)).body.rewardsVersion, 1);
-  assert.equal((await request('/dashboard/wheel-rewards', admin, activation, 'PATCH')).body.rewardsVersion, 2);
+  const activated = await request('/dashboard/wheel-rewards', admin, activation, 'PATCH');
+  assert.equal(activated.status, 200); assert.equal(activated.body.rewardsVersion, 2); assert.equal(activated.body.winRatePercent, 100);
+  const state = (await request('/customer/wheel')).body; assert.equal(state.allSpinsWin, true);
+  for (const rows of Object.values(state.segments)) assert(!rows.some(([id]) => id === 'none'));
+  assert.equal((await request('/dashboard/wheel-rewards', admin, { rewardsVersion: 2, monthlyClassicEnabled: true, confirmation: 'ACTIVER LA ROUE 80' }, 'PATCH')).status, 400);
+  assert.equal((await request('/dashboard/wheel-rewards', admin)).body.winRatePercent, 100);
   const attempts = await Promise.all(['a','b'].map(who => request('/customer/wheel/spin', tokens[who], { orderId: 'paid-' + who, requestId: 'fictitious-race-' + who })));
   assert(attempts.every(r => r.status === 200)); assert.equal(attempts.filter(r => r.body.spin.prizeId === 'classic').length, 1);
   const who = attempts[0].body.spin.prizeId === 'classic' ? 'a' : 'b', other = who === 'a' ? 'b' : 'a';

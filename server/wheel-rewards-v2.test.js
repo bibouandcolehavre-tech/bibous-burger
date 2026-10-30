@@ -15,17 +15,17 @@ function fixture() {
     wheelEurosPerTurn: 15, status: 'confirmed', payment: { status: 'PAID', provider: 'sumup', paidAt: now.toISOString() },
   })) };
 }
-const activate = db => policy.activate(db, { rewardsVersion: 2, monthlyClassicEnabled: true, confirmation: 'ACTIVER LA ROUE 80' }, now);
+const activate = db => policy.activate(db, { rewardsVersion: 2, monthlyClassicEnabled: true, allSpinsWin: true }, now);
 const spin = (db, who, number, id = '01', time = now) => wheel.spinWheel(db, who, { now: time, orderId: 'order-' + who, requestId: 'isolated-spin-' + who + '-' + id, randomInt: () => number });
 
 test('new reward policy is explicitly activated without changing published dates, earned turns or history', () => {
   const db = fixture(); assert.equal(wheel.customerWheelState(db, 'a', now).rewardsVersion, 1);
   const before = { turns: wheel.customerWheelState(db, 'a', now).available, start: db.wheel.startDate, end: db.wheel.endDate };
-  assert.throws(() => policy.activate(db, { rewardsVersion: 2, monthlyClassicEnabled: true }), /Confirmez/);
+  assert.throws(() => policy.activate(db, { rewardsVersion: 2, monthlyClassicEnabled: true }), /barème 100 %/);
   activate(db); assert.equal(activate(db), false);
   assert.equal(wheel.customerWheelState(db, 'a', now).available, before.turns);
   assert.equal(db.wheel.startDate, before.start); assert.equal(db.wheel.endDate, before.end);
-  assert.equal(db.wheelSpins.length, 0); assert.match(db.wheel.officialRules, /80 %/);
+  assert.equal(db.wheelSpins.length, 0); assert.match(db.wheel.officialRules, /100 %/);
 });
 
 test('every V2 tier has exactly 80 winning and 20 losing outcomes, even while rare prizes are available', () => {
@@ -59,7 +59,7 @@ test('no forced monthly winner, catch-up draw or first-order/tenth-order conditi
   for (const oldOrders of [0, 9]) {
     const db = fixture(); activate(db);
     for (let i = 0; i < oldOrders; i++) db.orders.push({ ...db.orders[0], id: 'previous-' + i });
-    assert.equal(spin(db, 'a', 0).spin.prizeId, 'none');
+    assert.equal(spin(db, 'a', 0).spin.prizeId, 'points-40');
     assert.equal(db.wheelClassicMonths, undefined);
     assert.equal(spin(db, 'a', 99, 'winning').spin.prizeId, 'classic');
   }
@@ -86,7 +86,7 @@ test('test, free and unpaid orders cannot take the real monthly Classic', () => 
 });
 
 test('desserts are real single-use account-owned rewards; former fries remain supported', () => {
-  const db = fixture(); activate(db); const won = spin(db, 'a', 74);
+  const db = fixture(); activate(db); const won = spin(db, 'a', 94);
   assert.equal(won.spin.prizeId, 'dessert');
   const offer = db.merchantPromotions[0]; assert.equal(offer.type, 'free_dessert');
   assert.equal(offer.ownerCustomerId, 'a'); assert.equal(offer.usageLimit, 1);
@@ -123,7 +123,7 @@ test('new prize previews remain price-compatible with already installed clients,
 test('rules disclose exact reward odds, monthly global cap and the absence of a guaranteed monthly winner', () => {
   const db = fixture(); activate(db); const state = wheel.customerWheelState(db, 'a', now);
   const rules = fullWheelRules(state.rules, state.segments);
-  assert.match(rules, /20 %/); assert.match(rules, /80 %/); assert.match(rules, /1 %/);
+  assert.match(rules, /100 %/); assert.match(rules, /88 %/); assert.match(rules, /1 %/);
   assert.match(rules, /sans frites, boisson ni suppléments/); assert.match(rules, /Aucun tirage mensuel/);
   assert.match(rules, /un mois peut rester sans gagnant/); assert.match(rules, /burger Classique seul du mois/);
 });
