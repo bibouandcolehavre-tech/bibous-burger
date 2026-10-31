@@ -376,6 +376,9 @@ const finalizePaidOrder = (order, database) => {
     }
   }
 
+  // Under the same database lock/write as verified payment, before any
+  // loyalty-account early return (a real kiosk guest can win too).
+  stbTickets.awardFirstPaidOrder(database, new Date(now));
   const customer = database.customers.find((item) => item.id === order.customerId);
   if (!customer) return null;
   const wheelPromotion = (database.merchantPromotions || []).find(item => item.id === order.promotion?.id && item.sourceWheelSpinId);
