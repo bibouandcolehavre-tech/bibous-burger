@@ -7,7 +7,7 @@ const money = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const burgerIds = Object.keys(PRODUCT_CATALOG).filter(id => !PRODUCT_CATALOG[id].menu && !PRODUCT_CATALOG[id].kind);
 const burgerPriceForPromotion = item => item.basePrice ?? (item.productId === 'custom-burger' ? item.price : PRODUCT_CATALOG[item.productId].price);
-const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery', 'free_drink', 'free_fries', 'free_dessert', 'free_classic'];
+const types = ['percent_order', 'percent_burger', 'bogo_burger', 'buy3_get1_burger', 'buy3_get1_menu', 'free_delivery', 'free_drink', 'free_fries', 'free_dessert', 'free_classic', 'free_menu'];
 const normalizeCode = value => typeof value === 'string' ? value.trim().toUpperCase() : '';
 const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filter(order => {
   if (order.promotion?.id !== promotion.id) return false;
@@ -16,6 +16,7 @@ const activeOrders = (db, promotion, now = Date.now()) => (db.orders || []).filt
   return order.status === 'awaiting_payment' && Date.parse(order.createdAt) + 15 * 60 * 1000 > now && !['FAILED', 'EXPIRED'].includes(order.payment?.status);
 });
 const publicView = promotion => ({ id: promotion.id, code: promotion.code, type: promotion.type,
+  ...(promotion.type === 'free_menu' ? { pickupOnly: true } : {}),
   percent: promotion.percent, productId: promotion.productId, minimum: promotion.minimum,
   ...(promotion.minimumAfterDiscounts === true ? { minimumAfterDiscounts:true } : {}),
   message: promotion.message, combineWelcome: promotion.combineWelcome !== false,
@@ -35,6 +36,8 @@ function validateServiceConditions(input) {
 }
 
 function assertServiceConditions(promotion, method, context = {}, { preview = false } = {}) {
+  if (promotion?.type === 'free_menu' && method !== 'pickup')
+    fail('Ce cadeau est réservé au retrait en Click & Collect, pas à la livraison.');
   const conditions = promotion?.serviceConditions;
   if (!conditions) return;
   if (!['pickup', 'delivery'].includes(method) || (conditions.onlineOnly &&
@@ -207,6 +210,18 @@ function discountFor(promotion, items, subtotal, deliveryFee = 0) {
     if (!classic) fail('Ajoute un burger Classique seul, sauce et crudités au choix, sans supplément payant. Les menus ne comptent pas.');
     products = Math.min(classic.price, PRODUCT_CATALOG.classique.price);
   }
+  if (promotion.type === 'free_menu') {
+    const prices = items.filter(item => item.quantity >= 1).flatMap(item => {
+      const product = PRODUCT_CATALOG[item.productId];
+      const naanFormat = product?.kind === 'naan' && item.options?.find(option => option.groupId === 'naan-format' && option.id === 'menu');
+      if (!(product?.menu === true || product?.kind === 'solo' || naanFormat)) return [];
+      // One individual menu unit, including its required naan format, but never
+      // extra cheese, a premium side, a dessert add-on, or a second menu unit.
+      return [money(Math.min(item.price, (item.basePrice ?? product.price) + (naanFormat ? naanFormat.price : 0)))];
+    });
+    if (!prices.length) fail('Ajoute un menu individuel de la carte pour utiliser ce cadeau.');
+    products = Math.max(...prices);
+  }
   return { products, delivery };
 }
 
@@ -238,7 +253,7 @@ function dashboard(db) {
 // Installed versions only understand the generic promotion preview. Adapt the
 // response shape, not the stored offer or its server-side eligibility/discount.
 function compatiblePreview(promotion, apiVersion) {
-  return Number(apiVersion) !== 2 && ['free_drink', 'free_fries', 'free_dessert', 'free_classic'].includes(promotion?.type)
+  return promotion?.type === 'free_menu' || (Number(apiVersion) !== 2 && ['free_drink', 'free_fries', 'free_dessert', 'free_classic'].includes(promotion?.type))
     ? { ...promotion, type: 'percent_order', originalType: promotion.type } : promotion;
 }
 module.exports = { validate, save, findByCode, assertAvailable, assertServiceConditions, discountFor, apply, dashboard, publicView, compatiblePreview };
