@@ -15,11 +15,14 @@
       const moved = routeName !== current;
       current = routeName;
       document.querySelector('#dashboard-app').dataset.page = view;
+      document.querySelector('#dashboard-app').dataset.route = routeName;
       window.KrokliProWeb?.view(view);
       document.querySelector('#app-current').textContent = view === 'orders' && filter === 'Historique' ? 'Historique' : labels[view];
       const selectedTab=view==='orders'?routeName:view==='dispatch'?'dispatch':'tools';
       document.querySelectorAll('.pro-bottom-tabs [data-jump]').forEach(button=>button.setAttribute('aria-current',button.dataset.jump===selectedTab?'page':'false'));
       if (!fromHistory && location.hash !== `#${routeName}`) history.pushState(null, '', `#${routeName}`);
+      if (view === 'orders') document.querySelector('#dashboard-title').textContent = routeName === 'history' ? 'Historique' : routeName === 'scheduled' ? 'Commandes programmées' : 'Commandes';
+      if (view === 'dispatch') document.querySelector('#dashboard-title').textContent = 'Livreurs';
       if (view === 'home') {
         document.querySelector('#dashboard-title').textContent = 'Votre service';
         document.querySelector('#view-description').textContent = 'Votre restaurant, à portée de main.';
