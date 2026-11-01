@@ -60,7 +60,11 @@ test('large bold styling is scoped to order times and asset URLs are refreshed',
   assert.match(css, /\.queue-order \.order-time,\.home-row \.order-time\{[^}]*font-size:26px;[^}]*font-weight:900/);
   assert.match(css, /\.order-appointment>\.order-time\{[^}]*font-size:clamp\(32px,5vw,40px\);[^}]*font-weight:900/);
   assert.ok(html.includes('pwa.css?v=pickup-time-20261016'));
-  assert.ok(html.includes('app.js?v=service-direct-20261028'));
+  const entry = html.match(/<script src="\.\/(app-orders-([a-f0-9]{12})\.js)"/);
+  assert.ok(entry, 'the runtime entry has a distinct content-addressed path');
+  const runtime = fs.readFileSync(path.join(__dirname, entry[1]));
+  assert.equal(runtime.toString(), fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8'));
+  assert.equal(require('node:crypto').createHash('sha256').update(runtime).digest('hex').slice(0, 12), entry[2]);
 });
 
 module.exports = { renderFixture };
