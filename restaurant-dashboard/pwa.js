@@ -1,6 +1,6 @@
 /* Shell only: no client records, session tokens or API responses are cached here. */
 (() => {
-  const routes = new Set(['home','tools','account','orders','dispatch','enrolment','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
+  const routes = new Set(['home','tools','account','orders','history','scheduled','dispatch','enrolment','reservations','rewards','menu','backups','customers','marketing','promotions','notifications','marketing-sms','crm','settings','schedule','statistics']);
   const labels = {home:'Accueil',tools:'Rubriques',account:'Mon compte',orders:'Commandes',dispatch:'Répartition des livreurs',enrolment:'Inscriptions Krokli',reservations:'Réservations',rewards:'Récompenses',menu:'Carte & produits',backups:'Sauvegardes',customers:'Clients & fidélité',marketing:'Marketing',promotions:'Codes promo',notifications:'Notifications', 'marketing-sms':'SMS commerciaux',crm:'Offres & statistiques',settings:'Réglages',schedule:'Créneaux',statistics:'Statistiques'};
   const route = () => {const candidate = location.hash.slice(1); return routes.has(candidate) ? candidate : 'orders';};
   const initialRoute = route();
@@ -9,16 +9,17 @@
   const updateInstallation = () => {document.querySelectorAll('[data-install-app]').forEach(button => {button.hidden = installed();});};
   const offline = () => {document.querySelector('#app-offline').hidden = navigator.onLine !== false;};
   window.BibouRestaurantApp = {
-    changed(view, filter) {
+    changed(view, filter,period='today') {
       if (!routes.has(view)) return;
-      const moved = view !== current;
-      current = view;
+      const routeName=view==='orders'?(filter==='Historique'?'history':period==='future'?'scheduled':'orders'):view;
+      const moved = routeName !== current;
+      current = routeName;
       document.querySelector('#dashboard-app').dataset.page = view;
       window.KrokliProWeb?.view(view);
       document.querySelector('#app-current').textContent = view === 'orders' && filter === 'Historique' ? 'Historique' : labels[view];
-      const selectedTab=view==='orders'?'orders':'tools';
+      const selectedTab=view==='orders'?routeName:view==='dispatch'?'dispatch':'tools';
       document.querySelectorAll('.pro-bottom-tabs [data-jump]').forEach(button=>button.setAttribute('aria-current',button.dataset.jump===selectedTab?'page':'false'));
-      if (!fromHistory && location.hash !== `#${view}`) history.pushState(null, '', `#${view}`);
+      if (!fromHistory && location.hash !== `#${routeName}`) history.pushState(null, '', `#${routeName}`);
       if (view === 'home') {
         document.querySelector('#dashboard-title').textContent = 'Votre service';
         document.querySelector('#view-description').textContent = 'Votre restaurant, à portée de main.';

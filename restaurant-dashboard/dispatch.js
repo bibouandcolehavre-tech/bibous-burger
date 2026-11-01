@@ -19,7 +19,8 @@ window.BibouDispatch = (() => {
   function create({ root, api, token, onUnauthorized, onOrdersChanged = () => {}, getOrder = () => null }) {
     let data = null, fresh = false, busy = false, loading = false, generation = 0, lastRender = '';
     const selections = new Map();
-    root.innerHTML = `<div class="menu-intro"><p class="eyebrow">VOS LIVREURS · KROKLI</p><h2>Répartir les courses</h2><p>Planifiez la proposition dès l’acceptation, ou choisissez vous-même le livreur. Le minuteur ne marque jamais le repas prêt.</p></div>
+    root.innerHTML = `<div class="menu-intro"><p class="eyebrow">VOS LIVREURS · KROKLI</p><h2>Livreurs</h2><p>Position visible pendant tout le service en ligne, même sans commande. Position masquée hors ligne. Les délais de préparation et d’appel restent inchangés.</p></div>
+      <div data-dispatch-map></div>
       <p data-dispatch-feedback class="menu-feedback" role="status" aria-live="polite"></p><div data-photo-delivery></div>
       <section class="workspace-panel" data-dispatch-settings></section>
       <div data-dispatch-metrics class="dispatch-metrics"></div>
@@ -27,6 +28,7 @@ window.BibouDispatch = (() => {
       <div class="dispatch-columns"><section class="workspace-panel"><h2>Commandes à attribuer</h2><div data-dispatch-ready></div></section><section class="workspace-panel"><h2>Livraisons attribuées</h2><div data-dispatch-assigned></div></section></div>
       <section class="workspace-panel dispatch-team"><h2>Mes livreurs</h2><div data-dispatch-drivers></div><p class="menu-note">Chaque livreur se connecte à Krokly Driver avec son compte personnel. L’alerte sur l’iPhone verrouillé doit être testée sur son téléphone ; pendant le pilote, surveillez aussi les courses ici.</p></section>`;
     const q = selector => root.querySelector(selector);
+    const map=window.KrokliDispatchMap?.create(q('[data-dispatch-map]'));
     const feedback = value => { q('[data-dispatch-feedback]').textContent = value; };
     async function request(route = '', method = 'GET', body) {
       const session = token();
@@ -56,15 +58,17 @@ window.BibouDispatch = (() => {
     }
     function render() {
       if (!data) return;
+      map?.update(data,fresh);
       const ready = data.orders.filter(order => order.eligible);
       const assigned = data.orders.filter(order => activeStatuses.includes(order.assignment?.status));
       const scheduled = data.orders.filter(order=>order.status==='preparing'&&!order.eligible&&!activeStatuses.includes(order.assignment?.status));
       q('[data-dispatch-settings]').innerHTML = data.dispatchSettings ? `<h2>Propositions automatiques ${data.dispatchSettings.enabled ? 'activées' : 'désactivées'}</h2><p>Après une nouvelle acceptation : préparation estimée à 15 min sous 40 €, 30 min de 40 € à 100 € inclus, 35 min au-delà de 100 €, hors frais et réductions. Appel 5 min avant la fin estimée. Si le repas est prêt plus tôt, cliquez sur « Prête » : l’appel est avancé sans attendre le minuteur, sauf si un livreur est déjà proposé ou a accepté. Seuls les livreurs qui se déclarent disponibles sont proposés, un par un, hors tournée groupée. Priorité aux positions GPS partagées récentes les plus proches du restaurant ; sans position récente, rotation des disponibles. La proximité est mesurée à vol d’oiseau, pas en temps de trajet routier.</p><button type="button" data-dispatch-toggle ${!fresh||busy?'disabled':''}>${data.dispatchSettings.enabled ? 'Désactiver les prochains appels automatiques' : 'Activer pour les prochaines commandes'}</button><p>Les anciennes commandes ne sont pas reprises automatiquement, sauf si vous les marquez « Prête ». Les propositions déjà envoyées restent à traiter.</p>` : '<p>Planification automatique non disponible sur cette version du serveur.</p>';
       q('[data-dispatch-scheduled]').innerHTML = scheduled.map(order=>order.source==='uber_eats'?`<article class="dispatch-order"><span class="external-source">UBER · COURSE IMPORTÉE</span><h3>Course Uber #${Number(order.number)} · ${esc(order.customerName)}</h3><p>${esc(order.deliveryAddress?.address)} · ${esc(order.deliveryAddress?.city)}</p><p>Importée, pas encore proposée au livreur. Paiement géré dans Uber.</p><button type="button" class="primary-button external-ready" data-external-action="ready" data-external-id="${esc(order.id)}" ${!fresh||busy?'disabled':''}>Le repas est prêt</button><button type="button" data-external-action="cancel" data-external-id="${esc(order.id)}" ${!fresh||busy?'disabled':''}>Annuler cet import</button></article>`:`<article class="dispatch-order"><h3>Commande #${Number(order.number)}</h3>${timing(order)||'<p>Préparation en cours, sans appel automatique planifié. L’attribution manuelle sera disponible une fois le repas marqué prêt.</p>'}</article>`).join('')||'<p>Aucune commande en attente de son heure d’appel.</p>';
-      q('[data-dispatch-metrics]').innerHTML = `<article><strong>${ready.length}</strong><span>à attribuer</span></article><article><strong>${assigned.length}</strong><span>attribuée(s)</span></article><article><strong>${data.drivers.filter(driver => driver.active).length}</strong><span>livreur(s) actif(s)</span></article>`;
+      q('[data-dispatch-metrics]').innerHTML = `<article><strong>${ready.length}</strong><span>à attribuer</span></article><article><strong>${assigned.length}</strong><span>attribuée(s)</span></article><article><strong>${data.drivers.filter(driver => window.KrokliDispatchMap?.online(driver)).length}</strong><span>livreur(s) en ligne</span></article>`;
       q('[data-dispatch-ready]').innerHTML = ready.map(order => card(order, false)).join('') || '<p class="dispatch-empty">Aucune commande prête à attribuer. Acceptez puis marquez prête une commande de livraison payée du jour. Les commandes déjà confiées à Uber ne sont pas proposées ici.</p>';
       q('[data-dispatch-assigned]').innerHTML = assigned.map(order => card(order, true)).join('') || '<p class="dispatch-empty">Aucune livraison attribuée pour le moment.</p>';
-      q('[data-dispatch-drivers]').innerHTML = data.drivers.map(driver => `<article class="dispatch-driver"><strong>${esc(driver.name)}</strong><span>${driver.active ? 'Compte actif' : 'Compte désactivé'} · ${driver.availability?.available ? 'Disponible pour les appels automatiques' : 'Indisponible pour les appels automatiques'} · ${Number(driver.pushDevices) || 0} téléphone(s) inscrit(s) aux alertes</span></article>`).join('') || '<p class="dispatch-empty">Aucun livreur créé pour le moment.</p>';
+      q('[data-dispatch-drivers]').innerHTML = data.drivers.map(driver => {const online=fresh&&window.KrokliDispatchMap?.online(driver),p=online&&(data.gpsPositions||[]).find(p=>p.driverId===driver.id&&window.KrokliDispatchMap?.position(p)),assignment=data.orders.find(o=>o.assignment?.driverId===driver.id&&activeStatuses.includes(o.assignment.status));return `<article class="dispatch-driver"><strong>${esc(driver.name)} <span class="dispatch-presence ${online?'online':''}">${!fresh?'Statut à actualiser':online?'En ligne':'Hors ligne'}</span></strong><span>${!driver.active?'Compte désactivé':assignment?'Course #'+Number(assignment.number)+' · '+esc(labels[assignment.assignment.status]):online?'Disponible':'Indisponible'} · ${Number(driver.pushDevices)||0} téléphone(s) inscrit(s) aux alertes</span><small>${!online?'Position masquée':p?'Position reçue à '+esc(timeLabel(p.receivedAt))+' · '+p.latitude.toFixed(5)+', '+p.longitude.toFixed(5):'GPS récent indisponible'}</small></article>`;}).join('') || '<p class="dispatch-empty">Aucun livreur créé pour le moment.</p>';
+      q('[data-dispatch-ready]').querySelectorAll('.dispatch-order').forEach((card,index)=>{const order=ready[index];if(!order)return;const button=document.createElement('button');button.type='button';button.className='primary-button';button.dataset.dispatchNearest=order.id;button.textContent='Proposer au plus proche';button.disabled=!fresh||busy||!window.KrokliDispatchMap?.nearest(data);card.append(button);});
     }
     async function load() {
       if (busy || loading || !token()) return;
@@ -136,8 +140,9 @@ window.BibouDispatch = (() => {
       catch(error){if(current===generation){fresh=false;busy=false;render();feedback(`${error.message} Actualisez avant de réessayer.`);}}
       finally{if(current===generation)busy=false;}
     }
-    root.addEventListener('click', event => { const button = event.target.closest('[data-dispatch-assign]'); if (button && !button.disabled) void assign(button.dataset.dispatchAssign); if(event.target.closest('[data-dispatch-toggle]'))void toggleAutomatic(); const external=event.target.closest('[data-external-action]');if(external)void externalAction(external); });
+    root.addEventListener('click', event => {const closest=event.target.closest('[data-dispatch-nearest]');if(closest&&!closest.disabled){const driver=window.KrokliDispatchMap?.nearest(data);if(!fresh||busy||!driver)return;const id=closest.dataset.dispatchNearest;selections.set(id,driver.id);q(`[data-dispatch-select="${CSS.escape(id)}"]`).value=driver.id;void assign(id);return;} const button = event.target.closest('[data-dispatch-assign]'); if (button && !button.disabled) void assign(button.dataset.dispatchAssign); if(event.target.closest('[data-dispatch-toggle]'))void toggleAutomatic(); const external=event.target.closest('[data-external-action]');if(external)void externalAction(external); });
     function clear() {
+      map?.clear();
       generation++;
       data = null; fresh = busy = loading = false; lastRender = '';
       selections.clear();

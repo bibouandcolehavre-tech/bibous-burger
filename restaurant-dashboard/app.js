@@ -288,6 +288,7 @@ async function dispatchAutoPrint() {
 }
 
 function renderOrders() {
+  document.querySelector('#orders-list').classList?.remove('orders-board');
   // Polling refreshes the content, not the responsible person's open/closed choice.
   document.querySelectorAll('#orders-list details[data-order-disclosure]').forEach(detail => {
     if (detail.open) openOrderDisclosures.add(detail.dataset.orderDisclosure);
@@ -341,6 +342,7 @@ function renderOrders() {
     const shipping = order.type === 'Livraison' ? `<details class="service-order-extra" data-order-disclosure="delivery:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`delivery:${order.apiId}`) ? 'open' : ''}><summary>Livraison & livreur${deliveryState ? ` · ${escapeHtml(deliveryState)}` : ''}</summary><div class="order-delivery-address">${address?.address ? `${escapeHtml(address.address)}<br>${escapeHtml([address.postalCode, address.city].filter(Boolean).join(' '))}` : 'Adresse de livraison non enregistrée'}</div>${window.BibouDispatch?.markup(order.raw) || ''}${window.BibouUber?.markup(order.raw) || ''}</details>` : '';
     return `<article class="order-card service-order-card ${order.status === "Nouvelle" ? "new" : ""}" data-service-order="${escapeHtml(order.apiId)}"><div class="order-head"><div><strong class="order-time">${escapeHtml(order.raw?.slot || order.slot)}</strong><div class="order-meta">${escapeHtml(order.type)}${order.raw?.serviceDate ? ` prévu${order.type === 'Livraison' ? 'e' : ''} · ${escapeHtml(serviceDateLabel(order.raw.serviceDate))}` : ''} · #${Number(order.id)}</div></div><span class="status ${escapeHtml(order.status.replace(' ', '-'))}">${order.status === 'Acceptée' ? 'En préparation' : escapeHtml(order.status)}</span></div><div class="order-id">${escapeHtml(order.customer)}</div>${dateWarning}<div class="order-items">${lines}</div>${comment}${amendmentMarkup(order)}<div class="order-bottom"><div class="order-details">${order.raw?.payment?.provider === 'cash' ? (cashDue(order.raw) ? 'Espèces à encaisser' : 'Espèces encaissées') : 'Paiement confirmé'} · ${euro(order.total)}</div>${actionMarkup(order)}</div><div class="order-contact">${call}</div>${printControls}${shipping}<details class="pricing-details" data-order-disclosure="payment:${escapeHtml(order.apiId)}" ${openOrderDisclosures.has(`payment:${order.apiId}`) ? 'open' : ''}><summary>Détail du paiement · ${euro(order.paidTotal ?? order.total)}</summary>${orderPricingMarkup(order)}</details></article>`;
   }).join("") : `<div class="empty">🍔<strong>${historyView ? "Aucune commande trouvée" : completedView ? "Aucune commande terminée" : "Aucune commande ici"}</strong>${historyView ? "Essayez un autre numéro, nom ou date." : completedView ? "Les commandes terminées resteront accessibles ici." : "Les nouvelles commandes apparaîtront dès leur réception."}</div>`;
+  if(!completedView&&!historyView&&period==='today')window.KrokliOrdersBoard?.mount({root:document.querySelector('#orders-list'),orders:shown,today});
   document.querySelectorAll('#orders-list [data-close-order]').forEach(button => button.onclick = () => {
     const detail = button.closest('details[data-order-disclosure]');
     if (!detail) return;
@@ -1064,6 +1066,8 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
+  if(view==='history'){servicePeriod='today';setOrderFilter('Historique');view='orders';}
+  else if(view==='scheduled'){servicePeriod='future';setOrderFilter('all');view='orders';}
   if (!["home", "tools", "account", "orders", "dispatch", "enrolment", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   if (view !== 'customers') closeCustomerDetail(false);
   currentView = view;
@@ -1111,7 +1115,7 @@ function showView(view) {
   if (view === "notifications") void notificationsPanel?.load();
   if (view === 'marketing-sms') { document.querySelector('#dashboard-title').textContent = 'Écrire par SMS'; updateText('#view-description', 'Préparez votre message et confirmez sa facturation avant tout envoi.'); void smsPanel?.load(); }
   if (["crm", "settings"].includes(view)) void crmPanel?.load();
-  window.BibouRestaurantApp?.changed(view, filter);
+  window.BibouRestaurantApp?.changed(view, filter,servicePeriod);
 }
 
 enrolmentPanel=window.KrokliEnrolment?.({root:document.querySelector('#enrolment-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.')});
@@ -1124,6 +1128,7 @@ document.querySelectorAll('[data-service-period]').forEach(button => button.addE
   const value = button.dataset.servicePeriod;
   if (value === 'history') setOrderFilter('Historique');
   else { servicePeriod = value === 'future' ? 'future' : 'today'; setOrderFilter('all'); }
+  window.BibouRestaurantApp?.changed('orders',filter,servicePeriod);
 }));
 document.querySelector('#pro-birthday-open').addEventListener('click',()=>birthdaysPanel?.open());
 document.querySelector('#pro-enable-alerts').addEventListener('click',()=>document.querySelector('#enable-alerts-button').click());
