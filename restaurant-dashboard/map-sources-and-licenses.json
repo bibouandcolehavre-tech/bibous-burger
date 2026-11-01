@@ -1,0 +1,22 @@
+{
+  "preparedAt": "2026-11-01T17:43:36.853156+00:00",
+  "roads": 17800,
+  "namedRoadSegments": 6708,
+  "distinctStreetNames": 2641,
+  "bounds": [
+    0.065,
+    49.47,
+    0.22,
+    49.56
+  ],
+  "runtimeGpsSentToCartographyProvider": false,
+  "roadsSource": "https://overpass-api.de/api/interpreter",
+  "roadsQuery": "[out:json][timeout:25];way[highway](49.47,0.065,49.56,0.22);out geom;",
+  "roadsTimestamp": "2026-11-01T17:39:43Z",
+  "roadsLicense": "ODbL1.0",
+  "roadsLicenseUrl": "https://www.openstreetmap.org/copyright",
+  "rasterSourceReceipt": "/Users/nowar/Documents/Codex/krokli-simulations-stores-20261101/map-source-license.json",
+  "rasterLicense": "Licence Ouverte2.0",
+  "leaflet": "1.9.4, BSD2Clause; original official SRI verified; CSS embeds official PNGs locally",
+  "sourceRawSha256": "26c1765a7a2c09f8187548bffa87d0d28c05b9cb0260781f0eb7b1b0838dc677"
+}
