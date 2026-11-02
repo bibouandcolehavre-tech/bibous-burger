@@ -2,11 +2,12 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const http = require('node:http'), { once } = require('node:events');
 const core = require('./wallet/core'), { createWalletHttp } = require('./wallet/http');
 
-test('Apple installation/update protocol is pass-scoped and updates the same card after points change and account deletion', async t => {
+test('Apple installation/update protocol is pass-scoped and updates the same card after points change and account deletion', { timeout: 20000 }, async t => {
   const db = { customers: [{ id: 'test-a', firstName: 'Alice', phoneVerifiedAt: '2026-01-01', points: 10 }, { id: 'test-b', firstName: 'Bob', phoneVerifiedAt: '2026-01-01', points: 20 }] };
   db.customers.forEach(c => core.ensureMembership(db, c)); const [a, b] = db.customers;
   const config = { enabled: true, origin: 'https://bibou.example', apple: { enabled: true, passType: 'pass.com.bibousburgers.club' }, google: { enabled: false } };
   const handle = createWalletHttp({ config, secret: 'test-secret', transact: async (fn, save) => { const result = await fn(db); if (save) core.reconcile(db); return result; },
+    send: (res, status, payload) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify(payload)); },
     readBody: async req => { let body = ''; for await (const part of req) body += part; return body ? JSON.parse(body) : {}; },
     authenticatedCustomer: req => req.headers.authorization === 'Bearer session-a' ? a : null, authenticatedDashboard: req => req.headers.authorization === 'Bearer restaurant-test',
     renderApple: pass => Buffer.from(JSON.stringify({ serial: pass.memberId, points: pass.points, voided: pass.voided })) });

@@ -34,6 +34,19 @@ test('Wallet HTTP reuses SMS registration, isolates its cookie, authenticates QR
   assert.equal((await req('/api/wallet/apple.pkpass', { cookie })).status, 503, 'No unsigned Apple pass can be issued');
   assert.equal((await req('/api/wallet/google', { method: 'POST', cookie })).status, 503);
   assert.equal((await req('/api/dashboard/wallet/identify', { method: 'POST', body: { barcode: member.member.barcode } })).status, 401);
+  const staff = await (await req('/api/dashboard/auth/login', { method: 'POST', body: { password: 'synthetic-dashboard-only' } })).json();
+  assert.ok(staff.token);
+  const beforeScan = JSON.parse(await fs.readFile(file, 'utf8'));
+  const scan = await req('/api/dashboard/wallet/identify', { method: 'POST', token: staff.token, origin: 'https://restaurant.example', body: { barcode: member.member.barcode } });
+  assert.equal(scan.status, 200); assert.equal(scan.headers.get('access-control-allow-origin'), '*');
+  const identified = await scan.json(); assert.equal(identified.member.customerId, original.id); assert.equal(identified.member.points, 345);
+  assert.equal(identified.permission, 'identify-only'); assert.equal(member.member.customerId, undefined);
+  const afterScan = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.deepEqual(afterScan, beforeScan, 'Staff scanning does not mutate points, orders, memberships or rewards');
+  for (const [barcode, token, expected] of [[member.member.barcode, login.token, 401], ['https://evil.example/', staff.token, 404], ['BIBOU:1:' + '0'.repeat(32), staff.token, 404]]) {
+    const response = await req('/api/dashboard/wallet/identify', { method: 'POST', token, body: { barcode } });
+    assert.equal(response.status, expected); assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  }
   const proof = await (await req('/api/auth/sms/check', { method: 'POST', body: { phone: '0600000002', code: '123456', registrationVersion: 2 } })).json();
   const signup = await (await req('/api/auth/sms/register', { method: 'POST', body: { registrationToken: proof.registrationToken, firstName: 'Camille', lastName: 'Test' } })).json();
   assert.equal((await req('/api/wallet/session', { method: 'POST', token: signup.token })).status, 403, 'Preview issuance rejects verified accounts outside the allowlist');
