@@ -19,6 +19,7 @@ function createWalletHttp({ config, secret, transact, readBody, authenticatedCus
     if (String(request.headers.authorization || '').replace(/^Bearer\s+/i, '').startsWith('kiosk.')) throw core.fail(403, 'Ouvre ta carte depuis ton téléphone personnel.');
     const customer = core.customerForCookie(request, database, secret) || authenticatedCustomer(request, database);
     if (!customer || !database.customers.includes(customer) || !customer.phoneVerifiedAt) throw core.fail(401, 'Vérifie ton numéro par SMS pour retrouver ta carte.');
+    core.assertPreviewAccess(customer, config);
     return customer;
   };
   const verifyApple = (request, serial) => {
@@ -36,7 +37,7 @@ function createWalletHttp({ config, secret, transact, readBody, authenticatedCus
       if (!config.enabled) throw core.fail(503, 'La carte Wallet Bibou est en préparation. Tes points restent disponibles dans ton compte Bibou.');
       protect(response);
       if (url.pathname === '/api/wallet/status' && request.method === 'GET') {
-        json(response, 200, { enabled: true, apple: config.apple.enabled, google: config.google.enabled }); return true;
+        json(response, 200, { enabled: true, apple: config.apple.enabled, google: config.google.enabled, previewOnly: Boolean(config.previewOnly) }); return true;
       }
       if (url.pathname.startsWith('/api/wallet/apple/v1/')) {
         if (!config.apple.enabled) throw core.fail(503, 'La carte Apple Wallet est en préparation.');
@@ -96,6 +97,7 @@ function createWalletHttp({ config, secret, transact, readBody, authenticatedCus
           // Exchange an existing, SMS-authenticated session for Wallet-only scope.
           const customer = authenticatedCustomer(request, database);
           if (!customer || !database.customers.includes(customer) || !customer.phoneVerifiedAt || String(request.headers.authorization || '').includes('kiosk.')) throw core.fail(401, 'Vérifie ton numéro par SMS pour retrouver ta carte.');
+          core.assertPreviewAccess(customer, config);
           return customer.id;
         });
         response.setHeader('Set-Cookie', core.walletCookie(customerId, secret, { secure })); json(response, 200, { ok: true }); return true;

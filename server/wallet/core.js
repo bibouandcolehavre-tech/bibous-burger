@@ -70,6 +70,15 @@ function assertSameOrigin(request, publicOrigin) {
   if (request.headers.origin !== publicOrigin || request.headers['sec-fetch-site'] === 'cross-site')
     throw fail(403, 'Recharge cette page Bibou avant de continuer.');
 }
+function assertPreviewAccess(customer, config) {
+  if (!config.previewOnly) return;
+  let phone = String(customer.phone || '').replace(/\D/g, '');
+  if (phone.startsWith('0033')) phone = phone.slice(2);
+  if (/^0[1-9]\d{8}$/.test(phone)) phone = '33' + phone.slice(1);
+  const hash = crypto.createHash('sha256').update(phone).digest('hex');
+  if (!/^33[1-9]\d{8}$/.test(phone) || !config.previewPhoneHashes?.some(allowed => safeEqual(hash, allowed)))
+    throw fail(403, 'La carte Wallet est réservée aux essais du restaurant pour le moment. Ton compte et tes points restent disponibles dans l’application Bibou.');
+}
 function publicOrigin(value, test = false) {
   try {
     const u = new URL(value);
@@ -79,4 +88,4 @@ function publicOrigin(value, test = false) {
   } catch { return null; }
 }
 module.exports = { COOKIE, ID, QR, fail, points, firstName, ensureMembership, reconcile, memberView, scan,
-  passAuth, safeEqual, findPass, removeCustomer, walletCookie, customerForCookie, assertSameOrigin, publicOrigin };
+  passAuth, safeEqual, findPass, removeCustomer, walletCookie, customerForCookie, assertSameOrigin, assertPreviewAccess, publicOrigin };

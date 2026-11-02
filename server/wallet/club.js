@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let phone, proof, pendingToken, pendingCustomerId;
+  let phone, proof, pendingToken, pendingCustomerId, previewOnly = false;
   const message = (text = '', error = false) => { $('message').textContent = text; $('message').classList.toggle('error', error); };
   const show = name => {
     for (const id of ['phone', 'code', 'identity', 'card']) $(id + '-panel').hidden = id !== name;
@@ -26,6 +26,7 @@
     $('member-qr').src = '/api/wallet/qr.png?t=' + Date.now();
     $('apple').hidden = !data.apple; $('google').hidden = !data.google;
     $('provider-note').textContent = data.apple && data.google ? 'Choisis le portefeuille de ton téléphone.' : data.apple ? 'Apple Wallet est disponible. Google Wallet est encore en préparation.' : data.google ? 'Google Wallet est disponible. Apple Wallet est encore en préparation.' : 'L’ajout à Wallet est encore en préparation.';
+    if (previewOnly) $('provider-note').textContent = 'Essai privé du restaurant — ' + $('provider-note').textContent;
     show('card'); message();
   }
   async function finish(token) {
@@ -56,7 +57,8 @@
     try {
       const status = await api('/api/wallet/status');
       if (!status.apple && !status.google) { show(null); message('Ta carte Wallet arrive bientôt. Ton compte et tes points Bibou restent disponibles dans l’application.'); return; }
-      try { await card(); } catch (error) { if (error.status === 401) { show('phone'); message(); } else throw error; }
+      previewOnly = Boolean(status.previewOnly);
+      try { await card(); } catch (error) { if (error.status === 401) { show('phone'); message(previewOnly ? 'Essai privé du restaurant. Connecte-toi avec le numéro autorisé pour tester ta carte.' : ''); } else throw error; }
     } catch (error) { show(null); message(error.message, true); }
   })();
 })();

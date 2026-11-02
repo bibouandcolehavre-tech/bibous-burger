@@ -1,7 +1,7 @@
 # Club Bibou Wallet
 
 Candidate based on the live API commit `a3d5a1742d72eb59f7f1f5b898bb8230404c5b52`.
-Not activated in production. No native application/store change in this candidate.
+No native application/store change in this candidate.
 
 ## Identity and loyalty
 
@@ -16,6 +16,8 @@ Account deletion removes the membership/customer association, immediately invali
 ## Deployment gates
 
 All providers are disabled by default. Serve the candidate only after the HTTP, signing, balance update and deletion tests pass. Do not enable public issuance until real-device acceptance, installation/update/removal and scanner behavior are verified.
+
+For private on-device acceptance, set `WALLET_PREVIEW_ONLY=true` and `WALLET_PREVIEW_PHONE_HASHES` to comma-separated SHA-256 digests of the allowed verified phone numbers, normalized as `33` plus the nine national digits (no plus sign). An empty/invalid list denies every account. The restriction applies to both full customer sessions and Wallet cookies, before membership creation or any Apple/Google issuance. It does not modify ordinary app authentication or loyalty. Never remove this restriction while device/scanner acceptance or Google publishing approval remains incomplete.
 
 Environment variables (values/keys must never enter Git):
 

@@ -8,6 +8,8 @@ const files = ['icon.png', 'icon@2x.png', 'icon@3x.png', 'logo.png', 'logo@2x.pn
 function configFromEnv(env = process.env) {
   const origin = publicOrigin(env.WALLET_PUBLIC_ORIGIN, env.NODE_ENV === 'test');
   const config = { enabled: env.WALLET_ENABLED === 'true' && Boolean(origin), origin,
+    previewOnly: env.WALLET_PREVIEW_ONLY === 'true',
+    previewPhoneHashes: String(env.WALLET_PREVIEW_PHONE_HASHES || '').split(',').map(s => s.trim()).filter(s => /^[a-f0-9]{64}$/.test(s)),
     apple: { enabled: false, passType: env.WALLET_APPLE_PASS_TYPE || '', team: env.WALLET_APPLE_TEAM_ID || '',
       certFile: env.WALLET_APPLE_CERT_FILE, keyFile: env.WALLET_APPLE_KEY_FILE, wwdrFile: env.WALLET_APPLE_WWDR_FILE,
       certPem: env.WALLET_APPLE_CERT_PEM, keyPem: env.WALLET_APPLE_KEY_PEM, wwdrPem: env.WALLET_APPLE_WWDR_PEM },
