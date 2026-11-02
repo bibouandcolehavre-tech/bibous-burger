@@ -93,6 +93,9 @@ const { createInvoiceHttp } = require('./customer-invoice-http');
 const { createEnrolmentStore } = require('./krokli-enrolment');
 const { createEnrolmentHttp } = require('./krokli-enrolment-http');
 const enrolmentMail = require('./krokli-enrolment-mail');
+const clubWallet = require('./wallet/core');
+const walletProviders = require('./wallet/providers');
+const { createWalletHttp } = require('./wallet/http');
 
 const envPath = path.join(process.cwd(), ".env");
 if (fsSync.existsSync(envPath)) {
@@ -138,6 +141,7 @@ const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
 const configuredCustomerSessionSecret = process.env.SESSION_SECRET;
 const kioskDeviceSecret = terminalDeviceSecret(process.env);
 const customerSessionSecret = configuredCustomerSessionSecret || crypto.randomBytes(32).toString("base64url");
+const walletConfig = walletProviders.configFromEnv(process.env);
 const kioskConnections = createKioskConnectionStore(path.join(path.dirname(databasePath), 'kiosk-connections.json'), { secret: customerSessionSecret });
 const kioskPairingLimiter = createAuthRateLimiter({ limit: 20, windowMs: 60000 });
 const googlePlaceId = process.env.GOOGLE_PLACE_ID || "ChIJY7WCDKSOcUgRyRRQzkp0rLs";
@@ -199,6 +203,7 @@ const ensureDatabase = async () => {
 const readDatabase = async () => { await ensureDatabase(); return JSON.parse(await fs.readFile(databasePath, "utf8")); };
 const writeDatabase = async (database) => {
   quantityStock.reconcile(database);
+  clubWallet.reconcile(database);
   await ensureDatabase();
   const temporary = `${databasePath}.${crypto.randomUUID()}.tmp`;
   try {
@@ -562,6 +567,13 @@ if(enrolmentStore)setInterval(()=>{void enrolmentStore.purge().catch(()=>{});},2
 if(enrolmentStore&&enrolmentMail.configured()){
   let sending=false;setInterval(async()=>{if(sending)return;sending=true;try{await enrolmentStore.drainMail(enrolmentMail.sender());}catch{/* Retry only known unsent work; no applicant content in logs. */}finally{sending=false;}},15000).unref();
 }
+const walletTransact = async (task, save = false) => {
+  const release = await acquireDatabase();
+  try { const database = await readDatabase(); const result = await task(database); if (save) await writeDatabase(database); return result; }
+  finally { release(); }
+};
+const walletHttp = createWalletHttp({ config: walletConfig, secret: customerSessionSecret, transact: walletTransact,
+  readBody, authenticatedCustomer, authenticatedDashboard, send });
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   let url;
@@ -593,6 +605,7 @@ const server = http.createServer(async (request, response) => {
       return send(response, 403, { error: 'Cet accès de vérification ne peut pas accéder aux données réelles.' });
     if (krokliStoreReview.isToken(driverReviewToken) && url.pathname === '/api/krokly-driver/login')
       return send(response, 403, { error: 'Reconnectez-vous sans utiliser une ancienne session de vérification.' });
+    if (await walletHttp(request, response, url)) return;
     const driverInformationPage = /^\/driver\/(privacy|support)\/?$/.exec(url.pathname);
     if (url.pathname === '/driver/password') {
       if (!['GET', 'HEAD'].includes(request.method)) return send(response, 405, { error: 'Lecture seule.' });
@@ -2476,6 +2489,10 @@ const server = http.createServer(async (request, response) => {
     releaseDatabase?.();
   }
 });
+
+const walletTick = require('./wallet/worker').createWorker({ config: walletConfig, transact: walletTransact });
+const walletTimer = setInterval(() => void walletTick().catch(() => {}), 60000);
+walletTimer.unref(); server.once('listening', () => void walletTick().catch(() => {})); server.on('close', () => clearInterval(walletTimer));
 
 const stbTimer = setInterval(async () => {
   const release = await acquireDatabase();
