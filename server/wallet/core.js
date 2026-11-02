@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { createCustomerSession, readCustomerSession } = require('../customer-session');
+const { PRESENTATION_REVISION } = require('./venue');
 
 const COOKIE = 'bibou_club_wallet';
 const ID = /^[a-f0-9]{32}$/;
@@ -8,7 +9,7 @@ const fail = (statusCode, message) => Object.assign(new Error(message), { status
 const scopedKey = (secret, purpose) => crypto.createHmac('sha256', secret).update(`bibou-wallet-v1:${purpose}`).digest('hex');
 const points = customer => Math.max(0, Math.trunc(Number(customer.points) || 0));
 const firstName = customer => String(customer.firstName || customer.name?.split(' ')[0] || 'Membre').slice(0, 60);
-const fingerprint = customer => JSON.stringify([firstName(customer), points(customer)]);
+const fingerprint = customer => JSON.stringify([firstName(customer), points(customer), PRESENTATION_REVISION]);
 
 function ensureMembership(database, customer) {
   if (customer.clubWallet) return false;

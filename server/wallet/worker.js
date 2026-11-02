@@ -7,6 +7,9 @@ function createWorker({ config, transact, updateGoogle = providers.createGoogleU
     running = true;
     try {
       const passes = await transact(database => {
+        // Include presentation-only changes (such as venue relevance) before
+        // taking the delivery snapshot, without changing the loyalty balance.
+        core.reconcile(database);
         for (const w of database.clubWalletRevocations || []) if (Date.parse(w.expiresAt) <= Date.now()) w.devices = [];
         const expired = (database.clubWalletRevocations || []).filter(w => Date.parse(w.expiresAt) <= Date.now()
           && (!w.googleIssued || w.googleSyncedRevision === w.revision));

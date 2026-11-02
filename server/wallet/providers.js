@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http2 = require('node:http2');
 const { passAuth, publicOrigin } = require('./core');
+const { VENUE, NEARBY_TEXT } = require('./venue');
 const files = ['icon.png', 'icon@2x.png', 'icon@3x.png', 'logo.png', 'logo@2x.png', 'logo@3x.png'];
 
 function configFromEnv(env = process.env) {
@@ -37,14 +38,17 @@ function appleProperties(pass, config, secret) {
   return { formatVersion: 1, passTypeIdentifier: config.apple.passType, teamIdentifier: config.apple.team,
     serialNumber: pass.memberId, organizationName: "Bibou’s Burgers", description: 'Club Bibou — carte de fidélité',
     logoText: 'CLUB BIBOU', backgroundColor: 'rgb(39, 82, 66)', foregroundColor: 'rgb(251, 244, 230)', labelColor: 'rgb(232, 221, 198)',
-    webServiceURL: `${config.origin}/api/wallet/apple`, authenticationToken: passAuth(pass.memberId, secret), voided: pass.voided };
+    webServiceURL: `${config.origin}/api/wallet/apple`, authenticationToken: passAuth(pass.memberId, secret), voided: pass.voided,
+    ...(pass.voided ? {} : { locations: [{ ...VENUE, relevantText: NEARBY_TEXT }] }) };
 }
 function applePass(pass, config, secret) {
   const { PKPass } = require('passkit-generator');
   const buffers = Object.fromEntries(files.map(name => [name, fs.readFileSync(path.join(__dirname, 'assets', name))]));
+  const properties = appleProperties(pass, config, secret);
   const pk = new PKPass(buffers, { signerCert: material(config.apple, 'cert'), signerKey: material(config.apple, 'key'),
-    wwdr: material(config.apple, 'wwdr') }, appleProperties(pass, config, secret));
+    wwdr: material(config.apple, 'wwdr') }, properties);
   pk.type = 'storeCard';
+  if (properties.locations) pk.setLocations(...properties.locations);
   pk.headerFields.push({ key: 'points', label: 'MES POINTS', value: pass.points, changeMessage: 'Ton solde est de %@ points.' });
   pk.primaryFields.push({ key: 'member', label: 'MEMBRE CLUB BIBOU', value: pass.firstName });
   pk.backFields.push({ key: 'program', label: 'Ton programme Bibou', value: 'Les mêmes points et les mêmes récompenses que dans ton compte Bibou. Cette carte identifie ton compte ; elle ne permet pas de te connecter ni de dépenser une récompense.' },
@@ -57,7 +61,8 @@ function googleClass(config) {
   return { id: config.google.classId, issuerName: "Bibou’s Burgers", programName: 'Club Bibou', reviewStatus: 'UNDER_REVIEW',
     programLogo: { sourceUri: { uri: `${config.origin}/club/google-logo.png` }, contentDescription: { defaultValue: { language: 'fr-FR', value: "Bibou’s Burgers" } } },
     hexBackgroundColor: '#275242', accountNameLabel: 'Membre', accountIdLabel: 'Carte Club Bibou',
-    homepageUri: { uri: 'https://bibousburgers.com/app', description: 'Retrouver mon compte Bibou' } };
+    homepageUri: { uri: 'https://bibousburgers.com/app', description: 'Retrouver mon compte Bibou' },
+    merchantLocations: [{ ...VENUE }] };
 }
 function googleObject(pass, config) {
   return { id: `${config.google.issuer}.${pass.memberId}`, classId: config.google.classId, state: pass.voided ? 'INACTIVE' : 'ACTIVE',
