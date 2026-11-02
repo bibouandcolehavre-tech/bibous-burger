@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const core = require('./wallet/core');
 const providers = require('./wallet/providers');
+const { VENUE, NEARBY_TEXT } = require('./wallet/venue');
 const { createWorker } = require('./wallet/worker');
 const { readCustomerSession } = require('./customer-session');
 const { anonymizeCustomerAccount } = require('./account-deletion');
@@ -74,6 +75,32 @@ test('Google Save JWT has a valid RSA signature and contains only the chosen car
   for (const field of ['+33600000001', 'synthetic-alice', 'Alice Test']) assert.ok(!JSON.stringify(payload).includes(field));
 });
 
+test('proximity metadata uses only the verified restaurant, never a client position, and is removed from a voided Apple pass', () => {
+  const config = { origin: 'https://bibou.example', apple: { passType: 'pass.com.bibousburgers.club', team: 'RXT78KZ7A7' }, google: { classId: '123456789.club' } };
+  const db = fixture(), customer = db.customers[0]; customer.latitude = 1; customer.longitude = 2; core.ensureMembership(db, customer);
+  const pass = core.findPass(db, customer.clubWallet.serial), before = structuredClone(db);
+  assert.deepEqual(providers.appleProperties(pass, config, 'secret').locations, [{ ...VENUE, relevantText: NEARBY_TEXT }]);
+  assert.equal(providers.appleProperties({ ...pass, voided: true }, config, 'secret').locations, undefined);
+  assert.deepEqual(providers.googleClass(config).merchantLocations, [{ ...VENUE }]);
+  assert.equal(providers.googleClass(config).locations, undefined, 'Deprecated Google locations are not used');
+  assert.deepEqual(db, before, 'Rendering proximity information does not change the customer or loyalty balance');
+});
+
+test('an already-installed card gets its presentation update without changing serial, points, orders or sending repeated pushes', async () => {
+  const db = fixture(), customer = db.customers[0]; core.ensureMembership(db, customer);
+  const serial = customer.clubWallet.serial, initialRevision = customer.clubWallet.revision;
+  customer.clubWallet.fingerprint = JSON.stringify(['Alice', 345]); // Card installed before nearby support.
+  customer.clubWallet.appleIssued = true;
+  customer.clubWallet.devices.push({ deviceId: 'already-installed-test-device', pushToken: 'f'.repeat(64), notifiedRevision: initialRevision });
+  let pushes = 0;
+  const tick = createWorker({ config: { enabled: true, apple: { enabled: true }, google: { enabled: false } },
+    transact: async fn => fn(db), pushApple: async () => { pushes++; return 200; } });
+  await tick(); assert.equal(pushes, 1); assert.ok(customer.clubWallet.revision > initialRevision);
+  assert.equal(customer.points, 345); assert.equal(customer.clubWallet.serial, serial); assert.equal(db.orders.length, 0);
+  assert.equal(customer.clubWallet.devices[0].notifiedRevision, customer.clubWallet.revision);
+  await tick(); assert.equal(pushes, 1, 'The same presentation update is not pushed on every worker tick');
+});
+
 test('Apple pass ZIP, manifest and CMS signature are valid with ephemeral TEST certificates; no Apple-installability claim', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bibou-wallet-pkpass-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const key = path.join(dir, 'test.key'), cert = path.join(dir, 'test.pem');
@@ -83,6 +110,7 @@ test('Apple pass ZIP, manifest and CMS signature are valid with ephemeral TEST c
   const file = path.join(dir, 'test.pkpass'); fs.writeFileSync(file, providers.applePass(pass, config, 'secret'));
   const extract = name => execFileSync('unzip', ['-p', file, name]);
   const content = JSON.parse(extract('pass.json')); assert.equal(content.storeCard.headerFields[0].value, 345);
+  assert.deepEqual(content.locations, [{ ...VENUE, relevantText: NEARBY_TEXT }], 'The signed package actually contains the restaurant location');
   assert.equal(content.barcodes[0].message, pass.barcode); assert.equal(content.authenticationToken, core.passAuth(pass.memberId, 'secret'));
   assert.ok(!JSON.stringify(content).includes('+33600000001'));
   const manifest = extract('manifest.json');
