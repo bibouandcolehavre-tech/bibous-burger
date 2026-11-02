@@ -46,13 +46,17 @@ const recurringServiceClosureReason = (dateKey, slot, method) => {
 const regularSlotsForDate = (dateKey, method = "delivery") => {
   const date = dateFromKey(dateKey);
   if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
-  return regularSlotsForWeekday(date.getUTCDay(), slotMinutesForMethod(method)).filter(slot => !recurringServiceClosureReason(dateKey, slot, method));
+  const slots = regularSlotsForWeekday(date.getUTCDay(), slotMinutesForMethod(method));
+  // Owner's regular pickup service starts one hour before delivery, every day.
+  if (method === 'pickup') slots.push('18:00', '18:20', '18:40');
+  return slots.filter(slot => !recurringServiceClosureReason(dateKey, slot, method)).sort();
 };
 const legacySlotsForDate = (dateKey, method) => {
   const date = dateFromKey(dateKey);
   if (!date || !['delivery', 'pickup', 'reservation'].includes(method)) return [];
   const weekday = date.getUTCDay();
-  const windows = weekday === 0 ? [[19, 21]] : weekday === 6 ? [[19, 22]] : [[12, 14], [19, 22]];
+  const eveningStart = method === 'pickup' ? 18 : 19;
+  const windows = weekday === 0 ? [[eveningStart, 21]] : weekday === 6 ? [[eveningStart, 22]] : [[12, 14], [eveningStart, 22]];
   const step = legacySlotMinutes(method);
   return windows.flatMap(([start, end]) => Array.from({ length: (end - start) * 60 / step }, (_, index) => {
     const minute = start * 60 + index * step;

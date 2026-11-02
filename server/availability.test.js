@@ -71,14 +71,14 @@ test("retrait et tables : trois créneaux fixes par heure inchangés", () => {
   for (const method of ["pickup", "reservation"]) {
     const slots = slotsForDate(dateKey, method);
     assert.deepEqual(slots.slice(0, 4), ["12:00", "12:20", "12:40", "13:00"]);
-    assert.equal(slots.length, 15);
+    assert.equal(slots.length, method === 'pickup' ? 18 : 15);
     assert.equal(slots.at(-1), "21:40");
     assert.equal(slots.includes("14:00"), false);
     assert.equal(slots.includes("22:00"), false);
     assert.equal(validateServiceSlot(dateKey, "12:20", now, method), null);
     assert.match(validateServiceSlot(dateKey, "12:00 – 12:30", now, method), /pas disponible/);
     assert.match(validateServiceSlot(dateKey, "12:10", now, method), /pas disponible/);
-    assert.equal(slotsForDate("2026-09-19", method)[0], "19:00");
+    assert.equal(slotsForDate("2026-09-19", method)[0], method === 'pickup' ? "18:00" : "19:00");
     if (method === 'reservation') assert.deepEqual(slotsForDate("2026-09-20", method), []);
     else assert.equal(slotsForDate("2026-09-20", method).at(-1), "20:40");
   }

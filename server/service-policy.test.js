@@ -28,7 +28,7 @@ test('délais de préparation appliqués au retrait et à la livraison, selon le
 });
 test('retrait et tables restent à vingt minutes, livraison à quinze',()=>{
   for(const method of ['pickup','reservation']) {
-    assert.equal(slotsForDate(date,method).length,15);
+    assert.equal(slotsForDate(date,method).length,method === 'pickup' ? 18 : 15);
     for(const slot of ['19:00','19:20','19:40','20:00']) assert.equal(validateServiceSlot(date,slot,now,method),null);
     assert.match(validateServiceSlot(date,'19:15',now,method),/pas disponible/);
   }
