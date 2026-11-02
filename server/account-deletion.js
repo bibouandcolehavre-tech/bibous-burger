@@ -11,6 +11,7 @@ const anonymizeCustomerAccount = (database, customer, value = new Date()) => {
   if (!database || !customer) return null;
   const deletedAt = value.toISOString();
   require('./wallet/core').removeCustomer(database, customer, value);
+  require('./paper-loyalty').removeCustomer(database, customer.id);
   withdrawContest(database, customer, value);
   deleteCustomerPush(database, customer.id);
   deleteCustomerCrm(database, customer.id);

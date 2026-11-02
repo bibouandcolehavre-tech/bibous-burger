@@ -117,6 +117,15 @@ test('Apple pass ZIP, manifest and CMS signature are valid with ephemeral TEST c
   for (const [name, sha] of Object.entries(JSON.parse(manifest))) assert.equal(crypto.createHash('sha1').update(extract(name)).digest('hex'), sha);
   fs.writeFileSync(path.join(dir, 'manifest.json'), manifest); fs.writeFileSync(path.join(dir, 'signature'), extract('signature'));
   execFileSync('openssl', ['cms', '-verify', '-binary', '-inform', 'DER', '-in', path.join(dir, 'signature'), '-content', path.join(dir, 'manifest.json'), '-noverify', '-out', path.join(dir, 'verified')], { stdio: 'ignore' });
+  require('./paper-loyalty').credit(db, db.customers[0], { requestId: crypto.randomUUID(), stamps: 6, cardReference: 'PC-APPLE-TEST' }, 'transfer');
+  const withPaper = core.findPass(db, pass.memberId);
+  fs.writeFileSync(file, providers.applePass(withPaper, config, 'secret'));
+  const paperContent = JSON.parse(extract('pass.json'));
+  assert.equal(paperContent.storeCard.secondaryFields.find(f => f.key === 'paper-stamps').value, '6 / 10 tampons');
+  assert.equal(paperContent.storeCard.headerFields[0].value, 345);
+  assert.ok(!JSON.stringify(paperContent).includes('PC-APPLE-TEST'));
+  const google = providers.googleObject(withPaper, { google: { issuer: '123456789', classId: '123456789.test' }, origin: 'https://bibou.example' });
+  assert.equal(google.secondaryLoyaltyPoints.balance.string, '6/10');
 });
 
 test('balance sync retries failures, survives concurrent balance changes and never changes loyalty points or sends SMS', async () => {

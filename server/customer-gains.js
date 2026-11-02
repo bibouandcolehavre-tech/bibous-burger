@@ -77,7 +77,7 @@ function customerGains(database, customer, now = new Date()) {
   const gifts = wheelHistory.filter(spin => !['none', 'points-20', 'points-30', 'points-40', 'points-60', 'stb-tickets'].includes(spin.prizeId)).map(spin => ({ ...spin, source: 'wheel' }));
   for (const claim of database.rewardClaims || []) {
     if (claim.customerId !== customer.id) continue;
-    gifts.push({ id: claim.id, source: 'tier', label: String(claim.rewardTitle || REWARD_DEFINITIONS.find(reward => reward.id === claim.rewardId)?.title || 'Récompense de palier'),
+    gifts.push({ id: claim.id, source: claim.source === 'paper-card' ? 'paper-card' : 'tier', label: String(claim.rewardTitle || REWARD_DEFINITIONS.find(reward => reward.id === claim.rewardId)?.title || 'Récompense de palier'),
       at: date(claim.createdAt), usedAt: date(claim.usedAt), status: { active: 'available', used: 'used', cancelled: 'revoked' }[claim.status] || 'unknown' });
   }
   for (const award of database.stbTickets?.awards || []) {

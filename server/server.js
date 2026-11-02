@@ -574,6 +574,8 @@ const walletTransact = async (task, save = false) => {
 };
 const walletHttp = createWalletHttp({ config: walletConfig, secret: customerSessionSecret, transact: walletTransact,
   readBody, authenticatedCustomer, authenticatedDashboard, send });
+const paperLoyaltyHttp = require('./paper-loyalty-http').createPaperLoyaltyHttp({ transact: walletTransact,
+  readBody, authenticatedCustomer, authenticatedDashboard, send });
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   let url;
@@ -606,6 +608,7 @@ const server = http.createServer(async (request, response) => {
     if (krokliStoreReview.isToken(driverReviewToken) && url.pathname === '/api/krokly-driver/login')
       return send(response, 403, { error: 'Reconnectez-vous sans utiliser une ancienne session de vérification.' });
     if (await walletHttp(request, response, url)) return;
+    if (await paperLoyaltyHttp(request, response, url)) return;
     const driverInformationPage = /^\/driver\/(privacy|support)\/?$/.exec(url.pathname);
     if (url.pathname === '/driver/password') {
       if (!['GET', 'HEAD'].includes(request.method)) return send(response, 405, { error: 'Lecture seule.' });

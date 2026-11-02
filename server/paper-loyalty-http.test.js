@@ -1,0 +1,28 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+const {spawn}=require('node:child_process'),{once}=require('node:events'),{createCustomerSession}=require('./customer-session');
+test('paper transfer HTTP is staff-only, concurrent retries create one gift, own reads stay isolated and redemption stays single-use',{timeout:20000},async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'paper-card-http-')),file=path.join(dir,'data.json');
+ const customers=['a','b'].map((id,i)=>({id,name:`Client ${id} fictif`,firstName:'Test',phone:`+3360000000${i+1}`,phoneVerifiedAt:'2026-01-01',points:345,weeklyOrders:2}));
+ await fs.writeFile(file,JSON.stringify({customers,orders:[],reservations:[],nextCustomerId:3,nextOrderNumber:1}));
+ const child=spawn(process.execPath,[path.join(__dirname,'server.js')],{cwd:dir,env:{PATH:process.env.PATH,NODE_ENV:'test',PORT:'0',DATA_FILE_PATH:file,SESSION_SECRET:'paper-http-only',RESTAURANT_DASHBOARD_PASSWORD:'paper-staff-only'},stdio:['ignore','pipe','pipe']});
+ t.after(async()=>{child.kill();if(child.exitCode===null)await once(child,'exit');await fs.rm(dir,{recursive:true,force:true});});
+ const base=await new Promise((resolve,reject)=>{child.stdout.on('data',d=>{const m=String(d).match(/http:\/\/localhost:\d+/);if(m)resolve(m[0]);});child.on('error',reject);child.on('exit',c=>reject(Error('Local server stopped: '+c)));});
+ const req=(route,{method='GET',body,token}={})=>fetch(base+route,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ const a=createCustomerSession('a','paper-http-only'),b=createCustomerSession('b','paper-http-only');
+ assert.equal((await req('/api/customer/paper-card')).status,401);
+ const staff=await(await req('/api/dashboard/auth/login',{method:'POST',body:{password:'paper-staff-only'}})).json();assert.ok(staff.token);
+ const route='/api/dashboard/customers/a/paper-card/transfers',body={requestId:crypto.randomUUID(),stamps:10,cardReference:'PC-FICTIVE-001'};
+ for(const token of [undefined,a,b])assert.equal((await req(route,{method:'POST',body,token})).status,401);
+ const replies=await Promise.all(Array.from({length:4},()=>req(route,{method:'POST',body,token:staff.token})));assert.ok(replies.every(r=>r.status===200));
+ const states=await Promise.all(replies.map(r=>r.json()));assert.ok(states.every(s=>s.paperCard.rewards.length===1));
+ const own=await(await req('/api/customer/paper-card',{token:a})).json();assert.equal(own.paperCard.rewards.length,1);assert.equal(own.history,undefined);assert.equal(own.paperCard.rewards[0].status,'active');
+ const other=await(await req('/api/customer/paper-card',{token:b})).json();assert.equal(other.paperCard,null);
+ await req('/api/customers/a',{method:'PATCH',token:a,body:{paperLoyalty:{stamps:9,completedCards:50}}});
+ assert.equal((await(await req('/api/customer/paper-card',{token:a})).json()).paperCard.stamps,0,'Profile updates cannot forge old stamps');
+ assert.equal((await req('/api/customer/paper-card',{method:'POST',body,token:a})).status,405);
+ const reward=own.paperCard.rewards[0];assert.equal((await req('/api/dashboard/reward-claims/'+reward.id,{method:'PATCH',body:{status:'used'},token:a})).status,401);
+ for(let i=0;i<2;i++)assert.equal((await req('/api/dashboard/reward-claims/'+reward.id,{method:'PATCH',body:{status:'used'},token:staff.token})).status,200);
+ const after=await(await req('/api/customer/paper-card',{token:a})).json();assert.equal(after.paperCard.rewards[0].status,'used');
+ const db=JSON.parse(await fs.readFile(file,'utf8'));assert.equal(db.paperLoyaltyTransfers.length,1);assert.equal(db.rewardClaims.length,1);assert.equal(db.customers[0].points,345);assert.equal(db.orders.length,0);
+ const readOnly=structuredClone(db);await req('/api/customer/paper-card',{token:a});assert.deepEqual(JSON.parse(await fs.readFile(file,'utf8')),readOnly,'Read does not credit points or gifts');
+});
