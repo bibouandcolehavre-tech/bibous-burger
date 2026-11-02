@@ -51,6 +51,12 @@ function applePass(pass, config, secret) {
   if (properties.locations) pk.setLocations(...properties.locations);
   pk.headerFields.push({ key: 'points', label: 'MES POINTS', value: pass.points, changeMessage: 'Ton solde est de %@ points.' });
   pk.primaryFields.push({ key: 'member', label: 'MEMBRE CLUB BIBOU', value: pass.firstName });
+  if (!pass.voided && pass.paperCard) {
+    pk.secondaryFields.push({ key: 'paper-stamps', label: 'ANCIENNE CARTE', value: pass.paperCard.stamps ? `${pass.paperCard.stamps} / 10 tampons` : 'Complétée' });
+    pk.auxiliaryFields.push({ key: 'paper-burgers', label: 'BURGERS À RETIRER', value: pass.paperCard.availableBurgers,
+      changeMessage: 'Ancienne carte : %@ burger(s) offert(s) à retirer.' });
+    pk.backFields.push({ key: 'paper-card', label: 'Ta carte papier reprise', value: `Les anciens tampons restent séparés de tes points. Présente le code du cadeau à l’équipe avant le retrait. Retrouve le détail sur ${config.origin}/club` });
+  }
   pk.backFields.push({ key: 'program', label: 'Ton programme Bibou', value: 'Les mêmes points et les mêmes récompenses que dans ton compte Bibou. Cette carte identifie ton compte ; elle ne permet pas de te connecter ni de dépenser une récompense.' },
     { key: 'app', label: 'Retrouve ton compte Bibou', value: 'https://bibousburgers.com/app' },
     { key: 'privacy', label: 'Données personnelles', value: `${config.origin}/privacy` });
@@ -68,6 +74,10 @@ function googleObject(pass, config) {
   return { id: `${config.google.issuer}.${pass.memberId}`, classId: config.google.classId, state: pass.voided ? 'INACTIVE' : 'ACTIVE',
     accountName: pass.firstName, accountId: pass.memberId,
     loyaltyPoints: { label: 'Mes points', balance: { int: pass.points } },
+    ...(!pass.voided && pass.paperCard ? {
+      secondaryLoyaltyPoints: { label: 'Tampons', balance: { string: pass.paperCard.stamps ? `${pass.paperCard.stamps}/10` : '10/10' } },
+      textModulesData: [{ id: 'paper-card', header: 'Burgers offerts à retirer', body: `${pass.paperCard.availableBurgers}. Présente le code du cadeau à l’équipe. Détail sur ${config.origin}/club` }]
+    } : {}),
     ...(pass.voided ? {} : { barcode: { type: 'QR_CODE', value: pass.barcode, alternateText: 'Carte Club Bibou' } }) };
 }
 function signJwt(payload, privateKey) {
@@ -108,6 +118,7 @@ function createGoogleUpdater(config, transport = fetch) {
     const res = await transport(`https://walletobjects.googleapis.com/walletobjects/v1/loyaltyObject/${encodeURIComponent(object.id)}`, {
       method: 'PATCH', signal: AbortSignal.timeout(10000), headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ accountName: object.accountName, loyaltyPoints: object.loyaltyPoints, state: object.state,
+        secondaryLoyaltyPoints: object.secondaryLoyaltyPoints || null, textModulesData: object.textModulesData || [],
         ...(pass.voided ? { barcode: { type: 'QR_CODE', value: 'BIBOU:DISABLED', alternateText: 'Carte désactivée' } } : {}) }) });
     // A Save link may never be used. Never create an object on a customer's behalf here.
     if (res.status === 404) return false;

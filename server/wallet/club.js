@@ -23,6 +23,17 @@
   async function card() {
     const data = await api('/api/wallet/member');
     $('points').textContent = data.member.points.toLocaleString('fr-FR'); $('member-name').textContent = data.member.firstName;
+    $('paper-card').hidden = !data.paperCard;
+    $('paper-rewards').replaceChildren();
+    if (data.paperCard) {
+      const paper = data.paperCard;
+      $('paper-progress').textContent = paper.stamps ? `${paper.stamps} / 10 tampons · encore ${paper.remaining} pour un burger offert.` : data.paperCard.rewards.some(item => item.status === 'active') ? 'Ancienne carte complétée · burger à retirer ci-dessous.' : 'Ancienne carte complétée · aucun burger en attente de retrait.';
+      for (const reward of paper.rewards.filter(item => item.status === 'active')) {
+        const block = document.createElement('p'), title = document.createElement('strong'), code = document.createElement('code');
+        title.textContent = 'Un burger offert · à présenter au comptoir'; code.textContent = reward.code;
+        block.append(title, document.createElement('br'), code); $('paper-rewards').append(block);
+      }
+    }
     $('member-qr').src = '/api/wallet/qr.png?t=' + Date.now();
     $('apple').hidden = !data.apple; $('google').hidden = !data.google;
     $('provider-note').textContent = data.apple && data.google ? 'Choisis le portefeuille de ton téléphone.' : data.apple ? 'Apple Wallet est disponible. Google Wallet est encore en préparation.' : data.google ? 'Google Wallet est disponible. Apple Wallet est encore en préparation.' : 'L’ajout à Wallet est encore en préparation.';
@@ -51,7 +62,7 @@
   });
   $('change-phone').addEventListener('click', () => { proof = null; pendingToken = null; pendingCustomerId = null; show('phone'); message(); });
   $('refresh').addEventListener('click', () => card().catch(error => message(error.message, true)));
-  $('logout').addEventListener('click', async () => { try { await api('/api/wallet/session', { method: 'DELETE' }); $('member-qr').removeAttribute('src'); show('phone'); message(); } catch (error) { message(error.message, true); } });
+  $('logout').addEventListener('click', async () => { try { await api('/api/wallet/session', { method: 'DELETE' }); $('member-qr').removeAttribute('src'); $('paper-rewards').replaceChildren(); $('paper-progress').textContent = ''; $('paper-card').hidden = true; show('phone'); message(); } catch (error) { message(error.message, true); } });
   $('google').addEventListener('click', async () => { $('google').disabled = true; try { const data = await api('/api/wallet/google', { method: 'POST' }); location.assign(data.url); } catch (error) { message(error.message, true); } finally { $('google').disabled = false; } });
   (async () => {
     try {

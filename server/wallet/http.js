@@ -113,11 +113,12 @@ function createWalletHttp({ config, secret, transact, readBody, authenticatedCus
         json(response, 200, { ok: true }); return true;
       }
       if (url.pathname === '/api/wallet/member' && request.method === 'GET') {
-        const member = await transact(database => { const customer = ownCustomer(request, database); core.ensureMembership(database, customer); return core.memberView(customer); }, true);
-        json(response, 200, { member, apple: config.apple.enabled, google: config.google.enabled }); return true;
+        const state = await transact(database => { const customer = ownCustomer(request, database); core.ensureMembership(database, customer);
+          return { member: core.memberView(customer, database), paperCard: require('../paper-loyalty').customerState(database, customer) }; }, true);
+        json(response, 200, { ...state, apple: config.apple.enabled, google: config.google.enabled }); return true;
       }
       if (url.pathname === '/api/wallet/qr.png' && request.method === 'GET') {
-        const member = await transact(database => { const customer = ownCustomer(request, database); core.ensureMembership(database, customer); return core.memberView(customer); }, true);
+        const member = await transact(database => { const customer = ownCustomer(request, database); core.ensureMembership(database, customer); return core.memberView(customer, database); }, true);
         binary(response, 'image/png', await QRCode.toBuffer(member.barcode, { width: 320, margin: 3, errorCorrectionLevel: 'M' })); return true;
       }
       if (url.pathname === '/api/wallet/apple.pkpass' && request.method === 'GET') {

@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { createCustomerSession, readCustomerSession } = require('../customer-session');
 const { PRESENTATION_REVISION } = require('./venue');
+const paper = require('../paper-loyalty');
 
 const COOKIE = 'bibou_club_wallet';
 const ID = /^[a-f0-9]{32}$/;
@@ -9,7 +10,8 @@ const fail = (statusCode, message) => Object.assign(new Error(message), { status
 const scopedKey = (secret, purpose) => crypto.createHmac('sha256', secret).update(`bibou-wallet-v1:${purpose}`).digest('hex');
 const points = customer => Math.max(0, Math.trunc(Number(customer.points) || 0));
 const firstName = customer => String(customer.firstName || customer.name?.split(' ')[0] || 'Membre').slice(0, 60);
-const fingerprint = customer => JSON.stringify([firstName(customer), points(customer), PRESENTATION_REVISION]);
+const fingerprint = (customer, database) => JSON.stringify([firstName(customer), points(customer), PRESENTATION_REVISION,
+  ...(customer.paperLoyalty ? [paper.walletState(database, customer)] : [])]);
 
 function ensureMembership(database, customer) {
   if (customer.clubWallet) return false;
@@ -20,20 +22,21 @@ function ensureMembership(database, customer) {
 function reconcile(database) {
   for (const customer of database.customers || []) {
     const wallet = customer.clubWallet;
-    if (!wallet || wallet.fingerprint === fingerprint(customer)) continue;
-    wallet.fingerprint = fingerprint(customer);
+    if (!wallet || wallet.fingerprint === fingerprint(customer, database)) continue;
+    wallet.fingerprint = fingerprint(customer, database);
     wallet.revision = database.clubWalletRevision = (database.clubWalletRevision || 0) + 1;
   }
 }
-function memberView(customer) {
+function memberView(customer, database = {}) {
   return { firstName: firstName(customer), points: points(customer), memberId: customer.clubWallet.serial,
-    barcode: `BIBOU:1:${customer.clubWallet.serial}` };
+    barcode: `BIBOU:1:${customer.clubWallet.serial}`,
+    ...(customer.paperLoyalty ? { paperCard: paper.walletState(database, customer) } : {}) };
 }
 function scan(database, barcode) {
   const match = typeof barcode === 'string' && QR.exec(barcode);
   if (!match) return null;
   const customer = (database.customers || []).find(c => c.clubWallet?.serial === match[1]);
-  return customer ? memberView(customer) : null;
+  return customer ? memberView(customer, database) : null;
 }
 function passAuth(serial, secret) { return scopedKey(secret, `apple:${serial}`); }
 function safeEqual(left, right) {
@@ -43,7 +46,7 @@ function safeEqual(left, right) {
 function findPass(database, serial) {
   if (!ID.test(serial)) return null;
   const customer = (database.customers || []).find(c => c.clubWallet?.serial === serial);
-  if (customer) return { ...memberView(customer), wallet: customer.clubWallet, voided: false };
+  if (customer) return { ...memberView(customer, database), wallet: customer.clubWallet, voided: false };
   const removed = (database.clubWalletRevocations || []).find(w => w.serial === serial);
   return removed ? { firstName: 'Carte désactivée', points: 0, memberId: serial, barcode: '', wallet: removed, voided: true } : null;
 }
