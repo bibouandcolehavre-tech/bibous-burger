@@ -56,6 +56,14 @@
       line('REMARQUE CLIENT'), ...lines.map(line),
       '<text align="left" dw="false" dh="false" em="false"/>', line('')];
   };
+  const lunchGiftLines = order => {
+    const gift = order.lunchGift;
+    if (!gift || gift.campaignId !== 'first-five-lunch-20261103' || order.status === 'cancelled') return [];
+    return [line(''), '<text align="left" dw="false" dh="true" em="true"/>',
+      line('CADEAU MIDI - OFFERT'), line(`1 x ${gift.label}`),
+      ...(gift.status === 'choice_required' ? [line('CHOISIR LE LOT AVEC LE CLIENT')] : []),
+      '<text align="left" dw="false" dh="false" em="false"/>', line('')];
+  };
   const serviceDay = value => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
     return match ? `${match[3]}/${match[2]}/${match[1]}` : 'DATE A CONFIRMER';
@@ -116,7 +124,7 @@
       ...customerContact(order),
     ];
     if (order.dineIn && order.tableNote) parts.push(line(`Table : ${order.tableNote}`));
-    parts.push(...customerRemark(order), line('--------------------------------'));
+    parts.push(...customerRemark(order), ...lunchGiftLines(order), line('--------------------------------'));
     for (const item of order.items) {
       const quantity = Number(item.quantity);
       if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error('Quantité de produit invalide.');
@@ -193,6 +201,7 @@
       parts.push(line(''), '<text em="true"/>', line(`Prix article : ${amount(Number(item.price) * quantity)}`), '<text em="false"/>', line(''));
       parts.push(line('--------------------------------'));
     }
+    parts.push(...lunchGiftLines(order));
     if (Number(order.discount) > 0) parts.push(line(`Remise : -${amount(order.discount)}`));
     if (order.method === 'delivery') parts.push(line(`Livraison : ${amount(order.deliveryFee ?? 0)}`));
     parts.push(line(''), '<text align="center" em="true"/>', line('PAIEMENT INITIAL'),
