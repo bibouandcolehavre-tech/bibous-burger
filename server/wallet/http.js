@@ -87,9 +87,15 @@ function createWalletHttp({ config, secret, transact, readBody, authenticatedCus
         if (request.method !== 'POST') throw core.fail(405, 'Action indisponible.');
         if (!authenticatedDashboard(request)) throw core.fail(401, 'Accès restaurant requis.');
         const input = await readBody(request);
-        const member = await transact(database => core.scan(database, input.barcode));
+        const member = await transact(database => {
+          const view = core.scan(database, input.barcode);
+          if (!view) return null;
+          const customer = database.customers.find(c => c.clubWallet?.serial === view.memberId);
+          // The existing customer drawer ID is exposed to authenticated staff only.
+          return { ...view, customerId: customer.id };
+        });
         if (!member) throw core.fail(404, 'Carte introuvable ou désactivée.');
-        json(response, 200, { member, permission: 'identify-only' }); return true;
+        send(response, 200, { member, permission: 'identify-only' }); return true;
       }
       if (['POST', 'DELETE'].includes(request.method)) core.assertSameOrigin(request, config.origin);
       if (url.pathname === '/api/wallet/session' && request.method === 'POST') {
@@ -129,7 +135,8 @@ function createWalletHttp({ config, secret, transact, readBody, authenticatedCus
       }
       throw core.fail(404, 'Page introuvable.');
     } catch (error) {
-      json(response, [400, 401, 403, 404, 405, 409, 413, 429, 503].includes(error.statusCode) ? error.statusCode : 503,
+      const reply = url.pathname === '/api/dashboard/wallet/identify' ? send : json;
+      reply(response, [400, 401, 403, 404, 405, 409, 413, 429, 503].includes(error.statusCode) ? error.statusCode : 503,
         { error: error.statusCode ? error.message : 'Ta carte est momentanément indisponible. Tes points restent conservés dans ton compte Bibou.' });
       return true;
     }
