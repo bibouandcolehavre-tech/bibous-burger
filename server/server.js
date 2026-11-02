@@ -88,6 +88,7 @@ const { statistics: dashboardStatistics } = require('./dashboard-statistics');
 const { removeAuthorizedOwnerTestAccounts } = require("./owner-test-account-cleanup");
 const { destinationForLegacyPath } = require('./domain-forwarding');
 const wheelGame = require('./wheel');
+const lunchGifts = require('./lunch-gifts');
 const { createInvoiceStore } = require('./customer-invoices');
 const { createInvoiceHttp } = require('./customer-invoice-http');
 const { createEnrolmentStore } = require('./krokli-enrolment');
@@ -353,7 +354,7 @@ const finalizePaidTableDeposit = (reservation, database) => {
   return true;
 };
 const loyaltyPointsForItems = (items) => items.reduce((total, item) => total + (menuProductIds.has(item.productId) ? MENU_POINTS : burgerProductIds.has(item.productId) ? BURGER_POINTS : naanLoyaltyPoints(item)) * Math.max(1, Number(item.quantity) || 1), 0);
-const finalizePaidOrder = (order, database) => {
+const finalizePaidOrder = async (order, database) => {
   if (order.payment?.status !== "PAID") return null;
   if (order.status === "cancelled") {
     revokeLoyaltyForCancelledOrder(order, database);
@@ -362,6 +363,13 @@ const finalizePaidOrder = (order, database) => {
 
   const now = new Date().toISOString();
   order.payment.paidAt ||= now;
+  if (lunchGifts.eligible(order, database.customers.find(c => c.id === order.customerId), new Date(now))) {
+    let giftFlags;
+    try { giftFlags = await productStockStore.read(); }
+    catch { giftFlags = null; console.error('Cadeau midi : vérifier le stock avec le client.'); }
+    lunchGifts.award(database, order, database.customers.find(c => c.id === order.customerId), {
+      now: new Date(now), flags: giftFlags, secret: customerSessionSecret });
+  }
   if (order.status === "awaiting_payment") {
     order.status = "confirmed";
     order.updatedAt = now;
@@ -517,7 +525,7 @@ const reconcileTablePreorders = async (database, now = new Date()) => {
       try { await refreshPayment(order); changed = true; }
       catch { continue; }
     }
-    if (order.payment?.status === 'PAID') { finalizePaidOrder(order, database); changed = true; }
+    if (order.payment?.status === 'PAID') { await finalizePaidOrder(order, database); changed = true; }
     else if (!order.payment?.checkoutReference || order.payment?.status === 'EXPIRED') {
       table.status = 'cancelled'; table.updatedAt = now.toISOString();
       order.status = 'cancelled'; order.updatedAt = now.toISOString(); changed = true;
@@ -583,6 +591,21 @@ const server = http.createServer(async (request, response) => {
   let releaseDatabase;
 
   try {
+    if (request.method === 'GET' && ['/api/lunch-gifts', '/cadeaux-midi'].includes(url.pathname)) {
+      const offer = await walletTransact(db => url.pathname === '/cadeaux-midi' ? lunchGifts.page(db) : lunchGifts.state(db));
+      if (url.pathname === '/api/lunch-gifts') return send(response, 200, offer);
+      response.writeHead(200, { 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff',
+        'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" });
+      return response.end(offer);
+    }
+    const lunchGiftRoute = /^\/api\/dashboard\/orders\/([^/]+)\/lunch-gift$/.exec(url.pathname);
+    if (lunchGiftRoute) {
+      if (!authenticatedDashboard(request)) return send(response, 401, {error:'Accès restaurant requis.'});
+      if (request.method !== 'PATCH') return send(response,405,{error:'Action indisponible.'});
+      const input = await readBody(request), giftFlags = await productStockStore.read();
+      const gift = await walletTransact(db => lunchGifts.resolve(db, db.orders.find(o => o.id === decodeURIComponent(lunchGiftRoute[1])), input, giftFlags), true);
+      return send(response,200,{gift});
+    }
     if (url.pathname==='/inscription'||url.pathname.startsWith('/inscription/')||url.pathname.startsWith('/api/krokli/enrolment')||url.pathname.startsWith('/api/dashboard/krokli-enrolment')) {
       if(!enrolmentHttp)return send(response,503,{error:'Les inscriptions sont momentanément indisponibles.'});
       if(await enrolmentHttp(request,response,url))return;
@@ -2087,7 +2110,7 @@ const server = http.createServer(async (request, response) => {
           quantityStock.reserve(database, order);
           assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
         }
-        if (confirmCashOrder(order, input.amount)) finalizePaidOrder(order, database);
+        if (confirmCashOrder(order, input.amount)) await finalizePaidOrder(order, database);
       } else if (input.action === 'cancel') { cancelCashOrder(order); cancelLinkedTable(order, database); }
       else return send(response, 400, { error:'Action espèces invalide.' });
       await writeDatabase(database);
@@ -2298,7 +2321,7 @@ const server = http.createServer(async (request, response) => {
         quantityStock.reserve(latestDatabase, createdOrder);
         latestDatabase.orders.unshift(createdOrder);
         if (cash) prepareCashOrder(createdOrder);
-        else if (settlePromotionalOrder(createdOrder, new Date(), latestDatabase)) finalizePaidOrder(createdOrder, latestDatabase);
+        else if (settlePromotionalOrder(createdOrder, new Date(), latestDatabase)) await finalizePaidOrder(createdOrder, latestDatabase);
         contestPrizes.reconcile(latestDatabase);
         await writeDatabase(latestDatabase);
         return createdOrder;
@@ -2400,7 +2423,7 @@ const server = http.createServer(async (request, response) => {
 
       assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
       await openPayment(order, database, { merchantCode, expiresAt: checkoutExpiresAt, description: `Commande Bibou's Burgers #${order.number}`, prefix: "bibous" });
-      const confirmation = finalizePaidOrder(order, database);
+      const confirmation = await finalizePaidOrder(order, database);
       await writeDatabase(database);
       return send(response, 201, { order, payment: order.payment, checkoutId: order.payment.checkoutId, checkoutUrl: order.payment.checkoutUrl || null, customer: confirmation?.customer || null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }
@@ -2426,7 +2449,7 @@ const server = http.createServer(async (request, response) => {
       }
       if (order) {
         await refreshPayment(order);
-        finalizePaidOrder(order, database);
+        await finalizePaidOrder(order, database);
         await writeDatabase(database);
       }
       if (bibouPlusPurchase) {
@@ -2452,7 +2475,7 @@ const server = http.createServer(async (request, response) => {
       if (!customer || customer.id !== order.customerId) return send(response, 401, { error: "Reconnecte-toi pour vérifier ce paiement." });
       if (!orderInKioskSession(order, request.kioskSession)) return send(response, 404, { error: 'Paiement de cette session requis.' });
       await refreshPayment(order);
-      const confirmation = finalizePaidOrder(order, database);
+      const confirmation = await finalizePaidOrder(order, database);
       await writeDatabase(database);
       return send(response, 200, { order, payment: order.payment, customer: confirmation?.customer ? (request.kioskSession ? kioskCustomerView(confirmation.customer) : confirmation.customer) : null, pointsAdded: confirmation?.pointsAdded || 0, referralPointsAdded: confirmation?.referralPointsAdded || 0 });
     }

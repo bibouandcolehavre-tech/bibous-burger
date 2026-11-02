@@ -81,7 +81,7 @@ function queueServiceNotification(db, record, type, previousStatus, config, now 
   const customer = db.customers.find(c => c.id === record.customerId);
   if (!customer || !prefs(customer).service) return;
   const messages = type === 'order' ? {
-    confirmed: ['Commande transmise', 'Ton paiement est confirmé. Le restaurant va prendre en charge ta commande.'],
+    confirmed: ['Commande transmise', record.lunchGift ? `Ton paiement est confirmé. Cadeau du midi : ${record.lunchGift.label}. Tes points habituels sont conservés.` : 'Ton paiement est confirmé. Le restaurant va prendre en charge ta commande.'],
     preparing: ['Commande acceptée', 'Ta commande est en préparation chez Bibou’s Burgers.'],
     ready: ['Commande prête', record.method === 'pickup' ? 'Ta commande est prête à être retirée au restaurant.' : 'Ta commande est prête. Elle attend son départ en livraison.'],
     out_for_delivery: [record.method === 'pickup' ? 'Commande remise' : DEPARTURE_TITLE, record.method === 'pickup' ? 'Merci pour ta commande et bon appétit !' : DEPARTURE_BODY],

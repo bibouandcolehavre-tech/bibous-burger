@@ -23,15 +23,15 @@ const publicNews = (database, now = new Date(), modernContestClient = true) => {
     return { ...item, title: `Concours Bibou ouvert · jusqu’au ${dateLabelFor(contest.endDate)}`, subtitle: 'Participation gratuite · 24 menus pour la 1re place · Lis le règlement et participe ici.' };
   });
   if (!closedTonight(database, now)) {
-    const visible = promotionNews(database, now, items);
+    const visible = require('./lunch-gifts').news(database, now, promotionNews(database, now, items));
     return { items: ['scheduled', 'active'].includes(contest.status) ? [...visible.filter(item => item.kind === 'contest'), ...visible.filter(item => item.kind !== 'contest')] : visible };
   }
   const dateLabel = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(now);
   // Preserve the existing closure notice without hiding a published contest.
   const closureId = ['scheduled', 'active'].includes(contest.status) && items.some(item => item.kind === 'contest') ? 'exceptional-closure' : 'contest';
-  return { items: [{ id: closureId, kind: 'note', enabled: true, title: 'Fermé exceptionnellement ce soir',
+  return { items: require('./lunch-gifts').news(database, now, [{ id: closureId, kind: 'note', enabled: true, title: 'Fermé exceptionnellement ce soir',
     subtitle: `Ce ${dateLabel} : pas de click & collect, de livraison ni de réservation de table. La carte reste consultable.`, url: '', imageUrl: '' },
-    ...items.filter(item => item.id !== closureId)] };
+    ...items.filter(item => item.id !== closureId)]) };
 };
 function saveNews(database, input, now = new Date()) {
   if (!input || input.revision !== dashboardNews(database).revision) throw error('Les actualités ont changé. Actualisez avant de réessayer.', 409);
