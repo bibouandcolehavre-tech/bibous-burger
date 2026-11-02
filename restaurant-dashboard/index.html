@@ -14,6 +14,7 @@
     <link rel="icon" type="image/png" href="./restaurant-icon.png" />
     <link rel="stylesheet" href="./styles.css?v=call-client-20261022" />
     <link rel="stylesheet" href="./crm.css?v=crm-1" />
+    <link rel="stylesheet" href="./wallet-scanner.css?v=20261102-1" />
     <link rel="stylesheet" href="./statistics.css?v=simple-ca-20261013" />
     <link rel="stylesheet" href="./service-schedule.css?v=workspace-1" />
     <link rel="stylesheet" href="./workspace-afternoon-b8578020a893.css" />
@@ -263,6 +264,7 @@
         </section>
         <section id="customers-view" class="customers-section" hidden>
           <div class="customer-directory-heading"><h2 id="customer-directory-title" tabindex="-1">Clients & fidélité</h2><button type="button" class="secondary-button" data-jump="tools">← Toutes les rubriques</button></div>
+          <div class="wallet-scan-launch"><div><strong>Carte Club Bibou</strong><p>Retrouvez un client avec le QR code de sa carte Wallet.</p></div><button type="button" id="wallet-scan-open" class="primary-button">Scanner une carte fidélité</button></div>
           <p class="customer-list-intro">Cliquez sur un nom pour ouvrir sa fiche, sans quitter la liste.</p>
           <div class="metrics customer-metrics" aria-label="Ensemble des comptes clients"><article><div><strong id="customer-total">—</strong><small>comptes clients</small></div></article><article><div><strong id="customer-plus">—</strong><small>membres Bibou + actifs</small></div></article><article><div><strong id="customer-referrals">—</strong><small>parrainages validés</small></div></article><article><div><strong id="customer-points">—</strong><small>points cumulés des clients</small></div></article></div>
           <div class="menu-toolbar customer-toolbar"><label for="customer-search">Rechercher un client<input id="customer-search" type="search" autocomplete="off" maxlength="100" placeholder="Prénom, téléphone ou code de parrainage…" /></label><div class="customer-button-options"><strong>Afficher</strong><input id="customer-filter" type="hidden" value="all"><div role="group" aria-label="Filtrer les clients"><button type="button" data-customer-filter="all" aria-pressed="true">Tous</button><button type="button" data-customer-filter="plus" aria-pressed="false">Bibou +</button><button type="button" data-customer-filter="sponsors" aria-pressed="false">Parrains</button></div></div><div class="customer-button-options"><strong>Clients par page</strong><input id="customer-limit" type="hidden" value="12"><div role="group" aria-label="Nombre de clients par page"><button type="button" data-customer-limit="6" aria-pressed="false">6</button><button type="button" data-customer-limit="12" aria-pressed="true">12</button><button type="button" data-customer-limit="24" aria-pressed="false">24</button><button type="button" data-customer-limit="48" aria-pressed="false">48</button></div></div></div>
@@ -339,6 +341,16 @@
     <script src="./service-orders.js?v=20261028"></script>
     <script src="./orders-board.js?v=simulation-fidele-20261101-r2"></script>
     <script src="./orders-presentation.js?v=simulation-fidele-20261101-r2"></script>
-    <script src="./app-orders-6900462714a3.js"></script>
+    <dialog id="wallet-scanner" class="wallet-scanner" aria-labelledby="wallet-scanner-title">
+      <header><h2 id="wallet-scanner-title">Scanner une carte</h2><button type="button" data-wallet-close class="secondary-button" aria-label="Fermer le lecteur">Fermer ✕</button></header>
+      <p data-wallet-status role="status" aria-live="polite"></p>
+      <video data-wallet-video playsinline muted autoplay hidden aria-label="Caméra de lecture du QR code"></video>
+      <section data-wallet-result hidden aria-label="Client retrouvé"><strong data-wallet-name></strong><p data-wallet-points></p><button type="button" data-wallet-profile class="primary-button">Ouvrir sa fiche</button></section>
+      <button type="button" data-wallet-start class="primary-button">Activer la caméra</button>
+      <small>La caméra lit le QR code sur votre téléphone. Aucune photo n’est enregistrée ni envoyée. Le scan identifie le compte ; il ne dépense aucun point ni cadeau.</small>
+    </dialog>
+    <script src="./wallet-qr-decoder-1.4.0.js"></script>
+    <script src="./wallet-scanner.js?v=20261102-1"></script>
+    <script src="./app-orders-wallet-43f23d3573fb.js"></script>
   </body>
 </html>
