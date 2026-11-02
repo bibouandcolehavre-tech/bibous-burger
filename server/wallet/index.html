@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Ta carte Club Bibou</title><link rel="stylesheet" href="/club/club.css"><script src="/club/club.js" defer></script></head>
+<body><main>
+  <a class="brand" href="https://bibousburgers.com/app" aria-label="Bibou’s Burgers"><img src="/club/wordmark.png" alt="Bibou’s Burgers" width="240" height="75"></a>
+  <p class="eyebrow">LE CLUB BIBOU</p><h1>Ta fidélité,<br>toujours avec toi.</h1>
+  <p class="intro">Ta carte dans ton téléphone. Les mêmes points et les mêmes récompenses que dans ton compte Bibou, sans installer l’application.</p>
+  <p id="message" role="status" aria-live="polite">Chargement de ta carte…</p>
+  <section id="phone-panel" hidden><h2>Retrouve ou crée ton compte</h2><p>Utilise ton numéro habituel si tu commandes déjà chez Bibou.</p>
+    <form id="phone-form"><label for="phone">Ton numéro de mobile</label><input id="phone" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="06 12 34 56 78" required maxlength="20"><button type="submit">Recevoir mon code par SMS</button></form>
+    <p class="small">Le SMS sert à vérifier ton numéro. Aucune inscription publicitaire.</p>
+  </section>
+  <section id="code-panel" hidden><h2>Un petit code, et c’est toi.</h2><p id="code-destination"></p>
+    <form id="code-form"><label for="code">Code reçu par SMS</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{4,10}" required maxlength="10"><button type="submit">Continuer</button></form><button id="change-phone" class="secondary" type="button">Changer de numéro</button>
+  </section>
+  <section id="identity-panel" hidden><h2>Comment t’appelles-tu ?</h2><p>Ces informations complètent ton compte Bibou.</p>
+    <form id="identity-form"><label for="first-name">Prénom</label><input id="first-name" autocomplete="given-name" required maxlength="60"><label for="last-name">Nom</label><input id="last-name" autocomplete="family-name" required maxlength="60"><button type="submit">Créer ma carte</button></form>
+  </section>
+  <section id="card-panel" hidden>
+    <div class="card"><div class="card-top"><img src="/club/wordmark.png" alt="Bibou’s Burgers" width="170" height="54"><span>CLUB BIBOU</span></div><div class="balance"><span>MES POINTS</span><strong id="points"></strong></div><h2 id="member-name"></h2><div class="qr"><img id="member-qr" width="220" height="220" alt="QR personnel de la carte Club Bibou"></div><p class="card-caption">Ma carte de fidélité</p></div>
+    <div class="actions"><a id="apple" class="button" href="/api/wallet/apple.pkpass" hidden>Ajouter à Apple Wallet</a><button id="google" type="button" hidden>Ajouter à Google Wallet</button></div>
+    <p id="provider-note" class="small"></p><p class="small">En ajoutant ta carte, tu transmets à Apple ou Google ton prénom, ton identifiant de carte et ton solde de points pour l’afficher et l’actualiser. Ton téléphone et tes commandes ne sont pas inclus dans la carte.</p><p>Tu commandes déjà avec Bibou ? Ton solde reste le même. Tu retrouveras ton compte dans l’application avec ce numéro.</p>
+    <button id="refresh" class="secondary" type="button">Actualiser mes points</button><button id="logout" class="secondary" type="button">Déconnecter cette page</button>
+  </section>
+  <footer><a href="/privacy">Confidentialité</a><a href="https://bibousburgers.com/app">L’application Bibou</a><p>Cette carte sert à identifier ton compte fidélité. Elle ne remplace pas une vérification de connexion et ne permet pas de dépenser tes récompenses.</p></footer>
+</main></body></html>

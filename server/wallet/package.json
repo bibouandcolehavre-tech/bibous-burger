@@ -1,0 +1,6 @@
+{
+  "name": "bibou-club-wallet",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": { "passkit-generator": "3.7.0", "qrcode": "1.5.4" }
+}
