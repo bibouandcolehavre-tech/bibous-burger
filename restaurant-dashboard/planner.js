@@ -1,15 +1,23 @@
 /* Daily openings use the server's exact slots and preserve existing bookings. */
 (function (global) {
   const names = { pickup: 'Retrait', delivery: 'Livraison', reservation: 'Tables' };
-  const periods = { lunch: ['Midi', 12, 15], evening: ['Soir', 18, 24], other: ['Autres heures', 0, 24] };
-  const inPeriod = (slot, period) => {
+  const periods = { lunch: ['Midi', 12, 14], afternoon: ['Après-midi · 14 h–19 h', 14, 19], evening: ['Soir', 19, 24], other: ['Autres heures', 0, 12] };
+  const inPeriod = (slot, period, method = 'pickup') => {
     const hour = Number(slot.slice(0, 2));
-    return period === 'other' ? hour < 12 || (hour >= 15 && hour < 18) : hour >= periods[period][1] && hour < periods[period][2];
+    // Table booking keeps its existing groups; the optional afternoon is for orders.
+    if (method === 'reservation') return period === 'lunch' ? hour >= 12 && hour < 15
+      : period === 'evening' ? hour >= 18 && hour < 24
+      : period === 'other' && (hour < 12 || (hour >= 15 && hour < 18));
+    return Boolean(periods[period] && hour >= periods[period][1] && hour < periods[period][2]);
+  };
+  const openPeriod = (data, draft, method, period) => {
+    for (const row of data.services[method].filter(row => inPeriod(row.slot, period, method)
+      && (period === 'afternoon' || row.standard))) draft[method][row.slot] = true;
   };
   const makeDraft = data => Object.fromEntries(Object.entries(data.services).map(([key, rows]) => [key, Object.fromEntries(rows.map(row => [row.slot, row.open]))]));
   const changes = (data, draft) => data ? Object.entries(data.services).flatMap(([method, rows]) => rows.filter(row => row.open !== draft[method][row.slot]).map(row => ({ ...row, method, nextOpen: draft[method][row.slot] }))) : [];
   const impacts = (data, draft) => changes(data, draft).filter(row => !row.nextOpen && row.committed > 0);
-  if (typeof module === 'object' && module.exports) module.exports = { inPeriod, makeDraft, changes, impacts };
+  if (typeof module === 'object' && module.exports) module.exports = { inPeriod, openPeriod, makeDraft, changes, impacts };
   if (!global) return;
 
   global.BibouSchedule = function ({ root, api, token, onUnauthorized }) {
@@ -18,12 +26,12 @@
     const tomorrow = () => { const next = new Date(today() + 'T12:00:00Z'); next.setUTCDate(next.getUTCDate() + 1); return next.toISOString().slice(0, 10); };
     let date = today(), data = null, draft = null, method = 'pickup', period = 'lunch', busy = false, epoch = 0, reviewing = false;
 
-    root.innerHTML = `<div class="schedule-intro"><h2>Ouvrir ou fermer un créneau</h2><p>Touchez une heure pour la rendre <strong>ouverte</strong> ou <strong>fermée</strong>, puis enregistrez.</p></div>
+    root.innerHTML = `<div class="schedule-intro"><h2>Ouvrir ou fermer un créneau</h2><p>Vos horaires habituels restent inchangés. Pour le jour choisi, vous pouvez aussi ouvrir le retrait et la livraison entre <strong>14 h et 19 h</strong>.</p></div>
       <div class="planner-controls"><div><strong>Quel jour ?</strong><div class="planner-quick-days"><button type="button" id="schedule-today">Aujourd’hui</button><button type="button" id="schedule-tomorrow">Demain</button></div></div><label for="schedule-date">Ou choisissez une date<input type="date" id="schedule-date"></label></div>
       <div class="planner-methods" aria-label="Choisir ce que vous ouvrez ou fermez"><button type="button" data-schedule-method="pickup"><span>🛍️</span><strong>Retrait</strong><small>Click & collect</small></button><button type="button" data-schedule-method="delivery"><span>🛵</span><strong>Livraison</strong><small>Commandes livrées</small></button><button type="button" data-schedule-method="reservation"><span>🍽️</span><strong>Tables</strong><small>Réservations</small></button></div>
-      <div class="planner-segment" aria-label="Choisir le moment"><button type="button" data-period="lunch">☀️ Midi</button><button type="button" data-period="evening">🌙 Soir</button><button type="button" data-period="other">Autres heures</button></div>
+      <div class="planner-segment" aria-label="Choisir le moment"><button type="button" data-period="lunch">☀️ Midi</button><button type="button" data-period="afternoon">Après-midi · 14 h–19 h</button><button type="button" data-period="evening">🌙 Soir</button><button type="button" data-period="other">Autres heures</button></div>
       <p id="schedule-message" role="status" aria-live="polite"></p>
-      <div id="schedule-editor" hidden><section class="workspace-panel planner-simple"><div class="workspace-heading"><h3 id="planner-title"></h3><span class="planner-legend">Touchez une heure pour changer</span></div><div id="schedule-slots" class="planner-slots"></div>
+      <div id="schedule-editor" hidden><section class="workspace-panel planner-simple"><div class="workspace-heading"><h3 id="planner-title"></h3><span class="planner-legend">Touchez une heure pour changer</span></div><p id="schedule-afternoon-help" class="planner-help" hidden>Ouvrez tout l’après-midi ou seulement les heures souhaitées, puis enregistrez. Ce choix concerne uniquement le service et la date sélectionnés ; il ne change pas vos ouvertures habituelles.</p><div id="schedule-slots" class="planner-slots"></div>
       <div class="planner-bulk"><button type="button" id="schedule-close-period">Tout fermer pour ce moment</button><button type="button" id="schedule-open-period">Ouvrir les horaires habituels</button></div></section>
       <div class="planner-preserve">Les commandes et réservations déjà reçues restent à honorer, même si vous fermez une heure.</div>
       <div class="planner-footer"><strong id="schedule-summary">Aucun changement</strong><div class="planner-footer-actions"><button type="button" class="secondary-button" id="schedule-discard">Annuler</button><button type="button" class="primary-button" id="schedule-save">Enregistrer</button></div></div>
@@ -50,10 +58,17 @@
       q('#schedule-date').value = date;
       q('#schedule-today').setAttribute('aria-pressed', String(date === today()));
       q('#schedule-tomorrow').setAttribute('aria-pressed', String(date === tomorrow()));
-      root.querySelectorAll('[data-period]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.period === period)));
+      root.querySelectorAll('[data-period]').forEach(button => {
+        button.hidden = button.dataset.period === 'afternoon' && method === 'reservation';
+        button.setAttribute('aria-pressed', String(button.dataset.period === period));
+      });
       root.querySelectorAll('[data-schedule-method]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.scheduleMethod === method)));
       if (!data) return;
-      const rows = data.services[method].filter(row => inPeriod(row.slot, period));
+      const afternoon = period === 'afternoon';
+      q('#schedule-afternoon-help').hidden = !afternoon;
+      q('#schedule-open-period').textContent = afternoon ? 'Ouvrir tout l’après-midi' : 'Ouvrir les horaires habituels';
+      q('#schedule-close-period').textContent = afternoon ? 'Fermer tout l’après-midi' : 'Tout fermer pour ce moment';
+      const rows = data.services[method].filter(row => inPeriod(row.slot, period, method));
       q('#planner-title').textContent = `${names[method]} · ${periods[period][0]} · ${date.split('-').reverse().join('/')}`;
       q('#schedule-slots').innerHTML = rows.map(row => {
         const open = draft[method][row.slot], pending = open !== row.open;
@@ -102,9 +117,9 @@
     q('#schedule-today').onclick = () => chooseDate(today());
     q('#schedule-tomorrow').onclick = () => chooseDate(tomorrow());
     root.querySelectorAll('[data-period]').forEach(button => button.onclick = () => { period = button.dataset.period; render(); });
-    root.querySelectorAll('[data-schedule-method]').forEach(button => button.onclick = () => { method = button.dataset.scheduleMethod; render(); });
-    q('#schedule-close-period').onclick = () => { if (!data || busy) return; for (const row of data.services[method].filter(row => inPeriod(row.slot, period))) draft[method][row.slot] = false; reviewing = false; render(); message('Ce moment sera fermé après enregistrement.'); };
-    q('#schedule-open-period').onclick = () => { if (!data || busy) return; for (const row of data.services[method].filter(row => inPeriod(row.slot, period) && row.standard)) draft[method][row.slot] = true; reviewing = false; render(); message('Les horaires habituels seront ouverts après enregistrement.'); };
+    root.querySelectorAll('[data-schedule-method]').forEach(button => button.onclick = () => { method = button.dataset.scheduleMethod; if (method === 'reservation' && period === 'afternoon') period = 'lunch'; render(); });
+    q('#schedule-close-period').onclick = () => { if (!data || busy) return; for (const row of data.services[method].filter(row => inPeriod(row.slot, period, method))) draft[method][row.slot] = false; reviewing = false; render(); message('Ce moment sera fermé après enregistrement.'); };
+    q('#schedule-open-period').onclick = () => { if (!data || busy) return; openPeriod(data, draft, method, period); reviewing = false; render(); message(period === 'afternoon' ? 'L’après-midi sera ouvert pour ce service après enregistrement.' : 'Les horaires habituels seront ouverts après enregistrement.'); };
     q('#schedule-close-day').onclick = () => { if (!data || busy) return; for (const key of Object.keys(names)) for (const row of data.services[key]) draft[key][row.slot] = false; reviewing = false; render(); message('Les trois services seront fermés pour ce jour après enregistrement.'); };
     q('#schedule-reset').onclick = () => { if (!data || busy) return; for (const key of Object.keys(names)) for (const row of data.services[key]) draft[key][row.slot] = row.standard; reviewing = false; render(); message('Les horaires habituels seront rétablis après enregistrement.'); };
     q('#schedule-discard').onclick = () => { if (!data || busy) return; draft = makeDraft(data); reviewing = false; q('#schedule-ack').checked = false; render(); message('Changements annulés.'); };
