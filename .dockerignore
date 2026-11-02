@@ -26,3 +26,5 @@ secrets
 **/*service-account*.json
 **/*serviceAccount*.json
 **/*firebase-adminsdk*.json
+!server/wallet/assets/
+!server/wallet/assets/*.png

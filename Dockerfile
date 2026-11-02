@@ -3,11 +3,17 @@ WORKDIR /app/server/pdf
 COPY server/pdf/package.json server/pdf/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
+FROM node:22-alpine AS wallet-dependencies
+WORKDIR /app/server/wallet
+COPY server/wallet/package.json server/wallet/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
 FROM node:22-alpine
 
 WORKDIR /app
 COPY server ./server
 COPY --from=statement-dependencies /app/server/pdf/node_modules ./server/pdf/node_modules
+COPY --from=wallet-dependencies /app/server/wallet/node_modules ./server/wallet/node_modules
 COPY driver-app ./driver-app
 COPY news-config.js ./news-config.js
 COPY customer-identity.js ./customer-identity.js
