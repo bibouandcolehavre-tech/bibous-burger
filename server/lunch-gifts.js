@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
-const { parisDateKey } = require('./availability');
+const { parisDateKey, slotsForDate, scheduleOverride } = require('./availability');
 const stock = require('./quantity-stock');
 const { PRODUCT_CATALOG } = require('./catalog');
 
@@ -84,10 +84,11 @@ function resolve(db, order, input, flags, now = new Date()) {
 function state(db, now = new Date()) {
   const day = parisDateKey(now), dateEligible = inDates(day);
   const awarded = dateEligible ? ledger(db).filter(a => a.day === day).length : 0;
-  const status = day < CAMPAIGN.startDate ? 'scheduled' : !dateEligible || minute(now) >= CAMPAIGN.endSlot ? 'closed' : awarded >= CAMPAIGN.limit ? 'exhausted' : 'active';
+  const serviceOpen = ['pickup', 'delivery'].some(method => slotsForDate(day, method, db).some(slot => slot.slice(0, 5) >= CAMPAIGN.startSlot && slot.slice(0, 5) < CAMPAIGN.endSlot && scheduleOverride(db, day, slot, method) !== false));
+  const status = day < CAMPAIGN.startDate ? 'scheduled' : !dateEligible || !serviceOpen || minute(now) >= CAMPAIGN.endSlot ? 'closed' : awarded >= CAMPAIGN.limit ? 'exhausted' : 'active';
   return { ...CAMPAIGN, status, day, awarded, remaining: status === 'active' ? Math.max(0, CAMPAIGN.limit - awarded) : 0,
     gifts: ['Frites maison', '3 tenders XL', 'Une boisson 33 cl'],
-    rules: 'Du 3 au 9 novembre 2026, heure de Paris : un cadeau concret ajouté automatiquement à la commande des cinq premiers clients distincts par service du midi. Commande sur l’application ou le site Bibou, payée en ligne le jour même avant 14 h, pour un retrait ou une livraison entre 12 h et 14 h. Attribution au paiement confirmé, dans la limite de cinq cadeaux par jour, un par numéro de téléphone et par jour. Frites maison, trois tenders XL ou une boisson 33 cl, sélectionnés parmi les lots disponibles. En cas de rupture totale, le restaurant convient avec le client d’un cadeau de cette sélection. Aucun point ne remplace ce cadeau. Points fidélité et classement selon les règles habituelles ; tours de roue conservés. La livraison reste payante selon les conditions habituelles. Les commandes de test, offertes, sur borne et annulées avant paiement sont exclues. Un cadeau attribué n’est pas remis en jeu après annulation ou remboursement. Apple et Google ne sont ni organisateurs ni sponsors.' };
+    rules: 'Du 3 au 9 novembre 2026, heure de Paris : un cadeau concret ajouté automatiquement à la commande des cinq premiers clients distincts par service du midi ouvert. Commande sur l’application ou le site Bibou, payée en ligne le jour même avant 14 h, pour un retrait ou une livraison entre 12 h et 14 h. Attribution au paiement confirmé, dans la limite de cinq cadeaux par jour, un par numéro de téléphone et par jour. Frites maison, trois tenders XL ou une boisson 33 cl, sélectionnés parmi les lots disponibles. En cas de rupture totale, le restaurant convient avec le client d’un cadeau de cette sélection. Aucun point ne remplace ce cadeau. Points fidélité et classement selon les règles habituelles ; tours de roue conservés. La livraison reste payante selon les conditions habituelles. Les commandes de test, offertes, sur borne et annulées avant paiement sont exclues. Un cadeau attribué n’est pas remis en jeu après annulation ou remboursement. Apple et Google ne sont ni organisateurs ni sponsors.' };
 }
 function news(db, now, items) {
   const offer = state(db, now);

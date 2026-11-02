@@ -82,3 +82,12 @@ test('tickets visibly include the exact extra gift while monetary amounts remain
   const receipt=printer.orderReceiptEnvelope(o);assert.match(receipt,/CADEAU MIDI - OFFERT/);assert.match(receipt,/16,90/);
   assert.doesNotMatch(printer.preparationEnvelope({...o,status:'cancelled'}),/CADEAU MIDI/);
 });
+
+test('the offer never advertises a closed lunch service or opens restaurant hours',()=>{
+  const db=fixture();const before=JSON.stringify(db);
+  const saturday=new Date('2026-11-07T10:00:00Z');assert.equal(gifts.state(db,saturday).status,'closed');
+  assert.ok(!gifts.news(db,saturday,[]).some(i=>i.id==='lunch-gifts'));assert.equal(JSON.stringify(db),before);
+  const slots=Object.fromEntries(Array.from({length:8},(_,i)=>[String(12+Math.floor(i/4)).padStart(2,'0')+':'+String((i%4)*15).padStart(2,'0'),false]));
+  db.serviceSchedule={dates:{'2026-11-03':{services:{pickup:slots,delivery:slots},slotMinutesByMethod:{pickup:15,delivery:15}}}};
+  assert.equal(gifts.state(db,now).status,'closed');
+});
