@@ -1,0 +1,327 @@
+// ePOS-Print XML for the restaurant's networked TM-m30II. Physical printing
+// from the restaurant iPad was confirmed on 30 September 2026.
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.BibouEpsonPrint = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  const NS = 'http://www.epson-pos.com/schemas/2011/03/epos-print';
+  const xml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;'
+  })[character]);
+  const clean = value => String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  const line = value => `<text>${xml(clean(value))}&#10;</text>`;
+  const indentedLine = value => `<text>&#32;&#32;${xml(clean(value))}&#10;</text>`;
+  // Double-width text has 16 columns on a narrow 32-column roll. Wrap values
+  // before XML escaping, never truncate an address, and restore all text state.
+  const contactValue = value => typeof value === 'string' || typeof value === 'number' ? clean(value) : '';
+  const contactLines = value => {
+    const lines = [], limit = 16;
+    let current = '';
+    for (const word of contactValue(value).split(/\s+/).filter(Boolean)) {
+      if (current && Array.from(`${current} ${word}`).length <= limit) { current += ` ${word}`; continue; }
+      if (current) { lines.push(current); current = ''; }
+      const letters = Array.from(word);
+      while (letters.length > limit) lines.push(letters.splice(0, limit).join(''));
+      current = letters.join('');
+    }
+    if (current) lines.push(current);
+    return lines;
+  };
+  const customerContact = order => {
+    const field = (label, values) => [
+      '<text align="left" width="1" height="1" em="true"/>', line(label),
+      '<text align="left" width="2" height="2" em="true"/>',
+      ...values.flatMap(contactLines).map(line),
+      '<text align="left" width="1" height="1" em="false"/>', line(''),
+    ];
+    const parts = [line(''), ...field('CLIENT', [contactValue(order.customerName) || 'NON RENSEIGNE']),
+      ...field('TELEPHONE', [contactValue(order.customerPhone) || 'NON RENSEIGNE'])];
+    if (order.method === 'delivery' && !order.dineIn) {
+      const address = order.deliveryAddress;
+      const values = typeof address === 'string' ? address.split(/\r\n|[\r\n\u2028\u2029]/).map(contactValue).filter(Boolean)
+        : address && typeof address === 'object'
+          ? [contactValue(address.address), [contactValue(address.postalCode), contactValue(address.city)].filter(Boolean).join(' ')].filter(Boolean) : [];
+      parts.push(...field('ADRESSE DE LIVRAISON', values.length ? values : ['NON RENSEIGNEE']));
+    }
+    return parts;
+  };
+  // The customer leaves one remark for the whole order. Print that same saved
+  // text on every ticket, prominently before the products, never as XML markup.
+  const customerRemark = order => {
+    const lines = typeof order.comment === 'string'
+      ? order.comment.split(/\r\n|[\r\n\u2028\u2029]/).map(clean).filter(Boolean) : [];
+    if (!lines.length) return [];
+    return [line(''), '<text align="left" dw="false" dh="true" em="true"/>',
+      line('REMARQUE CLIENT'), ...lines.map(line),
+      '<text align="left" dw="false" dh="false" em="false"/>', line('')];
+  };
+  const lunchGiftLines = order => {
+    const gift = order.lunchGift;
+    if (!gift || gift.campaignId !== 'first-five-lunch-20261103' || order.status === 'cancelled') return [];
+    return [line(''), '<text align="left" dw="false" dh="true" em="true"/>',
+      line('CADEAU MIDI - OFFERT'), line(`1 x ${gift.label}`),
+      ...(gift.status === 'choice_required' ? [line('CHOISIR LE LOT AVEC LE CLIENT')] : []),
+      '<text align="left" dw="false" dh="false" em="false"/>', line('')];
+  };
+  const serviceDay = value => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : 'DATE A CONFIRMER';
+  };
+  const serviceTime = value => {
+    const slot = clean(value).replace(/\s*[–—-]\s*/g, ' - ');
+    return slot || 'HEURE A CONFIRMER';
+  };
+  const serviceHeading = order => {
+    if (order.kioskImmediate) return [order.kioskDiningMode === 'here' ? 'SUR PLACE' : 'A EMPORTER', 'COMMANDE BORNE'];
+    const method = order.dineIn ? 'SUR PLACE - TABLE + REPAS' : order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : 'MODE A CONFIRMER';
+    return [method, `POUR LE ${serviceDay(order.serviceDate)}`,
+      order.dineIn ? `ARRIVEE A ${serviceTime(order.slot)}` : order.method === 'pickup' ? `A ${serviceTime(order.slot)}` : `CRENEAU ${serviceTime(order.slot)}`,
+      ...(order.dineIn ? [`TABLE DE ${Number(order.tableGuests) || '?'} PERSONNE(S)`] : [])];
+  };
+  // The service time must stand out on paper, not only in the dashboard.
+  // Keep the label/date separate so the large hour fits even on narrow rolls.
+  // Explicitly restore size afterwards: products and remarks keep their layout.
+  const serviceHeadingMarkup = order => serviceHeading(order).flatMap((heading, index) => {
+    if (index !== 2) return [line(heading)]; // Immediate kiosk orders have no scheduled time.
+    const time = serviceTime(order.slot);
+    const width = time.length <= 10 ? 3 : time.length <= 16 ? 2 : 1;
+    const label = order.dineIn ? 'ARRIVEE A' : order.method === 'pickup' ? 'HEURE DE RETRAIT' : 'CRENEAU DE LIVRAISON';
+    return [line(label), `<text width="${width}" height="3" em="true"/>`, line(time),
+      '<text width="1" height="2" em="true"/>'];
+  });
+  const wrap = content => `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="${NS}">${content}</epos-print></s:Body></s:Envelope>`;
+
+  const statusEnvelope = () => wrap('');
+  const testEnvelope = () => wrap('<text align="center" dw="true" dh="true" em="true"/>' +
+    line('ESSAI BIBOU') + '<text align="left" dw="false" dh="false" em="false"/>' +
+    line('AUCUNE COMMANDE REELLE') + line('Test de liaison avec le restaurant') + '<cut type="feed"/>');
+
+  function completedOrderForTest(orders) {
+    if (!Array.isArray(orders)) throw new Error('Liste de commandes invalide.');
+    return orders.filter(order => order?.status === 'delivered' && order.payment?.status === 'PAID' &&
+      !order.reviewMode && order.id && ['pickup', 'delivery'].includes(order.method) &&
+      Array.isArray(order.items) && order.items.length > 0 && Number.isFinite(Date.parse(order.createdAt)))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] || null;
+  }
+
+  function preparationEnvelope(order, { duplicateTest = false } = {}) {
+    if (!order || order.payment?.status !== 'PAID' || order.reviewMode || !order.id || !Array.isArray(order.items)) {
+      throw new Error('Seule une commande réelle réglée peut être imprimée.');
+    }
+    if (duplicateTest && order.status !== 'delivered') throw new Error('Le duplicata de test exige une commande terminée.');
+    const number = Number.isSafeInteger(Number(order.number)) ? `#${Number(order.number)}` : clean(order.id);
+    const method = order.dineIn ? 'SUR PLACE' : order.method === 'delivery' ? 'LIVRAISON' : order.method === 'pickup' ? 'RETRAIT' : null;
+    if (!method) throw new Error('Mode de commande inconnu.');
+    const parts = [
+      '<text align="center" dw="true" dh="true" em="true"/>', line(`BIBOU'S BURGERS ${number}`),
+      '<text align="left" dw="false" dh="false" em="false"/>',
+      ...(duplicateTest ? [line('DUPLICATA TEST - NE PAS PREPARER'), line('COMMANDE DEJA TERMINEE')] : []),
+      line('TICKET DE PREPARATION - NON FISCAL'),
+      '<text align="center" dw="false" dh="true" em="true"/>',
+      ...serviceHeadingMarkup(order),
+      '<text align="left" dw="false" dh="false" em="false"/>',
+      ...customerContact(order),
+    ];
+    if (order.dineIn && order.tableNote) parts.push(line(`Table : ${order.tableNote}`));
+    parts.push(...customerRemark(order), ...lunchGiftLines(order), line('--------------------------------'));
+    for (const item of order.items) {
+      const quantity = Number(item.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error('Quantité de produit invalide.');
+      parts.push('<text em="true"/>', line(`${quantity} x ${item.name || item.productId || 'Produit'}`), '<text em="false"/>');
+      for (const option of item.options || []) {
+        if (option?.label) parts.push(line(`  - ${option.label}`));
+      }
+      if (item.productId === 'menu-solo-tenders') parts.push('<text em="true"/>', indentedLine('Ce menu contient 3 tenders.'), '<text em="false"/>');
+    }
+    parts.push(line('--------------------------------'), line('TICKET CUISINE - PAS UNE FACTURE'));
+    if (duplicateTest) parts.push(line('DUPLICATA TEST - NE PAS PREPARER'));
+    parts.push('<cut type="feed"/>');
+    return wrap(parts.join(''));
+  }
+
+  function orderReceiptEnvelope(order) {
+    if (!order || order.payment?.status !== 'PAID' || order.reviewMode || !order.id || !Array.isArray(order.items) || !order.items.length) {
+      throw new Error('Seule une vraie commande payée peut être imprimée.');
+    }
+    const amount = value => {
+      if (value === null || value === undefined || value === '') throw new Error('Montant de commande manquant.');
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0) throw new Error('Montant de commande invalide.');
+      return `${number.toFixed(2).replace('.', ',')} EUR`;
+    };
+    const paid = order.paidTotal ?? order.total;
+    const number = Number.isSafeInteger(Number(order.number)) ? `#${Number(order.number)}` : clean(order.id);
+    const dateValue = order.payment.paidAt || order.createdAt;
+    const date = Number.isFinite(Date.parse(dateValue)) ? new Date(dateValue).toLocaleString('fr-FR', {
+      timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short'
+    }) : 'Date non disponible';
+    const itemType = item => {
+      const id = String(item.productId || '');
+      if (id === 'taurus' || id.endsWith('-menu') || id === 'menu-duo-tenders' || id === 'menu-solo-tenders') return 'MENU';
+      if (['atlas', 'classique', 'duck', 'dynamite', 'hambagu', 'basilic', 'montagnes', 'gros-lard', 'pork', 'custom-burger'].includes(id)) return 'BURGER SEUL';
+      if (id.startsWith('drink-')) return 'BOISSON';
+      return 'AUTRE ARTICLE';
+    };
+    const optionTitle = { protein: 'Composition', 'meat-type': 'Viande', drink: 'Boisson',
+      'duo-drink-one': 'Boisson 1', 'duo-drink-two': 'Boisson 2', sauces: 'Sauce',
+      salad: 'Crudites', extras: 'Supplement', 'menu-fries': 'Frites du menu',
+      'solo-fries': 'Frites du Menu Solo', 'duo-fries-one': 'Frites personne 1', 'duo-fries-two': 'Frites personne 2',
+      sides: 'Accompagnement', desserts: 'Dessert',
+      'custom-protein': 'Viande', 'custom-bread': 'Pain', 'custom-cheese': 'Fromage',
+      'custom-sauce': 'Sauce', 'custom-crudite': 'Crudites', 'custom-extra': 'Supplement', 'custom-diet': 'Viande' };
+    const parts = [
+      '<text align="center" dh="true" em="true"/>', line("BIBOU'S BURGERS"),
+      '<text dw="true" dh="true"/>', line(`COMMANDE ${number}`),
+      '<text dw="false" dh="true" em="true"/>',
+      ...serviceHeadingMarkup(order),
+      line(''),
+      '<text align="left" dw="false" dh="false" em="false"/>',
+      line(`Paiement : ${date}`),
+      line(''),
+      line('BIBOU & CO - 153 quai Georges V'), line('76600 Le Havre'),
+      line('RECAPITULATIF - NON FACTURE TVA'),
+      ...customerContact(order),
+      ...customerRemark(order),
+      line('--------------------------------'),
+    ];
+    for (const item of order.items) {
+      const quantity = Number(item.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error('Quantité de produit invalide.');
+      if (item.price === null || item.price === undefined) throw new Error('Prix de produit manquant.');
+      parts.push(line(''), '<text dw="true" dh="true" em="true"/>', line(itemType(item)),
+        line(`${quantity} x ${item.name || item.productId || 'Produit'}`),
+        '<text dw="false" dh="true" em="false"/>');
+      for (const option of item.options || []) {
+        if (!option?.label) continue;
+        const title = optionTitle[option.groupId];
+        parts.push(indentedLine(`${title ? `${title} : ` : '- '}${option.label}`));
+      }
+      if (item.productId === 'menu-solo-tenders') parts.push('<text em="true"/>', indentedLine('Ce menu contient 3 tenders.'), '<text em="false"/>');
+      parts.push(line(''), '<text em="true"/>', line(`Prix article : ${amount(Number(item.price) * quantity)}`), '<text em="false"/>', line(''));
+      parts.push(line('--------------------------------'));
+    }
+    parts.push(...lunchGiftLines(order));
+    if (Number(order.discount) > 0) parts.push(line(`Remise : -${amount(order.discount)}`));
+    if (order.method === 'delivery') parts.push(line(`Livraison : ${amount(order.deliveryFee ?? 0)}`));
+    parts.push(line(''), '<text align="center" em="true"/>', line('PAIEMENT INITIAL'),
+      '<text dw="true" dh="true"/>', line(amount(paid)),
+      '<text dw="false" dh="true" em="false" align="left"/>', line(''));
+    if (order.refund?.status === 'recorded') parts.push(line(`Remboursement declare : ${amount(order.refund.amount)}`));
+    if (order.refund?.status === 'due') parts.push(line(`Remboursement a effectuer : ${amount(order.refund.amount)}`));
+    if (order.status === 'cancelled') parts.push(line('COMMANDE ANNULEE'));
+    parts.push(line('Document de commande - TVA non detaillee'),
+      line('Demandez une facture au restaurant si besoin.'), line(''), '<cut type="feed"/>');
+    return wrap(parts.join(''));
+  }
+
+  // A narrow (32 normal-width columns) copy of the immutable issued invoice.
+  // Never accept a raw order here: tax, discounts and identity come from the ledger.
+  function invoiceLines(invoice) {
+    const fail = () => { throw new Error('Facture enregistrée incomplète : aucune impression envoyée.'); };
+    const integer = value => Number.isSafeInteger(value) && value >= 0;
+    if (!invoice || invoice.source === 'laddition' || invoice.accountingPolicy !== 'same-sale-already-paid'
+      || !/^WEB-\d{4}-\d{6}$/.test(invoice.number || '') || !invoice.seller?.name || !invoice.seller.address
+      || !invoice.seller.siret || !invoice.seller.vatNumber || !invoice.customerName
+      || !invoice.seller.legalForm || !invoice.seller.rcs || !integer(invoice.seller.capitalCents)
+      || !Array.isArray(invoice.items) || !invoice.items.length || invoice.items.length > 100
+      || !Array.isArray(invoice.tax) || !invoice.tax.length
+      || !['subtotalCents', 'discountCents', 'deliveryCents', 'totalCents', 'htCents', 'vatCents'].every(k => integer(invoice[k]))) fail();
+    for (const item of invoice.items) if (!item.name || !Number.isSafeInteger(item.quantity) || item.quantity < 1
+      || !['unitCents', 'grossCents', 'discountCents', 'ttcCents'].every(k => integer(item[k]))
+      || ![550, 1000, 2000].includes(item.rate) || item.unitCents * item.quantity !== item.grossCents
+      || item.grossCents - item.discountCents !== item.ttcCents) fail();
+    for (const row of invoice.tax) if (![550, 1000, 2000].includes(row.rate)
+      || !['htCents', 'vatCents', 'ttcCents'].every(k => integer(row[k])) || row.htCents + row.vatCents !== row.ttcCents) fail();
+    const sum = (rows, key) => rows.reduce((a, row) => a + row[key], 0);
+    if (sum(invoice.items, 'grossCents') !== invoice.subtotalCents || sum(invoice.items, 'discountCents') !== invoice.discountCents
+      || invoice.subtotalCents - invoice.discountCents + invoice.deliveryCents !== invoice.totalCents
+      || sum(invoice.tax, 'ttcCents') !== invoice.totalCents || sum(invoice.tax, 'htCents') !== invoice.htCents
+      || sum(invoice.tax, 'vatCents') !== invoice.vatCents) fail();
+    const money = cents => `${(cents / 100).toFixed(2).replace('.', ',')} EUR`;
+    const rate = value => `${String(value / 100).replace('.', ',')} %`;
+    const date = value => {
+      if (!Number.isFinite(Date.parse(value))) fail();
+      return new Date(value).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' });
+    };
+    const lines = [];
+    const add = value => {
+      for (const paragraph of String(value ?? '').split(/\r\n|[\r\n\u2028\u2029]/)) {
+        let rest = Array.from(clean(paragraph));
+        if (!rest.length) { lines.push(''); continue; }
+        while (rest.length > 32) {
+          let end = rest.slice(0, 33).lastIndexOf(' ');
+          if (end < 1) end = 32;
+          lines.push(rest.slice(0, end).join('')); rest = rest.slice(end);
+          while (rest[0] === ' ') rest.shift();
+        }
+        if (rest.length) lines.push(rest.join(''));
+      }
+    };
+    const separator = () => add('--------------------------------');
+    add(invoice.seller.tradeName || invoice.seller.name); add('FACTURE ACQUITTEE'); add(invoice.number);
+    add(`Emise le ${date(invoice.issuedAt)}`); add(`Commande #${invoice.orderNumber}`);
+    add(`Service du ${date(invoice.serviceDate + 'T12:00:00Z')}`); add(invoice.method); separator();
+    add(invoice.seller.name); add(invoice.seller.address); add(`SIRET ${invoice.seller.siret}`); add(`TVA ${invoice.seller.vatNumber}`);
+    add(`${invoice.seller.legalForm} - Capital ${money(invoice.seller.capitalCents)}`); add(invoice.seller.rcs); separator();
+    add('CLIENT'); add(invoice.customerName); if (invoice.customerAddress) add(invoice.customerAddress); separator();
+    for (const item of invoice.items) {
+      add(`${item.quantity} x ${item.name}`); if (item.detail) add(item.detail);
+      add(`P.U. HT ${money(Math.round(item.unitCents * 10000 / (10000 + item.rate)))}`);
+      add(`TVA ${rate(item.rate)}`); add(`Ligne TTC ${money(item.grossCents)}`);
+      if (item.discountCents) { add(`Remise ligne -${money(item.discountCents)}`); add(`Net TTC ${money(item.ttcCents)}`); }
+      add('');
+    }
+    separator(); add(`Sous-total TTC ${money(invoice.subtotalCents)}`);
+    if (invoice.discountCents) { add(invoice.discountLabel || 'Remise'); add(`Remise totale -${money(invoice.discountCents)}`); }
+    if (invoice.deliveryCents) add(`Livraison TTC ${money(invoice.deliveryCents)}`);
+    separator(); add('DETAIL TVA (remises incluses)');
+    for (const row of invoice.tax) { add(`Taux ${rate(row.rate)}`); add(`Base HT ${money(row.htCents)}`); add(`TVA ${money(row.vatCents)}`); add(`TTC ${money(row.ttcCents)}`); }
+    separator(); add(`TOTAL HT ${money(invoice.htCents)}`); add(`TOTAL TVA ${money(invoice.vatCents)}`); add(`TOTAL TTC ${money(invoice.totalCents)}`);
+    add(`Regle : ${invoice.paymentMethod}`); if (invoice.paidAt) add(`Paiement le ${date(invoice.paidAt)}`);
+    add('RESTE A PAYER 0,00 EUR'); separator();
+    add('Copie de la facture enregistree.'); add('Meme numero et meme vente.'); add('Aucun nouvel encaissement.');
+    add('P.U. HT avant remise.'); add('Ne pas comptabiliser deux fois.');
+    return lines;
+  }
+  const invoiceEnvelope = invoice => wrap('<text align="left" width="1" height="1" em="false"/>'
+    + invoiceLines(invoice).map(line).join('') + line('') + '<cut type="feed"/>');
+
+  function endpoint(host, { secure = true, deviceId = 'local_printer' } = {}) {
+    if (!/^([a-z0-9.-]+|\[[0-9a-f:]+\])$/i.test(String(host || ''))) throw new Error('Adresse imprimante invalide.');
+    if (!/^[a-z0-9_-]{1,32}$/i.test(deviceId)) throw new Error('Identifiant imprimante invalide.');
+    return `${secure ? 'https' : 'http'}://${host}/cgi-bin/epos/service.cgi?devid=${encodeURIComponent(deviceId)}&timeout=10000`;
+  }
+
+  function responseResult(responseDocument) {
+    const element = responseDocument?.getElementsByTagName?.('response')?.[0];
+    if (!element) throw new Error('Réponse Epson illisible.');
+    return { success: /^(1|true)$/i.test(element.getAttribute('success') || ''), code: element.getAttribute('code') || '', status: element.getAttribute('status') || '' };
+  }
+
+  function send(host, documentXml, { xhrFactory = () => new XMLHttpRequest() } = {}) {
+    if (typeof documentXml !== 'string' || !documentXml.startsWith('<?xml') || documentXml.length > 200000) {
+      return Promise.reject(new Error('Document Epson invalide.'));
+    }
+    return new Promise((resolve, reject) => {
+      const xhr = xhrFactory();
+      xhr.open('POST', endpoint(host), true);
+      xhr.timeout = 15000;
+      xhr.setRequestHeader('Content-Type', 'text/xml; charset=utf-8');
+      xhr.setRequestHeader('If-Modified-Since', 'Thu, 01 Jan 1970 00:00:00 GMT');
+      xhr.setRequestHeader('SOAPAction', '""');
+      xhr.onload = () => {
+        if (xhr.status !== 200) return reject(new Error(`Réponse HTTP ${xhr.status} de l'imprimante.`));
+        try { resolve(responseResult(xhr.responseXML)); }
+        catch (error) { reject(error); }
+      };
+      xhr.onerror = () => reject(new Error('La page sécurisée ne peut pas joindre le service d’impression Epson.'));
+      xhr.ontimeout = () => reject(new Error('L’imprimante ne répond pas au test du service d’impression.'));
+      xhr.send(documentXml);
+    });
+  }
+
+  const probe = (host, options) => send(host, statusEnvelope(), options);
+
+  return { statusEnvelope, testEnvelope, completedOrderForTest, preparationEnvelope, orderReceiptEnvelope, invoiceLines, invoiceEnvelope, endpoint, responseResult, probe, send };
+});
