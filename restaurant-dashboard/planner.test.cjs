@@ -4,11 +4,11 @@ const planner = require('./planner');
 const schedule = require('../server/service-schedule');
 const availability = require('../server/availability');
 const now = new Date('2026-11-02T08:00:00Z');
-const dates = ['2026-11-02', '2026-11-07', '2026-11-08'];
+const dates = Array.from({length:14},(_,i)=>new Date(Date.UTC(2026,10,2+i)).toISOString().slice(0,10));
 const input = (date, data, draft) => ({date, revision:data.revision, services:draft});
 
 test('order groups cover every exact slot once; afternoon is 14:00 inclusive to 19:00 exclusive', () => {
-  for (const method of ['pickup', 'delivery']) {
+  for (const method of ['delivery']) {
     for (const slot of availability.candidateSlots(method)) {
       const matches = ['lunch','afternoon','evening','other'].filter(period => planner.inPeriod(slot, period, method));
       assert.equal(matches.length, 1, `${method} ${slot}`);
@@ -22,9 +22,17 @@ test('order groups cover every exact slot once; afternoon is 14:00 inclusive to 
   assert.equal(planner.inPeriod('18:40','evening','reservation'),true);
   assert.equal(planner.inPeriod('16:00','other','reservation'),true);
   assert.equal(planner.inPeriod('16:00','afternoon','reservation'),false);
+  assert.equal(planner.inPeriod('14:00','afternoon','pickup'),false);
+  assert.equal(planner.inPeriod('18:40','afternoon','pickup'),false);
+  const state = schedule.dashboard({}, dates[0], now);
+  for (const method of ['pickup', 'reservation']) {
+    const draft = planner.makeDraft(state);
+    planner.openPeriod(state, draft, method, 'afternoon');
+    assert.equal(planner.changes(state, draft).length, 0);
+  }
 });
 
-for (const method of ['pickup','delivery']) test(`${method}: afternoon opens and closes on demand, preserves standard hours and other services`, () => {
+for (const method of ['delivery']) test(`${method}: afternoon opens and closes on demand, preserves standard hours and other services`, () => {
   for (const date of dates) {
     const db = {};
     const original = schedule.dashboard(db,date,now);
@@ -57,28 +65,28 @@ for (const method of ['pickup','delivery']) test(`${method}: afternoon opens and
 test('opening one afternoon slot keeps other exceptions and saved orders intact', () => {
   const date = dates[0], db = {orders:[{id:'fictional',serviceDate:date,slot:'19:00',method:'pickup',status:'confirmed',payment:{status:'PAID'}}]};
   const start = schedule.dashboard(db,date,now), first = planner.makeDraft(start);
-  first.delivery['20:00'] = false;
+  first.pickup['20:00'] = false;
   schedule.save(db,input(date,start,first),now);
   const original = schedule.dashboard(db,date,now), draft = planner.makeDraft(original);
-  draft.pickup['16:00'] = true;
+  draft.delivery['16:00'] = true;
   assert.equal(planner.changes(original,draft).length,1);
   schedule.save(db,input(date,original,draft),now);
   const state = planner.makeDraft(schedule.dashboard(db,date,now));
-  assert.equal(state.pickup['16:00'],true);
-  assert.equal(state.pickup['16:20'],false);
+  assert.equal(state.delivery['16:00'],true);
+  assert.equal(state.delivery['16:15'],false);
   assert.equal(state.pickup['19:00'],true);
-  assert.equal(state.delivery['20:00'],false);
+  assert.equal(state.pickup['20:00'],false);
   assert.equal(db.orders[0].status,'confirmed');
 });
 
 test('closing afternoon slots with bookings retains the existing warning and conflict protection', () => {
   const date = dates[0], db = {};
   const start = schedule.dashboard(db,date,now), opened = planner.makeDraft(start);
-  planner.openPeriod(start,opened,'pickup','afternoon');
+  planner.openPeriod(start,opened,'delivery','afternoon');
   schedule.save(db,input(date,start,opened),now);
-  db.orders = [{id:'fictional',serviceDate:date,slot:'16:00',slotDurationMinutes:20,method:'pickup',status:'confirmed',payment:{status:'PAID'}}];
+  db.orders = [{id:'fictional',serviceDate:date,slot:'16:00',slotDurationMinutes:15,method:'delivery',status:'confirmed',payment:{status:'PAID'}}];
   const state = schedule.dashboard(db,date,now), draft = planner.makeDraft(state);
-  draft.pickup['16:00'] = false;
+  draft.delivery['16:00'] = false;
   assert.equal(planner.impacts(state,draft).length,1);
   assert.throws(() => schedule.save(db,input(date,state,draft),now),/prise en charge/);
   schedule.save(db,{...input(date,state,draft),acknowledgeExisting:true},now);
