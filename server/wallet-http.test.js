@@ -8,6 +8,7 @@ test('Wallet HTTP reuses SMS registration, isolates its cookie, authenticates QR
   await fs.writeFile(file, JSON.stringify({ customers: [original], orders: [{ id: 'preserved-order', customerId: original.id, status: 'delivered' }], nextCustomerId: 2, nextOrderNumber: 1 }));
   const child = spawn(process.execPath, ['--require', path.join(__dirname, 'test-fixtures/sms-provider.cjs'), path.join(__dirname, 'server.js')], { cwd: dir,
     env: { PATH: process.env.PATH, NODE_ENV: 'test', PORT: '0', DATA_FILE_PATH: file, SESSION_SECRET: 'wallet-test-only', WALLET_ENABLED: 'true', WALLET_PUBLIC_ORIGIN: 'https://bibou.example',
+      WALLET_PREVIEW_ONLY: 'true', WALLET_PREVIEW_PHONE_HASHES: require('node:crypto').createHash('sha256').update('33600000001').digest('hex'),
       TWILIO_ACCOUNT_SID: 'FAKE', TWILIO_AUTH_TOKEN: 'FAKE', TWILIO_VERIFY_SERVICE_SID: 'FAKE', RESTAURANT_DASHBOARD_PASSWORD: 'synthetic-dashboard-only' }, stdio: ['ignore', 'pipe', 'pipe'] });
   t.after(async () => { child.kill(); if (child.exitCode === null) await once(child, 'exit'); await fs.rm(dir, { recursive: true, force: true }); });
   let errors = ''; child.stderr.on('data', d => { errors += d; });
@@ -35,7 +36,8 @@ test('Wallet HTTP reuses SMS registration, isolates its cookie, authenticates QR
   assert.equal((await req('/api/dashboard/wallet/identify', { method: 'POST', body: { barcode: member.member.barcode } })).status, 401);
   const proof = await (await req('/api/auth/sms/check', { method: 'POST', body: { phone: '0600000002', code: '123456', registrationVersion: 2 } })).json();
   const signup = await (await req('/api/auth/sms/register', { method: 'POST', body: { registrationToken: proof.registrationToken, firstName: 'Camille', lastName: 'Test' } })).json();
-  await req('/api/wallet/session', { method: 'POST', token: signup.token });
+  assert.equal((await req('/api/wallet/session', { method: 'POST', token: signup.token })).status, 403, 'Preview issuance rejects verified accounts outside the allowlist');
+  assert.equal((await req('/api/wallet/member', { token: signup.token })).status, 403, 'Full customer token cannot bypass preview restriction');
   const db = JSON.parse(await fs.readFile(file, 'utf8')); assert.equal(db.customers.length, 2); assert.equal(db.customers[0].points, 345); assert.equal(db.orders[0].id, 'preserved-order');
   const logout = await req('/api/wallet/session', { method: 'DELETE', cookie }); assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
   const deleted = await req('/api/customer/account', { method: 'DELETE', token: login.token }); assert.equal(deleted.status, 200);

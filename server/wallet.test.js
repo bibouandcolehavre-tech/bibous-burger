@@ -49,6 +49,15 @@ test('all providers fail closed by default; origins cannot contain credentials, 
   assert.throws(() => core.assertSameOrigin({ headers: { origin: 'https://evil.example' } }, 'https://bibou.example'), /Recharge/);
 });
 
+test('private preview accepts only allowed verified-phone formats and fails closed for missing or invalid allowlists', () => {
+  const hash = crypto.createHash('sha256').update('33600000001').digest('hex');
+  const config = providers.configFromEnv({ WALLET_PREVIEW_ONLY: 'true', WALLET_PREVIEW_PHONE_HASHES: 'bad,' + hash });
+  for (const phone of ['+33600000001', '0600000001', '0033600000001']) assert.doesNotThrow(() => core.assertPreviewAccess({ phone }, config));
+  for (const phone of ['0600000002', '', 'bad']) assert.throws(() => core.assertPreviewAccess({ phone }, config), { statusCode: 403 });
+  assert.throws(() => core.assertPreviewAccess({ phone: '0600000001' }, { previewOnly: true, previewPhoneHashes: [] }), { statusCode: 403 });
+  assert.doesNotThrow(() => core.assertPreviewAccess({ phone: '0600000002' }, { previewOnly: false }));
+});
+
 test('Google Save JWT has a valid RSA signature and contains only the chosen card, without phone or orders', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bibou-wallet-sign-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const keys = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
