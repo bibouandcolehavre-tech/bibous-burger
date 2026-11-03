@@ -126,10 +126,11 @@ function award(db, order, customer, { now = new Date(), flags = {}, secret, star
   stock.reconcile(db, now);
   const available = availableGroups(db, flags);
   const pool = available.length ? available[randomInt(available.length)] : [];
-  const productId = pool.length ? pool[randomInt(pool.length)] : null;
-  const label = productId ? productId === 'frites-maison' ? 'Une portion de frites maison offerte' : productId === 'tenders-xl-3' ? 'Trois tenders XL offerts' : `${PRODUCT_CATALOG[productId].name} offert` : 'Cadeau du midi à choisir avec le restaurant';
+  const drinkChoice = pool.some(id => drinkIds.includes(id));
+  const productId = pool.length && !drinkChoice ? pool[randomInt(pool.length)] : null;
+  const label = productId ? productId === 'frites-maison' ? 'Une portion de frites maison offerte' : productId === 'tenders-xl-3' ? 'Trois tenders XL offerts' : `${PRODUCT_CATALOG[productId].name} offert` : drinkChoice ? 'Boisson 33 cl au choix du client' : 'Cadeau du midi à choisir avec le restaurant';
   const gift = { campaignId: CAMPAIGN.id, day, rank: previous.length + 1, quantity: 1, productId, label,
-    status: productId ? 'attached' : 'choice_required', awardedAt: now.toISOString() };
+    status: productId ? 'attached' : 'choice_required', ...(drinkChoice ? { choiceType: 'drink', drinkOptions: pool.map(id => ({ id, label: PRODUCT_CATALOG[id].name })) } : {}), awardedAt: now.toISOString() };
   if (productId) {
     // A separate physical gift: debit stock once, without making it a paid
     // item, discount, new coupon, points source or amendment target.
@@ -152,11 +153,15 @@ function resolve(db, order, input, flags, now = new Date()) {
   if (gift?.campaignId !== CAMPAIGN.id) fail('Cette commande ne bénéficie pas du cadeau.');
   if (gift.status === 'attached' && gift.productId === input.productId) return gift;
   if (gift.status !== 'choice_required') fail('Le cadeau a déjà été ajouté.');
+  if (gift.choiceType === 'drink' && !drinkIds.includes(input.productId)) fail('Choisissez une boisson 33 cl.');
   if (!availableGroups(db, flags).flat().includes(input.productId)) fail('Ce cadeau est indisponible. Vérifiez le stock.');
   const productId = input.productId;
   stock.applyChange(db, { ...order, items: [...order.items, { productId, quantity: 1, options: [] }] }, order.items, now);
   gift.productId = productId;
   gift.label = productId === 'frites-maison' ? 'Une portion de frites maison offerte' : productId === 'tenders-xl-3' ? 'Trois tenders XL offerts' : `${PRODUCT_CATALOG[productId].name} offert`;
+  const award = ledger(db).find(entry => entry.orderId === order.id);
+  if (award) award.productId = productId;
+  delete gift.drinkOptions;
   gift.status = 'attached'; gift.stockRecorded = true; gift.resolvedAt = now.toISOString();
   return gift;
 }
