@@ -23,6 +23,7 @@ function paymentState(record, kind, now = Date.now()) {
   // A locally elapsed hold does NOT prove that a bank payment failed. Verify with
   // SumUp before allowing this attempt to be forgotten and a new one to be made.
   if (record.payment?.status === 'EXPIRED') return 'expired';
+  if (kind === 'order' && !record.payment?.checkoutReference && Date.parse(record.lunchDiscount?.expiresAt) <= now) return 'expired';
   if (!record.payment?.checkoutReference && ['order', 'reservation'].includes(kind) && now - Date.parse(record.createdAt) >= 15 * 60000) return 'expired';
   if (record.payment?.status === 'FAILED') return 'failed';
   return 'pending';

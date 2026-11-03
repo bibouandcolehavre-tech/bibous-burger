@@ -1036,13 +1036,18 @@ function PaymentScreen({ cart, customer, reservationDraft, onBack, onPay, onVali
 function PaymentPendingScreen({ record, kind, message, busy, onCheckPayment, onResume, onBack, onEditCart, recoverable = true }) {
   const state = paymentState(record, kind);
   const terminal = ['paid', 'cancelled', 'expired'].includes(state);
+  const confirmLunchDiscount = kind === 'order' && record?.lunchDiscount && !record.payment?.checkoutReference && !terminal;
   return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.successContent}>
     <Text style={styles.successEmoji}>🔒</Text>
     <Text style={styles.successTitle}>{kind === 'bibou-plus' ? 'Ton paiement Bibou +' : kind === 'reservation' ? 'Paiement de ta table' : 'Ton paiement sécurisé'}</Text>
     {record && <Text style={[styles.successText, styles.paymentRecoveryText]}>{kind === 'order' ? `Commande #${record.number} · ${money(record.total)}` : kind === 'reservation' ? `Réservation #${record.number} · ${money(record.amount)}` : `Bibou + · ${money(record.amount)}`}</Text>}
+    {confirmLunchDiscount && <View style={styles.statusCard}>
+      <Text style={styles.statusTitle}>🎁 Remise surprise du midi</Text>
+      <Text style={styles.statusDescription}>{money(record.lunchDiscount.amountCents / 100)} de remise sur tes produits. Offre réservée jusqu’à {new Date(record.lunchDiscount.expiresAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })}.</Text>
+    </View>}
     <Text style={[styles.successText, styles.paymentRecoveryText]}>{terminal ? 'Statut retrouvé pour cette tentative.' : !recoverable && kind === 'order' ? 'La commande n’a pas été créée. Corrige ton panier avant de recommencer le paiement.' : 'Ta tentative est sauvegardée. Reviens ici après SumUp, même si tu as fermé l’application.'}</Text>
     <View style={styles.statusCard}><Text style={styles.statusTitle}>{busy ? 'Vérification en cours…' : 'Suivi du paiement'}</Text><Text accessibilityLiveRegion="polite" style={styles.statusDescription}>{message || 'Aucun paiement n’est confirmé sans vérification auprès de SumUp.'}</Text></View>
-    {!terminal && recoverable && <><Pressable accessibilityRole="button" disabled={busy} style={[styles.primaryButton, styles.paymentRecoveryPrimary, busy && styles.primaryButtonDisabled]} onPress={onResume}><Text style={styles.primaryButtonText}>Reprendre le paiement SumUp</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} style={[styles.trackOrderButton, styles.paymentRecoverySecondary]} onPress={onCheckPayment}><Text style={[styles.trackOrderButtonText, styles.paymentRecoveryText]}>Vérifier mon paiement</Text></Pressable></>}
+    {!terminal && recoverable && <><Pressable accessibilityRole="button" disabled={busy} style={[styles.primaryButton, styles.paymentRecoveryPrimary, busy && styles.primaryButtonDisabled]} onPress={onResume}><Text style={styles.primaryButtonText}>{confirmLunchDiscount ? `Confirmer et payer ${money(record.total)}` : 'Reprendre le paiement SumUp'}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} style={[styles.trackOrderButton, styles.paymentRecoverySecondary]} onPress={onCheckPayment}><Text style={[styles.trackOrderButtonText, styles.paymentRecoveryText]}>Vérifier mon paiement</Text></Pressable></>}
     {onEditCart && !record && !busy && !recoverable && <Pressable accessibilityRole="button" style={[styles.primaryButton, styles.paymentRecoveryPrimary]} onPress={onEditCart}><Text style={styles.primaryButtonText}>Compléter ou modifier mon panier</Text></Pressable>}
     <Pressable accessibilityRole="button" disabled={busy} style={[styles.trackOrderButton, styles.paymentRecoverySecondary]} onPress={onBack}><Text style={[styles.trackOrderButtonText, styles.paymentRecoveryText]}>Retour à l’accueil</Text></Pressable>
   </ScrollView></SafeAreaView>;
@@ -1622,7 +1627,7 @@ function AppContent({ onReviewModeChange }) {
     }
     return false;
   };
-  const processAttempt = async (attempt, token, openCheckout = false) => {
+  const processAttempt = async (attempt, token, openCheckout = false, acceptedLunchOrder = null) => {
     showPaymentRecord(attempt, null);
     const health = await apiRequest('/health', token);
     if (!health.ok || health.payload.capabilities?.paymentRecovery !== 1) throw new Error('Le service de paiement est en cours de mise à jour. Ta tentative est conservée. Réessaie dans un instant.');
@@ -1661,8 +1666,15 @@ function AppContent({ onReviewModeChange }) {
       record = created.payload.order;
       if (await finishPayment(attempt, record, token)) return;
     }
+    if (record?.lunchDiscount && !record.payment?.checkoutReference &&
+        (acceptedLunchOrder?.id !== record.id || acceptedLunchOrder.total !== record.total)) {
+      showPaymentRecord(attempt, record);
+      setPaymentMessage('Vérifie le montant remisé, puis confirme pour ouvrir SumUp.');
+      return;
+    }
     const opened = attempt.kind === 'order'
-      ? await apiRequest('/payments/sumup-checkout', token, { orderId: record.id })
+      ? await apiRequest('/payments/sumup-checkout', token, { orderId: record.id,
+        ...(record.lunchDiscount ? { acceptedTotalCents: Math.round(record.total * 100) } : {}) })
       : attempt.kind === 'reservation'
         ? await apiRequest('/reservations/deposit-checkout', token, { ...attempt.input, requestId: attempt.requestId })
         : await apiRequest('/bibou-plus/checkout', token, { requestId: attempt.requestId });
@@ -1675,12 +1687,12 @@ function AppContent({ onReviewModeChange }) {
     // Same-tab navigation keeps the hosted checkout reliable on web and 3DS flows.
     await openCheckoutUrl(checkoutUrl, typeof window === 'undefined' ? null : window, Linking);
   };
-  const runPayment = async (attempt, token = authToken, openCheckout = false) => {
+  const runPayment = async (attempt, token = authToken, openCheckout = false, acceptedLunchOrder = null) => {
     if (paymentBusyRef.current || !attempt || !token) return;
     paymentBusyRef.current = true;
     setPaymentBusy(true);
     setPaymentMessage('');
-    try { await processAttempt(attempt, token, openCheckout); }
+    try { await processAttempt(attempt, token, openCheckout, acceptedLunchOrder); }
     catch (error) { setPaymentMessage(error.name === 'AbortError' ? 'Le réseau met trop de temps à répondre. Ta tentative est conservée : réessaie sans refaire de commande.' : error.message || 'Vérification indisponible. Réessaie dans un instant.'); }
     finally { paymentBusyRef.current = false; setPaymentBusy(false); }
   };
@@ -1770,6 +1782,7 @@ function AppContent({ onReviewModeChange }) {
     if (promoCode) input.promoCode = promoCode;
     if (!Number.isFinite(expectedTotal) || expectedTotal < 0) { Alert.alert('Montant à vérifier','Vérifie le total de ta commande avant de continuer. Aucun paiement lancé.'); return; }
     input.expectedTotalCents=Math.round(expectedTotal*100);
+    input.lunchDiscountPreview = true;
     await beginPayment('order', input);
   };
   const payTableDeposit = async draft => {
@@ -1810,7 +1823,7 @@ function AppContent({ onReviewModeChange }) {
     try { await beginPayment('bibou-plus'); } finally { setBibouPlusLoading(false); }
   };
   const checkPayment = () => runPayment(paymentAttempt.current);
-  const resumePayment = () => runPayment(paymentAttempt.current, authToken, true);
+  const resumePayment = () => runPayment(paymentAttempt.current, authToken, true, pendingOrder?.lunchDiscount ? pendingOrder : null);
   useEffect(() => {
     if (!CUSTOMER_JOURNEY_SHELL || !authToken || screen !== 'menu') return;
     let stopped = false, checking = false, checks = 0;
