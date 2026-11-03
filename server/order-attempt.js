@@ -30,6 +30,7 @@ function orderFingerprint(input) {
   const promoCode = normalizePromoCode(input.promoCode);
   if (promoCode) canonical.promoCode = promoCode;
   if (input.expectedTotalCents !== undefined) canonical.expectedTotalCents=input.expectedTotalCents;
+  if (input.lunchDiscountPreview === true) canonical.lunchDiscountPreview = true;
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 

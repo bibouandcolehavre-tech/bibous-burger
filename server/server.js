@@ -363,6 +363,7 @@ const finalizePaidOrder = async (order, database) => {
 
   const now = new Date().toISOString();
   order.payment.paidAt ||= now;
+  lunchGifts.recordPaidDiscount(database, order, database.customers.find(c => c.id === order.customerId), customerSessionSecret, new Date(now));
   if (lunchGifts.eligible(order, database.customers.find(c => c.id === order.customerId), new Date(now))) {
     let giftFlags;
     try { giftFlags = await productStockStore.read(); }
@@ -2318,6 +2319,19 @@ const server = http.createServer(async (request, response) => {
         const finalSlotError = immediate ? null : validateServiceSlot(createdOrder.serviceDate, createdOrder.slot, new Date(createdOrder.createdAt), createdOrder.method, latestDatabase, subtotal, grid);
         if (finalSlotError) throw Object.assign(new Error(finalSlotError), { statusCode: 400 });
         createdOrder.pickupAdvanceBonusApplied = !immediate && !createdOrder.dineIn && qualifiesForAdvancePickup(createdOrder);
+        if (input.lunchDiscountPreview === true && requestId && benefitsAllowed && !cash && !immediate &&
+            !promotionContext.isKiosk && input.expectedTotalCents !== undefined) {
+          const discounted = lunchGifts.reserveDiscount(latestDatabase, createdOrder, latestCustomer, pricing, {
+            secret: customerSessionSecret, startDate: process.env.LUNCH_DISCOUNT_START_DATE,
+          });
+          if (createdOrder.lunchDiscount) {
+            createdOrder.discount = discounted.discount;
+            createdOrder.total = discounted.total;
+            createdOrder.discountLabel = createdOrder.discountLabel
+              ? createdOrder.discountLabel + ' + remise surprise du midi'
+              : 'Remise surprise du midi';
+          }
+        }
         quantityStock.reserve(latestDatabase, createdOrder);
         latestDatabase.orders.unshift(createdOrder);
         if (cash) prepareCashOrder(createdOrder);
@@ -2414,7 +2428,11 @@ const server = http.createServer(async (request, response) => {
       if (closureReason) return send(response, 409, { code: "SERVICE_CLOSED", error: closureReason });
       quantityStock.reserve(database, order);
       assertStoredOrderAvailable(order.items, quantityStock.effectiveFlags(database, await productStockStore.read(), order.id));
-      const checkoutExpiresAt = new Date(new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS);
+      if (order.lunchDiscount && input.acceptedTotalCents !== Math.round(order.total * 100)) {
+        return send(response, 409, { code: 'LUNCH_TOTAL_CONFIRMATION_REQUIRED', error: 'Vérifie et confirme le total remisé avant de payer.' });
+      }
+      const reservationEnd = new Date(order.createdAt).getTime() + PENDING_RESERVATION_MS;
+      const checkoutExpiresAt = new Date(order.lunchDiscount ? Math.min(reservationEnd, Date.parse(order.lunchDiscount.expiresAt)) : reservationEnd);
       if (!Number.isFinite(checkoutExpiresAt.getTime()) || checkoutExpiresAt.getTime() <= Date.now()) {
         return send(response, 409, { code: "ORDER_EXPIRED", error: "La réservation de ce créneau a expiré. Recommence la commande pour choisir un créneau disponible." });
       }

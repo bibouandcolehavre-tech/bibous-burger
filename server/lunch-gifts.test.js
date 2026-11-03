@@ -91,3 +91,32 @@ test('the offer never advertises a closed lunch service or opens restaurant hour
   db.serviceSchedule={dates:{'2026-11-03':{services:{pickup:slots,delivery:slots},slotMinutesByMethod:{pickup:15,delivery:15}}}};
   assert.equal(gifts.state(db,now).status,'closed');
 });
+
+test('discount holds reserve one place, expire before opening SumUp and survive an uncertain provider result', () => {
+  const db = fixture();
+  const startDate = '2026-11-03';
+  const draft = i => order(i, { payment: undefined, customerPhone: db.customers[i - 1].phone });
+  const pricing = { subtotal: 35, discount: 2, deliveryFee: 4, total: 37 };
+  const reserve = (o, at) => gifts.reserveDiscount(db, o, db.customers[Number(o.id.slice(1)) - 1], pricing,
+    { ...options, now: at, startDate });
+  const abandoned = draft(1);
+  assert.deepEqual(reserve(abandoned, now), { ...pricing, discount: 7, total: 32 });
+  db.orders.push(abandoned);
+  const next = draft(2);
+  assert.equal(reserve(next, now), pricing);
+  const retryTime = new Date(+now + 5 * 60000);
+  assert.equal(reserve(next, retryTime).total, 32);
+  db.orders.push(next);
+  next.payment = { provider: 'sumup', checkoutReference: 'uncertain-test', status: 'PENDING' };
+  assert.equal(reserve(draft(3), new Date(+retryTime + 10 * 60000)), pricing);
+  for (let i = 3; i <= 7; i++) {
+    const paid = order(i);
+    db.orders.push(paid);
+    assert.equal(Boolean(gifts.award(db, paid, db.customers[i - 1], options)), i < 7);
+  }
+  next.payment.status = 'PAID';
+  gifts.recordPaidDiscount(db, next, db.customers[1], secret, retryTime);
+  gifts.recordPaidDiscount(db, next, db.customers[1], secret, retryTime);
+  assert.equal(gifts.state(db, now).awarded, 5);
+  assert.equal(gifts.award(db, next, db.customers[1], options), null);
+});
