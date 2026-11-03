@@ -24,10 +24,10 @@ function LocalStory({ onClose }) {
     <Pressable accessibilityRole="button" onPress={onClose} style={s.action}><Text style={s.actionText}>Revenir à ma commande</Text></Pressable>
   </View></Modal>;
 }
-export default function ExperienceNews({ apiBaseUrl, compact = true, onOpenContest }) {
+export default function ExperienceNews({ apiBaseUrl, compact = true, onOpenContest, hideHomePromotion = false }) {
   const [serverItems, setServerItems] = useState(DEFAULT_NEWS), [index, setIndex] = useState(0), [paused, setPaused] = useState(false), [playing, setPlaying] = useState(false), [error, setError] = useState('');
   const selectedId = useRef('histoire'), allowed = useExperienceMotion();
-  const items = [story, ...serverItems.filter(item => item.enabled !== false && (!compact || item.kind !== 'contest') && item.id !== 'histoire')];
+  const items = [story, ...serverItems.filter(item => item.enabled !== false && (!hideHomePromotion || item.campaign !== 'dynamite-duo') && (!compact || item.kind !== 'contest') && item.id !== 'histoire')];
   useEffect(() => { if (items[index]) selectedId.current = items[index].id; }, [index]);
   useEffect(() => {
     let live = true, busy = false, controller;
@@ -53,8 +53,8 @@ export default function ExperienceNews({ apiBaseUrl, compact = true, onOpenConte
     if (safePublicUrl(item.url)) try { await Linking.openURL(item.url); } catch { setError('Le lien ne s’est pas ouvert. Réessaie sans quitter ta commande.'); }
   };
   const card = item => item.kind === 'social' ? <SocialLinks key={item.id} compact style={s.social} /> : <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={item.kind === 'local-video' ? 'Lire la vidéo Pourquoi Bibou’s Burgers dans l’application' : item.title} disabled={item.kind === 'note' && !item.url} onPress={() => void open(item)} style={s.card}>
-    <View style={s.copy}><Text style={s.tag}>{item.kind === 'local-video' ? 'NOTRE HISTOIRE' : item.id === 'epicu' ? 'LE REPORTAGE ÉPICU' : item.id === 'paris-normandie' ? 'PARIS-NORMANDIE' : item.kind === 'contest' ? 'LE CONCOURS BIBOU' : 'À LA UNE'}</Text><Text style={s.title}>{item.title}</Text>{!compact && <Text style={s.body}>{item.subtitle}</Text>}<Text style={s.link}>{item.kind === 'local-video' ? '▶ Regarder ici' : item.kind === 'video' ? item.id === 'epicu' ? '▶ Lire sur Instagram' : '▶ Lire sur Facebook' : 'Découvrir →'}</Text></View>
-    {(covers[item.id] || safePublicUrl(item.imageUrl)) && <View style={s.cover}><Image source={covers[item.id] || { uri: item.imageUrl }} style={s.image} resizeMode="cover" />{['video', 'local-video'].includes(item.kind) && <View style={s.play}><Text style={s.playText}>▶</Text></View>}</View>}
+    <View style={s.copy}><Text style={s.tag}>{item.kind === 'local-video' ? 'NOTRE HISTOIRE' : item.kind === 'video' && item.id === 'epicu' ? 'LE REPORTAGE ÉPICU' : item.id === 'paris-normandie' ? 'PARIS-NORMANDIE' : item.kind === 'contest' ? 'LE CONCOURS BIBOU' : 'À LA UNE'}</Text><Text style={s.title}>{item.title}</Text>{!compact && <Text style={s.body}>{item.subtitle}</Text>}<Text style={s.link}>{item.kind === 'local-video' ? '▶ Regarder ici' : item.kind === 'video' ? item.id === 'epicu' ? '▶ Lire sur Instagram' : '▶ Lire sur Facebook' : 'Découvrir →'}</Text></View>
+    {((item.kind !== 'note' && covers[item.id]) || safePublicUrl(item.imageUrl)) && <View style={s.cover}><Image source={covers[item.id] || { uri: item.imageUrl }} style={s.image} resizeMode="cover" />{['video', 'local-video'].includes(item.kind) && <View style={s.play}><Text style={s.playText}>▶</Text></View>}</View>}
   </Pressable>;
   return <View testID="experience-news-carousel" style={s.section}><Text style={s.heading}>Nos actualités</Text>{compact ? card(items[Math.min(index, items.length - 1)]) : <View style={s.stack}>{items.map(card)}</View>}
     {compact && <View style={s.controls}><Pressable accessibilityRole="button" accessibilityLabel="Actualité précédente" onPress={() => { setPaused(true); setIndex(current => (current - 1 + items.length) % items.length); }} style={s.control}><Text style={s.link}>‹</Text></Pressable><View style={s.dots}>{items.map((item, i) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`Afficher ${item.title}`} accessibilityState={{ selected: i === index }} onPress={() => { selectedId.current = item.id; setIndex(i); setPaused(true); }} style={s.control}><View style={[s.dot, i === index && s.selected]} /></Pressable>)}</View><Pressable accessibilityRole="button" accessibilityLabel="Actualité suivante" onPress={() => { setPaused(true); setIndex(current => (current + 1) % items.length); }} style={s.control}><Text style={s.link}>›</Text></Pressable></View>}

@@ -7,15 +7,8 @@ const { supportsRankingContest } = require('./customer-experience-policy');
 const newsForPlatform = (items, platform) => supportsRankingContest(platform) ? items : items.filter(item => item.kind !== 'contest');
 const duoPreview = Platform.OS === 'android' || (Platform.OS === 'web' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') !== 'ancien');
 
-export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
+export function useHomeNews(apiBaseUrl) {
   const [items, setItems] = useState(() => newsForPlatform(DEFAULT_NEWS, Platform.OS));
-  const [index, setIndex] = useState(0);
-  const scroll = useRef(null);
-  const selectedId = useRef(newsForPlatform(DEFAULT_NEWS, Platform.OS)[0]?.id);
-  const { width } = useWindowDimensions();
-  const available = Math.min(Math.max(280, width - 40), 1140);
-  const cardWidth = width >= 900 ? Math.min(760, available * .72) : available;
-  const step = cardWidth + 12;
   useEffect(() => {
     let alive = true, loading = false;
     const controller = new AbortController();
@@ -37,6 +30,17 @@ export default function NewsCarousel({ apiBaseUrl, onOpenContest }) {
     const timer = setInterval(refresh, 60000);
     return () => { alive = false; controller.abort(); clearInterval(timer); };
   }, [apiBaseUrl]);
+  return items;
+}
+
+export default function NewsCarousel({ items, onOpenContest }) {
+  const [index, setIndex] = useState(0);
+  const scroll = useRef(null);
+  const selectedId = useRef(newsForPlatform(DEFAULT_NEWS, Platform.OS)[0]?.id);
+  const { width } = useWindowDimensions();
+  const available = Math.min(Math.max(280, width - 40), 1140);
+  const cardWidth = width >= 900 ? Math.min(760, available * .72) : available;
+  const step = cardWidth + 12;
   useEffect(() => {
     const next = Math.max(0, items.findIndex(item => item.id === selectedId.current));
     setIndex(next);
