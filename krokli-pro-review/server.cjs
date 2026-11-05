@@ -3,6 +3,7 @@
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');
 const {spawn}=require('node:child_process'),{once}=require('node:events');
 const {fixture}=require('./fixture.cjs'),{page}=require('./public-pages.cjs');
+const {demoPage,decorate,handleDemoLookup,DEMO_BARCODE}=require('./wallet-demo.cjs');
 const root=path.resolve(__dirname,'..'),publicRoot=path.join(root,'restaurant-dashboard');
 // Public example credential, NOT an access to any real restaurant or service.
 const DEMO_PASSWORD='KrokliProExemple2026';
@@ -24,6 +25,7 @@ async function start(){
    const url=new URL(req.url,'http://review.invalid');
    if(['GET','HEAD'].includes(req.method)&&url.pathname==='/health'){return json(res,200,{ok:true,product:'Krokli Pro',isolatedExamples:true,externalProviders:false});}
    if(['GET','HEAD'].includes(req.method)&&['/privacy','/support'].includes(url.pathname)){const html=page(url.pathname.slice(1));res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"});return res.end(req.method==='HEAD'?undefined:html);}
+   if(['GET','HEAD'].includes(req.method)&&url.pathname==='/staff/wallet/scan'){const html=demoPage();res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"});return res.end(req.method==='HEAD'?undefined:html);}
    if(url.pathname.startsWith('/api/')){
     // No customer authentication/order submission or driver/provider webhooks.
     const permitted=url.pathname.startsWith('/api/dashboard/')||req.method==='GET'&&url.pathname==='/api/catalog';
@@ -32,6 +34,8 @@ async function start(){
     if(Number(req.headers['content-length']||0)>131072)return json(res,413,{error:'Requête trop volumineuse.'});
     let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>131072)return json(res,413,{error:'Requête trop volumineuse.'});chunks.push(chunk);}
     const body=Buffer.concat(chunks);
+    const demoReply=await handleDemoLookup({req,url,body,backendPort});
+    if(demoReply)return json(res,demoReply.status,demoReply.data);
     const upstream=http.request({hostname:'127.0.0.1',port:backendPort,path:url.pathname+url.search,method:req.method,headers:{Accept:'application/json',...(req.headers.authorization?{Authorization:req.headers.authorization}:{}),...(body.length?{'Content-Type':'application/json','Content-Length':body.length}:{})}},response=>{res.writeHead(response.statusCode||502,{'Content-Type':response.headers['content-type']||'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});response.pipe(res);});
     upstream.setTimeout(20000,()=>upstream.destroy());upstream.on('error',()=>{if(!res.headersSent)json(res,503,{error:'Service de vérification temporairement indisponible.'});else res.end();});upstream.end(body);return;
    }
@@ -42,10 +46,11 @@ async function start(){
    const ext=path.extname(requested);if(!mime[ext])return json(res,404,{error:'Fichier indisponible.'});
    file=await fs.readFile(path.join(publicRoot,requested));
    if(requested==='/app.js')file=Buffer.from(file.toString('utf8').replace(/^const API_BASE_URL = [^\n]+;/,"const API_BASE_URL = window.location.origin + '/api';"));
+   if(ext==='.html'&&requested==='/index.html')file=Buffer.from(decorate(file.toString('utf8')));
    if(ext==='.html')file=Buffer.from(file.toString('utf8').replace('<body>','<body><div style="position:relative;z-index:99999;background:#bb7258;color:white;padding:12px;text-align:center;font-weight:700">VÉRIFICATION KROKLI PRO — EXEMPLES UNIQUEMENT. Aucun repas, paiement ou envoi réel. Ne saisissez aucune donnée personnelle.</div>').replace(/<link rel="manifest"[^>]+>/g,'').replace(/<script src="\.\/pwa\.js[^>]*><\/script>/g,''));
    // No service worker, printer/local-network connection or remote script allowed.
    if(requested==='/sw.js')return json(res,404,{error:'Service worker désactivé.'});
-   res.writeHead(200,{'Content-Type':mime[ext],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"});res.end(req.method==='HEAD'?undefined:file);
+   res.writeHead(200,{'Content-Type':mime[ext],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(self), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"});res.end(req.method==='HEAD'?undefined:file);
   }catch(error){if(!res.headersSent)json(res,error.code==='ENOENT'?404:500,{error:'Ressource de vérification indisponible.'});else res.end();}
  });
  server.listen(Number(process.env.PORT||0),'0.0.0.0',()=>console.log('Krokli Pro isolated review listening on '+server.address().port));
