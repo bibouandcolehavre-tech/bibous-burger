@@ -1,0 +1,32 @@
+#hygiene-view { color:#20332e; padding-bottom:18px; }
+#hygiene-view [hidden] { display:none !important; }
+.hygiene-tabs,.hygiene-period { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin:12px 0; }
+.hygiene-tabs button { padding:10px 13px; border:1px solid #d8c8b7; border-radius:8px; background:#fffaf4; color:#20332e; }
+.hygiene-tabs button[aria-pressed="true"] { background:#234b42; color:#fff; border-color:#234b42; }
+.hygiene-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(285px,100%),1fr)); gap:12px; align-items:start; }
+.hygiene-card { display:grid; gap:10px; padding:14px; border:1px solid #e7d5c1; border-radius:12px; background:#fffaf4; min-width:0; }
+.hygiene-card h2 { font-size:18px; margin:0; }
+.hygiene-card label,.hygiene-period label { display:grid; gap:4px; font-weight:600; }
+.hygiene-card input,.hygiene-card select,.hygiene-card textarea,.hygiene-period input {
+  width:100%; min-width:0; min-height:42px; border:1px solid #cabbad; border-radius:7px; padding:7px 9px;
+  background:#fff; color:#20332e; font:inherit; box-sizing:border-box;
+}
+.hygiene-card ul { margin:0; padding-left:20px; overflow-wrap:anywhere; }
+.hygiene-card li + li { margin-top:7px; }
+.hygiene-photo { display:grid; gap:8px; justify-items:start; }
+.hygiene-card .hygiene-camera { position:relative; display:inline-flex; padding:10px 12px; border:1px solid #234b42; border-radius:8px; color:#234b42; }
+.hygiene-camera:focus-within { outline:2px solid #234b42; outline-offset:2px; }
+.hygiene-card .hygiene-camera input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.hygiene-card img { display:block; width:min(100%,620px); height:auto; margin:6px 0; border-radius:8px; }
+.hygiene-open-photo { display:block; margin-top:6px; }
+.hygiene-inline-action { margin:5px 6px 0 0; min-height:42px; }
+#hygiene-view [data-feedback] { min-height:20px; }
+.hygiene-error { color:#a12e25; }
+.hygiene-print-only { display:none; }
+@media print {
+  body.hygiene-printing > :not(.hygiene-print-only) { display:none !important; }
+  body.hygiene-printing .hygiene-print-only { display:block; white-space:pre-wrap; color:#000; font:12pt/1.45 sans-serif; overflow-wrap:anywhere; }
+}
+
+.hygiene-review-print { width: min(38rem, calc(100% - 2rem)); max-height: 80vh; overflow: auto; }
+.hygiene-review-print pre { white-space: pre-wrap; overflow-wrap: anywhere; }

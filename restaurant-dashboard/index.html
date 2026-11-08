@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="./pwa.css?v=pickup-time-20261016" />
     <link rel="stylesheet" href="./customers-compact.css?v=pages-20261018" />
     <link rel="stylesheet" href="./birthdays.css?v=20261018" />
+    <link rel="stylesheet" href="./hygiene.css?v=haccp-review-20261109" />
   </head>
   <body>
     <section id="login-screen" class="login-screen">
@@ -128,6 +129,7 @@
             <button type="button" data-jump="customers"><span aria-hidden="true">♡</span><strong>Clients & fidélité</strong><small>Comptes, points et avantages</small></button>
             <button type="button" data-jump="marketing"><span aria-hidden="true">✦</span><strong>Marketing</strong><small>Promotions et messages</small></button>
             <button type="button" data-jump="statistics"><span aria-hidden="true">↗</span><strong>Statistiques</strong><small>Chiffre d’affaires & clients qui reviennent</small></button>
+            <button type="button" data-jump="hygiene"><span aria-hidden="true">✓</span><strong>Hygiène HACCP</strong><small>Contrôles, lots et dossier</small></button>
             <button type="button" data-jump="settings"><span aria-hidden="true">⚙</span><strong>Réglages</strong><small>Tickets, alertes et sauvegardes</small></button>
           </nav>
           <!-- Retain the previous home nodes for the existing read-only renderers. -->
@@ -154,6 +156,7 @@
         <section id="marketing-sms-view" hidden></section>
         <section id="crm-view" hidden></section>
         <section id="schedule-view" hidden></section>
+        <section id="hygiene-view" hidden aria-label="Hygiène HACCP"></section>
         <section id="dispatch-view" hidden aria-label="Répartition des courses"></section>
         <section id="settings-view" hidden></section>
         <details class="app-orders-stats"><summary>Activité & chiffre d’affaires</summary>
@@ -268,6 +271,7 @@
     <script src="./epson-print.js?v=pickup-ticket-time-20261016"></script>
     <script src="./pwa.js?v=customers-compact-20261018"></script>
     <script src="./birthdays.js?v=20261018"></script>
-    <script src="./app.js?v=birthdays-20261018"></script>
+    <script src="./hygiene.js?v=haccp-review-20261109"></script>
+    <script src="./app.js?v=haccp-review-20261109"></script>
   </body>
 </html>

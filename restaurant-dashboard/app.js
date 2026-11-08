@@ -87,6 +87,7 @@ let birthdaysPanel = null;
 let schedulePanel = null;
 let dispatchPanel = null;
 let statisticsPanel = null;
+let hygienePanel = null;
 const euro = (number) => `${Number(number).toFixed(2).replace(".", ",")} €`;
 const serviceDateLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "Date non précisée";
 const receivedTimeLabel = (value) => value ? new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "";
@@ -99,13 +100,13 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character
 const active = () => orders.filter((order) => order.refund?.status === "due" || !["Terminée", "Refusée"].includes(order.status));
 const showToast = (message) => { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); window.setTimeout(() => toast.classList.remove("show"), 2600); };
 const dashboardHeaders = (extra = {}) => ({ ...extra, Authorization: `Bearer ${dashboardToken}` });
-const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
+const showLogin = (message = "") => { window.BibouAmendments?.clear(); window.BibouUber?.clear(); openOrderDisclosures.clear(); document.querySelector('#orders-list').innerHTML = ''; dashboardToken = ""; archiveSearch = ""; document.querySelector('#archive-search').value = ''; clearCustomerView(); marketingPanel?.clear(); promotionsPanel?.clear(); notificationsPanel?.clear(); smsPanel?.clear(); crmPanel?.clear(); schedulePanel?.clear(); dispatchPanel?.clear(); statisticsPanel?.clear(); hygienePanel?.clear(); removeDashboardToken(); orderAlarm.reset(); soundPlayer.stop(); clearTimeout(arrivalTimer); queuedArrivals.clear(); document.title = "Bibou's Burgers — Espace restaurant"; document.querySelector("#dashboard-app").hidden = true; document.querySelector("#login-screen").hidden = false; document.querySelector("#login-error").textContent = message; };
 const logoutDashboard = () => {
   const token = dashboardToken;
   showLogin('Vous êtes déconnecté de cet appareil.');
   if (token) void fetch(`${API_BASE_URL}/dashboard/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
 };
-const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; void birthdaysPanel?.load(); };
+const showDashboard = () => { document.querySelector("#login-screen").hidden = true; document.querySelector("#dashboard-app").hidden = false; if (location.hash === "#hygiene") showView("hygiene"); void birthdaysPanel?.load(); };
 
 const cashDue = order => order?.kioskCash === true && order.status === 'awaiting_payment' && order.payment?.provider === 'cash' && order.payment.status === 'CASH_DUE';
 const cashChanges = new Set();
@@ -1023,7 +1024,7 @@ async function downloadBackup(button) {
 document.querySelector("#backup-create").addEventListener("click", () => loadBackups(true));
 
 function showView(view) {
-  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
+  if (!["home", "orders", "dispatch", "reservations", "rewards", "menu", "backups", "customers", "marketing", "promotions", "notifications", "marketing-sms", "crm", "settings", "schedule", "statistics", "hygiene"].includes(view)) return showToast("Cette rubrique sera disponible prochainement.");
   if (view !== 'customers') closeCustomerDetail(false);
   currentView = view;
   document.querySelector('#home-view').hidden = view !== 'home';
@@ -1031,6 +1032,7 @@ function showView(view) {
   document.querySelector('#marketing-subnav').hidden = !['marketing','promotions','crm','notifications','marketing-sms'].includes(view);
   document.querySelector('#settings-subnav').hidden = !['settings','backups'].includes(view);
   document.querySelector("#schedule-view").hidden = view !== "schedule";
+  document.querySelector("#hygiene-view").hidden = view !== "hygiene";
   document.querySelector('#statistics-view').hidden = view !== 'statistics';
   document.querySelector("#dispatch-view").hidden = view !== "dispatch";
   document.querySelector("#orders-view").hidden = view !== "orders";
@@ -1063,6 +1065,11 @@ function showView(view) {
   if (view === "notifications") void notificationsPanel?.load();
   if (view === 'marketing-sms') { document.querySelector('#dashboard-title').textContent = 'Écrire par SMS'; updateText('#view-description', 'Préparez votre message et confirmez sa facturation avant tout envoi.'); void smsPanel?.load(); }
   if (["crm", "settings"].includes(view)) void crmPanel?.load();
+  if (view === 'hygiene') {
+    document.querySelector('#dashboard-title').textContent = 'Hygiène HACCP';
+    updateText('#view-description', 'Essayez le registre avec des données fictives.');
+    void hygienePanel?.load();
+  }
   window.BibouRestaurantApp?.changed(view, filter);
 }
 
@@ -1136,6 +1143,7 @@ document.querySelectorAll(".attention-links button").forEach((button) => button.
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 document.querySelector("#refresh-orders").addEventListener("click", async () => {
   void birthdaysPanel?.load(true);
+  if (currentView === "hygiene") return hygienePanel?.load();
   if (["crm", "settings"].includes(currentView)) return crmPanel?.load();
   if (currentView === "schedule") return schedulePanel?.load();
   if (currentView === 'statistics') return statisticsPanel?.load();
@@ -1188,6 +1196,8 @@ if (typeof window.BibouSchedule === 'function') schedulePanel = window.BibouSche
 if (window.BibouDispatch?.create) dispatchPanel = window.BibouDispatch.create({root:document.querySelector('#dispatch-view'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onOrdersChanged:()=>loadOrders(),getOrder:id=>orders.find(order=>order.apiId===id)});
 if (typeof window.BibouCrm === 'function') crmPanel = window.BibouCrm({ root: document.querySelector('#crm-view'), settingsRoot: document.querySelector('#settings-view'), api: API_BASE_URL, token: () => dashboardToken, onUnauthorized: () => showLogin('Session expirée. Reconnectez-vous.'), onLogout: logoutDashboard });
 if (typeof window.BibouBirthdays === 'function') birthdaysPanel = window.BibouBirthdays({banner:document.querySelector('#birthday-alert'),dialog:document.querySelector('#birthday-dialog'),openButton:document.querySelector('#birthday-open'),api:API_BASE_URL,token:()=>dashboardToken,onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'),onPreparePush:target=>{showView('notifications');notificationsPanel?.prepareBirthday(target);}});
+hygienePanel = window.KrokliHygiene?.({root:document.querySelector('#hygiene-view'), api:API_BASE_URL,
+  token:()=>dashboardToken, onUnauthorized:()=>showLogin('Session expirée. Reconnectez-vous.'), reviewMode:true});
 refreshMetrics();
 updateSoundControls();
 updateConnectionStatus();
