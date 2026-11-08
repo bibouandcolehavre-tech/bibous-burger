@@ -4,6 +4,7 @@ const http=require('node:http'),fs=require('node:fs/promises'),path=require('nod
 const {spawn}=require('node:child_process'),{once}=require('node:events');
 const {fixture}=require('./fixture.cjs'),{page}=require('./public-pages.cjs');
 const {demoPage,decorate,handleDemoLookup,DEMO_BARCODE}=require('./wallet-demo.cjs');
+const {createHygieneDemo}=require('./hygiene-demo.cjs');
 const root=path.resolve(__dirname,'..'),publicRoot=path.join(root,'restaurant-dashboard');
 // Public example credential, NOT an access to any real restaurant or service.
 const DEMO_PASSWORD='KrokliProExemple2026';
@@ -14,18 +15,21 @@ async function start(){
  const dataPath=path.join(temporary,'data.json');
  await fs.writeFile(dataPath,JSON.stringify(fixture()),{mode:0o600});
  // Explicit allowlist: no production keys, no Render environment groups, no .env.
- const child=spawn(process.execPath,['--require',path.join(__dirname,'network-isolation.cjs'),path.join(root,'server/server.js')],{cwd:temporary,env:{PATH:process.env.PATH,PORT:'0',LISTEN_HOST:'127.0.0.1',NODE_ENV:'test',DATA_FILE_PATH:dataPath,SESSION_SECRET:crypto.randomBytes(32).toString('hex'),RESTAURANT_DASHBOARD_PASSWORD:DEMO_PASSWORD,PUSH_ENABLED:'false',KROKLI_NATIVE_PUSH_ENABLED:'false',KEYYO_CALL_SMS_ENABLED:'false',STORE_REVIEW_ENABLED:'false'},stdio:['ignore','pipe','pipe']});
+ const child=spawn(process.execPath,['--require',path.join(__dirname,'network-isolation.cjs'),path.join(root,'server/server.js')],{cwd:temporary,env:{PATH:process.env.PATH,PORT:'0',LISTEN_HOST:'127.0.0.1',NODE_ENV:'test',DATA_FILE_PATH:dataPath,SESSION_SECRET:crypto.randomBytes(32).toString('hex'),RESTAURANT_DASHBOARD_PASSWORD:DEMO_PASSWORD,PUSH_ENABLED:'false',KROKLI_NATIVE_PUSH_ENABLED:'false',KEYYO_CALL_SMS_ENABLED:'false',STORE_REVIEW_ENABLED:'false',KROKLI_REVIEW_PASSWORD_HASH:'disabled-in-pro-review'},stdio:['ignore','pipe','pipe']});
  let backendPort;
  const booted=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Review backend startup timed out')),20000);child.stdout.on('data',chunk=>{const match=String(chunk).match(/http:\/\/localhost:(\d+)/);if(match){backendPort=Number(match[1]);clearTimeout(timer);resolve();}});child.on('error',reject);child.once('exit',code=>{clearTimeout(timer);reject(Error('Review backend exited '+code));});});
  // Keep credentials, request bodies and future user-entered data out of logs.
  child.stderr.on('data',()=>{});
  await booted;
+ const hygieneDemo=createHygieneDemo(backendPort);
  const server=http.createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://review.invalid');
    if(['GET','HEAD'].includes(req.method)&&url.pathname==='/health'){return json(res,200,{ok:true,product:'Krokli Pro',isolatedExamples:true,externalProviders:false});}
    if(['GET','HEAD'].includes(req.method)&&['/privacy','/support'].includes(url.pathname)){const html=page(url.pathname.slice(1));res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"});return res.end(req.method==='HEAD'?undefined:html);}
    if(['GET','HEAD'].includes(req.method)&&url.pathname==='/staff/wallet/scan'){const html=demoPage();res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"});return res.end(req.method==='HEAD'?undefined:html);}
+   if(await hygieneDemo.handle(req,res,url,json))return;
+   if(req.method==='POST'&&url.pathname==='/api/dashboard/auth/logout')hygieneDemo.forget(req);
    if(url.pathname.startsWith('/api/')){
     // No customer authentication/order submission or driver/provider webhooks.
     const permitted=url.pathname.startsWith('/api/dashboard/')||req.method==='GET'&&url.pathname==='/api/catalog';
@@ -50,7 +54,7 @@ async function start(){
    if(ext==='.html')file=Buffer.from(file.toString('utf8').replace('<body>','<body><div style="position:relative;z-index:99999;background:#bb7258;color:white;padding:12px;text-align:center;font-weight:700">VÉRIFICATION KROKLI PRO — EXEMPLES UNIQUEMENT. Aucun repas, paiement ou envoi réel. Ne saisissez aucune donnée personnelle.</div>').replace(/<link rel="manifest"[^>]+>/g,'').replace(/<script src="\.\/pwa\.js[^>]*><\/script>/g,''));
    // No service worker, printer/local-network connection or remote script allowed.
    if(requested==='/sw.js')return json(res,404,{error:'Service worker désactivé.'});
-   res.writeHead(200,{'Content-Type':mime[ext],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(self), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"});res.end(req.method==='HEAD'?undefined:file);
+   res.writeHead(200,{'Content-Type':mime[ext],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(self), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"});res.end(req.method==='HEAD'?undefined:file);
   }catch(error){if(!res.headersSent)json(res,error.code==='ENOENT'?404:500,{error:'Ressource de vérification indisponible.'});else res.end();}
  });
  server.listen(Number(process.env.PORT||0),'0.0.0.0',()=>console.log('Krokli Pro isolated review listening on '+server.address().port));
